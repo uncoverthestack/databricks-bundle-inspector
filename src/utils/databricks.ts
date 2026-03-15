@@ -3,10 +3,17 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-export class DatabricksCliUnavailableError extends Error {
+export class DatabricksCliCommandError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DatabricksCliUnavailableError";
+    this.name = "DatabricksCliCommandError";
+  }
+}
+
+export class DatabricksCliVersionParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DatabricksCliVersionParseError";
   }
 }
 
@@ -15,25 +22,27 @@ export function extractVersion(text: string): string | null {
   return match ? match[1] : null;
 }
 
-export async function runDatabricksVersionCommand(): Promise<string> {
+export async function runCommand(command: string): Promise<string> {
   try {
-    const { stdout, stderr } = await execAsync("databricks --version");
+    const { stdout, stderr } = await execAsync(command);
     return `${stdout}\n${stderr}`.trim();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new DatabricksCliUnavailableError(
-      `Failed to run 'databricks --version': ${message}`,
+    throw new DatabricksCliCommandError(
+      `Failed to run '${command}': ${message}`,
     );
   }
 }
 
-export async function getDatabricksCliVersion(): Promise<string> {
-  const output = await runDatabricksVersionCommand();
+export async function getDatabricksCliVersion(
+  runner: (command: string) => Promise<string> = runCommand,
+): Promise<string> {
+  const output = await runner("databricks --version");
   const version = extractVersion(output);
 
   if (!version) {
-    throw new DatabricksCliUnavailableError(
-      `Unable to detect Databricks CLI version from output: ${output}`,
+    throw new DatabricksCliVersionParseError(
+      `Unable to parse Databricks CLI version from output: ${output}`,
     );
   }
 
