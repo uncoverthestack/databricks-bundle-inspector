@@ -1,0 +1,8 @@
+.env
+node_modules
+.DS_Store
+.cache
+dist
+.eslintcache
+.idea
+.log
