@@ -7,19 +7,22 @@ export function extractVersion(text: string): string | null {
 
 export function runDatabricksVersionCommand(): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec("databricks --version", (error, stdout, stderr) => {
-      if (error) {
-        reject(error);
-        return;
-      }
+    exec(
+      "databricks --version",
+      (error: Error, stdout: string, stderr: string) => {
+        if (error) {
+          reject(error);
+          return;
+        }
 
-      if (stderr) {
-        reject(new Error(stderr));
-        return;
-      }
+        if (stderr) {
+          reject(new Error(stderr));
+          return;
+        }
 
-      resolve(stdout.trim());
-    });
+        resolve(stdout.trim());
+      },
+    );
   });
 }
 
