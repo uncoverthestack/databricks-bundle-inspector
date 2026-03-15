@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, ExecException } from "child_process";
 
 export function extractVersion(text: string): string | null {
   const match = text.match(/\bv?(\d+\.\d+\.\d+)\b/);
@@ -9,7 +9,7 @@ export function runDatabricksVersionCommand(): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(
       "databricks --version",
-      (error: Error, stdout: string, stderr: string) => {
+      (error: ExecException | null, stdout: string, stderr: string) => {
         if (error) {
           reject(error);
           return;
