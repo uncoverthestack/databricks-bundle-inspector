@@ -1,52 +1,38 @@
 {
   "name": "databricks-bundle-inspector",
-  "displayName": "databricks-bundle-inspector",
-  "description": "Developer tooling for previewing, inspecting visualizing Databricks Asset Bundles locally before and after deployment",
-  "version": "0.0.1",
-  "engines": {
-    "vscode": "^1.110.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "databricks-bundle-inspector.helloWorld",
-        "title": "Hello World"
-      }
-    ]
-  },
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "npm run check-types && npm run lint && node esbuild.js",
-    "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
-    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "check-types": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.10.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.8.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "shadcn": "^4.2.0",
+    "tailwind-merge": "^3.5.0",
+    "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.19.15",
-    "@types/vscode": "^1.110.0",
-    "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2",
-    "esbuild": "^0.27.3",
-    "eslint": "^9.39.3",
-    "mocha": "^11.3.0",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
-  },
-  "overrides": {
-    "serialize-javascript": "^7.0.3"
+    "@eslint/js": "^9.39.4",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.4"
   }
 }
