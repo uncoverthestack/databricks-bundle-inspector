@@ -1,13 +1,52 @@
 {
   "name": "databricks-bundle-inspector",
-  "private": true,
-  "version": "0.0.0",
+  "displayName": "Databricks Bundle Inspector",
+  "description": "Inspect and visualize Databricks bundle structure",
+  "version": "0.0.1",
+  "publisher": "databricks",
   "type": "module",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:yaml"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "databricks-bundle-inspector.inspectBundle",
+        "title": "Inspect Databricks Bundle",
+        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "databricks-bundle-inspector.inspectBundle",
+          "group": "navigation",
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "databricks-bundle-inspector.inspectBundle",
+          "group": "navigation",
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+        }
+      ]
+    }
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "build:ext": "node esbuild.js",
+    "build:webview": "vite build",
+    "build": "npm run build:ext && npm run build:webview",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch",
+    "watch-tests": "tsc -p . --outDir out --watch",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "compile": "npm run build:ext",
+    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/validateBundle.test.js"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
@@ -26,7 +65,9 @@
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "esbuild": "^0.28.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

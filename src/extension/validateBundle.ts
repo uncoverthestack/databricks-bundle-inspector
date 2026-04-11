@@ -9,6 +9,25 @@ export {
 
 const execFileAsync = promisify(execFile);
 
+type ExecFileResult = {
+  stdout: string;
+  stderr: string;
+};
+
+type ExecFileLike = (
+  file: string,
+  args: string[],
+  options?: {
+    cwd?: string;
+    timeout?: number;
+  },
+) => Promise<ExecFileResult>;
+
+interface ValidateBundleDependencies {
+  execFileAsync: ExecFileLike;
+  resolveDatabricksCli: () => Promise<string | null>;
+}
+
 export interface BundleError {
   bundleDir: string;
   bundleName: string;
@@ -79,7 +98,7 @@ function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
 }
 
-async function resolveDatabricksCli(): Promise<string | null> {
+export async function resolveDatabricksCli(): Promise<string | null> {
   const candidates = [
     process.env.DATABRICKS_CLI_PATH,
     "/opt/homebrew/bin/databricks",
@@ -107,12 +126,23 @@ export async function validateBundle(
   bundleDir: string,
   target?: string,
 ): Promise<BundleResult> {
+  return validateBundleWithDependencies(bundleDir, target, {
+    execFileAsync,
+    resolveDatabricksCli,
+  });
+}
+
+export async function validateBundleWithDependencies(
+  bundleDir: string,
+  target: string | undefined,
+  dependencies: ValidateBundleDependencies,
+): Promise<BundleResult> {
   const resolvedBundleDir = path.resolve(bundleDir);
   const bundleName = path.basename(resolvedBundleDir);
 
   console.log("[validateBundle] running preflight check");
 
-  const cliPath = await resolveDatabricksCli();
+  const cliPath = await dependencies.resolveDatabricksCli();
 
   if (!cliPath) {
     return {
@@ -128,12 +158,13 @@ export async function validateBundle(
   }
 
   const args = ["bundle", "validate", "--output", "json"];
+  // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
     args.push("--target", target);
   }
 
   try {
-    const { stdout, stderr } = await execFileAsync(cliPath, args, {
+    const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {
       cwd: resolvedBundleDir,
       timeout: 30_000,
     });
@@ -151,11 +182,16 @@ export async function validateBundle(
 
     return issues ? { ok: true, data, issues } : { ok: true, data };
   } catch (error: unknown) {
+    const stdout = extractStdout(error);
+    const stderr = extractStderr(error);
+
     console.warn("[validateBundle] command exited non-zero", {
       cliPath,
       bundleDir: resolvedBundleDir,
       target,
-      error,
+      error: getErrorMessage(error),
+      stdout,
+      stderr,
     });
 
     if (hasErrorCode(error, "ENOENT")) {
@@ -184,9 +220,6 @@ export async function validateBundle(
       };
     }
 
-    const stdout = extractStdout(error);
-    const stderr = extractStderr(error);
-
     if (isAuthError(stderr) && stdout?.trim()) {
       try {
         const data = JSON.parse(stdout) as ParsedBundleConfig;
@@ -207,6 +240,27 @@ export async function validateBundle(
       }
     }
 
+    // Try to parse stdout even if command failed, in case it's valid JSON with warnings
+    if (stdout?.trim()) {
+      try {
+        const data = JSON.parse(stdout) as ParsedBundleConfig;
+
+        return {
+          ok: true,
+          data,
+          issues: [
+            {
+              code: "CLI_WARNING",
+              message: "Databricks CLI validation completed with warnings.",
+              details: stderr?.trim() || getErrorMessage(error),
+            },
+          ],
+        };
+      } catch {
+        // stdout is not valid JSON, fall through to error
+      }
+    }
+
     return {
       ok: false,
       error: {
@@ -214,7 +268,7 @@ export async function validateBundle(
         bundleName,
         error: "Failed to validate Databricks bundle.",
         errorCode: "VALIDATION_FAILED",
-        details: getErrorMessage(error),
+        details: stderr?.trim() || getErrorMessage(error),
       },
     };
   }
