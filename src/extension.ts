@@ -116,15 +116,14 @@ async function inspectBundle() {
 }
 
 export function activate(extensionContext: vscode.ExtensionContext) {
-  context = extensionContext;
   console.log('Extension "databricks-bundle-inspector" is now active!');
 
   const disposable = vscode.commands.registerCommand(
-    "databricks-bundle-inspector.inspectBundle",
+    "databricksBundleInspector.inspectBundle",
     () => inspectBundle(),
   );
 
-  context.subscriptions.push(disposable);
+  extensionContext.subscriptions.push(disposable);
 }
 
 function getWebviewContent(

@@ -15,7 +15,7 @@
   "contributes": {
     "commands": [
       {
-        "command": "databricks-bundle-inspector.inspectBundle",
+        "command": "databricksBundleInspector.inspectBundle",
         "title": "Inspect Databricks Bundle",
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
@@ -23,14 +23,14 @@
     "menus": {
       "editor/title": [
         {
-          "command": "databricks-bundle-inspector.inspectBundle",
+          "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }
       ],
       "editor/context": [
         {
-          "command": "databricks-bundle-inspector.inspectBundle",
+          "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }
@@ -46,7 +46,7 @@
     "watch-tests": "tsc -p . --outDir out --watch",
     "lint": "eslint .",
     "compile": "npm run build:ext",
-    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/validateBundle.test.js"
+    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/jobSelection.test.js out/test/validateBundle.test.js"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
