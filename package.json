@@ -8,6 +8,10 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uncoverthestack/databricks-bundle-inspector.git"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:yaml"
