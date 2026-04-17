@@ -3,7 +3,7 @@
   "displayName": "Databricks Bundle Inspector",
   "description": "Inspect and visualize Databricks bundle structure",
   "version": "0.0.1",
-  "publisher": "uncoverthestack",
+  "publisher": "UncoverTheStack",
   "license": "Apache-2.0",
   "type": "module",
   "categories": [
@@ -13,9 +13,20 @@
     "Machine Learning",
     "Other"
   ],
+  "keywords": [
+    "databricks",
+    "bundle",
+    "dab",
+    "yaml",
+    "jobs",
+    "visualization",
+    "deployment",
+    "inspector"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
+  "homepage": "https://github.com/uncoverthestack/databricks-bundle-inspector",
   "qna": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues",
   "bugs": {
     "url": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues"
