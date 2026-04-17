@@ -4,9 +4,21 @@
   "description": "Inspect and visualize Databricks bundle structure",
   "version": "0.0.1",
   "publisher": "uncoverthestack",
+  "license": "Apache-2.0",
   "type": "module",
+  "categories": [
+    "Visualization",
+    "Notebooks",
+    "Data Science",
+    "Machine Learning",
+    "Other"
+  ],
   "engines": {
     "vscode": "^1.85.0"
+  },
+  "qna": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues",
+  "bugs": {
+    "url": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues"
   },
   "repository": {
     "type": "git",
