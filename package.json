@@ -3,7 +3,7 @@
   "displayName": "Databricks Bundle Inspector",
   "description": "Inspect and visualize Databricks bundle structure",
   "version": "0.0.1",
-  "publisher": "databricks",
+  "publisher": "uncoverthestack",
   "type": "module",
   "engines": {
     "vscode": "^1.85.0"
