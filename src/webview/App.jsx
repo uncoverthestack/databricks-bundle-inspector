@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { extractBundleGraph } from "../shared/bundleGraph";
 import {
   applyNodeChanges,
@@ -8,8 +8,14 @@ import {
   MiniMap,
   ReactFlow,
 } from "@xyflow/react";
-import { JobSummaryCard, JobSummaryNode, ResourcePillNode, TaskNode } from "./components/JobNode";
+import {
+  JobSummaryCard,
+  JobSummaryNode,
+  ResourcePillNode,
+  TaskNode,
+} from "./components/JobNode";
 import { KindIcon } from "./components/Icons";
+import { resolveSelectedJobKey } from "./lib/jobSelection";
 import "@xyflow/react/dist/style.css";
 
 const nodeTypes = {
@@ -28,7 +34,10 @@ function estimateTaskWidth(taskNode) {
     360,
     Math.max(
       220,
-      120 + typeLabelLength * 7 + Math.max(nameLength * 7, Math.min(subtitleLength, 28) * 6) + computeWidth,
+      120 +
+        typeLabelLength * 7 +
+        Math.max(nameLength * 7, Math.min(subtitleLength, 28) * 6) +
+        computeWidth,
     ),
   );
 }
@@ -50,8 +59,12 @@ function getTaskLevel(node, allNodes, edges, memo = new Map()) {
   const level =
     Math.max(
       ...inboundDependencies.map((edge) => {
-        const sourceNode = allNodes.find((candidate) => candidate.id === edge.source);
-        return sourceNode ? getTaskLevel(sourceNode, allNodes, edges, memo) + 1 : 0;
+        const sourceNode = allNodes.find(
+          (candidate) => candidate.id === edge.source,
+        );
+        return sourceNode
+          ? getTaskLevel(sourceNode, allNodes, edges, memo) + 1
+          : 0;
       }),
     ) || 0;
 
@@ -86,13 +99,13 @@ function buildFlowFromBundle(parsedBundle) {
     );
     const taskEdges = graph.edges.filter(
       (edge) =>
-        (edge.relationship === "depends_on" || edge.relationship === "contains") &&
+        (edge.relationship === "depends_on" ||
+          edge.relationship === "contains") &&
         (edge.source === jobNode.id ||
           taskNodes.some((taskNode) => taskNode.id === edge.source) ||
           taskNodes.some((taskNode) => taskNode.id === edge.target)),
     );
     const levelMemo = new Map();
-    const levelRows = new Map();
     const taskLevels = new Map();
     const levelWidths = new Map();
 
@@ -125,7 +138,8 @@ function buildFlowFromBundle(parsedBundle) {
 
     function getAnchorRow(taskNode) {
       const incomingEdges = taskEdges.filter(
-        (edge) => edge.relationship === "depends_on" && edge.target === taskNode.id,
+        (edge) =>
+          edge.relationship === "depends_on" && edge.target === taskNode.id,
       );
 
       if (incomingEdges.length === 0) {
@@ -140,7 +154,9 @@ function buildFlowFromBundle(parsedBundle) {
         return null;
       }
 
-      return incomingRows.reduce((sum, row) => sum + row, 0) / incomingRows.length;
+      return (
+        incomingRows.reduce((sum, row) => sum + row, 0) / incomingRows.length
+      );
     }
 
     function claimNearestFreeRow(preferredRow, usedRows) {
@@ -168,7 +184,9 @@ function buildFlowFromBundle(parsedBundle) {
 
       levelTaskNodes.sort((leftTaskNode, rightTaskNode) => {
         if (level === 0) {
-          return leftTaskNode.displayName.localeCompare(rightTaskNode.displayName);
+          return leftTaskNode.displayName.localeCompare(
+            rightTaskNode.displayName,
+          );
         }
 
         const leftAnchor = getAnchorRow(leftTaskNode);
@@ -181,7 +199,9 @@ function buildFlowFromBundle(parsedBundle) {
           return anchorDifference;
         }
 
-        return leftTaskNode.displayName.localeCompare(rightTaskNode.displayName);
+        return leftTaskNode.displayName.localeCompare(
+          rightTaskNode.displayName,
+        );
       });
 
       const usedRows = new Set();
@@ -196,10 +216,12 @@ function buildFlowFromBundle(parsedBundle) {
         rowByTaskId.set(taskNode.id, row);
 
         const isEntryTask = !taskEdges.some(
-          (edge) => edge.relationship === "depends_on" && edge.target === taskNode.id,
+          (edge) =>
+            edge.relationship === "depends_on" && edge.target === taskNode.id,
         );
         const isTerminalTask = !taskEdges.some(
-          (edge) => edge.relationship === "depends_on" && edge.source === taskNode.id,
+          (edge) =>
+            edge.relationship === "depends_on" && edge.source === taskNode.id,
         );
 
         flowNodes.push({
@@ -227,24 +249,25 @@ function buildFlowFromBundle(parsedBundle) {
     });
   });
 
-  const flowEdges = graph.edges.map((edge) => {
-    const isDependency = edge.relationship === "depends_on";
-    if (edge.relationship === "contains") {
-      return null;
-    }
+  const flowEdges = graph.edges
+    .map((edge) => {
+      const isDependency = edge.relationship === "depends_on";
+      if (edge.relationship === "contains") {
+        return null;
+      }
 
-    return {
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      animated: isDependency,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 16,
-        height: 16,
-        color: "#fafaf9",
-      },
-      style: isDependency
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        animated: isDependency,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 16,
+          height: 16,
+          color: "#fafaf9",
+        },
+        style: isDependency
           ? {
               stroke: "#fafaf9",
               strokeDasharray: "6 4",
@@ -255,10 +278,19 @@ function buildFlowFromBundle(parsedBundle) {
               strokeWidth: 1.1,
               opacity: 0.7,
             },
-    };
-  }).filter(Boolean);
+      };
+    })
+    .filter(Boolean);
 
   return { nodes: flowNodes, edges: flowEdges, summaries: summaryCards };
+}
+
+function getFlowStateKey(selectedJobKey, flow) {
+  return JSON.stringify({
+    selectedJobKey,
+    nodeIds: flow.nodes.map((node) => node.id),
+    edgeIds: flow.edges.map((edge) => edge.id),
+  });
 }
 
 function selectSingleJobBundle(parsedBundle, selectedJobKey) {
@@ -283,45 +315,8 @@ function selectSingleJobBundle(parsedBundle, selectedJobKey) {
   };
 }
 
-function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
-  const jobsByKey = useMemo(
-    () => parsedBundle?.resources?.jobs ?? {},
-    [parsedBundle],
-  );
-  const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
-  const jobOptions = useMemo(
-    () =>
-      jobKeys.map((jobKey) => {
-        const jobName = jobsByKey[jobKey]?.name;
-        return {
-          value: jobKey,
-          label:
-            typeof jobName === "string" && jobName.trim()
-              ? `${jobKey} - ${jobName}`
-              : jobKey,
-        };
-      }),
-    [jobKeys, jobsByKey],
-  );
-  const [selectedJobKey, setSelectedJobKey] = useState(
-    initialSelectedJobKey ?? jobKeys[0] ?? "",
-  );
-
-  useEffect(() => {
-    const fallbackJobKey = initialSelectedJobKey ?? jobKeys[0] ?? "";
-
-    if (!selectedJobKey || !jobKeys.includes(selectedJobKey)) {
-      setSelectedJobKey(fallbackJobKey);
-    }
-  }, [initialSelectedJobKey, jobKeys, selectedJobKey]);
-
-  const filteredBundle = useMemo(
-    () => selectSingleJobBundle(parsedBundle, selectedJobKey),
-    [parsedBundle, selectedJobKey],
-  );
-  const flow = useMemo(() => buildFlowFromBundle(filteredBundle), [filteredBundle]);
+function FlowCanvas({ flow, flowStateKey, jobKeysLength }) {
   const [nodes, setNodes] = useState(flow.nodes);
-  const [edges, setEdges] = useState(flow.edges);
   const [selectedTaskNodeId, setSelectedTaskNodeId] = useState("");
   const rfStyle = {
     background:
@@ -329,12 +324,6 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
     backgroundColor: "#111111",
     backgroundSize: "16px 16px",
   };
-
-  useEffect(() => {
-    setNodes(flow.nodes);
-    setEdges(flow.edges);
-    setSelectedTaskNodeId("");
-  }, [flow]);
 
   function onNodesChange(changes) {
     setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
@@ -349,36 +338,19 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
   }
 
   const selectedTask = useMemo(
-    () => nodes.find((node) => node.id === selectedTaskNodeId && node.type === "task"),
+    () =>
+      nodes.find(
+        (node) => node.id === selectedTaskNodeId && node.type === "task",
+      ),
     [nodes, selectedTaskNodeId],
   );
 
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
-      <div className="absolute left-6 top-6 z-20 flex items-start gap-3">
-        {jobKeys.length > 1 ? (
-          <label className="flex flex-col gap-2 rounded-xl border border-stone-700 bg-stone-950/95 px-4 py-3 text-xs text-stone-200 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
-              Job
-            </span>
-            <select
-              value={selectedJobKey}
-              onChange={(event) => setSelectedJobKey(event.target.value)}
-              className="min-w-[220px] rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm text-stone-50 outline-none transition focus:border-emerald-400"
-            >
-              {jobOptions.map((jobOption) => (
-                <option key={jobOption.value} value={jobOption.value}>
-                  {jobOption.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
+    <div key={flowStateKey} style={{ width: "100vw", height: "100vh" }}>
       {flow.summaries[0] ? (
         <div
           className={`pointer-events-none absolute left-6 z-10 ${
-            jobKeys.length > 1 ? "top-24" : "top-6"
+            jobKeysLength > 1 ? "top-24" : "top-6"
           }`}
         >
           <div className="pointer-events-auto">
@@ -387,9 +359,7 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
         </div>
       ) : null}
       {selectedTask ? (
-        <div
-          className="absolute right-6 top-6 z-20 w-[380px] rounded-2xl border border-stone-700 bg-stone-950/95 p-5 text-stone-50 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur"
-        >
+        <div className="absolute right-6 top-6 z-20 w-[380px] rounded-2xl border border-stone-700 bg-stone-950/95 p-5 text-stone-50 shadow-[0_18px_44px_rgba(0,0,0,0.35)] backdrop-blur">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
@@ -423,9 +393,11 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
             {selectedTask.data.subtitle ? (
               <section>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
-                  Path / Target
+                  Local Path
                 </div>
-                <div className="break-all text-stone-200">{selectedTask.data.subtitle}</div>
+                <div className="break-all text-stone-200">
+                  {selectedTask.data.subtitle}
+                </div>
               </section>
             ) : null}
 
@@ -436,7 +408,10 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
                 </div>
                 <div className="space-y-1">
                   {selectedTask.data.compute.map((item) => (
-                    <div key={`${item.kind}-${item.label}`} className="flex items-center gap-2 text-stone-200">
+                    <div
+                      key={`${item.kind}-${item.label}`}
+                      className="flex items-center gap-2 text-stone-200"
+                    >
                       <div className="rounded-full border border-stone-700 p-1.5">
                         <KindIcon kind={item.kind} color="#f5f5f4" size={12} />
                       </div>
@@ -450,11 +425,14 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
             {selectedTask.data.parameters?.length ? (
               <section>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
-                  Effective Parameters
+                  Task Parameters
                 </div>
                 <div className="max-h-[220px] space-y-1 overflow-auto rounded-xl border border-stone-800 bg-stone-900/80 p-3">
                   {selectedTask.data.parameters.map((parameter) => (
-                    <div key={parameter.name} className="break-all text-stone-200">
+                    <div
+                      key={parameter.name}
+                      className="break-all text-stone-200"
+                    >
                       <span className="text-stone-400">{parameter.name}</span>
                       <span>: </span>
                       <span>{parameter.value}</span>
@@ -468,7 +446,7 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
       ) : null}
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={flow.edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
@@ -516,6 +494,83 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
         />
         <Controls />
       </ReactFlow>
+    </div>
+  );
+}
+
+function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
+  const jobsByKey = useMemo(
+    () => parsedBundle?.resources?.jobs ?? {},
+    [parsedBundle],
+  );
+  const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
+  const jobOptions = useMemo(
+    () =>
+      jobKeys.map((jobKey) => {
+        const jobName = jobsByKey[jobKey]?.name;
+        return {
+          value: jobKey,
+          label:
+            typeof jobName === "string" && jobName.trim()
+              ? `${jobKey} - ${jobName}`
+              : jobKey,
+        };
+      }),
+    [jobKeys, jobsByKey],
+  );
+  const [userSelectedJobKey, setUserSelectedJobKey] = useState(
+    initialSelectedJobKey,
+  );
+  const selectedJobKey = useMemo(
+    () =>
+      resolveSelectedJobKey(
+        jobKeys,
+        userSelectedJobKey,
+        initialSelectedJobKey,
+      ),
+    [initialSelectedJobKey, jobKeys, userSelectedJobKey],
+  );
+  const filteredBundle = useMemo(
+    () => selectSingleJobBundle(parsedBundle, selectedJobKey),
+    [parsedBundle, selectedJobKey],
+  );
+  const flow = useMemo(
+    () => buildFlowFromBundle(filteredBundle),
+    [filteredBundle],
+  );
+  const flowStateKey = useMemo(
+    () => getFlowStateKey(selectedJobKey, flow),
+    [flow, selectedJobKey],
+  );
+
+  return (
+    <div style={{ width: "100vw", height: "100vh" }}>
+      <div className="absolute left-6 top-6 z-20 flex items-start gap-3">
+        {jobKeys.length > 1 ? (
+          <label className="flex flex-col gap-2 rounded-xl border border-stone-700 bg-stone-950/95 px-4 py-3 text-xs text-stone-200 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
+              Job
+            </span>
+            <select
+              value={selectedJobKey}
+              onChange={(event) => setUserSelectedJobKey(event.target.value)}
+              className="min-w-[220px] rounded-md border border-stone-700 bg-stone-900 px-3 py-2 text-sm text-stone-50 outline-none transition focus:border-emerald-400"
+            >
+              {jobOptions.map((jobOption) => (
+                <option key={jobOption.value} value={jobOption.value}>
+                  {jobOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <FlowCanvas
+        key={flowStateKey}
+        flow={flow}
+        flowStateKey={flowStateKey}
+        jobKeysLength={jobKeys.length}
+      />
     </div>
   );
 }
