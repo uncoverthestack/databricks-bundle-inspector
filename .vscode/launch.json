@@ -11,7 +11,7 @@
 			"request": "launch",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
-				"${workspaceFolder}/src/sample-data/sample-bundle"
+				"${workspaceFolder}/src/sample-data"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
