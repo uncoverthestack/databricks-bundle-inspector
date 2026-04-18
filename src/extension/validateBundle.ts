@@ -107,8 +107,13 @@ export async function resolveDatabricksCli(): Promise<string | null> {
 
   for (const candidate of candidates) {
     try {
-      await execFileAsync(candidate, ["--version"], { timeout: 10_000 });
-      console.log("[resolveDatabricksCli] using", candidate);
+      const { stdout } = await execFileAsync(candidate, ["--version"], {
+        timeout: 10_000,
+      });
+      console.log(
+        "[resolveDatabricksCli] using",
+        `${candidate} version: ${stdout.trim()}`,
+      );
       return candidate;
     } catch (error) {
       console.log("[resolveDatabricksCli] failed", candidate, error);
@@ -157,7 +162,7 @@ export async function validateBundleWithDependencies(
     };
   }
 
-  const args = ["bundle", "validate", "--output", "json"];
+  const args = ["bundle", "validate", "--output", "json", "-t", "dev"];
   // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
     args.push("--target", target);
