@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  validateBundleWithDependencies,
-} from "../src/extension/validateBundle.js";
-import type { ParsedBundleConfig } from "../src/shared/bundleGraph.js";
+import { validateBundleWithDependencies } from "../extension/validateBundle.js";
+import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
 
 function createBundle(): ParsedBundleConfig {
   return {
@@ -22,10 +20,14 @@ function createBundle(): ParsedBundleConfig {
 }
 
 test("validateBundle returns CLI_NOT_FOUND when no CLI is resolved", async () => {
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => ({ stdout: "", stderr: "" }),
-    resolveDatabricksCli: async () => null,
-  });
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => ({ stdout: "", stderr: "" }),
+      resolveDatabricksCli: async () => null,
+    },
+  );
 
   assert.equal(result.ok, false);
   if (result.ok) {
@@ -38,23 +40,32 @@ test("validateBundle returns CLI_NOT_FOUND when no CLI is resolved", async () =>
 
 test("validateBundle returns parsed bundle on successful validation", async () => {
   const bundle = createBundle();
-  const calls: Array<{ file: string; args: string[]; cwd: string; timeout: number }> = [];
+  const calls: Array<{
+    file: string;
+    args: string[];
+    cwd: string;
+    timeout: number;
+  }> = [];
 
-  const result = await validateBundleWithDependencies("/workspace/demo", "dev", {
-    execFileAsync: async (file, args, options) => {
-      calls.push({
-        file,
-        args,
-        cwd: options?.cwd ?? "",
-        timeout: options?.timeout ?? 0,
-      });
-      return {
-        stdout: JSON.stringify(bundle),
-        stderr: "",
-      };
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    "dev",
+    {
+      execFileAsync: async (file, args, options) => {
+        calls.push({
+          file,
+          args,
+          cwd: options?.cwd ?? "",
+          timeout: options?.timeout ?? 0,
+        });
+        return {
+          stdout: JSON.stringify(bundle),
+          stderr: "",
+        };
+      },
+      resolveDatabricksCli: async () => "databricks",
     },
-    resolveDatabricksCli: async () => "databricks",
-  });
+  );
 
   assert.equal(result.ok, true);
   if (!result.ok) {
@@ -73,13 +84,17 @@ test("validateBundle returns parsed bundle on successful validation", async () =
 });
 
 test("validateBundle surfaces stderr as a validation warning on success", async () => {
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => ({
-      stdout: JSON.stringify(createBundle()),
-      stderr: "warning: something non-fatal happened",
-    }),
-    resolveDatabricksCli: async () => "databricks",
-  });
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => ({
+        stdout: JSON.stringify(createBundle()),
+        stderr: "warning: something non-fatal happened",
+      }),
+      resolveDatabricksCli: async () => "databricks",
+    },
+  );
 
   assert.equal(result.ok, true);
   if (!result.ok) {
@@ -95,12 +110,16 @@ test("validateBundle tolerates auth errors when stdout contains valid JSON", asy
     stdout: JSON.stringify(createBundle()),
   });
 
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => {
-      throw error;
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => {
+        throw error;
+      },
+      resolveDatabricksCli: async () => "databricks",
     },
-    resolveDatabricksCli: async () => "databricks",
-  });
+  );
 
   assert.equal(result.ok, true);
   if (!result.ok) {
@@ -116,12 +135,16 @@ test("validateBundle treats non-zero exit with valid JSON as a CLI warning", asy
     stdout: JSON.stringify(createBundle()),
   });
 
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => {
-      throw error;
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => {
+        throw error;
+      },
+      resolveDatabricksCli: async () => "databricks",
     },
-    resolveDatabricksCli: async () => "databricks",
-  });
+  );
 
   assert.equal(result.ok, true);
   if (!result.ok) {
@@ -136,12 +159,16 @@ test("validateBundle maps ETIMEDOUT to a timeout error", async () => {
     code: "ETIMEDOUT",
   });
 
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => {
-      throw error;
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => {
+        throw error;
+      },
+      resolveDatabricksCli: async () => "databricks",
     },
-    resolveDatabricksCli: async () => "databricks",
-  });
+  );
 
   assert.equal(result.ok, false);
   if (result.ok) {
@@ -157,12 +184,16 @@ test("validateBundle returns validation failure when stdout is not valid JSON", 
     stdout: "not-json",
   });
 
-  const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
-    execFileAsync: async () => {
-      throw error;
+  const result = await validateBundleWithDependencies(
+    "/workspace/demo",
+    undefined,
+    {
+      execFileAsync: async () => {
+        throw error;
+      },
+      resolveDatabricksCli: async () => "databricks",
     },
-    resolveDatabricksCli: async () => "databricks",
-  });
+  );
 
   assert.equal(result.ok, false);
   if (result.ok) {

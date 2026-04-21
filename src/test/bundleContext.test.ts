@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getBundleDirFromEditor, isBundleFile } from "../src/extension/bundleContext.js";
+import {
+  getBundleDirFromEditor,
+  isBundleFile,
+} from "../extension/bundleContext.js";
 
 test("isBundleFile matches supported bundle file names", () => {
   assert.equal(isBundleFile("databricks.yaml"), true);
