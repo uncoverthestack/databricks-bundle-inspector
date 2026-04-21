@@ -1,7 +1,9 @@
 import { execFile } from "child_process";
 import path from "node:path";
 import { promisify } from "node:util";
+import { z } from "zod";
 import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
+import { resolveDatabricksCli } from "./validateDatabricksCli.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -54,6 +56,44 @@ export type BundleResult =
       data?: ParsedBundleConfig;
     };
 
+// Fix #5: Runtime schema validation with Zod.
+// JSON.parse produces `unknown` at runtime; the `as ParsedBundleConfig` cast
+// is a compile-time fiction. This schema validates the minimum shape required
+// before we pass data into the rest of the extension.
+// Zod v4 requires both key and value schemas for z.record().
+const ParsedBundleConfigSchema = z
+  .object({
+    bundle: z
+      .object({
+        name: z.string(),
+      })
+      .loose(),
+    resources: z
+      .record(z.string(), z.record(z.string(), z.unknown()))
+      .optional(),
+    variables: z.record(z.string(), z.unknown()).optional(),
+    sync: z.unknown().optional(),
+    artifacts: z.unknown().optional(),
+    include: z.array(z.string()).optional(),
+    workspace: z.unknown().optional(),
+  })
+  .passthrough();
+
+function parseBundleConfig(
+  raw: unknown,
+): { ok: true; data: ParsedBundleConfig } | { ok: false; error: string } {
+  const result = ParsedBundleConfigSchema.safeParse(raw);
+  if (!result.success) {
+    return {
+      ok: false,
+      error: result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; "),
+    };
+  }
+  return { ok: true, data: result.data as ParsedBundleConfig };
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -98,12 +138,47 @@ function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
 }
 
+// Fix #4: Reject DATABRICKS_CLI_PATH values that contain shell metacharacters.
+// execFile already avoids shell injection, but a value like `rm -rf /; databricks`
+// could still point at an unexpected executable. This is a defence-in-depth check.
+function isValidExecutablePath(value: string): boolean {
+  return !/[;&|`$<>]/.test(value);
+}
+
+// Fix #8: Cache the resolved CLI path so we don't spawn probe subprocesses on
+// every invocation. The cache is invalidated to `undefined` on extension startup
+// and can be reset explicitly if needed (e.g., after a settings change).
+let cachedCliPath: string | null | undefined;
+
+export function resetCliPathCache(): void {
+  cachedCliPath = undefined;
+}
+
 export async function resolveDatabricksCli(): Promise<string | null> {
+  if (cachedCliPath !== undefined) {
+    return cachedCliPath;
+  }
+
+  const envPath = process.env.DATABRICKS_CLI_PATH;
+
   const candidates = [
-    process.env.DATABRICKS_CLI_PATH,
+    envPath,
     "/opt/homebrew/bin/databricks",
     "databricks",
-  ].filter((value): value is string => Boolean(value));
+  ].filter((value): value is string => {
+    if (!value) {
+      return false;
+    }
+    // Fix #4: Warn and skip paths containing shell metacharacters.
+    if (!isValidExecutablePath(value)) {
+      console.warn(
+        "[resolveDatabricksCli] DATABRICKS_CLI_PATH contains suspicious characters and will be ignored:",
+        value,
+      );
+      return false;
+    }
+    return true;
+  });
 
   for (const candidate of candidates) {
     try {
@@ -114,12 +189,14 @@ export async function resolveDatabricksCli(): Promise<string | null> {
         "[resolveDatabricksCli] using",
         `${candidate} version: ${stdout.trim()}`,
       );
-      return candidate;
+      cachedCliPath = candidate;
+      return cachedCliPath;
     } catch (error) {
       console.log("[resolveDatabricksCli] failed", candidate, error);
     }
   }
 
+  cachedCliPath = null;
   return null;
 }
 
@@ -162,7 +239,7 @@ export async function validateBundleWithDependencies(
     };
   }
 
-  const args = ["bundle", "validate", "--output", "json", "-t", "dev"];
+  const args = ["bundle", "validate", "--output", "json"];
   // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
     args.push("--target", target);
@@ -174,7 +251,20 @@ export async function validateBundleWithDependencies(
       timeout: 30_000,
     });
 
-    const data = JSON.parse(stdout) as ParsedBundleConfig;
+    const parsed = parseBundleConfig(JSON.parse(stdout));
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        error: {
+          bundleDir: resolvedBundleDir,
+          bundleName,
+          error: "Databricks CLI returned an unexpected bundle shape.",
+          errorCode: "INVALID_BUNDLE_SHAPE",
+          details: parsed.error,
+        },
+      };
+    }
+
     const issues = stderr?.trim()
       ? [
           {
@@ -185,7 +275,9 @@ export async function validateBundleWithDependencies(
         ]
       : undefined;
 
-    return issues ? { ok: true, data, issues } : { ok: true, data };
+    return issues
+      ? { ok: true, data: parsed.data, issues }
+      : { ok: true, data: parsed.data };
   } catch (error: unknown) {
     const stdout = extractStdout(error);
     const stderr = extractStderr(error);
@@ -227,19 +319,20 @@ export async function validateBundleWithDependencies(
 
     if (isAuthError(stderr) && stdout?.trim()) {
       try {
-        const data = JSON.parse(stdout) as ParsedBundleConfig;
-
-        return {
-          ok: true,
-          data,
-          issues: [
-            {
-              code: "AUTH_NOT_CONFIGURED",
-              message: "Databricks authentication is not configured.",
-              details: stderr?.trim() ?? "",
-            },
-          ],
-        };
+        const parsed = parseBundleConfig(JSON.parse(stdout));
+        if (parsed.ok) {
+          return {
+            ok: true,
+            data: parsed.data,
+            issues: [
+              {
+                code: "AUTH_NOT_CONFIGURED",
+                message: "Databricks authentication is not configured.",
+                details: stderr?.trim() ?? "",
+              },
+            ],
+          };
+        }
       } catch {
         // fall through to failure
       }
@@ -248,19 +341,20 @@ export async function validateBundleWithDependencies(
     // Try to parse stdout even if command failed, in case it's valid JSON with warnings
     if (stdout?.trim()) {
       try {
-        const data = JSON.parse(stdout) as ParsedBundleConfig;
-
-        return {
-          ok: true,
-          data,
-          issues: [
-            {
-              code: "CLI_WARNING",
-              message: "Databricks CLI validation completed with warnings.",
-              details: stderr?.trim() || getErrorMessage(error),
-            },
-          ],
-        };
+        const parsed = parseBundleConfig(JSON.parse(stdout));
+        if (parsed.ok) {
+          return {
+            ok: true,
+            data: parsed.data,
+            issues: [
+              {
+                code: "CLI_WARNING",
+                message: "Databricks CLI validation completed with warnings.",
+                details: stderr?.trim() || getErrorMessage(error),
+              },
+            ],
+          };
+        }
       } catch {
         // stdout is not valid JSON, fall through to error
       }

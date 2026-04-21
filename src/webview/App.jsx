@@ -42,9 +42,19 @@ function estimateTaskWidth(taskNode) {
   );
 }
 
-function getTaskLevel(node, allNodes, edges, memo = new Map()) {
+function getTaskLevel(
+  node,
+  nodeById,
+  edges,
+  memo = new Map(),
+  visiting = new Set(),
+) {
   if (memo.has(node.id)) {
     return memo.get(node.id);
+  }
+
+  if (visiting.has(node.id)) {
+    return 0;
   }
 
   const inboundDependencies = edges.filter(
@@ -56,18 +66,19 @@ function getTaskLevel(node, allNodes, edges, memo = new Map()) {
     return 0;
   }
 
+  visiting.add(node.id);
+
   const level =
     Math.max(
       ...inboundDependencies.map((edge) => {
-        const sourceNode = allNodes.find(
-          (candidate) => candidate.id === edge.source,
-        );
+        const sourceNode = nodeById.get(edge.source);
         return sourceNode
-          ? getTaskLevel(sourceNode, allNodes, edges, memo) + 1
+          ? getTaskLevel(sourceNode, nodeById, edges, memo, visiting) + 1
           : 0;
       }),
     ) || 0;
 
+  visiting.delete(node.id);
   memo.set(node.id, level);
   return level;
 }
@@ -105,12 +116,13 @@ function buildFlowFromBundle(parsedBundle) {
           taskNodes.some((taskNode) => taskNode.id === edge.source) ||
           taskNodes.some((taskNode) => taskNode.id === edge.target)),
     );
+    const taskNodeById = new Map(taskNodes.map((n) => [n.id, n]));
     const levelMemo = new Map();
     const taskLevels = new Map();
     const levelWidths = new Map();
 
     taskNodes.forEach((taskNode) => {
-      const level = getTaskLevel(taskNode, taskNodes, taskEdges, levelMemo);
+      const level = getTaskLevel(taskNode, taskNodeById, taskEdges, levelMemo);
       taskLevels.set(taskNode.id, level);
       levelWidths.set(
         level,
@@ -286,11 +298,7 @@ function buildFlowFromBundle(parsedBundle) {
 }
 
 function getFlowStateKey(selectedJobKey, flow) {
-  return JSON.stringify({
-    selectedJobKey,
-    nodeIds: flow.nodes.map((node) => node.id),
-    edgeIds: flow.edges.map((edge) => edge.id),
-  });
+  return `${selectedJobKey}::${flow.nodes.length}::${flow.edges.length}`;
 }
 
 function selectSingleJobBundle(parsedBundle, selectedJobKey) {
@@ -523,11 +531,7 @@ function App({ parsedBundle, selectedJobKey: initialSelectedJobKey }) {
   );
   const selectedJobKey = useMemo(
     () =>
-      resolveSelectedJobKey(
-        jobKeys,
-        userSelectedJobKey,
-        initialSelectedJobKey,
-      ),
+      resolveSelectedJobKey(jobKeys, userSelectedJobKey, initialSelectedJobKey),
     [initialSelectedJobKey, jobKeys, userSelectedJobKey],
   );
   const filteredBundle = useMemo(

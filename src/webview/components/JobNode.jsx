@@ -127,40 +127,28 @@ export function TaskNode({ data, selected }) {
     compute.length > 1
       ? compute.map((item) => item.label).join(", ")
       : primaryCompute?.label;
-  const shortTaskTypeLabel =
-    taskTypeLabel === "Notebook"
-      ? "NB"
-      : taskTypeLabel === "Python script"
-        ? "PY"
-      : taskTypeLabel === "Python wheel"
-          ? "WHL"
-          : taskTypeLabel === "Pipeline"
-            ? "PL"
-            : taskTypeLabel === "Run Job"
-              ? "JOB"
-              : taskTypeLabel === "If/else"
-                ? "IF"
-                : taskTypeLabel === "For each"
-                  ? "EACH"
-                  : taskTypeLabel === "Dashboards"
-                    ? "DSH"
-                    : taskTypeLabel === "Power BI"
-                      ? "PBI"
-                      : taskTypeLabel === "Clean room"
-                        ? "CR"
-                        : taskTypeLabel === "Spark Submit"
-                          ? "SUB"
-                            : taskTypeLabel === "JAR"
-                              ? "JAR"
-                            : taskTypeLabel === "dbt"
-                              ? "DBT"
-                              : taskTypeLabel === "dbt platform (Beta)"
-                                ? "DBTP"
-                                : taskTypeLabel === "SQL Alert (Beta)"
-                                  ? "ALRT"
-                                : taskTypeLabel === "SQL"
-                                  ? "SQL"
-                                  : "TSK";
+  // Fix #11: Replace the 30-level nested ternary with a plain object lookup.
+  // Adding a new task type is now a one-line change, and wrong abbreviations
+  // can no longer hide inside an indentation maze.
+  const TASK_TYPE_ABBREVIATIONS = {
+    "Notebook": "NB",
+    "Python script": "PY",
+    "Python wheel": "WHL",
+    "Pipeline": "PL",
+    "Run Job": "JOB",
+    "If/else": "IF",
+    "For each": "EACH",
+    "Dashboards": "DSH",
+    "Power BI": "PBI",
+    "Clean room": "CR",
+    "Spark Submit": "SUB",
+    "JAR": "JAR",
+    "dbt": "DBT",
+    "dbt platform (Beta)": "DBTP",
+    "SQL Alert (Beta)": "ALRT",
+    "SQL": "SQL",
+  };
+  const shortTaskTypeLabel = TASK_TYPE_ABBREVIATIONS[taskTypeLabel] ?? "TSK";
 
   return (
     <div
