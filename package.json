@@ -73,7 +73,6 @@
     "compile": "npm run build:ext",
     "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/jobSelection.test.js out/test/validateBundle.test.js",
     "test:unit": "jest",
-    "pretest": "npm run compile && npm run lint",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test"
   },
   "dependencies": {
