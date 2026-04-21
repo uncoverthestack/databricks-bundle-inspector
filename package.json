@@ -36,9 +36,7 @@
     "url": "https://github.com/uncoverthestack/databricks-bundle-inspector.git"
   },
   "main": "./dist/extension.js",
-  "activationEvents": [
-    "onCommand:databricksBundleInspector.inspectBundle"
-  ],
+  "activationEvents": [],
   "contributes": {
     "commands": [
       {
@@ -71,9 +69,12 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch",
     "watch-tests": "tsc -p . --outDir out --watch",
-    "lint": "eslint .",
+    "lint": "eslint src",
     "compile": "npm run build:ext",
-    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/jobSelection.test.js out/test/validateBundle.test.js"
+    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/jobSelection.test.js out/test/validateBundle.test.js",
+    "test:unit": "jest",
+    "pretest": "npm run compile && npm run lint",
+    "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
@@ -90,6 +91,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@tailwindcss/vite": "^4.2.2",
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -100,7 +102,9 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "jest": "^30.3.0",
     "tailwindcss": "^4.2.2",
+    "ts-jest": "^29.4.9",
     "typescript": "^6.0.2",
     "vite": "^8.0.4"
   }

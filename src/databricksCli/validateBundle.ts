@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
 import { resolveDatabricksCli } from "./validateDatabricksCli.js";
+import type { DatabricksCliVerificationResult } from "./validateDatabricksCli.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -27,7 +28,9 @@ type ExecFileLike = (
 
 interface ValidateBundleDependencies {
   execFileAsync: ExecFileLike;
-  resolveDatabricksCli: () => Promise<string | null>;
+  resolveDatabricksCli: () => Promise<
+    DatabricksCliVerificationResult | undefined
+  >;
 }
 
 export interface BundleError {
@@ -154,52 +157,6 @@ export function resetCliPathCache(): void {
   cachedCliPath = undefined;
 }
 
-export async function resolveDatabricksCli(): Promise<string | null> {
-  if (cachedCliPath !== undefined) {
-    return cachedCliPath;
-  }
-
-  const envPath = process.env.DATABRICKS_CLI_PATH;
-
-  const candidates = [
-    envPath,
-    "/opt/homebrew/bin/databricks",
-    "databricks",
-  ].filter((value): value is string => {
-    if (!value) {
-      return false;
-    }
-    // Fix #4: Warn and skip paths containing shell metacharacters.
-    if (!isValidExecutablePath(value)) {
-      console.warn(
-        "[resolveDatabricksCli] DATABRICKS_CLI_PATH contains suspicious characters and will be ignored:",
-        value,
-      );
-      return false;
-    }
-    return true;
-  });
-
-  for (const candidate of candidates) {
-    try {
-      const { stdout } = await execFileAsync(candidate, ["--version"], {
-        timeout: 10_000,
-      });
-      console.log(
-        "[resolveDatabricksCli] using",
-        `${candidate} version: ${stdout.trim()}`,
-      );
-      cachedCliPath = candidate;
-      return cachedCliPath;
-    } catch (error) {
-      console.log("[resolveDatabricksCli] failed", candidate, error);
-    }
-  }
-
-  cachedCliPath = null;
-  return null;
-}
-
 export async function isDatabricksInstalled(): Promise<boolean> {
   return (await resolveDatabricksCli()) !== null;
 }
@@ -224,7 +181,8 @@ export async function validateBundleWithDependencies(
 
   console.log("[validateBundle] running preflight check");
 
-  const cliPath = await dependencies.resolveDatabricksCli();
+  const cliResult = await dependencies.resolveDatabricksCli();
+  const cliPath = cliResult?.candidate;
 
   if (!cliPath) {
     return {

@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   extractBundleGraph,
   extractResourceNodes,
-} from "../src/shared/bundleGraph.js";
-import type { ParsedBundleConfig } from "../src/shared/bundleGraph.js";
+} from "../shared/bundleGraph.js";
+import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
 
 function createParsedBundle(): ParsedBundleConfig {
   return {
@@ -75,10 +75,10 @@ test("extractResourceNodes returns jobs and non-job resources", () => {
   const nodes = extractResourceNodes(createParsedBundle());
 
   assert.equal(nodes.length, 2);
-  assert.deepEqual(
-    nodes.map((node) => node.id).sort(),
-    ["resources.jobs.ingest_job", "resources.pipelines.bronze_pipeline"],
-  );
+  assert.deepEqual(nodes.map((node) => node.id).sort(), [
+    "resources.jobs.ingest_job",
+    "resources.pipelines.bronze_pipeline",
+  ]);
 });
 
 test("extractBundleGraph creates job, task, resource, and dependency nodes", () => {
@@ -87,7 +87,9 @@ test("extractBundleGraph creates job, task, resource, and dependency nodes", () 
   assert.equal(graph.nodes.length, 4);
   assert.equal(graph.edges.length, 3);
 
-  const jobNode = graph.nodes.find((node) => node.id === "resources.jobs.ingest_job");
+  const jobNode = graph.nodes.find(
+    (node) => node.id === "resources.jobs.ingest_job",
+  );
   assert.ok(jobNode);
   assert.equal(jobNode.nodeType, "job");
   assert.equal(jobNode.trigger, "Every 2 days");
@@ -161,7 +163,9 @@ test("extractBundleGraph falls back to default compute and generated task keys",
     },
   });
 
-  const jobNode = graph.nodes.find((node) => node.id === "resources.jobs.unnamed_job");
+  const jobNode = graph.nodes.find(
+    (node) => node.id === "resources.jobs.unnamed_job",
+  );
   assert.ok(jobNode);
   assert.deepEqual(jobNode?.compute, [
     { kind: "cluster", label: "Serverless / inherited compute" },

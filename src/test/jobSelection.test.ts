@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveSelectedJobKey } from "../src/webview/lib/jobSelection.js";
+import { resolveSelectedJobKey } from "../webview/lib/jobSelection.js";
 
 test("resolveSelectedJobKey keeps a valid user-selected job key", () => {
   const selectedJobKey = resolveSelectedJobKey(
