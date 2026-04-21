@@ -2,7 +2,7 @@ import { test, expect } from "@jest/globals";
 import {
   extractDatabricksVersion,
   isDatabricksCliVersionOutput,
-} from "../../databricksCli/parsing";
+} from "../../databricksCli/parsing.js";
 
 test("extracts Databricks CLI version", () => {
   expect(extractDatabricksVersion("Databricks CLI v0.295.0")).toBe("v0.295.0");
