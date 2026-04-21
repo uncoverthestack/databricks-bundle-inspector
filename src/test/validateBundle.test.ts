@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateBundleWithDependencies } from "../extension/validateBundle.js";
+import { validateBundleWithDependencies } from "../databricksCli/validateBundle.js";
 import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
 
 function createBundle(): ParsedBundleConfig {

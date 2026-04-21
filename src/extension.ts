@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "path";
-import { validateBundle } from "./extension/validateBundle.js";
+import { validateBundle } from "./databricksCli/validateBundle.js";
 import { getBundleDirFromEditor } from "./extension/bundleContext.js";
 
 function getWebviewPaths(extensionUri: vscode.Uri) {
