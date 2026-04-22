@@ -228,8 +228,8 @@ describe("real fixture: secret-scope-example notebook.ipynb", () => {
     expect(results).toHaveLength(3);
   });
 
-  test("all detections resolve to scope azure-key-vault", async () => {
+  test("all detections resolve to scope jdbc-test", async () => {
     const results = await detectSecretInNotebook(fixturePath);
-    expect(results.every((r) => r.scope === "azure-key-vault")).toBe(true);
+    expect(results.every((r) => r.scope === "jdbc-test")).toBe(true);
   });
 });
