@@ -4,8 +4,6 @@
     // File Layout
     "rootDir": "./src",
     "outDir": "./out",
-
-    "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/webview/*"]
@@ -43,7 +41,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
-    "moduleDetection": "force",
+    "moduleDetection": "auto",
     "skipLibCheck": true,
   }
 }
