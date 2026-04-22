@@ -2,7 +2,7 @@ import path from "node:path";
 import {
   validateBundle,
   extractBundleGraph,
-} from "../databricksCli/validateBundle.js";
+} from "../bundle/validateBundle.js";
 
 async function main() {
   const bundleDirArg = process.argv[2];
