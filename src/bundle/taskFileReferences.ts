@@ -318,6 +318,92 @@ function scanSqlContent(content: string): SecretDetection[] {
   return detections;
 }
 
+// ─── Widgets ─────────────────────────────────────────────────────────────────
+
+const WIDGET_DEPRECATED_NOTE =
+  "dbutils.widgets.getArgument() is deprecated; use dbutils.widgets.get() instead";
+
+/** The retrieval method that produced a {@link WidgetDetection}. */
+export type WidgetMethod = "get" | "getArgument" | "getAll";
+
+/**
+ * A single detected use of a Databricks widget-retrieval call within a file.
+ * Covers `dbutils.widgets.get()`, `dbutils.widgets.getArgument()` (deprecated),
+ * and `dbutils.widgets.getAll()` in Python files and notebooks.
+ */
+export interface WidgetDetection {
+  /** 1-based line number where the call starts. */
+  line: number;
+  /** The source line on which the call appears. */
+  raw: string;
+  /**
+   * The literal widget name when it can be determined statically, or `null`
+   * when the name is a variable resolved at runtime, or when `method` is
+   * `"getAll"` (which returns all widgets rather than a named one).
+   */
+  name: string | null;
+  /** Which retrieval method was used. */
+  method: WidgetMethod;
+  /**
+   * Optional human-readable note — present on `getArgument` detections to
+   * flag that the method is deprecated.
+   */
+  note?: string;
+}
+
+/**
+ * Extracts the widget name from the argument fragment of a
+ * `dbutils.widgets.get(name)` or `dbutils.widgets.getArgument(name, ...)` call.
+ *
+ * Returns the first positional string literal, or `null` when the name is a
+ * variable whose value is only known at runtime.
+ *
+ * @param argFragment Everything between the opening and closing parenthesis.
+ */
+function extractWidgetName(argFragment: string): string | null {
+  const normalised = argFragment
+    .replace(/\\\n/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const first = normalised.match(/^(["'])([^"']+)\1/);
+  return first?.[2] ?? null;
+}
+
+/**
+ * Scans `content` for all `dbutils.widgets.get(...)`, `getArgument(...)`, and
+ * `getAll()` calls that appear in executable Python code and returns one
+ * {@link WidgetDetection} per call.
+ */
+function scanPythonWidgets(content: string): WidgetDetection[] {
+  const detections: WidgetDetection[] = [];
+  // getArgument and getAll are listed before get to prevent the shorter prefix
+  // from shadowing them in the alternation.
+  const re =
+    /dbutils\.widgets\.(getArgument|getAll|get)\s*\(([\s\S]*?)\)/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (!isInPythonCodeContext(content, match.index)) {
+      continue;
+    }
+    const method = match[1] as WidgetMethod;
+    const name =
+      method === "getAll" ? null : extractWidgetName(match[2] ?? "");
+    const detection: WidgetDetection = {
+      line: getStartLine(content, match.index),
+      raw: getLineText(content, match.index),
+      name,
+      method,
+    };
+    if (method === "getArgument") {
+      detection.note = WIDGET_DEPRECATED_NOTE;
+    }
+    detections.push(detection);
+  }
+
+  return detections;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
@@ -352,4 +438,34 @@ export async function detectSecretInNotebook(
 
   const searchContent = ext === ".ipynb" ? notebookToContent(content) : content;
   return scanPythonContent(searchContent);
+}
+
+/**
+ * Scans a local file for widget-retrieval calls and returns one
+ * {@link WidgetDetection} per call found in executable code.
+ *
+ * | Extension | Detected call                                       |
+ * |-----------|-----------------------------------------------------|
+ * | `.py`     | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
+ * | `.ipynb`  | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
+ *
+ * SQL widget access uses the `:name` parameter syntax, which is
+ * indistinguishable from general SQL parameters and is not scanned.
+ *
+ * `null` on `name` means the argument is a variable resolved at runtime, or
+ * the method is `getAll` (which retrieves every widget, not a named one).
+ * `getArgument` detections always carry a `note` marking the deprecation.
+ *
+ * @param filePath Absolute path to a `.py` or `.ipynb` file.
+ * @returns Array of detections, one per widget-retrieval call found.
+ */
+export async function detectWidgetsInFile(
+  filePath: string,
+): Promise<WidgetDetection[]> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".sql") return [];
+
+  const content = await fs.readFile(filePath, "utf8");
+  const searchContent = ext === ".ipynb" ? notebookToContent(content) : content;
+  return scanPythonWidgets(searchContent);
 }

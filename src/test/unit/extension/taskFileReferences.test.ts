@@ -2,7 +2,10 @@ import { describe, test, expect, afterAll } from "@jest/globals";
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { detectSecretInNotebook } from "../../../bundle/taskFileReferences.js";
+import {
+  detectSecretInNotebook,
+  detectWidgetsInFile,
+} from "../../../bundle/taskFileReferences.js";
 
 const tempFiles: string[] = [];
 
@@ -112,10 +115,7 @@ describe("key extraction", () => {
   });
 
   test("only scope provided — key is null", async () => {
-    const file = await py(
-      "key-missing",
-      `dbutils.secrets.get("dev-scope")`,
-    );
+    const file = await py("key-missing", `dbutils.secrets.get("dev-scope")`);
     const [result] = await detectSecretInNotebook(file);
     expect(result?.scope).toBe("dev-scope");
     expect(result?.key).toBeNull();
@@ -458,5 +458,191 @@ describe(".sql files — false positive suppression", () => {
     const results = await detectSecretInNotebook(file);
     expect(results).toHaveLength(1);
     expect(results[0]?.scope).toBe("dev-scope");
+  });
+});
+
+const WIDGET_DEPRECATED_NOTE =
+  "dbutils.widgets.getArgument() is deprecated; use dbutils.widgets.get() instead";
+
+describe("widgets — name extraction", () => {
+  test("positional string literal double quotes", async () => {
+    const file = await py("wgt-dbl", `dbutils.widgets.get("my-widget")`);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.name).toBe("my-widget");
+    expect(result?.method).toBe("get");
+  });
+
+  test("positional string literal single quotes", async () => {
+    const file = await py("wgt-sgl", `dbutils.widgets.get('my-widget')`);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.name).toBe("my-widget");
+  });
+
+  test("variable argument returns null name", async () => {
+    const file = await py("wgt-var", `dbutils.widgets.get(widget_name)`);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.name).toBeNull();
+    expect(result?.method).toBe("get");
+  });
+});
+
+describe("widgets — detection metadata", () => {
+  test("reports correct 1-based line number", async () => {
+    const file = await py(
+      "wgt-line",
+      `line_one = 1\nx = dbutils.widgets.get("my-widget")`,
+    );
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.line).toBe(2);
+  });
+
+  test("raw contains the full source line", async () => {
+    const src = `x = dbutils.widgets.get("my-widget")`;
+    const file = await py("wgt-raw", src);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.raw).toBe(src);
+  });
+});
+
+describe("widgets — getArgument (deprecated)", () => {
+  test("extracts widget name from first positional arg", async () => {
+    const file = await py(
+      "wgt-getarg",
+      `dbutils.widgets.getArgument("env", "default")`,
+    );
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.name).toBe("env");
+    expect(result?.method).toBe("getArgument");
+  });
+
+  test("carries the deprecation note", async () => {
+    const file = await py(
+      "wgt-getarg-note",
+      `dbutils.widgets.getArgument("env", "default")`,
+    );
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.note).toBe(WIDGET_DEPRECATED_NOTE);
+  });
+});
+
+describe("widgets — getAll", () => {
+  test("name is null and method is getAll", async () => {
+    const file = await py("wgt-getall", `params = dbutils.widgets.getAll()`);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.name).toBeNull();
+    expect(result?.method).toBe("getAll");
+  });
+
+  test("carries no note", async () => {
+    const file = await py("wgt-getall-note", `dbutils.widgets.getAll()`);
+    const [result] = await detectWidgetsInFile(file);
+    expect(result?.note).toBeUndefined();
+  });
+});
+
+describe("widgets — false positive suppression", () => {
+  test("ignores calls on a # comment line", async () => {
+    const file = await py("wgt-comment", `# dbutils.widgets.get("my-widget")`);
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("ignores calls inside a string literal", async () => {
+    const file = await py(
+      "wgt-in-string",
+      `print("use dbutils.widgets.get('name') to read a widget")`,
+    );
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("DBUTILS.WIDGETS.GET in uppercase is not detected (case-sensitive)", async () => {
+    const file = await py("wgt-case", `x = DBUTILS.WIDGETS.GET("my-widget")`);
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("SQL files return empty array", async () => {
+    const file = await sql("wgt-sql", `SELECT :my_widget`);
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+});
+
+describe("widgets — multiple calls in one file", () => {
+  test("returns one detection per call with correct names and methods", async () => {
+    const file = await py(
+      "wgt-multi",
+      [
+        `env = dbutils.widgets.get("environment")`,
+        `region = dbutils.widgets.get(region_var)`,
+        `legacy = dbutils.widgets.getArgument("old-param", "default")`,
+        `all_params = dbutils.widgets.getAll()`,
+      ].join("\n"),
+    );
+    const results = await detectWidgetsInFile(file);
+
+    expect(results).toHaveLength(4);
+    expect(results[0]?.name).toBe("environment");
+    expect(results[0]?.method).toBe("get");
+    expect(results[1]?.name).toBeNull();
+    expect(results[1]?.method).toBe("get");
+    expect(results[2]?.name).toBe("old-param");
+    expect(results[2]?.method).toBe("getArgument");
+    expect(results[3]?.name).toBeNull();
+    expect(results[3]?.method).toBe("getAll");
+  });
+});
+
+describe("widgets — .ipynb notebooks", () => {
+  test("detects get() in a single code cell", async () => {
+    const file = await notebook("wgt-nb-basic", [
+      [`env = dbutils.widgets.get("nb-env")\n`],
+    ]);
+    const results = await detectWidgetsInFile(file);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("nb-env");
+    expect(results[0]?.method).toBe("get");
+  });
+
+  test("detects calls across multiple cells", async () => {
+    const file = await notebook("wgt-nb-multi", [
+      [`env = dbutils.widgets.get("environment")\n`],
+      [`region = dbutils.widgets.getArgument("region", "us-east-1")\n`],
+    ]);
+    const results = await detectWidgetsInFile(file);
+
+    expect(results).toHaveLength(2);
+    expect(results[0]?.name).toBe("environment");
+    expect(results[1]?.name).toBe("region");
+    expect(results[1]?.method).toBe("getArgument");
+  });
+
+  test("ignores commented-out calls inside a cell", async () => {
+    const file = await notebook("wgt-nb-comment", [
+      [`# dbutils.widgets.get("env")\n`, `x = 1\n`],
+    ]);
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+});
+
+describe("real widgets: notebook.ipynb", () => {
+  const fixturePath = path.join(
+    __dirname,
+    "../../fixtures/secret-scope-example/src/notebook.ipynb",
+  );
+
+  test("detects all 4 widgets", async () => {
+    const results = await detectWidgetsInFile(fixturePath);
+    expect(results).toHaveLength(4);
+  });
+
+  test("all detections of defined widgets", async () => {
+    const results = await detectWidgetsInFile(fixturePath);
+    expect(results[0]?.name).toBe("table_name");
+    expect(results[1]?.name).toBe("target_table_name");
+    expect(results[2]?.name).toBe("filter_str");
   });
 });
