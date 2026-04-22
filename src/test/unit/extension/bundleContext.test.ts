@@ -2,7 +2,7 @@ import { describe, test, expect } from "@jest/globals";
 import {
   isBundleFile,
   getBundleDirFromEditor,
-} from "../../bundle/bundleContext.js";
+} from "../../../bundle/bundleContext.js";
 
 describe("isBundleFile", () => {
   test("returns true for databricks.yaml", () => {

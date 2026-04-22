@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "path";
 import { validateBundle } from "./bundle/validateBundle.js";
+import {
+  getConfiguration,
+  getConfiguredDatabricksCliPath,
+} from "./databricksCli/config.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 
 function getWebviewPaths(extensionUri: vscode.Uri) {
@@ -67,7 +71,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     try {
-      const result = await validateBundle(bundleDir);
+      const configuredCliPath = getConfiguredDatabricksCliPath(getConfiguration());
+      const result = await validateBundle(bundleDir, undefined, configuredCliPath);
 
       if (!result.ok) {
         const errorMsg = result.error.details

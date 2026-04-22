@@ -1,5 +1,3 @@
-import * as vscode from "vscode";
-import { getConfiguration, getConfiguredDatabricksCliPath } from "./config.js";
 import { runVersionCommand } from "./processRunner.js";
 import {
   isDatabricksCliVersionOutput,
@@ -114,12 +112,11 @@ export async function autoDetectDatabricksCli(): Promise<
  * @returns A verification result for a working Databricks CLI candidate, or `undefined` if none could be found.
  */
 export async function resolveDatabricksCli(
-  config: vscode.WorkspaceConfiguration = getConfiguration(),
+  configuredPath?: string,
 ): Promise<DatabricksCliVerificationResult | undefined> {
   if (cacheDatabricksCliResult?.ok) {
     return cacheDatabricksCliResult;
   }
-  const configuredPath = getConfiguredDatabricksCliPath(config);
 
   if (configuredPath) {
     const result = await verifyCliPath(configuredPath);

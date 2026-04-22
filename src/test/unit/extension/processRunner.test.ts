@@ -15,7 +15,7 @@ jest.mock("node:util", () => ({
   promisify: jest.fn(() => execFileAsyncMock),
 }));
 
-import { runVersionCommand } from "../../databricksCli/processRunner.js";
+import { runVersionCommand } from "../../../databricksCli/processRunner.js";
 
 test("runs candidate with --version and timeout", async () => {
   execFileAsyncMock.mockResolvedValue({

@@ -2,7 +2,7 @@ import { describe, test, expect } from "@jest/globals";
 import {
   extractDatabricksVersion,
   isDatabricksCliVersionOutput,
-} from "../../databricksCli/parsing.js";
+} from "../../../databricksCli/parsing.js";
 
 describe("extractDatabricksVersion", () => {
   test("extracts Databricks CLI version", () => {
