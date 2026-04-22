@@ -12,3 +12,11 @@ resources:
         - task_key: notebook_task
           notebook_task:
             notebook_path: ../src/notebook.ipynb
+
+        - task_key: sql_task
+          depends_on:
+            - task_key: notebook_task
+          sql_task:
+            file:
+              path: ../src/query.sql
+            warehouse_id: ${var.warehouse_id}

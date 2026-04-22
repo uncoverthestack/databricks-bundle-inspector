@@ -1,6 +1,6 @@
 resources:
   pipelines:
-    default_python_pipeline:
+    sample_python_pipeline:
       name: default_python_pipeline
       catalog: ${var.catalog}
       schema: ${var.schema}
