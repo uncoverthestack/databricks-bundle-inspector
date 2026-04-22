@@ -82,25 +82,22 @@ export async function verifyCliPath(
 
 /**
  * Automatically detects the Databricks CLI on the current host machine.
+ * Requires `databricks` to be on the system PATH.
  * @returns A verified Databricks CLI executable name or path, or `undefined` if none could be found.
  */
 export async function autoDetectDatabricksCli(): Promise<
   DatabricksCliVerificationResult | undefined
 > {
-  const candidates = ["databricks"];
-
-  for (const candidate of candidates) {
-    const result = await verifyCliPath(candidate);
-    if (result.ok) {
-      console.log(
-        `[DatabricksBundleInspector] auto-detected Databricks CLI: ${candidate}`,
-      );
-      return result;
-    }
+  const result = await verifyCliPath("databricks");
+  if (result.ok) {
+    console.log(
+      `[DatabricksBundleInspector] auto-detected Databricks CLI: databricks`,
+    );
+    return result;
   }
 
   console.warn(
-    "[DatabricksBundleInspector] could not auto-detect Databricks CLI",
+    "[DatabricksBundleInspector] could not auto-detect Databricks CLI — ensure 'databricks' is on your PATH",
   );
   return undefined;
 }
