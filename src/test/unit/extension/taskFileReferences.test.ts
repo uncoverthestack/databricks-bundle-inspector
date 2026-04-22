@@ -6,8 +6,18 @@ import { detectSecretInNotebook } from "../../../bundle/taskFileReferences.js";
 
 const tempFiles: string[] = [];
 
+const SQL_PREVIEW_NOTE =
+  "secret() and try_secret() are Databricks SQL preview features";
+
 async function py(name: string, content: string): Promise<string> {
   const file = path.join(tmpdir(), `bdi-test-${name}.py`);
+  await writeFile(file, content, "utf8");
+  tempFiles.push(file);
+  return file;
+}
+
+async function sql(name: string, content: string): Promise<string> {
+  const file = path.join(tmpdir(), `bdi-test-${name}.sql`);
   await writeFile(file, content, "utf8");
   tempFiles.push(file);
   return file;
@@ -80,6 +90,87 @@ describe("scope extraction", () => {
   });
 });
 
+describe("key extraction", () => {
+  test("keyword args — both scope and key extracted", async () => {
+    const file = await py(
+      "key-kw",
+      `dbutils.secrets.get(scope="dev-scope", key="my-key")`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("positional args — both scope and key extracted", async () => {
+    const file = await py(
+      "key-positional",
+      `dbutils.secrets.get("dev-scope", "my-key")`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("only scope provided — key is null", async () => {
+    const file = await py(
+      "key-missing",
+      `dbutils.secrets.get("dev-scope")`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBeNull();
+  });
+
+  test("key is a variable — key is null", async () => {
+    const file = await py(
+      "key-var",
+      `dbutils.secrets.get(scope="dev-scope", key=key_var)`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBeNull();
+  });
+
+  test("both args are variables — scope and key are null", async () => {
+    const file = await py("key-both-var", `dbutils.secrets.get(s, k)`);
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBeNull();
+    expect(result?.key).toBeNull();
+  });
+});
+
+describe("getBytes variant", () => {
+  test("detects dbutils.secrets.getBytes()", async () => {
+    const file = await py(
+      "get-bytes",
+      `dbutils.secrets.getBytes(scope="my-scope", key="my-key")`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scope).toBe("my-scope");
+    expect(results[0]?.key).toBe("my-key");
+  });
+
+  test("getBytes with positional args", async () => {
+    const file = await py(
+      "get-bytes-positional",
+      `dbutils.secrets.getBytes("my-scope", "my-key")`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("my-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("getBytes in comment is ignored", async () => {
+    const file = await py(
+      "get-bytes-comment",
+      `# dbutils.secrets.getBytes("my-scope", "my-key")`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(0);
+  });
+});
+
 describe("detection metadata", () => {
   test("reports the correct 1-based line number", async () => {
     const file = await py(
@@ -134,6 +225,28 @@ describe("multi-line calls", () => {
     );
     const [result] = await detectSecretInNotebook(file);
     expect(result?.scope).toBe("dev-scope");
+  });
+});
+
+describe("case sensitivity", () => {
+  test("DBUTILS.SECRETS.GET in .py is not detected", async () => {
+    const file = await py(
+      "case-py",
+      `x = DBUTILS.SECRETS.GET(scope="dev-scope", key="k")`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("SECRET() and TRY_SECRET() in uppercase SQL are detected (case-insensitive)", async () => {
+    const file = await sql(
+      "case-sql",
+      [`SELECT SECRET('scope-a', 'k1'), TRY_SECRET('scope-b', 'k2')`].join(""),
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(2);
+    expect(results[0]?.scope).toBe("scope-a");
+    expect(results[1]?.scope).toBe("scope-b");
   });
 });
 
@@ -215,6 +328,26 @@ describe(".ipynb notebooks", () => {
 
     expect(results).toHaveLength(0);
   });
+
+  test("detects getBytes in a notebook cell with correct scope and key", async () => {
+    const file = await notebook("nb-get-bytes", [
+      [`cert = dbutils.secrets.getBytes(scope="nb-scope", key="tls-cert")\n`],
+    ]);
+    const results = await detectSecretInNotebook(file);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scope).toBe("nb-scope");
+    expect(results[0]?.key).toBe("tls-cert");
+  });
+
+  test("case-sensitive: DBUTILS.SECRETS.GET is not detected", async () => {
+    const file = await notebook("nb-case", [
+      [`x = DBUTILS.SECRETS.GET(scope="nb-scope", key="k")\n`],
+    ]);
+    const results = await detectSecretInNotebook(file);
+
+    expect(results).toHaveLength(0);
+  });
 });
 
 describe("real fixture: secret-scope-example notebook.ipynb", () => {
@@ -223,13 +356,107 @@ describe("real fixture: secret-scope-example notebook.ipynb", () => {
     "../../fixtures/secret-scope-example/src/notebook.ipynb",
   );
 
-  test("detects all three secret calls", async () => {
+  test("detects all four secret calls (three get + one getBytes)", async () => {
     const results = await detectSecretInNotebook(fixturePath);
-    expect(results).toHaveLength(3);
+    expect(results).toHaveLength(4);
   });
 
   test("all detections resolve to scope jdbc-test", async () => {
     const results = await detectSecretInNotebook(fixturePath);
     expect(results.every((r) => r.scope === "jdbc-test")).toBe(true);
+  });
+
+  test("getBytes call resolves key tls-cert", async () => {
+    const results = await detectSecretInNotebook(fixturePath);
+    const getBytesResult = results.find((r) => r.key === "tls-cert");
+    expect(getBytesResult).toBeDefined();
+    expect(getBytesResult?.scope).toBe("jdbc-test");
+  });
+});
+
+describe(".sql files — secret()", () => {
+  test("extracts scope and key from secret() with single quotes", async () => {
+    const file = await sql(
+      "secret-single",
+      `SELECT secret('dev-scope', 'my-key')`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("extracts scope and key from secret() with double quotes", async () => {
+    const file = await sql(
+      "secret-double",
+      `SELECT secret("dev-scope", "my-key")`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("extracts scope and key from try_secret()", async () => {
+    const file = await sql(
+      "try-secret",
+      `SELECT try_secret('dev-scope', 'my-key')`,
+    );
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
+  test("every SQL detection carries the preview note", async () => {
+    const file = await sql(
+      "preview-note",
+      [
+        `SELECT secret('scope-a', 'k1'),`,
+        `       try_secret('scope-b', 'k2')`,
+      ].join("\n"),
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.note === SQL_PREVIEW_NOTE)).toBe(true);
+  });
+
+  test("Python detections carry no note", async () => {
+    const file = await py("no-note", `dbutils.secrets.get(scope="s", key="k")`);
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.note).toBeUndefined();
+  });
+});
+
+describe(".sql files — false positive suppression", () => {
+  test("ignores calls after a -- line comment", async () => {
+    const file = await sql("sql-comment", `-- secret('dev-scope', 'my-key')`);
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("ignores calls inside a string literal", async () => {
+    const file = await sql(
+      "sql-in-string",
+      `SELECT 'use secret(''scope'', ''key'') to read a value'`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("ignores calls inside an inline block comment", async () => {
+    const file = await sql(
+      "sql-block-comment",
+      `SELECT /* secret('dev-scope', 'key') */ 1`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("detects a call that follows a closed string on the same line", async () => {
+    const file = await sql(
+      "sql-after-string",
+      `SELECT 'hello', secret('dev-scope', 'key')`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scope).toBe("dev-scope");
   });
 });
