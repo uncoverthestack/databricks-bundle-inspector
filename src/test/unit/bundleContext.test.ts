@@ -17,26 +17,28 @@ describe("isBundleFile", () => {
     expect(isBundleFile("bundle.yml")).toBe(false);
   });
 });
-test("getBundleDirFromEditor returns bundle file directory", () => {
-  const bundleDir = getBundleDirFromEditor({
-    document: {
-      fileName: "/workspace/project/databricks.yaml",
-    },
+
+describe("getBundleDirFromEditor", () => {
+  test("getBundleDirFromEditor returns bundle file directory", () => {
+    const bundleDir = getBundleDirFromEditor({
+      document: {
+        fileName: "/workspace/project/databricks.yaml",
+      },
+    });
+    expect(bundleDir).toBe("/workspace/project");
   });
 
-  assert.equal(bundleDir, "/workspace/project");
-});
+  test("getBundleDirFromEditor ignores non-bundle files", () => {
+    const bundleDir = getBundleDirFromEditor({
+      document: {
+        fileName: "/workspace/project/not-databricks.yaml",
+      },
+    });
 
-test("getBundleDirFromEditor ignores non-bundle files", () => {
-  const bundleDir = getBundleDirFromEditor({
-    document: {
-      fileName: "/workspace/project/not-databricks.yaml",
-    },
+    expect(bundleDir).toBeUndefined();
   });
 
-  assert.equal(bundleDir, undefined);
-});
-
-test("getBundleDirFromEditor handles missing editor", () => {
-  assert.equal(getBundleDirFromEditor(), undefined);
+  test("getBundleDirFromEditor handles missing editor", () => {
+    expect(getBundleDirFromEditor()).toBeUndefined();
+  });
 });
