@@ -14,7 +14,9 @@ module.exports = {
     ],
   },
   testMatch: ["<rootDir>/src/test/unit/**/*.test.ts"],
+  verbose: true,
   clearMocks: true,
+  setupFilesAfterEnv: ["<rootDir>/src/test/setup.ts"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
