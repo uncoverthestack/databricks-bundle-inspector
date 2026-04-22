@@ -24,7 +24,8 @@
     "inspector"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": "22.x"
   },
   "homepage": "https://github.com/uncoverthestack/databricks-bundle-inspector",
   "qna": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues",
@@ -71,7 +72,6 @@
     "watch-tests": "tsc -p . --outDir out --watch",
     "lint": "eslint src",
     "compile": "npm run build:ext",
-    "test": "tsc -p . --outDir out && node --test out/test/bundleContext.test.js out/test/bundleGraph.test.js out/test/jobSelection.test.js out/test/validateBundle.test.js",
     "test:unit": "jest",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test"
   },

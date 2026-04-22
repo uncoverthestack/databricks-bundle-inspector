@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { extractBundleGraph } from "../shared/bundleGraph";
+import { extractBundleGraph } from "../bundle/validateBundle.js";
 import {
   applyNodeChanges,
   Background,

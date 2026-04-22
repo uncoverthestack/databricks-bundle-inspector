@@ -2,13 +2,10 @@ import { execFile } from "child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { ParsedBundleConfig } from "../shared/bundleGraph.js";
-import { resolveDatabricksCli } from "./validateDatabricksCli.js";
-import type { DatabricksCliVerificationResult } from "./validateDatabricksCli.js";
-export {
-  extractBundleGraph,
-  extractResourceNodes,
-} from "../shared/bundleGraph.js";
+import type { ParsedBundleConfig } from "./bundleGraph.js";
+import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
+import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
+export { extractBundleGraph, extractResourceNodes } from "./bundleGraph.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -157,17 +154,20 @@ export function resetCliPathCache(): void {
   cachedCliPath = undefined;
 }
 
-export async function isDatabricksInstalled(): Promise<boolean> {
-  return (await resolveDatabricksCli()) !== null;
+export async function isDatabricksInstalled(
+  configuredCliPath?: string,
+): Promise<boolean> {
+  return (await resolveDatabricksCli(configuredCliPath)) !== null;
 }
 
 export async function validateBundle(
   bundleDir: string,
   target?: string,
+  configuredCliPath?: string,
 ): Promise<BundleResult> {
   return validateBundleWithDependencies(bundleDir, target, {
     execFileAsync,
-    resolveDatabricksCli,
+    resolveDatabricksCli: () => resolveDatabricksCli(configuredCliPath),
   });
 }
 
