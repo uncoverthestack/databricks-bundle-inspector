@@ -1,0 +1,17 @@
+bundle:
+  name: secret-scope-example
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://example.databricks.com
+
+  prod:
+    mode: production
+    workspace:
+      host: https://example.databricks.com

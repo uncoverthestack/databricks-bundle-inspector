@@ -1,0 +1,14 @@
+resources:
+  jobs:
+    config_job:
+      name: config_job
+
+      trigger:
+        periodic:
+          interval: 1
+          unit: DAYS
+
+      tasks:
+        - task_key: notebook_task
+          notebook_task:
+            notebook_path: ../src/notebook.ipynb
