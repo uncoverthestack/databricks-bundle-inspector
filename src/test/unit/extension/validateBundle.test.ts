@@ -17,7 +17,6 @@ function createBundle(): ParsedBundleConfig {
     },
   };
 }
-
 describe("validateBundleWithDependencies", () => {
   test("returns CLI_NOT_FOUND when no CLI is resolved", async () => {
     const result = await validateBundleWithDependencies(
@@ -45,10 +44,11 @@ describe("validateBundleWithDependencies", () => {
       cwd: string;
       timeout: number;
     }> = [];
+    const probeTarget = `__bundle_inspector_probe__`;
 
     const result = await validateBundleWithDependencies(
       "/workspace/demo",
-      "dev",
+      probeTarget,
       {
         execFileAsync: async (file, args, options) => {
           calls.push({
@@ -78,7 +78,14 @@ describe("validateBundleWithDependencies", () => {
     expect(calls).toEqual([
       {
         file: "databricks",
-        args: ["bundle", "validate", "--output", "json", "--target", "dev"],
+        args: [
+          "bundle",
+          "validate",
+          "--output",
+          "json",
+          "--target",
+          probeTarget,
+        ],
         cwd: "/workspace/demo",
         timeout: 30_000,
       },

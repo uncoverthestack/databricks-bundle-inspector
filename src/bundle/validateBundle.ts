@@ -173,7 +173,7 @@ export async function validateBundle(
 
 export async function validateBundleWithDependencies(
   bundleDir: string,
-  target: string | undefined,
+  target: string | undefined = "__bundle_inspector_probe__",
   dependencies: ValidateBundleDependencies,
 ): Promise<BundleResult> {
   const resolvedBundleDir = path.resolve(bundleDir);
@@ -196,9 +196,8 @@ export async function validateBundleWithDependencies(
       },
     };
   }
-
   const args = ["bundle", "validate", "--output", "json"];
-  // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
+  // // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
     args.push("--target", target);
   }
