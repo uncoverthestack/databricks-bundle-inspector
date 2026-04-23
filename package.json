@@ -73,7 +73,8 @@
     "lint": "eslint src",
     "compile": "npm run build:ext",
     "test:unit": "jest",
-    "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test"
+    "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
+    "update-schema": "curl -fsSL https://json.schemastore.org/databricks-asset-bundles.json -o src/bundle/schemas/databricks-asset-bundles.json"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
