@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   detectSecretInNotebook,
   detectWidgetsInFile,
-} from "../../../bundle/taskFileReferences.js";
+} from "../../../bundle/taskFileDetections.js";
 
 // Secret scope Detection & Retrieval
 
