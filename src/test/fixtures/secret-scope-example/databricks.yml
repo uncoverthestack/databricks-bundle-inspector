@@ -10,8 +10,13 @@ targets:
     default: true
     workspace:
       host: https://example.databricks.com
+    variables:
+      warehouse_id: dev-warehouse-id
 
   prod:
     mode: production
+    default: true
     workspace:
       host: https://example.databricks.com
+    variables:
+      warehouse_id: prod-warehouse-id

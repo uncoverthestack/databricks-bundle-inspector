@@ -1,0 +1,10 @@
+variables:
+  schema:
+    description: The schema to use
+    default: inspector
+  catalog:
+    description: The catalog to use
+    default: development
+  warehouse_id:
+    description: The warehouse to use
+    default: general-warehouse-id
