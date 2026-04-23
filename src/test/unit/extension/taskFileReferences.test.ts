@@ -7,6 +7,8 @@ import {
   detectWidgetsInFile,
 } from "../../../bundle/taskFileReferences.js";
 
+// Secret scope Detection & Retrieval
+
 const tempFiles: string[] = [];
 
 const SQL_PREVIEW_NOTE =
@@ -225,6 +227,60 @@ describe("multi-line calls", () => {
     );
     const [result] = await detectSecretInNotebook(file);
     expect(result?.scope).toBe("dev-scope");
+  });
+});
+
+describe("f-string expressions", () => {
+  test("detects widget get() inside an f-string expression", async () => {
+    const file = await py(
+      "fstr-widget",
+      `query = f"SELECT {dbutils.widgets.get('env')} FROM table"`,
+    );
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("env");
+    expect(results[0]?.method).toBe("get");
+  });
+
+  test("does not detect a plain string that documents the call", async () => {
+    const file = await py(
+      "fstr-plain",
+      `x = "use dbutils.widgets.get('name') to read a widget"`,
+    );
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(0);
+  });
+
+  test("detects secret get() inside an f-string expression", async () => {
+    const file = await py(
+      "fstr-secret",
+      `q = f"token={dbutils.secrets.get(scope='sc', key='k')}"`,
+    );
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scope).toBe("sc");
+    expect(results[0]?.key).toBe("k");
+  });
+
+  test("multiple calls in one f-string are each detected", async () => {
+    const file = await py(
+      "fstr-multi",
+      `q = f"SELECT {dbutils.widgets.get('db')}.{dbutils.widgets.get('tbl')}"`,
+    );
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(2);
+    expect(results[0]?.name).toBe("db");
+    expect(results[1]?.name).toBe("tbl");
+  });
+
+  test("escaped {{ }} braces are not treated as expression openers", async () => {
+    const file = await py(
+      "fstr-escaped",
+      `s = f"literal {{braces}} then {dbutils.widgets.get('name')}"`,
+    );
+    const results = await detectWidgetsInFile(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("name");
   });
 });
 
@@ -461,6 +517,8 @@ describe(".sql files — false positive suppression", () => {
   });
 });
 
+// WIDGET Detection + Retrieval
+
 const WIDGET_DEPRECATED_NOTE =
   "dbutils.widgets.getArgument() is deprecated; use dbutils.widgets.get() instead";
 
@@ -644,5 +702,6 @@ describe("real widgets: notebook.ipynb", () => {
     expect(results[0]?.name).toBe("table_name");
     expect(results[1]?.name).toBe("target_table_name");
     expect(results[2]?.name).toBe("filter_str");
+    expect(results[3]?.name).toBe("sub_table_name");
   });
 });

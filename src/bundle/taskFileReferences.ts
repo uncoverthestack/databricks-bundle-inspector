@@ -29,8 +29,6 @@ export interface SecretDetection {
   note?: string;
 }
 
-// ─── Shared utilities ────────────────────────────────────────────────────────
-
 /** Returns the 1-based line number of `charIndex` within `content`. */
 function getStartLine(content: string, charIndex: number): number {
   return content.slice(0, charIndex).split("\n").length;
@@ -46,8 +44,6 @@ function getLineText(content: string, charIndex: number): string {
   );
   return raw.replace(/\r$/, "");
 }
-
-// ─── Python / notebook ───────────────────────────────────────────────────────
 
 /**
  * Extracts the `scope` and `key` from the argument fragment of a
@@ -73,19 +69,15 @@ function extractPythonArgs(argFragment: string): {
     .trim();
 
   // keyword forms — matched independently so either can be absent
-  const scope =
-    normalised.match(/scope\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
-  const key =
-    normalised.match(/key\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
+  const scope = normalised.match(/scope\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
+  const key = normalised.match(/key\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
 
   if (scope !== null || key !== null) {
     // At least one keyword arg was found; fill the other from positional if needed
     const positionalScope =
       scope ?? normalised.match(/^(["'])([^"']+)\1/)?.[2] ?? null;
     const positionalKey =
-      key ??
-      normalised.match(/^[^,]+,\s*(["'])([^"']+)\1/)?.[2] ??
-      null;
+      key ?? normalised.match(/^[^,]+,\s*(["'])([^"']+)\1/)?.[2] ?? null;
     return { scope: positionalScope, key: positionalKey };
   }
 
@@ -104,19 +96,56 @@ function extractPythonArgs(argFragment: string): {
 
 /**
  * Returns `true` when `charIndex` falls inside executable Python code — i.e.
- * not after a `#` comment marker and not inside a string literal on the same
- * line. Triple-quoted strings that open on a prior line are not detected;
- * that is an acceptable limitation for a sniffer.
+ * not after a `#` comment marker and not inside a plain string literal.
+ *
+ * F-string expressions (`f"...{<expr>}..."`) are treated as executable code
+ * because the `{...}` block is evaluated at runtime. A plain string that
+ * contains the same text (e.g. for documentation) is correctly excluded.
+ *
+ * Triple-quoted strings that open on a prior line are not tracked; that is an
+ * acceptable limitation for a sniffer.
  */
 function isInPythonCodeContext(content: string, charIndex: number): boolean {
   const lineStart = content.lastIndexOf("\n", charIndex - 1) + 1;
   const prefix = content.slice(lineStart, charIndex);
 
+  // inFStr / fQuote track whether we're inside an f-string.
+  // fExprDepth > 0 means we're inside a { } expression within that f-string.
   let inDouble = false;
   let inSingle = false;
+  let inFStr = false;
+  let fQuote = "";
+  let fExprDepth = 0;
 
   for (let i = 0; i < prefix.length; i++) {
     const ch = prefix[i];
+
+    if (inFStr) {
+      if (ch === "{") {
+        // {{ is an escaped brace, not an expression opener
+        if ((prefix[i + 1] ?? "") === "{") {
+          i++;
+          continue;
+        }
+        fExprDepth++;
+        continue;
+      }
+      if (ch === "}") {
+        if (fExprDepth > 0) fExprDepth--;
+        continue;
+      }
+      // Closing quote only ends the f-string when outside any expression
+      if (ch === fQuote && fExprDepth === 0) {
+        inFStr = false;
+        fQuote = "";
+      }
+      // Backslash escapes are not allowed inside f-string expressions (Python
+      // rule), so we only skip them in the literal parts (fExprDepth === 0).
+      if (ch === "\\" && fExprDepth === 0) {
+        i++;
+      }
+      continue;
+    }
 
     if (inDouble) {
       if (ch === "\\") {
@@ -137,6 +166,19 @@ function isInPythonCodeContext(content: string, charIndex: number): boolean {
     }
 
     if (ch === "#") return false;
+
+    // Detect f-string prefix: f" f' F" F'
+    if ((ch === "f" || ch === "F") && !inFStr) {
+      const next = prefix[i + 1] ?? "";
+      if (next === '"' || next === "'") {
+        inFStr = true;
+        fQuote = next;
+        fExprDepth = 0;
+        i++;
+        continue;
+      }
+    }
+
     if (ch === '"') {
       inDouble = true;
       continue;
@@ -147,7 +189,8 @@ function isInPythonCodeContext(content: string, charIndex: number): boolean {
     }
   }
 
-  return !inDouble && !inSingle;
+  // Code context when: bare code, OR inside an f-string expression
+  return (!inDouble && !inSingle && !inFStr) || (inFStr && fExprDepth > 0);
 }
 
 /**
@@ -197,8 +240,6 @@ function notebookToContent(raw: string): string {
     .join("\n");
 }
 
-// ─── SQL ─────────────────────────────────────────────────────────────────────
-
 const SQL_PREVIEW_NOTE =
   "secret() and try_secret() are Databricks SQL preview features";
 
@@ -218,9 +259,7 @@ function extractSqlArgs(argFragment: string): {
   const normalised = argFragment.replace(/\s+/g, " ").trim();
 
   // Both positional string literals: 'scope', 'key' or "scope", "key"
-  const both = normalised.match(
-    /^(["'])([^"']+)\1\s*,\s*(["'])([^"']+)\3/,
-  );
+  const both = normalised.match(/^(["'])([^"']+)\1\s*,\s*(["'])([^"']+)\3/);
   if (both) {
     return { scope: both[2] ?? null, key: both[4] ?? null };
   }
@@ -318,8 +357,6 @@ function scanSqlContent(content: string): SecretDetection[] {
   return detections;
 }
 
-// ─── Widgets ─────────────────────────────────────────────────────────────────
-
 const WIDGET_DEPRECATED_NOTE =
   "dbutils.widgets.getArgument() is deprecated; use dbutils.widgets.get() instead";
 
@@ -378,8 +415,7 @@ function scanPythonWidgets(content: string): WidgetDetection[] {
   const detections: WidgetDetection[] = [];
   // getArgument and getAll are listed before get to prevent the shorter prefix
   // from shadowing them in the alternation.
-  const re =
-    /dbutils\.widgets\.(getArgument|getAll|get)\s*\(([\s\S]*?)\)/g;
+  const re = /dbutils\.widgets\.(getArgument|getAll|get)\s*\(([\s\S]*?)\)/g;
 
   let match: RegExpExecArray | null;
   while ((match = re.exec(content)) !== null) {
@@ -387,8 +423,7 @@ function scanPythonWidgets(content: string): WidgetDetection[] {
       continue;
     }
     const method = match[1] as WidgetMethod;
-    const name =
-      method === "getAll" ? null : extractWidgetName(match[2] ?? "");
+    const name = method === "getAll" ? null : extractWidgetName(match[2] ?? "");
     const detection: WidgetDetection = {
       line: getStartLine(content, match.index),
       raw: getLineText(content, match.index),
@@ -403,8 +438,6 @@ function scanPythonWidgets(content: string): WidgetDetection[] {
 
   return detections;
 }
-
-// ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Scans a local file for secret-access calls and returns one
@@ -444,8 +477,8 @@ export async function detectSecretInNotebook(
  * Scans a local file for widget-retrieval calls and returns one
  * {@link WidgetDetection} per call found in executable code.
  *
- * | Extension | Detected call                                       |
- * |-----------|-----------------------------------------------------|
+ * | Extension | Detected call                                          |
+ * |-----------|--------------------------------------------------------|
  * | `.py`     | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
  * | `.ipynb`  | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
  *
