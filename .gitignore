@@ -28,3 +28,6 @@ out
 Steps.md
 checks.md
 code-review.md
+
+# environment variables
+.env
