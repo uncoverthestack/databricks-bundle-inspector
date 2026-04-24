@@ -74,7 +74,8 @@
     "compile": "npm run build:ext",
     "test:unit": "jest",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
-    "update-schema": "curl -fsSL https://json.schemastore.org/databricks-asset-bundles.json -o src/bundle/schemas/databricks-asset-bundles.json"
+    "update-schema": "curl -fsSL https://json.schemastore.org/databricks-asset-bundles.json -o src/bundle/schemas/databricks-asset-bundles.json",
+    "prepare": "husky"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
@@ -102,6 +103,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "husky": "^9.1.7",
     "jest": "^30.3.0",
     "tailwindcss": "^4.2.2",
     "ts-jest": "^29.4.9",
