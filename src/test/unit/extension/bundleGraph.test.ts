@@ -98,7 +98,7 @@ describe("extractBundleGraph", () => {
     expect(jobNode?.runAs).toBe("Service Principal / spn-demo");
     expect(jobNode?.compute).toEqual([
       { kind: "cluster", label: "etl-cluster" },
-      { kind: "sqlWarehouse", label: "warehouse_id" },
+      { kind: "sqlWarehouse", label: "0123456789" },
     ]);
 
     const extractTask = graph.nodes.find(
@@ -120,7 +120,7 @@ describe("extractBundleGraph", () => {
     expect(loadTask?.taskTypeLabel).toBe("SQL");
     expect(loadTask?.subtitle).toBe("queries/load.sql");
     expect(loadTask?.compute).toEqual([
-      { kind: "sqlWarehouse", label: "warehouse_id" },
+      { kind: "sqlWarehouse", label: "0123456789" },
     ]);
     expect(loadTask?.parameters).toEqual([
       { name: "env", value: "env" },
