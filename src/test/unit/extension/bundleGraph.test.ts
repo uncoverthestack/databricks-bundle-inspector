@@ -48,7 +48,7 @@ function createParsedBundle(): ParsedBundleConfig {
                 file: {
                   path: "queries/load.sql",
                 },
-                warehouse_id: "${var.warehouse_id}",
+                warehouse_id: "0123456789",
                 base_parameters: {
                   mode: "append",
                 },
