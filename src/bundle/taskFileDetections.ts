@@ -3,7 +3,7 @@ import path from "node:path";
 
 /**
  * A single detected use of a Databricks secret-access call within a file.
- * Covers `dbutils.secrets.get` in Python/notebooks and `secret()`/`try_secret()`
+ * Covers `dbutils.secrets.get` in Python/Jupyter notebook/Source format notebooks and `secret()`/`try_secret()`
  * in Databricks SQL.
  */
 export interface SecretDetection {
@@ -227,7 +227,7 @@ function scanPythonContent(content: string): SecretDetection[] {
  * {@link scanPythonContent} can apply a single regex pass across all cells.
  * Each cell is separated by a newline to preserve line numbering.
  */
-function notebookToContent(raw: string): string {
+function jupyterNotebookToContent(raw: string): string {
   const notebook = JSON.parse(raw) as {
     cells?: Array<{ source?: string | string[] }>;
   };
@@ -469,7 +469,8 @@ export async function detectSecretInNotebook(
     return scanSqlContent(content);
   }
 
-  const searchContent = ext === ".ipynb" ? notebookToContent(content) : content;
+  const searchContent =
+    ext === ".ipynb" ? jupyterNotebookToContent(content) : content;
   return scanPythonContent(searchContent);
 }
 
@@ -499,6 +500,39 @@ export async function detectWidgetsInFile(
   if (ext === ".sql") return [];
 
   const content = await fs.readFile(filePath, "utf8");
-  const searchContent = ext === ".ipynb" ? notebookToContent(content) : content;
+  const searchContent =
+    ext === ".ipynb" ? jupyterNotebookToContent(content) : content;
   return scanPythonWidgets(searchContent);
+}
+
+export type SourceFormatNotebook = "SQLSourceNotebook" | "PythonSourceNotebook";
+export type NoteBookType = "JupyterNotebook" | SourceFormatNotebook;
+
+/**
+ * Checks if a file is a Databricks Source format notebook or not
+ * We only check for Python, SQL Source Notebooks or Jupyter notebooks for now
+ *
+ * @param filePath Absolute path to a `.py` or `.ipynb`, `sql` file.
+ * @returns `JupyterNotebook` if the an ipynb notebook, `SQLNotebook` if it is a sql notebook,
+ *  `PythonNotebook` if Python notebook else, undefined
+ */
+export async function getNotebookType(
+  filePath: string,
+): Promise<NoteBookType | undefined> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".ipynb") return "JupyterNotebook";
+  if (ext === ".py" || ext === ".sql") {
+    // TODO: Do we need entire file to be read into memory
+    const content = await fs.readFile(filePath, "utf8");
+    const prefix = ext === ".sql" ? "--" : "#";
+    const databricksSourceMatch = content.match(
+      new RegExp(`^${prefix} Databricks notebook source`),
+    );
+
+    return databricksSourceMatch
+      ? ext === ".sql"
+        ? "SQLSourceNotebook"
+        : "PythonSourceNotebook"
+      : undefined;
+  }
 }

@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   detectSecretInNotebook,
   detectWidgetsInFile,
+  getNotebookType,
 } from "../../../bundle/taskFileDetections.js";
 
 // Secret scope Detection & Retrieval
@@ -28,7 +29,10 @@ async function sql(name: string, content: string): Promise<string> {
   return file;
 }
 
-async function notebook(name: string, cells: Array<string[]>): Promise<string> {
+async function jupyterNotebook(
+  name: string,
+  cells: Array<string[]>,
+): Promise<string> {
   const file = path.join(tmpdir(), `bdi-test-${name}.ipynb`);
   const notebook = {
     cells: cells.map((src) => ({ cell_type: "code", source: src })),
@@ -354,7 +358,7 @@ describe("multiple calls in one file", () => {
 
 describe(".ipynb notebooks", () => {
   test("detects a secret in a single code cell", async () => {
-    const file = await notebook("basic", [
+    const file = await jupyterNotebook("basic", [
       [`dbutils.secrets.get(scope="nb-scope", key="k")\n`],
     ]);
     const results = await detectSecretInNotebook(file);
@@ -364,7 +368,7 @@ describe(".ipynb notebooks", () => {
   });
 
   test("detects secrets across multiple cells", async () => {
-    const file = await notebook("multi-cell", [
+    const file = await jupyterNotebook("multi-cell", [
       [`from pyspark.sql import SparkSession\n`],
       [`x = dbutils.secrets.get("cell-2-scope")\n`],
       [`y = dbutils.secrets.get(scope="cell-3-scope", key="k")\n`],
@@ -377,7 +381,7 @@ describe(".ipynb notebooks", () => {
   });
 
   test("ignores commented-out calls inside a cell", async () => {
-    const file = await notebook("nb-comment", [
+    const file = await jupyterNotebook("nb-comment", [
       [`# dbutils.secrets.get("scope")\n`, `real_code = 1\n`],
     ]);
     const results = await detectSecretInNotebook(file);
@@ -386,7 +390,7 @@ describe(".ipynb notebooks", () => {
   });
 
   test("detects getBytes in a notebook cell with correct scope and key", async () => {
-    const file = await notebook("nb-get-bytes", [
+    const file = await jupyterNotebook("nb-get-bytes", [
       [`cert = dbutils.secrets.getBytes(scope="nb-scope", key="tls-cert")\n`],
     ]);
     const results = await detectSecretInNotebook(file);
@@ -397,7 +401,7 @@ describe(".ipynb notebooks", () => {
   });
 
   test("case-sensitive: DBUTILS.SECRETS.GET is not detected", async () => {
-    const file = await notebook("nb-case", [
+    const file = await jupyterNotebook("nb-case", [
       [`x = DBUTILS.SECRETS.GET(scope="nb-scope", key="k")\n`],
     ]);
     const results = await detectSecretInNotebook(file);
@@ -652,9 +656,9 @@ describe("widgets — multiple calls in one file", () => {
   });
 });
 
-describe("widgets — .ipynb notebooks", () => {
+describe("widgets — .ipynb Jupyter notebooks", () => {
   test("detects get() in a single code cell", async () => {
-    const file = await notebook("wgt-nb-basic", [
+    const file = await jupyterNotebook("wgt-nb-basic", [
       [`env = dbutils.widgets.get("nb-env")\n`],
     ]);
     const results = await detectWidgetsInFile(file);
@@ -664,8 +668,8 @@ describe("widgets — .ipynb notebooks", () => {
     expect(results[0]?.method).toBe("get");
   });
 
-  test("detects calls across multiple cells", async () => {
-    const file = await notebook("wgt-nb-multi", [
+  test("detects calls across multiple cells in Jupyter notebook", async () => {
+    const file = await jupyterNotebook("wgt-nb-multi", [
       [`env = dbutils.widgets.get("environment")\n`],
       [`region = dbutils.widgets.getArgument("region", "us-east-1")\n`],
     ]);
@@ -677,8 +681,8 @@ describe("widgets — .ipynb notebooks", () => {
     expect(results[1]?.method).toBe("getArgument");
   });
 
-  test("ignores commented-out calls inside a cell", async () => {
-    const file = await notebook("wgt-nb-comment", [
+  test("ignores commented-out calls inside a cell in a Jupyter notebook", async () => {
+    const file = await jupyterNotebook("wgt-nb-comment", [
       [`# dbutils.widgets.get("env")\n`, `x = 1\n`],
     ]);
     const results = await detectWidgetsInFile(file);
@@ -686,7 +690,7 @@ describe("widgets — .ipynb notebooks", () => {
   });
 });
 
-describe("real widgets: notebook.ipynb", () => {
+describe("real widgets: cell in a Jupyter notebook: notebook.ipynb", () => {
   const fixturePath = path.join(
     __dirname,
     "../../fixtures/secret-scope-example/src/notebook.ipynb",
@@ -703,5 +707,26 @@ describe("real widgets: notebook.ipynb", () => {
     expect(results[1]?.name).toBe("target_table_name");
     expect(results[2]?.name).toBe("filter_str");
     expect(results[3]?.name).toBe("sub_table_name");
+  });
+});
+
+describe("notebook detection: Detects the kind of notebook", () => {
+  const jupyterNotebookPath = path.join(
+    __dirname,
+    "../../fixtures/secret-scope-example/src/notebook.ipynb",
+  );
+  const sourceSqlNotebookPath = path.join(
+    __dirname,
+    "../../fixtures/secret-scope-example/src/source_notebook.sql",
+  );
+
+  test("Jupyter notebook", async () => {
+    const inferredNotebookType = await getNotebookType(jupyterNotebookPath);
+    expect(inferredNotebookType).toBe("JupyterNotebook");
+  });
+
+  test("Source SQL Format Notebook", async () => {
+    const inferredNotebookType = await getNotebookType(sourceSqlNotebookPath);
+    expect(inferredNotebookType).toBe("SQLSourceNotebook");
   });
 });
