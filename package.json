@@ -36,8 +36,14 @@
     "type": "git",
     "url": "https://github.com/uncoverthestack/databricks-bundle-inspector.git"
   },
+  "extensionDependencies": [
+    "redhat.vscode-yaml"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:**/databricks.yml",
+    "workspaceContains:**/databricks.yaml"
+  ],
   "contributes": {
     "commands": [
       {
@@ -46,6 +52,21 @@
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
     ],
+    "configuration": {
+      "title": "Databricks Bundle Inspector",
+      "properties": {
+        "databricksBundleInspector.schemaStorage": {
+          "type": "string",
+          "enum": ["workspace", "local"],
+          "enumDescriptions": [
+            "Write the schema to .vscode/databricks-bundle-schema.json (portable, can be committed and shared with the team).",
+            "Write the schema to VS Code's per-workspace storage (keeps your project clean, not portable across machines)."
+          ],
+          "default": "workspace",
+          "description": "Where to write the generated Databricks bundle JSON schema used for YAML validation."
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
@@ -91,6 +112,7 @@
     "shadcn": "^4.2.0",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0",
+    "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -108,8 +130,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "husky": "^9.1.7",
-    "lint-staged": "^15.5.2",
     "jest": "^30.3.0",
+    "lint-staged": "^15.5.2",
     "tailwindcss": "^4.2.2",
     "ts-jest": "^29.4.9",
     "typescript": "^6.0.2",

@@ -8,6 +8,8 @@ import {
   getConfiguredDatabricksCliPath,
 } from "./databricksCli/config.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
+import { resolveDatabricksCli } from "./databricksCli/validateDatabricksCli.js";
+import { setupBundleSchema } from "./bundle/schemaManager.js";
 
 function getWebviewPaths(extensionUri: vscode.Uri) {
   const webviewRoot = vscode.Uri.joinPath(extensionUri, "dist", "webview");
@@ -54,8 +56,46 @@ async function getWebviewContent(
   return html;
 }
 
+async function initBundleSchemas(
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const configuredPath = getConfiguredDatabricksCliPath(getConfiguration());
+  const cli = await resolveDatabricksCli(configuredPath);
+  if (!cli?.ok) {
+    console.warn(
+      "[BundleInspector] Databricks CLI not found — skipping schema setup",
+    );
+    return;
+  }
+
+  const bundleFiles = await vscode.workspace.findFiles(
+    "**/databricks.{yml,yaml}",
+    "{node_modules,dist,out}/**",
+  );
+
+  await Promise.all(
+    bundleFiles.map((uri) =>
+      setupBundleSchema(uri.fsPath, cli.candidate, context).catch((err) => {
+        console.warn(
+          `[BundleInspector] schema setup failed for ${uri.fsPath}:`,
+          err,
+        );
+      }),
+    ),
+  );
+}
+
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
+
+  void initBundleSchemas(extensionContext);
+
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    "**/databricks.{yml,yaml}",
+  );
+  watcher.onDidChange(() => void initBundleSchemas(extensionContext));
+  watcher.onDidCreate(() => void initBundleSchemas(extensionContext));
+  extensionContext.subscriptions.push(watcher);
 
   let activePanel: vscode.WebviewPanel | undefined;
   let activeBundleData: unknown;
