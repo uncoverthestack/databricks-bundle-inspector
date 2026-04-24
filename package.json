@@ -57,7 +57,10 @@
       "properties": {
         "databricksBundleInspector.schemaStorage": {
           "type": "string",
-          "enum": ["workspace", "local"],
+          "enum": [
+            "workspace",
+            "local"
+          ],
           "enumDescriptions": [
             "Write the schema to .vscode/databricks-bundle-schema.json (portable, can be committed and shared with the team).",
             "Write the schema to VS Code's per-workspace storage (keeps your project clean, not portable across machines)."

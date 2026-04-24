@@ -13,6 +13,9 @@ const LOCAL_SCHEMA_FILENAME = "databricks-bundle-schema.json";
 /**
  * Full pipeline: parse includes → resolve files → fetch CLI schema →
  * write schema → register it in yaml.schemas for all bundle files.
+ *
+ * Validation is delegated entirely to the Red Hat YAML extension via
+ * `yaml.schemas`. No in-process diagnostics are produced here.
  */
 export async function setupBundleSchema(
   bundleYmlPath: string,
@@ -50,7 +53,6 @@ export async function setupBundleSchema(
   await fs.writeFile(schemaAbsPath, JSON.stringify(mergedSchema, null, 2));
 
   await updateYamlSchemas(
-    workspaceFolder,
     workspaceRoot,
     schemaAbsPath,
     storageMode,
@@ -99,7 +101,6 @@ function applyStrictOverlay(cliSchema: object): object {
 }
 
 async function updateYamlSchemas(
-  workspaceFolder: vscode.WorkspaceFolder | undefined,
   workspaceRoot: string,
   schemaAbsPath: string,
   storageMode: "workspace" | "local",
@@ -111,15 +112,23 @@ async function updateYamlSchemas(
       : path.relative(workspaceRoot, schemaAbsPath);
   const fileValues = filePaths.map((f) => path.relative(workspaceRoot, f));
 
-  const config = vscode.workspace.getConfiguration(
-    "yaml",
-    workspaceFolder?.uri,
-  );
-  const current = config.inspect<Record<string, unknown>>("schemas");
-  const schemas: Record<string, unknown> = {
-    ...(current?.workspaceValue ?? {}),
-  };
-  schemas[schemaKey] = fileValues;
+  const settingsPath = path.join(workspaceRoot, ".vscode", "settings.json");
 
-  await config.update("schemas", schemas, vscode.ConfigurationTarget.Workspace);
+  let settings: Record<string, unknown> = {};
+  try {
+    const raw = await fs.readFile(settingsPath, "utf8");
+    // Strip JSONC comments before parsing — settings.json allows them
+    const stripped = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    settings = JSON.parse(stripped) as Record<string, unknown>;
+  } catch {
+    // File absent or unparseable — start fresh
+  }
+
+  const existing = (settings["yaml.schemas"] as Record<string, unknown>) ?? {};
+  settings["yaml.schemas"] = { ...existing, [schemaKey]: fileValues };
+
+  await fs.mkdir(path.join(workspaceRoot, ".vscode"), { recursive: true });
+  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
 }

@@ -75,12 +75,14 @@ async function initBundleSchemas(
 
   await Promise.all(
     bundleFiles.map((uri) =>
-      setupBundleSchema(uri.fsPath, cli.candidate, context).catch((err) => {
-        console.warn(
-          `[BundleInspector] schema setup failed for ${uri.fsPath}:`,
-          err,
-        );
-      }),
+      setupBundleSchema(uri.fsPath, cli.candidate, context).catch(
+        (err) => {
+          console.warn(
+            `[BundleInspector] schema setup failed for ${uri.fsPath}:`,
+            err,
+          );
+        },
+      ),
     ),
   );
 }
