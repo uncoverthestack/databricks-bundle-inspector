@@ -169,30 +169,34 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   const configuredCliPath = getConfiguredDatabricksCliPath(getConfiguration());
 
   // Maps every bundle-related file (databricks.yml + all includes) to its bundle root.
-  // Built cheaply on activation via YAML parse; kept up-to-date after each CLI run.
+  // Populated on activation via cheap YAML parse, then kept up-to-date after each CLI run.
   const fileToBundleRoot = new Map<string, string>();
-  void buildIncludeMap(fileToBundleRoot);
 
-  function onEditorFocused(editor: vscode.TextEditor | undefined): void {
-    if (!editor) return;
-    const filePath = editor.document.uri.fsPath;
+  // On activation: build the include map then immediately run diagnostics for all
+  // found bundles so the Problems panel is populated without any user interaction.
+  void (async () => {
+    await buildIncludeMap(fileToBundleRoot);
+    const bundleRoots = new Set(fileToBundleRoot.values());
+    await Promise.all(
+      [...bundleRoots].map((root) =>
+        runBundleDiagnostics(root, configuredCliPath, diagnosticCollection, fileToBundleRoot).catch(
+          (err) => { console.warn(`[BundleInspector] diagnostics failed for ${root}:`, err); },
+        ),
+      ),
+    );
+  })();
 
-    // Always recognise databricks.yml regardless of whether it's in the map yet
-    const bundleRoot = BUNDLE_YML_RE.test(filePath)
-      ? path.dirname(filePath)
-      : fileToBundleRoot.get(filePath);
-
-    if (!bundleRoot) return;
-
-    void runBundleDiagnostics(bundleRoot, configuredCliPath, diagnosticCollection, fileToBundleRoot);
-  }
-
+  // On save: re-run diagnostics for the bundle that owns the saved file.
   extensionContext.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(onEditorFocused),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      const filePath = document.uri.fsPath;
+      const bundleRoot = BUNDLE_YML_RE.test(filePath)
+        ? path.dirname(filePath)
+        : fileToBundleRoot.get(filePath);
+      if (!bundleRoot) return;
+      void runBundleDiagnostics(bundleRoot, configuredCliPath, diagnosticCollection, fileToBundleRoot);
+    }),
   );
-
-  // Check whichever file is already open when the extension activates
-  onEditorFocused(vscode.window.activeTextEditor);
 
   let activePanel: vscode.WebviewPanel | undefined;
   let activeBundleData: unknown;
