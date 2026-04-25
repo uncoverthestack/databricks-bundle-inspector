@@ -36,9 +36,6 @@
     "type": "git",
     "url": "https://github.com/uncoverthestack/databricks-bundle-inspector.git"
   },
-  "extensionDependencies": [
-    "redhat.vscode-yaml"
-  ],
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:**/databricks.yml",
@@ -52,24 +49,6 @@
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
     ],
-    "configuration": {
-      "title": "Databricks Bundle Inspector",
-      "properties": {
-        "databricksBundleInspector.schemaStorage": {
-          "type": "string",
-          "enum": [
-            "workspace",
-            "local"
-          ],
-          "enumDescriptions": [
-            "Write the schema to .vscode/databricks-bundle-schema.json (portable, can be committed and shared with the team).",
-            "Write the schema to VS Code's per-workspace storage (keeps your project clean, not portable across machines)."
-          ],
-          "default": "workspace",
-          "description": "Where to write the generated Databricks bundle JSON schema used for YAML validation."
-        }
-      }
-    },
     "menus": {
       "editor/title": [
         {
@@ -99,7 +78,6 @@
     "test": "npm run test:unit",
     "test:unit": "jest",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
-    "update-schema": "curl -fsSL https://json.schemastore.org/databricks-asset-bundles.json -o src/bundle/schemas/databricks-asset-bundles.json",
     "prepare": "husky"
   },
   "lint-staged": {

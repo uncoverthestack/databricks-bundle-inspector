@@ -548,6 +548,12 @@ function getJobComputeSummary(tasks: JobTask[]): GraphCompute[] {
   return [...computeMap.values()];
 }
 
+/**
+ * Flattens all resource entries from a parsed bundle config into a uniform list.
+ *
+ * @param parsedBundle The validated bundle configuration produced by `databricks bundle validate`.
+ * @returns An array of resource nodes, one per named resource across all resource groups.
+ */
 export function extractResourceNodes(
   parsedBundle: ParsedBundleConfig,
 ): ResourceNode[] {
@@ -574,6 +580,17 @@ export function extractResourceNodes(
   return nodes;
 }
 
+/**
+ * Builds a graph of nodes and edges from a parsed bundle config.
+ *
+ * Jobs are expanded into job nodes and individual task nodes connected by
+ * `contains` edges. Task-to-task `depends_on` relationships become `depends_on`
+ * edges. All other resource types become single leaf nodes.
+ *
+ * @param parsedBundle The validated bundle configuration produced by `databricks bundle validate`.
+ * @returns A graph with `nodes` (jobs, tasks, and other resources) and `edges`
+ *   (containment and dependency relationships).
+ */
 export function extractBundleGraph(
   parsedBundle: ParsedBundleConfig,
 ): BundleGraph {

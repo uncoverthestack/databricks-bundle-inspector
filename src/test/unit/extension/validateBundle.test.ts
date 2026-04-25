@@ -92,14 +92,14 @@ describe("validateBundleWithDependencies", () => {
     ]);
   });
 
-  test("surfaces stderr as a validation warning on success", async () => {
+  test("surfaces stderr diagnostics as BUNDLE_DIAGNOSTICS on success", async () => {
     const result = await validateBundleWithDependencies(
       "/workspace/demo",
       undefined,
       {
         execFileAsync: async () => ({
           stdout: JSON.stringify(createBundle()),
-          stderr: "warning: something non-fatal happened",
+          stderr: "Warning: unknown field: includ\n  in databricks.yml:4:1",
         }),
         resolveDatabricksCli: async () => ({
           ok: true,
@@ -112,7 +112,14 @@ describe("validateBundleWithDependencies", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.issues?.[0]?.code).toBe("VALIDATION_WARNING");
+    expect(result.issues?.[0]?.code).toBe("BUNDLE_DIAGNOSTICS");
+    expect(result.issues?.[0]?.diagnostics?.[0]).toMatchObject({
+      severity: "warning",
+      message: "unknown field: includ",
+      path: "databricks.yml",
+      line: 4,
+      column: 1,
+    });
   });
 
   test("tolerates auth errors when stdout contains valid JSON", async () => {

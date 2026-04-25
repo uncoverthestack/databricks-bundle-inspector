@@ -58,6 +58,7 @@ function getLineText(content: string, charIndex: number): string {
  * matching so that multi-line calls are treated identically to single-line ones.
  *
  * @param argFragment Everything between the opening and closing parenthesis.
+ * @returns `scope` and `key` as string literals, or `null` when either is a runtime variable.
  */
 function extractPythonArgs(argFragment: string): {
   scope: string | null;
@@ -104,6 +105,11 @@ function extractPythonArgs(argFragment: string): {
  *
  * Triple-quoted strings that open on a prior line are not tracked; that is an
  * acceptable limitation for a sniffer.
+ *
+ * @param content The full source text of the file.
+ * @param charIndex The character offset of the match to check.
+ * @returns `true` if the position is in executable Python code; `false` if it
+ *   is inside a comment or a non-f-string literal.
  */
 function isInPythonCodeContext(content: string, charIndex: number): boolean {
   const lineStart = content.lastIndexOf("\n", charIndex - 1) + 1;
@@ -198,6 +204,9 @@ function isInPythonCodeContext(content: string, charIndex: number): boolean {
  * `dbutils.secrets.getBytes(...)` calls that appear in executable Python code
  * (not comments or string literals) and returns one {@link SecretDetection}
  * per call.
+ *
+ * @param content The full source text of a `.py` file or a flattened notebook.
+ * @returns One {@link SecretDetection} per matched call in executable code.
  */
 function scanPythonContent(content: string): SecretDetection[] {
   const detections: SecretDetection[] = [];
@@ -226,6 +235,9 @@ function scanPythonContent(content: string): SecretDetection[] {
  * Flattens a Jupyter notebook's cell sources into a single string so that
  * {@link scanPythonContent} can apply a single regex pass across all cells.
  * Each cell is separated by a newline to preserve line numbering.
+ *
+ * @param raw Raw JSON string of the `.ipynb` file.
+ * @returns A single string with all code cell sources joined by newlines.
  */
 function jupyterNotebookToContent(raw: string): string {
   const notebook = JSON.parse(raw) as {
@@ -251,6 +263,7 @@ const SQL_PREVIEW_NOTE =
  * so both fields are expected to be non-null for well-formed calls.
  *
  * @param argFragment Everything between the opening and closing parenthesis.
+ * @returns `scope` and `key` as string literals, or `null` when either is absent or malformed.
  */
 function extractSqlArgs(argFragment: string): {
   scope: string | null;
@@ -275,6 +288,11 @@ function extractSqlArgs(argFragment: string): {
  * same line. Inline `/* ... *\/` block comments that open and close on the
  * same line before the match are also detected. Block comments that open on
  * a prior line are not tracked; acceptable for a sniffer.
+ *
+ * @param content The full source text of the file.
+ * @param charIndex The character offset of the match to check.
+ * @returns `true` if the position is in executable SQL; `false` if it is
+ *   inside a comment or a string literal.
  */
 function isInSqlCodeContext(content: string, charIndex: number): boolean {
   const lineStart = content.lastIndexOf("\n", charIndex - 1) + 1;
@@ -332,6 +350,9 @@ function isInSqlCodeContext(content: string, charIndex: number): boolean {
  *
  * Every detection carries {@link SQL_PREVIEW_NOTE} in its `note` field
  * because both functions are currently a Databricks SQL preview feature.
+ *
+ * @param content The full source text of a `.sql` file.
+ * @returns One {@link SecretDetection} per matched call in executable SQL.
  */
 function scanSqlContent(content: string): SecretDetection[] {
   const detections: SecretDetection[] = [];
@@ -396,6 +417,7 @@ export interface WidgetDetection {
  * variable whose value is only known at runtime.
  *
  * @param argFragment Everything between the opening and closing parenthesis.
+ * @returns The widget name as a string literal, or `null` if it is a runtime variable.
  */
 function extractWidgetName(argFragment: string): string | null {
   const normalised = argFragment
@@ -410,6 +432,9 @@ function extractWidgetName(argFragment: string): string | null {
  * Scans `content` for all `dbutils.widgets.get(...)`, `getArgument(...)`, and
  * `getAll()` calls that appear in executable Python code and returns one
  * {@link WidgetDetection} per call.
+ *
+ * @param content The full source text of a `.py` file or a flattened notebook.
+ * @returns One {@link WidgetDetection} per matched call in executable code.
  */
 function scanPythonWidgets(content: string): WidgetDetection[] {
   const detections: WidgetDetection[] = [];
