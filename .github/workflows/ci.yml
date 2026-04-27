@@ -35,7 +35,15 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=optional
+
+      - name: Repair native optional bindings
+        run: npm run deps:repair-native
+
+      - name: Verify native bindings
+        run: |
+          node -e "require('@rolldown/binding-linux-x64-gnu')"
+          node -e "require('@unrs/resolver-binding-linux-x64-gnu')"
 
       - name: Security audit
         run: npm audit --audit-level=high

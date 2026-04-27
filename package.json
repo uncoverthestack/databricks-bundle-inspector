@@ -97,7 +97,7 @@
   },
   "scripts": {
     "build:ext": "node esbuild.js",
-    "build:webview": "vite build",
+    "build:webview": "node scripts/repair-native-optional-deps.mjs && vite build",
     "build": "npm run build:ext && npm run build:webview",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch",
@@ -112,6 +112,7 @@
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
     "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
+    "deps:repair-native": "node scripts/repair-native-optional-deps.mjs",
     "cli:install-matrix": "node scripts/install-databricks-cli-matrix.mjs",
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
     "prepare": "husky"
