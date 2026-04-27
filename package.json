@@ -47,6 +47,15 @@
         "command": "databricksBundleInspector.inspectBundle",
         "title": "Inspect Databricks Bundle",
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
+      },
+      {
+        "command": "databricksBundleInspector.openBundleIssues",
+        "title": "Open Bundle Issues"
+      },
+      {
+        "command": "databricksBundleInspector.generateJobDocumentation",
+        "title": "Generate Databricks Job Documentation",
+        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
     ],
     "menus": {
@@ -55,11 +64,21 @@
           "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+        },
+        {
+          "command": "databricksBundleInspector.generateJobDocumentation",
+          "group": "navigation",
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }
       ],
       "editor/context": [
         {
           "command": "databricksBundleInspector.inspectBundle",
+          "group": "navigation",
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+        },
+        {
+          "command": "databricksBundleInspector.generateJobDocumentation",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }

@@ -13,7 +13,7 @@ resources:
           notebook_task:
             notebook_path: ../src/notebook.ipynb
             base_parameters:
-              start_time: "2021-01-01" # dib: The default start time
+              start_time: "2021-01-01" # dbi: The default start time
         - task_key: query_file_sql
           depends_on:
             - task_key: notebook_task

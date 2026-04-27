@@ -2,11 +2,14 @@ import { execFile } from "child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { ParsedBundleConfig } from "./bundleGraph.js";
+import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
 import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
 import { parseBundleDiagnostics } from "./parseBundleDiagnostics.js";
-export { extractBundleGraph, extractResourceNodes } from "./bundleGraph.js";
+export {
+  extractBundleGraph,
+  extractResourceNodes,
+} from "./graph/bundleGraph.js";
 export type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 
 export const BUNDLE_PROBE_TARGET = "__bundle_inspector_probe__";
@@ -144,7 +147,6 @@ function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
 }
 
-
 /**
  * Returns whether a working Databricks CLI can be resolved on this machine.
  *
@@ -240,10 +242,20 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    const diagnostics = parseBundleDiagnostics(stderr ?? "", target ?? BUNDLE_PROBE_TARGET);
-    const issues = diagnostics.length > 0
-      ? [{ code: "BUNDLE_DIAGNOSTICS", message: "Databricks CLI reported bundle diagnostics.", diagnostics }]
-      : undefined;
+    const diagnostics = parseBundleDiagnostics(
+      stderr ?? "",
+      target ?? BUNDLE_PROBE_TARGET,
+    );
+    const issues =
+      diagnostics.length > 0
+        ? [
+            {
+              code: "BUNDLE_DIAGNOSTICS",
+              message: "Databricks CLI reported bundle diagnostics.",
+              diagnostics,
+            },
+          ]
+        : undefined;
 
     return issues
       ? { ok: true, data: parsed.data, issues }
@@ -291,7 +303,10 @@ export async function validateBundleWithDependencies(
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
-          const diagnostics = parseBundleDiagnostics(stderr ?? "", target ?? BUNDLE_PROBE_TARGET);
+          const diagnostics = parseBundleDiagnostics(
+            stderr ?? "",
+            target ?? BUNDLE_PROBE_TARGET,
+          );
           return {
             ok: true,
             data: parsed.data,
@@ -315,10 +330,27 @@ export async function validateBundleWithDependencies(
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
-          const diagnostics = parseBundleDiagnostics(stderr ?? "", target ?? BUNDLE_PROBE_TARGET);
-          const issues = diagnostics.length > 0
-            ? [{ code: "BUNDLE_DIAGNOSTICS", message: "Databricks CLI reported bundle diagnostics.", diagnostics }]
-            : [{ code: "CLI_WARNING", message: "Databricks CLI validation completed with warnings.", details: stderr?.trim() || getErrorMessage(error) }];
+          const diagnostics = parseBundleDiagnostics(
+            stderr ?? "",
+            target ?? BUNDLE_PROBE_TARGET,
+          );
+          const issues =
+            diagnostics.length > 0
+              ? [
+                  {
+                    code: "BUNDLE_DIAGNOSTICS",
+                    message: "Databricks CLI reported bundle diagnostics.",
+                    diagnostics,
+                  },
+                ]
+              : [
+                  {
+                    code: "CLI_WARNING",
+                    message:
+                      "Databricks CLI validation completed with warnings.",
+                    details: stderr?.trim() || getErrorMessage(error),
+                  },
+                ];
           return { ok: true, data: parsed.data, issues };
         }
       } catch {
@@ -338,9 +370,15 @@ export async function validateBundleWithDependencies(
       bundleName,
       error: "Failed to validate Databricks bundle.",
       errorCode: "VALIDATION_FAILED",
-      details: diagnostics.length > 0
-        ? diagnostics.map((d) => `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`).join("\n")
-        : filteredStderr || getErrorMessage(error),
+      details:
+        diagnostics.length > 0
+          ? diagnostics
+              .map(
+                (d) =>
+                  `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
+              )
+              .join("\n")
+          : filteredStderr || getErrorMessage(error),
     };
     if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
     return { ok: false, error: bundleError };

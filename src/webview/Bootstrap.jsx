@@ -8,6 +8,14 @@ const vscodeApi =
 
 export default function Bootstrap() {
   const [parsedBundle, setParsedBundle] = useState(null);
+  const [bundleGraph, setBundleGraph] = useState(null);
+  const [validationIssues, setValidationIssues] = useState([]);
+  const [inspectorIssues, setInspectorIssues] = useState([]);
+  const [inspectedTarget, setInspectedTarget] = useState(null);
+  const [inspectedTargetMode, setInspectedTargetMode] = useState(null);
+  const [requestedTarget, setRequestedTarget] = useState(null);
+  const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
+  const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
 
   useEffect(() => {
     vscodeApi?.postMessage({ type: "webviewReady" });
@@ -23,6 +31,39 @@ export default function Bootstrap() {
         data.parsedBundle !== null
       ) {
         setParsedBundle(data.parsedBundle);
+        if (typeof data.graph === "object" && data.graph !== null) {
+          setBundleGraph(data.graph);
+        }
+        setValidationIssues(
+          Array.isArray(data.validationIssues) ? data.validationIssues : [],
+        );
+        setInspectorIssues(
+          Array.isArray(data.inspectorIssues) ? data.inspectorIssues : [],
+        );
+        setInspectedTarget(
+          typeof data.inspectedTarget === "string" ? data.inspectedTarget : null,
+        );
+        setInspectedTargetMode(
+          typeof data.inspectedTargetMode === "string"
+            ? data.inspectedTargetMode
+            : null,
+        );
+        setRequestedTarget(
+          typeof data.requestedTarget === "string" ? data.requestedTarget : null,
+        );
+        setTargetFallbackMessage(
+          typeof data.targetFallbackMessage === "string"
+            ? data.targetFallbackMessage
+            : null,
+        );
+        setFocusIssuesNonce(
+          typeof data.focusIssuesNonce === "number"
+            ? data.focusIssuesNonce
+            : null,
+        );
+      }
+      if (data.type === "focusIssues") {
+        setFocusIssuesNonce(Date.now());
       }
     }
 
@@ -38,5 +79,36 @@ export default function Bootstrap() {
     );
   }
 
-  return <App parsedBundle={parsedBundle} />;
+  function handleOpenFile(filePath, line, column) {
+    vscodeApi?.postMessage({
+      type: "openFile",
+      path: filePath,
+      line: line ?? undefined,
+      column: column ?? undefined,
+    });
+  }
+
+  function handleSelectTarget(target) {
+    vscodeApi?.postMessage({
+      type: "selectTarget",
+      target: target || null,
+    });
+  }
+
+  return (
+    <App
+      key={focusIssuesNonce ?? "inspector"}
+      parsedBundle={parsedBundle}
+      graph={bundleGraph}
+      validationIssues={validationIssues}
+      inspectorIssues={inspectorIssues}
+      inspectedTarget={inspectedTarget}
+      inspectedTargetMode={inspectedTargetMode}
+      requestedTarget={requestedTarget}
+      targetFallbackMessage={targetFallbackMessage}
+      focusIssuesNonce={focusIssuesNonce}
+      onSelectTarget={handleSelectTarget}
+      onOpenFile={handleOpenFile}
+    />
+  );
 }

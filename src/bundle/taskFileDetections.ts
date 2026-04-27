@@ -486,16 +486,19 @@ function scanPythonWidgets(content: string): WidgetDetection[] {
  */
 export async function detectSecretInNotebook(
   filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<SecretDetection[]> {
   const content = await fs.readFile(filePath, "utf8");
   const ext = path.extname(filePath).toLowerCase();
 
-  if (ext === ".sql") {
+  if (fileTypeHint === "sql" || ext === ".sql") {
     return scanSqlContent(content);
   }
 
   const searchContent =
-    ext === ".ipynb" ? jupyterNotebookToContent(content) : content;
+    fileTypeHint === "notebook" || ext === ".ipynb"
+      ? jupyterNotebookToContent(content)
+      : content;
   return scanPythonContent(searchContent);
 }
 
@@ -520,13 +523,16 @@ export async function detectSecretInNotebook(
  */
 export async function detectWidgetsInFile(
   filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<WidgetDetection[]> {
   const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".sql") return [];
+  if (fileTypeHint === "sql" || ext === ".sql") return [];
 
   const content = await fs.readFile(filePath, "utf8");
   const searchContent =
-    ext === ".ipynb" ? jupyterNotebookToContent(content) : content;
+    fileTypeHint === "notebook" || ext === ".ipynb"
+      ? jupyterNotebookToContent(content)
+      : content;
   return scanPythonWidgets(searchContent);
 }
 

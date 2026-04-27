@@ -1,6 +1,6 @@
 import { describe, test, expect } from "@jest/globals";
 import { validateBundleWithDependencies } from "../../../bundle/validateBundle.js";
-import type { ParsedBundleConfig } from "../../../bundle/bundleGraph.js";
+import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 function createBundle(): ParsedBundleConfig {
   return {

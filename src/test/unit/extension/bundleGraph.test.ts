@@ -2,8 +2,8 @@ import { describe, test, expect } from "@jest/globals";
 import {
   extractBundleGraph,
   extractResourceNodes,
-} from "../../../bundle/bundleGraph.js";
-import type { ParsedBundleConfig } from "../../../bundle/bundleGraph.js";
+} from "../../../bundle/graph/bundleGraph.js";
+import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 function createParsedBundle(): ParsedBundleConfig {
   return {
@@ -83,8 +83,8 @@ describe("extractResourceNodes", () => {
 });
 
 describe("extractBundleGraph", () => {
-  test("creates job, task, resource, and dependency nodes", () => {
-    const graph = extractBundleGraph(createParsedBundle());
+  test("creates job, task, resource, and dependency nodes", async () => {
+    const graph = await extractBundleGraph(createParsedBundle());
 
     expect(graph.nodes).toHaveLength(4);
     expect(graph.edges).toHaveLength(3);
@@ -133,7 +133,7 @@ describe("extractBundleGraph", () => {
         (edge) =>
           edge.id ===
             "resources.jobs.ingest_job.tasks.extract->resources.jobs.ingest_job.tasks.load" &&
-          edge.relationship === "depends_on",
+          edge.kind === "depends_on",
       ),
     ).toBe(true);
 
@@ -145,8 +145,8 @@ describe("extractBundleGraph", () => {
     expect(resourceNode?.kind).toBe("pipeline");
   });
 
-  test("falls back to default compute and generated task keys", () => {
-    const graph = extractBundleGraph({
+  test("falls back to default compute and generated task keys", async () => {
+    const graph = await extractBundleGraph({
       bundle: {
         name: "demo-bundle",
       },

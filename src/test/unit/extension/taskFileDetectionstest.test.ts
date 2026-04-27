@@ -465,6 +465,17 @@ describe(".sql files — secret()", () => {
     expect(result?.key).toBe("my-key");
   });
 
+  test("uses SQL scanner for extensionless SQL task files when hinted", async () => {
+    const file = path.join(tmpdir(), "bdi-test-extensionless-sql");
+    await writeFile(file, `SELECT secret('dev-scope', 'my-key')`, "utf8");
+    tempFiles.push(file);
+
+    const [result] = await detectSecretInNotebook(file, "sql");
+
+    expect(result?.scope).toBe("dev-scope");
+    expect(result?.key).toBe("my-key");
+  });
+
   test("every SQL detection carries the preview note", async () => {
     const file = await sql(
       "preview-note",
