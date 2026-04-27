@@ -25,7 +25,7 @@ export type DatabricksCliVerificationResult =
       reason?: string;
     };
 
-let cacheDatabricksCliResult: DatabricksCliVerificationResult | undefined;
+let resolveCliPromise: Promise<DatabricksCliVerificationResult | undefined> | undefined;
 
 /**
  * Verifies that the candidate executable is the Databricks CLI.
@@ -114,25 +114,23 @@ export async function autoDetectDatabricksCli(): Promise<
 export async function resolveDatabricksCli(
   configuredPath?: string,
 ): Promise<DatabricksCliVerificationResult | undefined> {
-  if (cacheDatabricksCliResult?.ok) {
-    return cacheDatabricksCliResult;
+  if (!resolveCliPromise) {
+    resolveCliPromise = resolveCliInternal(configuredPath);
   }
+  return resolveCliPromise;
+}
 
+async function resolveCliInternal(
+  configuredPath?: string,
+): Promise<DatabricksCliVerificationResult | undefined> {
   if (configuredPath) {
     const result = await verifyCliPath(configuredPath);
     if (result.ok) {
-      cacheDatabricksCliResult = result;
       return result;
     }
-
     console.warn(
       `[DatabricksBundleInspector] configured cliPath is invalid: ${configuredPath}. Reason: ${result.reason ?? "unknown"}`,
     );
   }
-  const detected = await autoDetectDatabricksCli();
-  if (detected?.ok) {
-    cacheDatabricksCliResult = detected;
-  }
-
-  return detected;
+  return autoDetectDatabricksCli();
 }

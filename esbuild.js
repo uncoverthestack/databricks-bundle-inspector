@@ -37,6 +37,9 @@ async function main() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
+    banner: {
+      js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
+    },
     plugins: [
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,

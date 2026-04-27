@@ -7,6 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  trufflehog:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: TruffleHog
+        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26
+        with:
+          extra_args: --only-verified
+
   ci:
     name: Build, Test, Lint, Audit
     runs-on: ubuntu-latest
@@ -22,7 +35,15 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=optional
+
+      - name: Repair native optional bindings
+        run: npm run deps:repair-native
+
+      - name: Verify native bindings
+        run: |
+          node -e "require('@rolldown/binding-linux-x64-gnu')"
+          node -e "require('@unrs/resolver-binding-linux-x64-gnu')"
 
       - name: Security audit
         run: npm audit --audit-level=high

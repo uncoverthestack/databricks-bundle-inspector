@@ -19,5 +19,6 @@ module.exports = {
   setupFilesAfterEnv: ["<rootDir>/src/test/setup.ts"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
+    "^vscode$": "<rootDir>/src/test/__mocks__/vscode.ts",
   },
 };

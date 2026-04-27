@@ -2,10 +2,17 @@ import { execFile } from "child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { ParsedBundleConfig } from "./bundleGraph.js";
+import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
 import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
-export { extractBundleGraph, extractResourceNodes } from "./bundleGraph.js";
+import { parseBundleDiagnostics } from "./parseBundleDiagnostics.js";
+export {
+  extractBundleGraph,
+  extractResourceNodes,
+} from "./graph/bundleGraph.js";
+export type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
+
+export const BUNDLE_PROBE_TARGET = "__bundle_inspector_probe__";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,12 +43,14 @@ export interface BundleError {
   error: string;
   errorCode?: string;
   details?: string;
+  diagnostics?: import("./parseBundleDiagnostics.js").BundleDiagnostic[];
 }
 
 export interface ValidationIssue {
   code: string;
   message: string;
   details?: string;
+  diagnostics?: import("./parseBundleDiagnostics.js").BundleDiagnostic[];
 }
 
 export type BundleResult =
@@ -138,28 +147,30 @@ function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
 }
 
-// Fix #4: Reject DATABRICKS_CLI_PATH values that contain shell metacharacters.
-// execFile already avoids shell injection, but a value like `rm -rf /; databricks`
-// could still point at an unexpected executable. This is a defence-in-depth check.
-function isValidExecutablePath(value: string): boolean {
-  return !/[;&|`$<>]/.test(value);
-}
-
-// Fix #8: Cache the resolved CLI path so we don't spawn probe subprocesses on
-// every invocation. The cache is invalidated to `undefined` on extension startup
-// and can be reset explicitly if needed (e.g., after a settings change).
-let cachedCliPath: string | null | undefined;
-
-export function resetCliPathCache(): void {
-  cachedCliPath = undefined;
-}
-
+/**
+ * Returns whether a working Databricks CLI can be resolved on this machine.
+ *
+ * @param configuredCliPath Optional user-configured CLI path from extension settings.
+ * @returns `true` if a Databricks CLI executable could be located and verified.
+ */
 export async function isDatabricksInstalled(
   configuredCliPath?: string,
 ): Promise<boolean> {
   return (await resolveDatabricksCli(configuredCliPath)) !== null;
 }
 
+/**
+ * Validates a Databricks bundle by running `databricks bundle validate --output json`.
+ *
+ * Uses a synthetic probe target by default so the CLI produces bundle JSON without
+ * requiring valid workspace authentication.
+ *
+ * @param bundleDir Absolute or relative path to the directory containing `databricks.yml`.
+ * @param target Deployment target to validate against. Defaults to the probe target.
+ * @param configuredCliPath Optional user-configured CLI path from extension settings.
+ * @returns A {@link BundleResult} that is either `ok` with parsed bundle data and any
+ *   diagnostics, or `!ok` with a structured error.
+ */
 export async function validateBundle(
   bundleDir: string,
   target?: string,
@@ -171,9 +182,18 @@ export async function validateBundle(
   });
 }
 
+/**
+ * Testable core of {@link validateBundle} with injectable dependencies.
+ *
+ * @param bundleDir Absolute or relative path to the directory containing `databricks.yml`.
+ * @param target Deployment target to validate against. Defaults to {@link BUNDLE_PROBE_TARGET}.
+ * @param dependencies Injected `execFileAsync` and `resolveDatabricksCli` implementations.
+ * @returns A {@link BundleResult} that is either `ok` with parsed bundle data and any
+ *   diagnostics, or `!ok` with a structured error.
+ */
 export async function validateBundleWithDependencies(
   bundleDir: string,
-  target: string | undefined,
+  target: string | undefined = BUNDLE_PROBE_TARGET,
   dependencies: ValidateBundleDependencies,
 ): Promise<BundleResult> {
   const resolvedBundleDir = path.resolve(bundleDir);
@@ -196,9 +216,8 @@ export async function validateBundleWithDependencies(
       },
     };
   }
-
   const args = ["bundle", "validate", "--output", "json"];
-  // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
+  // // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
     args.push("--target", target);
   }
@@ -223,15 +242,20 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    const issues = stderr?.trim()
-      ? [
-          {
-            code: "VALIDATION_WARNING",
-            message: "Databricks CLI reported a warning during validation.",
-            details: stderr.trim(),
-          },
-        ]
-      : undefined;
+    const diagnostics = parseBundleDiagnostics(
+      stderr ?? "",
+      target ?? BUNDLE_PROBE_TARGET,
+    );
+    const issues =
+      diagnostics.length > 0
+        ? [
+            {
+              code: "BUNDLE_DIAGNOSTICS",
+              message: "Databricks CLI reported bundle diagnostics.",
+              diagnostics,
+            },
+          ]
+        : undefined;
 
     return issues
       ? { ok: true, data: parsed.data, issues }
@@ -279,6 +303,10 @@ export async function validateBundleWithDependencies(
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
+          const diagnostics = parseBundleDiagnostics(
+            stderr ?? "",
+            target ?? BUNDLE_PROBE_TARGET,
+          );
           return {
             ok: true,
             data: parsed.data,
@@ -287,6 +315,7 @@ export async function validateBundleWithDependencies(
                 code: "AUTH_NOT_CONFIGURED",
                 message: "Databricks authentication is not configured.",
                 details: stderr?.trim() ?? "",
+                diagnostics,
               },
             ],
           };
@@ -296,37 +325,62 @@ export async function validateBundleWithDependencies(
       }
     }
 
-    // Try to parse stdout even if command failed, in case it's valid JSON with warnings
+    // Try to parse stdout even if command failed — probe target always exits non-zero
     if (stdout?.trim()) {
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
-          return {
-            ok: true,
-            data: parsed.data,
-            issues: [
-              {
-                code: "CLI_WARNING",
-                message: "Databricks CLI validation completed with warnings.",
-                details: stderr?.trim() || getErrorMessage(error),
-              },
-            ],
-          };
+          const diagnostics = parseBundleDiagnostics(
+            stderr ?? "",
+            target ?? BUNDLE_PROBE_TARGET,
+          );
+          const issues =
+            diagnostics.length > 0
+              ? [
+                  {
+                    code: "BUNDLE_DIAGNOSTICS",
+                    message: "Databricks CLI reported bundle diagnostics.",
+                    diagnostics,
+                  },
+                ]
+              : [
+                  {
+                    code: "CLI_WARNING",
+                    message:
+                      "Databricks CLI validation completed with warnings.",
+                    details: stderr?.trim() || getErrorMessage(error),
+                  },
+                ];
+          return { ok: true, data: parsed.data, issues };
         }
       } catch {
         // stdout is not valid JSON, fall through to error
       }
     }
 
-    return {
-      ok: false,
-      error: {
-        bundleDir: resolvedBundleDir,
-        bundleName,
-        error: "Failed to validate Databricks bundle.",
-        errorCode: "VALIDATION_FAILED",
-        details: stderr?.trim() || getErrorMessage(error),
-      },
+    const probeTarget = target ?? BUNDLE_PROBE_TARGET;
+    const diagnostics = parseBundleDiagnostics(stderr ?? "", probeTarget);
+    const filteredStderr = (stderr ?? "")
+      .split("\n")
+      .filter((line) => !line.includes(`${probeTarget}: no such target`))
+      .join("\n")
+      .trim();
+    const bundleError: BundleError = {
+      bundleDir: resolvedBundleDir,
+      bundleName,
+      error: "Failed to validate Databricks bundle.",
+      errorCode: "VALIDATION_FAILED",
+      details:
+        diagnostics.length > 0
+          ? diagnostics
+              .map(
+                (d) =>
+                  `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
+              )
+              .join("\n")
+          : filteredStderr || getErrorMessage(error),
     };
+    if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
+    return { ok: false, error: bundleError };
   }
 }

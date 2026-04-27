@@ -73,3 +73,29 @@ body {
   width: 100vw;
   height: 100vh;
 }
+
+.bundle-flow {
+  --xy-controls-button-background-color: #18181b;
+  --xy-controls-button-background-color-hover: #27272a;
+  --xy-controls-button-color: #d6d3d1;
+  --xy-controls-button-color-hover: #fafaf9;
+  --xy-controls-button-border-color: rgba(120, 113, 108, 0.55);
+  --xy-controls-box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+}
+
+.bundle-flow .react-flow__controls {
+  border: 1px solid rgba(120, 113, 108, 0.4);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bundle-flow .react-flow__controls-button {
+  width: 28px;
+  height: 28px;
+}
+
+.bundle-flow .react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 14px;
+  max-height: 14px;
+}

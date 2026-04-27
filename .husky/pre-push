@@ -1,0 +1,7 @@
+npm run test:unit
+
+if ! command -v trufflehog &> /dev/null; then
+  echo "trufflehog not installed, skipping secret scan (brew install trufflehog to enable)"
+  exit 0
+fi
+trufflehog git --only-verified --since-commit origin/main file://.

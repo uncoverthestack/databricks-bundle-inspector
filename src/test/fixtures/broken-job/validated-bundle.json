@@ -1,0 +1,39 @@
+{
+  "bundle": {
+    "name": "broken-job"
+  },
+  "variables": {
+    "defined": {
+      "default": "present"
+    }
+  },
+  "resources": {
+    "jobs": {
+      "broken_job": {
+        "name": "Broken Job",
+        "tasks": [
+          {
+            "task_key": "missing_notebook",
+            "notebook_task": {
+              "notebook_path": "./src/missing.py"
+            }
+          },
+          {
+            "task_key": "unresolved_sql",
+            "sql_task": {
+              "file": {
+                "path": "./src/query.sql"
+              },
+              "warehouse_id": "${var.missing_warehouse}"
+            },
+            "libraries": [
+              {
+                "whl": "./dist/missing.whl"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

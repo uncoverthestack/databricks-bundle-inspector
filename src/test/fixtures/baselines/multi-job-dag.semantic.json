@@ -1,0 +1,123 @@
+{
+  "bundle": "multi-job-dag",
+  "jobs": [
+    {
+      "key": "cleanup_job",
+      "name": "Cleanup Job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "cleanup",
+          "type": "Python script",
+          "source": "./src/cleanup.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [
+            {
+              "path": "./src/cleanup.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "ingest_job",
+      "name": "Ingest Job",
+      "trigger": "Every 2 days",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "extract",
+          "type": "Notebook",
+          "source": "./src/extract.py",
+          "dependsOn": [],
+          "dependents": [
+            "transform"
+          ],
+          "compute": [],
+          "files": [
+            {
+              "path": "./src/extract.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "load",
+          "type": "SQL",
+          "source": "./src/load.sql",
+          "dependsOn": [
+            "transform"
+          ],
+          "dependents": [],
+          "compute": [
+            "warehouse-main"
+          ],
+          "files": [
+            {
+              "path": "./src/load.sql",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "transform",
+          "type": "Python script",
+          "source": "./src/transform.py",
+          "dependsOn": [
+            "extract"
+          ],
+          "dependents": [
+            "load"
+          ],
+          "compute": [],
+          "files": [
+            {
+              "path": "./src/transform.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "extract",
+          "transform"
+        ],
+        [
+          "transform",
+          "load"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

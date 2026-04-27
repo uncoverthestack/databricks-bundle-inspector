@@ -1,0 +1,20 @@
+{
+  "clis": [
+    {
+      "name": "default",
+      "command": "databricks"
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "secret-scope-example",
+      "fixture": "src/test/fixtures/secret-scope-example",
+      "baseline": "src/test/fixtures/baselines/secret-scope-example.semantic.json"
+    },
+    {
+      "name": "multi-job-dag",
+      "fixture": "src/test/fixtures/multi-job-dag",
+      "baseline": "src/test/fixtures/baselines/multi-job-dag.semantic.json"
+    }
+  ]
+}

@@ -2,8 +2,8 @@ import { describe, test, expect } from "@jest/globals";
 import {
   extractBundleGraph,
   extractResourceNodes,
-} from "../../../bundle/bundleGraph.js";
-import type { ParsedBundleConfig } from "../../../bundle/bundleGraph.js";
+} from "../../../bundle/graph/bundleGraph.js";
+import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 function createParsedBundle(): ParsedBundleConfig {
   return {
@@ -48,7 +48,7 @@ function createParsedBundle(): ParsedBundleConfig {
                 file: {
                   path: "queries/load.sql",
                 },
-                warehouse_id: "${var.warehouse_id}",
+                warehouse_id: "0123456789",
                 base_parameters: {
                   mode: "append",
                 },
@@ -83,8 +83,8 @@ describe("extractResourceNodes", () => {
 });
 
 describe("extractBundleGraph", () => {
-  test("creates job, task, resource, and dependency nodes", () => {
-    const graph = extractBundleGraph(createParsedBundle());
+  test("creates job, task, resource, and dependency nodes", async () => {
+    const graph = await extractBundleGraph(createParsedBundle());
 
     expect(graph.nodes).toHaveLength(4);
     expect(graph.edges).toHaveLength(3);
@@ -98,7 +98,7 @@ describe("extractBundleGraph", () => {
     expect(jobNode?.runAs).toBe("Service Principal / spn-demo");
     expect(jobNode?.compute).toEqual([
       { kind: "cluster", label: "etl-cluster" },
-      { kind: "sqlWarehouse", label: "warehouse_id" },
+      { kind: "sqlWarehouse", label: "0123456789" },
     ]);
 
     const extractTask = graph.nodes.find(
@@ -120,7 +120,7 @@ describe("extractBundleGraph", () => {
     expect(loadTask?.taskTypeLabel).toBe("SQL");
     expect(loadTask?.subtitle).toBe("queries/load.sql");
     expect(loadTask?.compute).toEqual([
-      { kind: "sqlWarehouse", label: "warehouse_id" },
+      { kind: "sqlWarehouse", label: "0123456789" },
     ]);
     expect(loadTask?.parameters).toEqual([
       { name: "env", value: "env" },
@@ -133,7 +133,7 @@ describe("extractBundleGraph", () => {
         (edge) =>
           edge.id ===
             "resources.jobs.ingest_job.tasks.extract->resources.jobs.ingest_job.tasks.load" &&
-          edge.relationship === "depends_on",
+          edge.kind === "depends_on",
       ),
     ).toBe(true);
 
@@ -145,8 +145,8 @@ describe("extractBundleGraph", () => {
     expect(resourceNode?.kind).toBe("pipeline");
   });
 
-  test("falls back to default compute and generated task keys", () => {
-    const graph = extractBundleGraph({
+  test("falls back to default compute and generated task keys", async () => {
+    const graph = await extractBundleGraph({
       bundle: {
         name: "demo-bundle",
       },

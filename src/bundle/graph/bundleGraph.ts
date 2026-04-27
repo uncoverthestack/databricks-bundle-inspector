@@ -1,0 +1,793 @@
+import { readFile, readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { parse as parseYaml } from "yaml";
+import { buildTaskNodeData, type TaskNodeData } from "../resources/task.js";
+import {
+  parseYamlLocations,
+  type YamlLocationMap,
+} from "../sourceLocations.js";
+import type { BundleEdge, EdgeKind } from "./edges.js";
+
+export type { BundleEdge, EdgeKind };
+
+export type VariableValue = unknown;
+
+export interface Variable {
+  type?: "complex";
+  default?: VariableValue;
+  description?: string;
+  value?: VariableValue;
+  lookup?: Record<string, unknown>;
+}
+
+export type Variables = Record<string, Variable>;
+
+export interface JobPermission {
+  [key: string]: unknown;
+}
+
+export interface JobTaskDependency {
+  task_key?: string;
+  [key: string]: unknown;
+}
+
+export interface JobTask {
+  task_key?: string;
+  depends_on?: JobTaskDependency[];
+  clean_rooms_notebook_task?: {
+    notebook_path?: string;
+  };
+  condition_task?: {
+    op?: string;
+    left?: string;
+    right?: string;
+  };
+  dashboard_task?: {
+    dashboard_id?: string;
+    warehouse_id?: string;
+  };
+  sql_alert_task?: {
+    alert_id?: string;
+    pause_subscriptions?: boolean;
+  };
+  dbt_task?: {
+    commands?: string[];
+    warehouse_id?: string;
+  };
+  dbt_platform_task?: {
+    commands?: string[];
+    warehouse_id?: string;
+  };
+  for_each_task?: {
+    inputs?: string;
+  };
+  spark_jar_task?: {
+    main_class_name?: string;
+  };
+  notebook_task?: {
+    notebook_path?: string;
+  };
+  pipeline_task?: {
+    pipeline_id?: string;
+  };
+  power_bi_task?: {
+    dashboard_id?: string;
+  };
+  sql_task?: {
+    file?: {
+      path?: string;
+    };
+    warehouse_id?: string;
+  };
+  spark_python_task?: {
+    python_file?: string;
+  };
+  python_wheel_task?: {
+    package_name?: string;
+    entry_point?: string;
+  };
+  run_job_task?: {
+    job_id?: string;
+  };
+  spark_submit_task?: {
+    parameters?: string[];
+  };
+  job_cluster_key?: string;
+  existing_cluster_id?: string;
+  [key: string]: unknown;
+}
+
+export interface Job {
+  name?: string;
+  id?: string;
+  url?: string;
+  tasks?: JobTask[];
+  permissions?: JobPermission[];
+  parameters?: Array<{ name?: string; default?: string }>;
+  trigger?: {
+    periodic?: {
+      interval?: number;
+      unit?: string;
+    };
+    pause_status?: string;
+    [key: string]: unknown;
+  };
+  run_as?: {
+    service_principal_name?: string;
+    user_name?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface Bundle {
+  name: string;
+  environment?: string;
+  uuid?: string;
+  mode?: string;
+  target?: string;
+}
+
+export interface Sync {
+  paths?: string[];
+  include?: string[];
+  exclude?: string[];
+}
+
+export interface Resources {
+  jobs?: Record<string, Job>;
+  pipelines?: Record<string, unknown>;
+  models?: Record<string, unknown>;
+  experiments?: Record<string, unknown>;
+  model_serving_endpoints?: Record<string, unknown>;
+  registered_models?: Record<string, unknown>;
+  quality_monitors?: Record<string, unknown>;
+  catalogs?: Record<string, unknown>;
+  schemas?: Record<string, unknown>;
+  volumes?: Record<string, unknown>;
+  external_locations?: Record<string, unknown>;
+  clusters?: Record<string, unknown>;
+  dashboards?: Record<string, unknown>;
+  apps?: Record<string, unknown>;
+  secret_scopes?: Record<string, unknown>;
+  alerts?: Record<string, unknown>;
+  sql_warehouses?: Record<string, unknown>;
+  database_instances?: Record<string, unknown>;
+  database_catalogs?: Record<string, unknown>;
+  synced_database_tables?: Record<string, unknown>;
+  postgres_projects?: Record<string, unknown>;
+  postgres_branches?: Record<string, unknown>;
+  postgres_endpoints?: Record<string, unknown>;
+}
+
+export interface ParsedBundleConfig {
+  bundle: Bundle;
+  sync?: Sync;
+  variables?: Variables;
+  resources?: Resources;
+  artifacts?: Record<string, unknown>;
+  include?: string[];
+  workspace?: Record<string, unknown>;
+}
+
+export interface ResourceNode {
+  id: string;
+  resourceGroup: string;
+  resourceKey: string;
+  displayName: string;
+  data: Record<string, unknown>;
+}
+
+export interface GraphParameter {
+  name: string;
+  value: string;
+}
+
+export interface GraphCompute {
+  kind: string;
+  label: string;
+}
+
+export type BundleNodeType =
+  | "job"
+  | "task"
+  | "resource"
+  | "variable"
+  | "file"
+  | "library"
+  | "cluster"
+  | "warehouse"
+  | "secret_scope"
+  | "widget";
+
+export interface BundleGraphNode {
+  id: string;
+  kind: string;
+  nodeType: BundleNodeType;
+  displayName: string;
+  location?: "local" | "workspace" | "dbfs";
+  taskTypeLabel?: string;
+  subtitle?: string;
+  status?: string;
+  trigger?: string;
+  runAs?: string;
+  taskCount?: number;
+  parameters?: GraphParameter[];
+  compute?: GraphCompute[];
+  resourceGroup?: string;
+  resourceKey?: string;
+  taskKey?: string;
+  parentId?: string;
+  hasMissingFile?: boolean;
+  data: Record<string, unknown>;
+  taskData?: TaskNodeData;
+}
+
+/** @deprecated use BundleEdge from edges.ts — kept for callers that destructure relationship */
+export interface BundleGraphEdge extends BundleEdge {}
+
+export interface BundleGraph {
+  nodes: BundleGraphNode[];
+  edges: BundleEdge[];
+}
+
+// --- helpers ---
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function getResourceDisplayName(
+  resourceKey: string,
+  resourceData: Record<string, unknown>,
+): string {
+  return typeof resourceData.name === "string" ? resourceData.name : resourceKey;
+}
+
+function normalizeReference(value: string): string {
+  const variableReference = value.match(/^\$\{var\.([^}]+)\}$/);
+  if (variableReference?.[1]) {
+    return variableReference[1];
+  }
+  return value;
+}
+
+function withOptionalSubtitle(
+  kind: string,
+  label: string,
+  subtitle?: string,
+): { kind: string; label: string; subtitle?: string } {
+  return { kind, label, ...(subtitle ? { subtitle } : {}) };
+}
+
+function detectTaskType(task: JobTask): {
+  kind: string;
+  label: string;
+  subtitle?: string;
+} {
+  if (task.clean_rooms_notebook_task) {
+    return withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task.notebook_path);
+  }
+  if (task.condition_task) {
+    return withOptionalSubtitle("job", "If/else", task.condition_task.op);
+  }
+  if (task.dashboard_task) {
+    return withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task.dashboard_id);
+  }
+  if (task.sql_alert_task) {
+    return withOptionalSubtitle("alert", "SQL Alert (Beta)", task.sql_alert_task.alert_id);
+  }
+  if (task.dbt_task) {
+    return withOptionalSubtitle("script", "dbt", task.dbt_task.commands?.join(" "));
+  }
+  if (task.dbt_platform_task) {
+    return withOptionalSubtitle("script", "dbt platform (Beta)", task.dbt_platform_task.commands?.join(" "));
+  }
+  if (task.for_each_task) {
+    return withOptionalSubtitle("job", "For each", task.for_each_task.inputs);
+  }
+  if (task.spark_jar_task) {
+    return withOptionalSubtitle("script", "JAR", task.spark_jar_task.main_class_name);
+  }
+  if (task.notebook_task) {
+    return withOptionalSubtitle("notebook", "Notebook", task.notebook_task.notebook_path);
+  }
+  if (task.pipeline_task) {
+    return withOptionalSubtitle(
+      "pipeline",
+      "Pipeline",
+      task.pipeline_task.pipeline_id ? normalizeReference(task.pipeline_task.pipeline_id) : undefined,
+    );
+  }
+  if (task.power_bi_task) {
+    return withOptionalSubtitle("dashboard", "Power BI", task.power_bi_task.dashboard_id);
+  }
+  if (task.spark_python_task) {
+    return withOptionalSubtitle("script", "Python script", task.spark_python_task.python_file);
+  }
+  if (task.python_wheel_task) {
+    return withOptionalSubtitle("script", "Python wheel", task.python_wheel_task.package_name);
+  }
+  if (task.run_job_task) {
+    return withOptionalSubtitle("job", "Run Job", task.run_job_task.job_id);
+  }
+  if (task.sql_task) {
+    return withOptionalSubtitle("sql", "SQL", task.sql_task.file?.path);
+  }
+  if (task.spark_submit_task) {
+    return withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task.parameters?.join(" "));
+  }
+  return { kind: "job", label: "Task", subtitle: "Other task settings" };
+}
+
+function formatTrigger(job: Job): string {
+  const periodic = job.trigger?.periodic;
+  if (!periodic?.interval || !periodic.unit) return "Not specified";
+  const unit = periodic.interval === 1 ? periodic.unit.slice(0, -1) : periodic.unit;
+  return `Every ${periodic.interval} ${unit.toLowerCase()}`;
+}
+
+function formatRunAs(job: Job): string {
+  if (job.run_as?.service_principal_name) {
+    return `Service Principal / ${job.run_as.service_principal_name}`;
+  }
+  if (job.run_as?.user_name) {
+    return `User / ${job.run_as.user_name}`;
+  }
+  return "Not specified";
+}
+
+function getParameterSummary(job: Job): GraphParameter[] {
+  return (job.parameters ?? [])
+    .filter((parameter) => typeof parameter.name === "string")
+    .slice(0, 3)
+    .map((parameter) => ({
+      name: parameter.name ?? "parameter",
+      value: typeof parameter.default === "string" ? normalizeReference(parameter.default) : "set",
+    }));
+}
+
+function stringifyParameterValue(value: unknown): string {
+  if (typeof value === "string") return normalizeReference(value);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
+  if (Array.isArray(value)) return value.map((item) => stringifyParameterValue(item)).join(", ");
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
+  return "set";
+}
+
+function getTaskPayload(task: JobTask): Record<string, unknown> | null {
+  const taskPayloadKeys = [
+    "clean_rooms_notebook_task",
+    "condition_task",
+    "dashboard_task",
+    "sql_alert_task",
+    "dbt_task",
+    "dbt_platform_task",
+    "for_each_task",
+    "spark_jar_task",
+    "notebook_task",
+    "pipeline_task",
+    "power_bi_task",
+    "sql_task",
+    "spark_python_task",
+    "python_wheel_task",
+    "run_job_task",
+    "spark_submit_task",
+  ] as const;
+
+  for (const taskPayloadKey of taskPayloadKeys) {
+    const taskPayload = task[taskPayloadKey];
+    if (typeof taskPayload === "object" && taskPayload !== null) {
+      return taskPayload as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] | undefined {
+  const mergedParameters = new Map<string, string>();
+
+  for (const parameter of job.parameters ?? []) {
+    if (typeof parameter.name !== "string") continue;
+    mergedParameters.set(parameter.name, stringifyParameterValue(parameter.default));
+  }
+
+  const taskPayload = getTaskPayload(task);
+  const taskBaseParameters =
+    taskPayload && typeof taskPayload.base_parameters === "object" && taskPayload.base_parameters !== null
+      ? (taskPayload.base_parameters as Record<string, unknown>)
+      : null;
+
+  if (taskBaseParameters) {
+    for (const [parameterName, parameterValue] of Object.entries(taskBaseParameters)) {
+      mergedParameters.set(parameterName, stringifyParameterValue(parameterValue));
+    }
+  }
+
+  if (mergedParameters.size === 0) return undefined;
+
+  return [...mergedParameters.entries()].map(([name, value]) => ({ name, value }));
+}
+
+/** Returns true for task types that require cluster compute and default to serverless when none is specified. */
+function requiresClusterCompute(task: JobTask): boolean {
+  return !!(
+    task.notebook_task ||
+    task.spark_python_task ||
+    task.spark_jar_task ||
+    task.spark_submit_task ||
+    task.python_wheel_task ||
+    task.dbt_task ||
+    task.dbt_platform_task ||
+    task.clean_rooms_notebook_task
+  );
+}
+
+function getTaskCompute(task: JobTask): GraphCompute[] {
+  const compute: GraphCompute[] = [];
+
+  if (task.sql_task?.warehouse_id) {
+    compute.push({ kind: "sqlWarehouse", label: normalizeReference(task.sql_task.warehouse_id) });
+  }
+  if (task.job_cluster_key) {
+    compute.push({ kind: "cluster", label: task.job_cluster_key });
+  }
+  if (task.existing_cluster_id) {
+    compute.push({ kind: "cluster", label: task.existing_cluster_id });
+  }
+
+  return compute;
+}
+
+function getJobComputeSummary(tasks: JobTask[]): GraphCompute[] {
+  const computeMap = new Map<string, GraphCompute>();
+  tasks.forEach((task) => {
+    getTaskCompute(task).forEach((item) => {
+      computeMap.set(`${item.kind}:${item.label}`, item);
+    });
+  });
+
+  if (computeMap.size === 0) {
+    return [{ kind: "cluster", label: "Serverless / inherited compute" }];
+  }
+
+  return [...computeMap.values()];
+}
+
+function fileLocation(rawPath: string, resolvedPath: string | undefined): "local" | "workspace" | "dbfs" {
+  if (resolvedPath) return "local";
+  if (rawPath.startsWith("/Workspace/")) return "workspace";
+  return "dbfs";
+}
+
+function fileDisplayName(rawPath: string): string {
+  return rawPath.split("/").pop() ?? rawPath;
+}
+
+/** Adds reference, uses, and compute nodes+edges for a single task. */
+function addTaskReferenceGraph(
+  taskId: string,
+  taskData: TaskNodeData,
+  task: JobTask,
+  addNode: (node: BundleGraphNode) => void,
+  addEdge: (edge: BundleEdge) => void,
+): void {
+  for (const ref of taskData.fileReferences) {
+    const nodeId = `file:${ref.resolvedPath ?? ref.path}`;
+    addNode({
+      id: nodeId,
+      kind: "file",
+      nodeType: "file",
+      displayName: fileDisplayName(ref.path),
+      location: fileLocation(ref.path, ref.resolvedPath),
+      data: { path: ref.path, resolvedPath: ref.resolvedPath, exists: ref.exists, referenceType: ref.referenceType },
+    });
+    addEdge({ id: `${taskId}->references->${nodeId}`, source: taskId, target: nodeId, kind: "references" });
+  }
+
+  for (const ref of taskData.variableReferences) {
+    const nodeId = `var:${ref.variableName}`;
+    addNode({ id: nodeId, kind: "variable", nodeType: "variable", displayName: ref.variableName, data: {} });
+    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+  }
+
+  for (const ref of taskData.libraryReferences) {
+    const nodeId = `lib:${ref.libraryType}:${ref.resolvedPath ?? ref.identifier}`;
+    addNode({
+      id: nodeId,
+      kind: "library",
+      nodeType: "library",
+      displayName: ref.identifier,
+      ...(ref.isLocal ? { location: "local" as const } : {}),
+      data: { libraryType: ref.libraryType, identifier: ref.identifier, isLocal: ref.isLocal, exists: ref.exists },
+    });
+    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+  }
+
+  for (const ref of taskData.resourceReferences) {
+    const targetId = `resources.${ref.resourceType}.${ref.resourceName}`;
+    addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
+  }
+
+  const computeItems = getTaskCompute(task);
+  for (const item of computeItems) {
+    if (item.kind === "cluster") {
+      const nodeId = `cluster:${item.label}`;
+      addNode({ id: nodeId, kind: "cluster", nodeType: "cluster", displayName: item.label, data: {} });
+      addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+    } else if (item.kind === "sqlWarehouse") {
+      const nodeId = `warehouse:${item.label}`;
+      addNode({ id: nodeId, kind: "warehouse", nodeType: "warehouse", displayName: item.label, data: {} });
+      addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+    }
+  }
+
+  if (computeItems.length === 0 && requiresClusterCompute(task)) {
+    const nodeId = `cluster:serverless`;
+    addNode({ id: nodeId, kind: "cluster", nodeType: "cluster", displayName: "Serverless", data: { serverless: true } });
+    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+  }
+
+  if (task.run_job_task?.job_id) {
+    const jobIdRef = task.run_job_task.job_id;
+    const resourceMatch = jobIdRef.match(/^\$\{resources\.jobs\.([^.}]+)\.id\}$/);
+    const targetId = resourceMatch ? `resources.jobs.${resourceMatch[1]}` : `external-job:${jobIdRef}`;
+    addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
+  }
+}
+
+/**
+ * Parses each resource YAML file matched by the bundle's include patterns and
+ * returns a map from "resourceGroup.resourceKey" to the absolute path of the
+ * file that defines it.  This lets callers resolve file references relative to
+ * the correct source file rather than the bundle root.
+ */
+interface SourceIndex {
+  resourceSourceMap: Map<string, string>;
+  yamlLocationMaps: Map<string, YamlLocationMap>;
+}
+
+async function buildSourceIndex(
+  bundleRoot: string,
+  includePatterns: string[],
+): Promise<SourceIndex> {
+  const resourceSourceMap = new Map<string, string>();
+  const yamlLocationMaps = new Map<string, YamlLocationMap>();
+
+  async function parseResourceFile(filePath: string): Promise<void> {
+    try {
+      const content = await readFile(filePath, "utf-8");
+      yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content));
+      const yaml = parseYaml(content) as Record<string, unknown> | null;
+      const resources = (yaml?.resources ?? {}) as Record<string, Record<string, unknown>>;
+      for (const [resourceGroup, resourceMap] of Object.entries(resources)) {
+        for (const resourceKey of Object.keys(resourceMap ?? {})) {
+          const key = `${resourceGroup}.${resourceKey}`;
+          if (!resourceSourceMap.has(key)) resourceSourceMap.set(key, filePath);
+        }
+      }
+    } catch {
+      // ignore unreadable / non-YAML files
+    }
+  }
+
+  for (const pattern of includePatterns) {
+    const parts = pattern.split("/");
+    const [dir0, glob] = parts;
+    if (parts.length === 2 && glob !== undefined && glob.startsWith("*.") && dir0 !== undefined) {
+      const ext = glob.slice(1);
+      const dir = join(bundleRoot, dir0);
+      try {
+        const entries = await readdir(dir);
+        for (const entry of entries) {
+          if (entry.endsWith(ext)) await parseResourceFile(join(dir, entry));
+        }
+      } catch { /* directory missing */ }
+    } else {
+      await parseResourceFile(join(bundleRoot, pattern));
+    }
+  }
+
+  // Also scan the bundle root databricks.yml / databricks.yaml
+  for (const name of ["databricks.yml", "databricks.yaml"]) {
+    const p = join(bundleRoot, name);
+    await parseResourceFile(p);
+  }
+
+  return { resourceSourceMap, yamlLocationMaps };
+}
+
+/**
+ * Flattens all resource entries from a parsed bundle config into a uniform list.
+ */
+export function extractResourceNodes(parsedBundle: ParsedBundleConfig): ResourceNode[] {
+  const nodes: ResourceNode[] = [];
+
+  for (const [resourceGroup, resourceMap] of Object.entries(parsedBundle.resources ?? {})) {
+    const typedResourceMap = (resourceMap ?? {}) as Record<string, unknown>;
+    for (const [resourceKey, resourceValue] of Object.entries(typedResourceMap)) {
+      const resourceData = toRecord(resourceValue);
+      nodes.push({
+        id: `resources.${resourceGroup}.${resourceKey}`,
+        resourceGroup,
+        resourceKey,
+        displayName: getResourceDisplayName(resourceKey, resourceData),
+        data: resourceData,
+      });
+    }
+  }
+
+  return nodes;
+}
+
+/**
+ * Builds a graph of nodes and edges from a parsed bundle config.
+ *
+ * Without `bundleRoot`, the graph contains job, task, and resource nodes connected
+ * by `contains` and `depends_on` edges — the structural skeleton.
+ *
+ * With `bundleRoot`, the graph is enriched with `file`, `variable`, `library`,
+ * `cluster`, and `warehouse` nodes plus `references` and `uses` edges derived
+ * from each task's local path and expression analysis.
+ */
+export async function extractBundleGraph(
+  parsedBundle: ParsedBundleConfig,
+  bundleRoot?: string,
+): Promise<BundleGraph> {
+  const nodeMap = new Map<string, BundleGraphNode>();
+  const edgeIds = new Set<string>();
+  const edges: BundleEdge[] = [];
+
+  function addNode(node: BundleGraphNode): void {
+    if (!nodeMap.has(node.id)) nodeMap.set(node.id, node);
+  }
+
+  function addEdge(edge: BundleEdge): void {
+    if (!edgeIds.has(edge.id)) {
+      edgeIds.add(edge.id);
+      edges.push(edge);
+    }
+  }
+
+  const resourceNodes = extractResourceNodes(parsedBundle);
+
+  const sourceIndex = bundleRoot
+    ? await buildSourceIndex(
+        bundleRoot,
+        (parsedBundle.include ?? []).filter((p): p is string => typeof p === "string"),
+      )
+    : { resourceSourceMap: new Map<string, string>(), yamlLocationMaps: new Map<string, YamlLocationMap>() };
+  const { resourceSourceMap, yamlLocationMaps } = sourceIndex;
+
+  // Variable nodes from bundle definition (always, when bundleRoot provided)
+  if (bundleRoot) {
+    for (const [varName, varDef] of Object.entries(parsedBundle.variables ?? {})) {
+      const varId = `var:${varName}`;
+      addNode({ id: varId, kind: "variable", nodeType: "variable", displayName: varName, data: toRecord(varDef) });
+
+      const lookup = toRecord(varDef).lookup as Record<string, unknown> | undefined;
+      if (lookup) {
+        for (const [resourceType, resourceName] of Object.entries(lookup)) {
+          if (typeof resourceName === "string") {
+            const targetId = `resources.${resourceType}s.${resourceName}`;
+            addEdge({ id: `${varId}->lookup->${targetId}`, source: varId, target: targetId, kind: "lookup" });
+          }
+        }
+      }
+    }
+  }
+
+  resourceNodes.forEach((resourceNode) => {
+    const isJobGroup = resourceNode.resourceGroup === "jobs" || resourceNode.resourceGroup === "job";
+    if (!isJobGroup) {
+      addNode({
+        id: resourceNode.id,
+        kind: resourceNode.resourceGroup.replace(/s$/, ""),
+        nodeType: "resource",
+        displayName: resourceNode.displayName,
+        resourceGroup: resourceNode.resourceGroup,
+        resourceKey: resourceNode.resourceKey,
+        data: resourceNode.data,
+      });
+      return;
+    }
+
+    const job = resourceNode.data as Job;
+    const tasks = Array.isArray(job.tasks) ? job.tasks : [];
+    const jobId = resourceNode.id;
+
+    addNode({
+      id: jobId,
+      kind: "job",
+      nodeType: "job",
+      displayName: resourceNode.displayName,
+      trigger: formatTrigger(job),
+      runAs: formatRunAs(job),
+      taskCount: tasks.length,
+      parameters: getParameterSummary(job),
+      compute: getJobComputeSummary(tasks),
+      resourceGroup: resourceNode.resourceGroup,
+      resourceKey: resourceNode.resourceKey,
+      data: resourceNode.data,
+    });
+
+    tasks.forEach((task, taskIndex) => {
+      const taskKey = task.task_key ?? `task-${taskIndex + 1}`;
+      const taskId = `${jobId}.tasks.${taskKey}`;
+      const taskCompute = getTaskCompute(task);
+      const taskType = detectTaskType(task);
+      const taskParameters = getEffectiveTaskParameters(job, task);
+      const sourceFilePath = resourceSourceMap.get(
+        `${resourceNode.resourceGroup}.${resourceNode.resourceKey}`,
+      ) ?? "";
+      const sourceFileDir = sourceFilePath ? dirname(sourceFilePath) : "";
+      const taskYamlPrefix = `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.tasks[${taskIndex}]`;
+      const sourceLocations = sourceFilePath
+        ? yamlLocationMaps.get(sourceFilePath)
+        : undefined;
+      const resolveSourceLocation = (yamlPath: string) => {
+        const taskPrefix = `tasks.${taskKey}`;
+        if (!yamlPath.startsWith(taskPrefix)) return undefined;
+        const suffix = yamlPath.slice(taskPrefix.length);
+        return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
+      };
+      const taskData = bundleRoot
+        ? buildTaskNodeData(
+            toRecord(task),
+            resourceNode.data,
+            jobId,
+            taskKey,
+            bundleRoot,
+            sourceFilePath,
+            sourceFileDir,
+            resolveSourceLocation,
+          )
+        : undefined;
+
+      const hasMissingFile = taskData?.fileReferences.some(
+        (ref) => ref.resolvedPath !== undefined && !ref.exists,
+      ) ?? false;
+
+      addNode({
+        id: taskId,
+        kind: taskType.kind,
+        nodeType: "task",
+        displayName: taskKey,
+        taskTypeLabel: taskType.label,
+        status: "READY",
+        compute: taskCompute,
+        ...(taskParameters ? { parameters: taskParameters } : {}),
+        taskKey,
+        parentId: jobId,
+        resourceGroup: resourceNode.resourceGroup,
+        resourceKey: resourceNode.resourceKey,
+        ...(hasMissingFile ? { hasMissingFile: true } : {}),
+        data: toRecord(task),
+        ...(taskType.subtitle ? { subtitle: taskType.subtitle } : {}),
+        ...(taskData ? { taskData } : {}),
+      });
+
+      addEdge({ id: `${jobId}->${taskId}`, source: jobId, target: taskId, kind: "contains" });
+
+      const dependencies = Array.isArray(task.depends_on) ? task.depends_on : [];
+      dependencies.forEach((dependency) => {
+        if (!dependency.task_key) return;
+        addEdge({
+          id: `${jobId}.tasks.${dependency.task_key}->${taskId}`,
+          source: `${jobId}.tasks.${dependency.task_key}`,
+          target: taskId,
+          kind: "depends_on",
+        });
+      });
+
+      if (bundleRoot && taskData) {
+        addTaskReferenceGraph(taskId, taskData, task, addNode, addEdge);
+      }
+    });
+  });
+
+  return { nodes: [...nodeMap.values()], edges };
+}

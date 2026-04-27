@@ -1,6 +1,6 @@
 import { describe, test, expect } from "@jest/globals";
 import { validateBundleWithDependencies } from "../../../bundle/validateBundle.js";
-import type { ParsedBundleConfig } from "../../../bundle/bundleGraph.js";
+import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 function createBundle(): ParsedBundleConfig {
   return {
@@ -17,7 +17,6 @@ function createBundle(): ParsedBundleConfig {
     },
   };
 }
-
 describe("validateBundleWithDependencies", () => {
   test("returns CLI_NOT_FOUND when no CLI is resolved", async () => {
     const result = await validateBundleWithDependencies(
@@ -45,10 +44,11 @@ describe("validateBundleWithDependencies", () => {
       cwd: string;
       timeout: number;
     }> = [];
+    const probeTarget = `__bundle_inspector_probe__`;
 
     const result = await validateBundleWithDependencies(
       "/workspace/demo",
-      "dev",
+      probeTarget,
       {
         execFileAsync: async (file, args, options) => {
           calls.push({
@@ -78,21 +78,28 @@ describe("validateBundleWithDependencies", () => {
     expect(calls).toEqual([
       {
         file: "databricks",
-        args: ["bundle", "validate", "--output", "json", "--target", "dev"],
+        args: [
+          "bundle",
+          "validate",
+          "--output",
+          "json",
+          "--target",
+          probeTarget,
+        ],
         cwd: "/workspace/demo",
         timeout: 30_000,
       },
     ]);
   });
 
-  test("surfaces stderr as a validation warning on success", async () => {
+  test("surfaces stderr diagnostics as BUNDLE_DIAGNOSTICS on success", async () => {
     const result = await validateBundleWithDependencies(
       "/workspace/demo",
       undefined,
       {
         execFileAsync: async () => ({
           stdout: JSON.stringify(createBundle()),
-          stderr: "warning: something non-fatal happened",
+          stderr: "Warning: unknown field: includ\n  in databricks.yml:4:1",
         }),
         resolveDatabricksCli: async () => ({
           ok: true,
@@ -105,7 +112,14 @@ describe("validateBundleWithDependencies", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.issues?.[0]?.code).toBe("VALIDATION_WARNING");
+    expect(result.issues?.[0]?.code).toBe("BUNDLE_DIAGNOSTICS");
+    expect(result.issues?.[0]?.diagnostics?.[0]).toMatchObject({
+      severity: "warning",
+      message: "unknown field: includ",
+      path: "databricks.yml",
+      line: 4,
+      column: 1,
+    });
   });
 
   test("tolerates auth errors when stdout contains valid JSON", async () => {

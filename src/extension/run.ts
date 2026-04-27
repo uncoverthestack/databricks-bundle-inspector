@@ -18,7 +18,7 @@ async function main() {
   const result = await validateBundle(bundleDir, target);
 
   if (result.ok) {
-    console.log(JSON.stringify(extractBundleGraph(result.data), null, 2));
+    console.log(JSON.stringify(await extractBundleGraph(result.data), null, 2));
   } else {
     console.error(JSON.stringify(result.error, null, 2));
     process.exit(1);

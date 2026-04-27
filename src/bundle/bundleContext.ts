@@ -20,10 +20,13 @@ export function isBundleFile(fileName: string): boolean {
 }
 
 /**
- * Gets the Full directory name of the Databricks bundle
+ * Returns the directory that contains the Databricks bundle configuration file
+ * currently open in the given editor.
  *
- * @param editor
- * @returns the full Directory name of the current file in the editor
+ * @param editor The active VS Code text editor, if any.
+ * @returns The absolute path of the bundle root directory, or `undefined` if
+ *   the editor has no active file or the file is not a Databricks bundle
+ *   configuration file.
  */
 export function getBundleDirFromEditor(
   editor?: EditorWithFileName,
