@@ -1,0 +1,17 @@
+{
+  "name": "Databricks Bundle Inspector",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "databricksBundleInspector.cliPath": "/usr/local/bin/databricks"
+      }
+    }
+  },
+  "postCreateCommand": "npm ci"
+}

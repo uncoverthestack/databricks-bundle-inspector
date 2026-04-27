@@ -20,10 +20,10 @@ resources:
           sql_task:
             file:
               path: ../src/query_file.sql
-            warehouse_id: 0123456789
+            warehouse_id: "0123456789"
 
         - task_key: query_file_sql_no_extension
           sql_task:
             file:
               path: ../src/query_file_sql_no_extension
-            warehouse_id: 0123456789
+            warehouse_id: "0123456789"

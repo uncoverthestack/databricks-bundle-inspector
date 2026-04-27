@@ -1,0 +1,85 @@
+{
+  "bundle": "broken-job",
+  "jobs": [
+    {
+      "key": "broken_job",
+      "name": "Broken Job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "missing_notebook",
+          "type": "Notebook",
+          "source": "./src/missing.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [
+            {
+              "path": "./src/missing.py",
+              "status": "missing"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "unresolved_sql",
+          "type": "SQL",
+          "source": "./src/query.sql",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "missing_warehouse"
+          ],
+          "files": [
+            {
+              "path": "./src/query.sql",
+              "status": "found"
+            }
+          ],
+          "variables": [
+            "missing_warehouse"
+          ],
+          "libraries": [
+            "./dist/missing.whl"
+          ]
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 3,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "missing_file",
+      "title": "Missing local file reference",
+      "detail": "./src/missing.py",
+      "taskKey": "missing_notebook"
+    },
+    {
+      "severity": "error",
+      "kind": "missing_library",
+      "title": "Missing local library",
+      "detail": "./dist/missing.whl",
+      "taskKey": "unresolved_sql"
+    },
+    {
+      "severity": "error",
+      "kind": "unresolved_variable",
+      "title": "Unresolved variable",
+      "detail": "missing_warehouse",
+      "taskKey": "unresolved_sql"
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

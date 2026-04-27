@@ -12,6 +12,9 @@ dist
 dist-ssr
 out
 *.local
+.test-artifacts
+.tools
+semantic-cli-matrix.local.json
 
 # Editor directories and files
 .vscode/*

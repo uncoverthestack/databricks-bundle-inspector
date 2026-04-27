@@ -58,6 +58,16 @@
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
     ],
+    "configuration": {
+      "title": "Databricks Bundle Inspector",
+      "properties": {
+        "databricksBundleInspector.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the Databricks CLI executable. When empty, the extension uses databricks from PATH."
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
@@ -93,10 +103,17 @@
     "watch:tsc": "tsc --noEmit --watch",
     "watch-tests": "tsc -p . --outDir out --watch",
     "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
     "compile": "npm run build:ext",
-    "test": "npm run test:unit",
-    "test:unit": "jest",
+    "test": "npm run test:unit && npm run test:semantic",
+    "test:unit": "jest --testPathIgnorePatterns semanticGraph.test.ts",
+    "test:semantic": "jest src/test/unit/extension/semanticGraph.test.ts",
+    "test:semantic:cli": "jest --config jest.semantic-cli.config.cjs",
+    "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
+    "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
+    "cli:install-matrix": "node scripts/install-databricks-cli-matrix.mjs",
+    "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

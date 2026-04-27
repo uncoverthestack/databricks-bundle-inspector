@@ -1,0 +1,34 @@
+bundle:
+  name: multi-job-dag
+
+resources:
+  jobs:
+    ingest_job:
+      name: Ingest Job
+      trigger:
+        periodic:
+          interval: 2
+          unit: DAYS
+      tasks:
+        - task_key: extract
+          notebook_task:
+            notebook_path: ./src/extract.py
+        - task_key: transform
+          depends_on:
+            - task_key: extract
+          spark_python_task:
+            python_file: ./src/transform.py
+        - task_key: load
+          depends_on:
+            - task_key: transform
+          sql_task:
+            file:
+              path: ./src/load.sql
+            warehouse_id: warehouse-main
+
+    cleanup_job:
+      name: Cleanup Job
+      tasks:
+        - task_key: cleanup
+          spark_python_task:
+            python_file: ./src/cleanup.py

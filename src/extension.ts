@@ -22,6 +22,7 @@ import {
   documentationFileName,
   renderJobDocumentationMarkdown,
 } from "./bundle/jobDocumentation.js";
+import { decideDocumentationGeneration } from "./bundle/documentationPolicy.js";
 import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
@@ -617,12 +618,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           inspectorIssues,
         );
 
-        const blockingIssues = doc.issues.filter(
-          (issue) => issue.severity === "error",
-        );
-        if (blockingIssues.length > 0) {
+        const generationDecision = decideDocumentationGeneration(doc.issues);
+        if (generationDecision.action === "block") {
           const choice = await vscode.window.showErrorMessage(
-            `Job documentation was not generated because "${selectedJob.jobKey}" has error-level inspector issues${issueSummary(blockingIssues)}`,
+            `Job documentation was not generated because "${selectedJob.jobKey}" has error-level inspector issues${issueSummary(generationDecision.blockingIssues)}`,
             "Open Issues",
           );
           if (choice === "Open Issues") {
@@ -631,12 +630,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           return;
         }
 
-        const warningIssues = doc.issues.filter(
-          (issue) => issue.severity === "warning",
-        );
-        if (warningIssues.length > 0) {
+        if (generationDecision.action === "warn") {
           const choice = await vscode.window.showWarningMessage(
-            `This job has warning-level inspector issues${issueSummary(warningIssues)} Generate documentation anyway?`,
+            `This job has warning-level inspector issues${issueSummary(generationDecision.warningIssues)} Generate documentation anyway?`,
             "Generate Anyway",
             "Open Issues",
           );
