@@ -52,6 +52,7 @@ describe("buildInspectorIssues", () => {
               path: "../src/missing.py",
               resolvedPath: "/workspace/demo/src/missing.py",
               exists: false,
+              source: undefined,
               isInGitignore: false,
               referenceType: "notebook",
               sourceFile: "/workspace/demo/resources/job.yml",
@@ -77,6 +78,50 @@ describe("buildInspectorIssues", () => {
         file: "/workspace/demo/resources/job.yml",
         line: 12,
         column: 7,
+      },
+    ]);
+  });
+
+  test("warns when task file references use Git source", () => {
+    const graph: BundleGraph = {
+      nodes: [
+        taskNode({
+          fileReferences: [
+            {
+              path: "ingest/highlights",
+              resolvedPath: "/workspace/demo/ingest/highlights.py",
+              exists: true,
+              source: "GIT",
+              isInGitignore: false,
+              referenceType: "notebook",
+              sourceFile: "/workspace/demo/resources/job.yml",
+              sourceLine: 14,
+              sourceColumn: 11,
+              yamlPath: "resources.jobs.ingest.tasks.extract.notebook_task.notebook_path",
+            },
+          ],
+        }),
+      ],
+      edges: [],
+    };
+
+    expect(
+      buildInspectorIssues(
+        graph,
+        { bundle: { name: "demo" } },
+        [],
+        "/workspace/demo",
+      ),
+    ).toMatchObject([
+      {
+        severity: "warning",
+        kind: "git_source_not_recommended",
+        title: "Git-sourced task path is not recommended for bundles",
+        detail: "ingest/highlights",
+        taskName: "extract",
+        file: "/workspace/demo/resources/job.yml",
+        line: 14,
+        column: 11,
       },
     ]);
   });

@@ -5,7 +5,10 @@ import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
 import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
-import { parseBundleDiagnostics } from "./parseBundleDiagnostics.js";
+import {
+  parseAvailableTargets,
+  parseBundleDiagnostics,
+} from "./parseBundleDiagnostics.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -58,11 +61,13 @@ export type BundleResult =
       ok: true;
       data: ParsedBundleConfig;
       issues?: ValidationIssue[];
+      targetOptions?: string[];
     }
   | {
       ok: false;
       error: BundleError;
       data?: ParsedBundleConfig;
+      targetOptions?: string[];
     };
 
 // Fix #5: Runtime schema validation with Zod.
@@ -81,6 +86,7 @@ const ParsedBundleConfigSchema = z
       .record(z.string(), z.record(z.string(), z.unknown()))
       .optional(),
     variables: z.record(z.string(), z.unknown()).optional(),
+    targets: z.record(z.string(), z.unknown()).optional(),
     sync: z.unknown().optional(),
     artifacts: z.unknown().optional(),
     include: z.array(z.string()).optional(),
@@ -246,6 +252,7 @@ export async function validateBundleWithDependencies(
       stderr ?? "",
       target ?? BUNDLE_PROBE_TARGET,
     );
+    const targetOptions = parseAvailableTargets(stderr ?? "");
     const issues =
       diagnostics.length > 0
         ? [
@@ -257,9 +264,12 @@ export async function validateBundleWithDependencies(
           ]
         : undefined;
 
-    return issues
-      ? { ok: true, data: parsed.data, issues }
-      : { ok: true, data: parsed.data };
+    return {
+      ok: true,
+      data: parsed.data,
+      ...(issues ? { issues } : {}),
+      ...(targetOptions.length > 0 ? { targetOptions } : {}),
+    };
   } catch (error: unknown) {
     const stdout = extractStdout(error);
     const stderr = extractStderr(error);
@@ -306,7 +316,11 @@ export async function validateBundleWithDependencies(
           const diagnostics = parseBundleDiagnostics(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
-          );
+          ).map((diagnostic) => ({
+            ...diagnostic,
+            severity: "warning" as const,
+          }));
+          const targetOptions = parseAvailableTargets(stderr ?? "");
           return {
             ok: true,
             data: parsed.data,
@@ -318,6 +332,7 @@ export async function validateBundleWithDependencies(
                 diagnostics,
               },
             ],
+            ...(targetOptions.length > 0 ? { targetOptions } : {}),
           };
         }
       } catch {
@@ -334,6 +349,7 @@ export async function validateBundleWithDependencies(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
           );
+          const targetOptions = parseAvailableTargets(stderr ?? "");
           const issues =
             diagnostics.length > 0
               ? [
@@ -351,7 +367,12 @@ export async function validateBundleWithDependencies(
                     details: stderr?.trim() || getErrorMessage(error),
                   },
                 ];
-          return { ok: true, data: parsed.data, issues };
+          return {
+            ok: true,
+            data: parsed.data,
+            issues,
+            ...(targetOptions.length > 0 ? { targetOptions } : {}),
+          };
         }
       } catch {
         // stdout is not valid JSON, fall through to error
@@ -360,6 +381,7 @@ export async function validateBundleWithDependencies(
 
     const probeTarget = target ?? BUNDLE_PROBE_TARGET;
     const diagnostics = parseBundleDiagnostics(stderr ?? "", probeTarget);
+    const targetOptions = parseAvailableTargets(stderr ?? "");
     const filteredStderr = (stderr ?? "")
       .split("\n")
       .filter((line) => !line.includes(`${probeTarget}: no such target`))
@@ -381,6 +403,10 @@ export async function validateBundleWithDependencies(
           : filteredStderr || getErrorMessage(error),
     };
     if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
-    return { ok: false, error: bundleError };
+    return {
+      ok: false,
+      error: bundleError,
+      ...(targetOptions.length > 0 ? { targetOptions } : {}),
+    };
   }
 }

@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 out
+*.vsix
 *.local
 .test-artifacts
 .tools
@@ -28,9 +29,8 @@ semantic-cli-matrix.local.json
 *.sw?
 *.vscode-test
 *sample-data
-Steps.md
-checks.md
-code-review.md
 
 # environment variables
 .env
+.claude/*.local.json
+repo-audit

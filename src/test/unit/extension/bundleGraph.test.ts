@@ -123,7 +123,7 @@ describe("extractBundleGraph", () => {
       { kind: "sqlWarehouse", label: "0123456789" },
     ]);
     expect(loadTask?.parameters).toEqual([
-      { name: "env", value: "env" },
+      { name: "env", value: "env", expression: "${var.env}" },
       { name: "limit", value: "25" },
       { name: "mode", value: "append" },
     ]);
@@ -179,5 +179,279 @@ describe("extractBundleGraph", () => {
     expect(generatedTask).toBeDefined();
     expect(generatedTask?.displayName).toBe("task-1");
     expect(generatedTask?.taskTypeLabel).toBe("Python script");
+  });
+
+  test("attaches job cluster details to job_cluster_key compute", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      variables: {
+        node_type_id: { default: "Standard_DS3_v2" },
+      },
+      resources: {
+        jobs: {
+          validation_job: {
+            job_clusters: [
+              {
+                job_cluster_key: "job_cluster",
+                new_cluster: {
+                  spark_version: "15.4.x-scala2.12",
+                  node_type_id: "${var.node_type_id}",
+                  data_security_mode: "USER_ISOLATION",
+                  autoscale: {
+                    min_workers: 1,
+                    max_workers: 2,
+                  },
+                },
+              },
+            ],
+            tasks: [
+              {
+                task_key: "validate",
+                job_cluster_key: "job_cluster",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.validate",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "cluster",
+        label: "job_cluster",
+        details: [
+          { label: "Spark", value: "15.4.x-scala2.12" },
+          {
+            label: "Node type",
+            value: "node_type_id",
+            expression: "${var.node_type_id}",
+          },
+          { label: "Autoscale", value: "1 - 2 workers" },
+          { label: "Security", value: "USER_ISOLATION" },
+        ],
+      },
+    ]);
+  });
+
+  test("attaches top-level cluster resource details to existing_cluster_id references", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        clusters: {
+          shared_cluster: {
+            spark_version: "15.4.x-scala2.12",
+            node_type_id: "i3.xlarge",
+            num_workers: 2,
+            data_security_mode: "SINGLE_USER",
+          },
+        },
+        jobs: {
+          validation_job: {
+            tasks: [
+              {
+                task_key: "validate",
+                existing_cluster_id: "${resources.clusters.shared_cluster.id}",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.validate",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "cluster",
+        label: "shared_cluster",
+        expression: "${resources.clusters.shared_cluster.id}",
+        details: [
+          { label: "Spark", value: "15.4.x-scala2.12" },
+          { label: "Node type", value: "i3.xlarge" },
+          { label: "Workers", value: "2" },
+          { label: "Security", value: "SINGLE_USER" },
+        ],
+      },
+    ]);
+  });
+
+  test("attaches pipeline resource details to pipeline tasks", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        pipelines: {
+          bronze_pipeline: {
+            name: "Bronze Pipeline",
+            catalog: "main",
+            schema: "bronze",
+            channel: "CURRENT",
+            edition: "CORE",
+            photon: true,
+            clusters: [
+              {
+                label: "default",
+                node_type_id: "i3.xlarge",
+                autoscale: {
+                  min_workers: 1,
+                  max_workers: 3,
+                },
+              },
+            ],
+          },
+        },
+        jobs: {
+          validation_job: {
+            tasks: [
+              {
+                task_key: "run_pipeline",
+                pipeline_task: {
+                  pipeline_id: "${resources.pipelines.bronze_pipeline.id}",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.run_pipeline",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "pipeline",
+        label: "bronze_pipeline",
+        expression: "${resources.pipelines.bronze_pipeline.id}",
+        details: [
+          { label: "Name", value: "Bronze Pipeline" },
+          { label: "Catalog", value: "main" },
+          { label: "Schema", value: "bronze" },
+          { label: "Channel", value: "CURRENT" },
+          { label: "Edition", value: "CORE" },
+          { label: "Photon", value: "true" },
+          { label: "Cluster", value: "default" },
+          { label: "Node type", value: "i3.xlarge" },
+          { label: "Autoscale", value: "1 - 3 workers" },
+        ],
+      },
+    ]);
+  });
+
+  test("infers compute by Databricks task type", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          compute_job: {
+            tasks: [
+              {
+                task_key: "if_else",
+                condition_task: {
+                  op: "EQUAL_TO",
+                  left: "a",
+                  right: "b",
+                },
+              },
+              {
+                task_key: "pipeline",
+                pipeline_task: {
+                  pipeline_id: "pipeline-id",
+                },
+              },
+              {
+                task_key: "dashboard",
+                dashboard_task: {
+                  dashboard_id: "dashboard-id",
+                  warehouse_id: "dashboard-warehouse",
+                },
+              },
+              {
+                task_key: "dbt",
+                dbt_task: {
+                  commands: ["dbt run"],
+                  warehouse_id: "dbt-warehouse",
+                },
+              },
+              {
+                task_key: "sql_default",
+                sql_task: {
+                  file: {
+                    path: "query.sql",
+                  },
+                },
+              },
+              {
+                task_key: "jar",
+                spark_jar_task: {
+                  main_class_name: "com.acme.Main",
+                },
+              },
+              {
+                task_key: "wheel",
+                python_wheel_task: {
+                  package_name: "demo",
+                },
+              },
+              {
+                task_key: "notebook",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    function taskCompute(taskKey: string) {
+      return graph.nodes.find(
+        (node) => node.id === `resources.jobs.compute_job.tasks.${taskKey}`,
+      )?.compute;
+    }
+
+    expect(taskCompute("if_else")).toEqual([]);
+    expect(taskCompute("pipeline")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("dashboard")).toEqual([
+      { kind: "sqlWarehouse", label: "dashboard-warehouse" },
+    ]);
+    expect(taskCompute("dbt")).toEqual([
+      { kind: "sqlWarehouse", label: "dbt-warehouse" },
+    ]);
+    expect(taskCompute("sql_default")).toEqual([
+      { kind: "sqlWarehouse", label: "Serverless / inherited SQL warehouse" },
+    ]);
+    expect(taskCompute("jar")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("wheel")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("notebook")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
   });
 });

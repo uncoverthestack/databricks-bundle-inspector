@@ -1,6 +1,5 @@
 import GraphModeToggle from "./GraphModeToggle";
 import SearchBox from "./SearchBox";
-import StatChip from "./StatChip";
 
 export default function AppHeader({
   bundleName,
@@ -20,16 +19,7 @@ export default function AppHeader({
   onSearchSelect,
   graphMode,
   onGraphModeChange,
-  selectedNodeId,
-  overviewStats,
-  visibleIssueCount,
-  validationDiagnosticCount,
-  onTogglePanel,
 }) {
-  const selectedJobLabel = selectedJobKey ? ` (${selectedJobKey})` : "";
-  const issueScopeTitle = `${visibleIssueCount} issue${visibleIssueCount === 1 ? "" : "s"} in the selected job${selectedJobLabel}. The VS Code Problems panel is workspace-wide and may include other bundles.`;
-  const issueBreakdown = `${overviewStats?.issues.missingFiles ?? 0} missing files, ${overviewStats?.issues.unresolvedVariables ?? 0} unresolved variables, ${validationDiagnosticCount} validation diagnostics`;
-
   return (
     <header
       className="flex h-12 shrink-0 items-center gap-3 border-b border-stone-800/50 px-4"
@@ -50,7 +40,7 @@ export default function AppHeader({
               : "border-stone-700 bg-stone-900 text-stone-300",
           ].join(" ")}
         >
-          <option value="">{targetLabel}</option>
+          <option value="">structural preview</option>
           {targetOptions.map((target) => (
             <option key={target} value={target}>
               target: {target}
@@ -97,49 +87,7 @@ export default function AppHeader({
       <GraphModeToggle
         value={graphMode}
         onChange={onGraphModeChange}
-        disabled={!selectedNodeId}
       />
-      {overviewStats && (
-        <div className="ml-auto hidden items-center gap-1.5 xl:flex">
-          <StatChip
-            label="Tasks"
-            value={overviewStats.tasks}
-            onClick={() => onTogglePanel("tasks")}
-          />
-          <StatChip
-            label="Files"
-            value={overviewStats.files}
-            onClick={() => onTogglePanel("files")}
-          />
-          <StatChip
-            label="Pipelines"
-            value={overviewStats.pipelines}
-            onClick={() => onTogglePanel("pipelines")}
-          />
-          <StatChip
-            label="Vars"
-            value={overviewStats.variables}
-            onClick={() => onTogglePanel("variables")}
-          />
-          <StatChip
-            label="Secrets"
-            value={overviewStats.secrets}
-            onClick={() => onTogglePanel("secrets")}
-          />
-          <StatChip
-            label="Compute"
-            value={overviewStats.compute}
-            onClick={() => onTogglePanel("compute")}
-          />
-          <StatChip
-            label="Job issues"
-            value={visibleIssueCount}
-            tone={visibleIssueCount > 0 ? "danger" : "neutral"}
-            title={`${issueScopeTitle} ${issueBreakdown}`}
-            onClick={() => onTogglePanel("issues")}
-          />
-        </div>
-      )}
     </header>
   );
 }

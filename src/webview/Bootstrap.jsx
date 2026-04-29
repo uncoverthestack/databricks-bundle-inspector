@@ -8,12 +8,14 @@ const vscodeApi =
 
 export default function Bootstrap() {
   const [parsedBundle, setParsedBundle] = useState(null);
+  const [resolutionBundle, setResolutionBundle] = useState(null);
   const [bundleGraph, setBundleGraph] = useState(null);
   const [validationIssues, setValidationIssues] = useState([]);
   const [inspectorIssues, setInspectorIssues] = useState([]);
   const [inspectedTarget, setInspectedTarget] = useState(null);
   const [inspectedTargetMode, setInspectedTargetMode] = useState(null);
   const [requestedTarget, setRequestedTarget] = useState(null);
+  const [targetOptions, setTargetOptions] = useState([]);
   const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
 
@@ -31,6 +33,12 @@ export default function Bootstrap() {
         data.parsedBundle !== null
       ) {
         setParsedBundle(data.parsedBundle);
+        setResolutionBundle(
+          typeof data.resolutionBundle === "object" &&
+            data.resolutionBundle !== null
+            ? data.resolutionBundle
+            : data.parsedBundle,
+        );
         if (typeof data.graph === "object" && data.graph !== null) {
           setBundleGraph(data.graph);
         }
@@ -50,6 +58,11 @@ export default function Bootstrap() {
         );
         setRequestedTarget(
           typeof data.requestedTarget === "string" ? data.requestedTarget : null,
+        );
+        setTargetOptions(
+          Array.isArray(data.targetOptions)
+            ? data.targetOptions.filter((item) => typeof item === "string")
+            : [],
         );
         setTargetFallbackMessage(
           typeof data.targetFallbackMessage === "string"
@@ -99,12 +112,14 @@ export default function Bootstrap() {
     <App
       key={focusIssuesNonce ?? "inspector"}
       parsedBundle={parsedBundle}
+      resolutionBundle={resolutionBundle ?? parsedBundle}
       graph={bundleGraph}
       validationIssues={validationIssues}
       inspectorIssues={inspectorIssues}
       inspectedTarget={inspectedTarget}
       inspectedTargetMode={inspectedTargetMode}
       requestedTarget={requestedTarget}
+      targetOptions={targetOptions}
       targetFallbackMessage={targetFallbackMessage}
       focusIssuesNonce={focusIssuesNonce}
       onSelectTarget={handleSelectTarget}

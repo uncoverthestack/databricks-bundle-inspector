@@ -41,6 +41,7 @@ export interface FileReference {
   path: string;
   resolvedPath: string | undefined;
   exists: boolean;
+  source: "GIT" | "WORKSPACE" | undefined;
   isInGitignore: boolean;
   referenceType:
     | "notebook"
@@ -117,6 +118,7 @@ export interface TaskParameterReference {
 
 const VAR_PATTERN = /\$\{var\.([^}]+)\}/g;
 const RESOURCE_PATTERN = /\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}/g;
+const GIT_NOTEBOOK_EXTENSIONS = [".py", ".sql", ".scala", ".r", ".ipynb"];
 
 interface SourceLocation {
   line: number;
@@ -143,6 +145,10 @@ function resolveLocalPath(
   rawPath: string,
   primaryDir: string,
   fallbackDir?: string,
+  options?: {
+    baseMode?: "primary_then_fallback" | "fallback_only";
+    extensions?: string[];
+  },
 ): { resolvedPath: string | undefined; exists: boolean } {
   if (isRemotePath(rawPath) || containsTemplate(rawPath)) {
     return { resolvedPath: undefined, exists: false };
@@ -150,17 +156,36 @@ function resolveLocalPath(
   if (isAbsolute(rawPath)) {
     return { resolvedPath: rawPath, exists: existsSync(rawPath) };
   }
-  const fromPrimary = resolve(primaryDir, rawPath);
-  if (existsSync(fromPrimary)) {
-    return { resolvedPath: fromPrimary, exists: true };
-  }
-  if (fallbackDir && fallbackDir !== primaryDir) {
-    const fromFallback = resolve(fallbackDir, rawPath);
-    if (existsSync(fromFallback)) {
-      return { resolvedPath: fromFallback, exists: true };
+
+  const baseDirs =
+    options?.baseMode === "fallback_only" && fallbackDir
+      ? [fallbackDir]
+      : fallbackDir && fallbackDir !== primaryDir
+        ? [primaryDir, fallbackDir]
+        : [primaryDir];
+  const candidates = (baseDir: string) => {
+    const exact = resolve(baseDir, rawPath);
+    return [
+      exact,
+      ...(options?.extensions ?? []).map((extension) => `${exact}${extension}`),
+    ];
+  };
+
+  for (const baseDir of baseDirs) {
+    for (const candidate of candidates(baseDir)) {
+      if (existsSync(candidate)) {
+        return { resolvedPath: candidate, exists: true };
+      }
     }
   }
-  return { resolvedPath: fromPrimary, exists: false };
+
+  return { resolvedPath: candidates(baseDirs[0] ?? primaryDir)[0], exists: false };
+}
+
+function normalizedNotebookSource(value: unknown): "GIT" | "WORKSPACE" | undefined {
+  if (value === "GIT") return "GIT";
+  if (value === "WORKSPACE") return "WORKSPACE";
+  return undefined;
 }
 
 function extractVarRefs(
@@ -305,12 +330,21 @@ function getFileReferences(
     rawPath: unknown,
     referenceType: FileReference["referenceType"],
     yamlSubPath: string,
+    source?: FileReference["source"],
   ): void {
     if (typeof rawPath !== "string" || !rawPath) return;
+    const gitNotebook =
+      referenceType === "notebook" && source === "GIT";
     const { resolvedPath, exists } = resolveLocalPath(
       rawPath,
       sourceFileDir,
       bundleRoot,
+      gitNotebook
+        ? {
+            baseMode: "fallback_only",
+            extensions: GIT_NOTEBOOK_EXTENSIONS,
+          }
+        : undefined,
     );
     const yamlPath = `tasks.${taskKey}.${yamlSubPath}`;
     const sourceLocation = resolveSourceLocation?.(yamlPath);
@@ -318,6 +352,7 @@ function getFileReferences(
       path: rawPath,
       resolvedPath,
       exists,
+      source,
       isInGitignore: false,
       referenceType,
       sourceFile,
@@ -328,7 +363,13 @@ function getFileReferences(
   }
 
   const nb = task.notebook_task as Record<string, unknown> | undefined;
-  if (nb) addRef(nb.notebook_path, "notebook", "notebook_task.notebook_path");
+  if (nb)
+    addRef(
+      nb.notebook_path,
+      "notebook",
+      "notebook_task.notebook_path",
+      normalizedNotebookSource(nb.source),
+    );
 
   const cleanNb = task.clean_rooms_notebook_task as
     | Record<string, unknown>
@@ -338,6 +379,7 @@ function getFileReferences(
       cleanNb.notebook_path,
       "notebook",
       "clean_rooms_notebook_task.notebook_path",
+      normalizedNotebookSource(cleanNb.source),
     );
 
   const py = task.spark_python_task as Record<string, unknown> | undefined;

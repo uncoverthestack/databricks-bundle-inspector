@@ -10,6 +10,7 @@ beforeAll(async () => {
   bundleRoot = await mkdtemp(path.join(tmpdir(), "bdi-task-test-"));
   await writeFile(path.join(bundleRoot, "notebook.py"), "# notebook", "utf8");
   await writeFile(path.join(bundleRoot, "query.sql"), "SELECT 1", "utf8");
+  await writeFile(path.join(bundleRoot, "git_notebook.py"), "# git", "utf8");
 });
 
 afterAll(async () => {
@@ -166,6 +167,69 @@ describe("buildTaskNodeData — fileReferences", () => {
     expect(result.fileReferences[0]?.exists).toBe(true);
     expect(result.fileReferences[0]?.resolvedPath).toBe(
       path.join(bundleRoot, "notebook.py"),
+    );
+  });
+
+  test("notebook_task source GIT resolves extensionless notebook paths locally", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(true);
+    expect(result.fileReferences[0]?.source).toBe("GIT");
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook.py"),
+    );
+  });
+
+  test("notebook_task source GIT prefers an exact local path before extension probing", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "notebook.py", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(true);
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "notebook.py"),
+    );
+  });
+
+  test("notebook_task source omitted requires exact local path", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(false);
+    expect(result.fileReferences[0]?.source).toBeUndefined();
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook"),
+    );
+  });
+
+  test("notebook_task source WORKSPACE requires exact local path", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook", source: "WORKSPACE" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(false);
+    expect(result.fileReferences[0]?.source).toBe("WORKSPACE");
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook"),
     );
   });
 

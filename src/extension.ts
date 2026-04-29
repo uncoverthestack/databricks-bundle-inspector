@@ -27,10 +27,43 @@ import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
 } from "./databricksCli/config.js";
+import { invalidateDatabricksCliCache } from "./databricksCli/validateDatabricksCli.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import { getIncludedFiles } from "./bundle/bundleIncludes.js";
+import type { ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
 
 const BUNDLE_YML_RE = /databricks\.ya?ml$/;
+
+function isPathInDirectory(filePath: string, directoryPath: string): boolean {
+  const resolvedFilePath = path.resolve(filePath);
+  const resolvedDirectoryPath = path.resolve(directoryPath);
+  const relativePath = path.relative(resolvedDirectoryPath, resolvedFilePath);
+
+  return (
+    relativePath === "" ||
+    (relativePath.length > 0 &&
+      !relativePath.startsWith("..") &&
+      !path.isAbsolute(relativePath))
+  );
+}
+
+export function isOpenFilePathAllowed(
+  filePath: string,
+  activeBundleDir: string | undefined,
+  workspaceFolders:
+    | readonly { uri: { fsPath: string } }[]
+    | undefined,
+): boolean {
+  if (!filePath || !path.isAbsolute(filePath)) return false;
+
+  if (activeBundleDir && isPathInDirectory(filePath, activeBundleDir)) {
+    return true;
+  }
+
+  return (workspaceFolders ?? []).some((folder) =>
+    isPathInDirectory(filePath, folder.uri.fsPath),
+  );
+}
 
 function toVsCodeDiagnostics(
   bundleDiagnostics: BundleDiagnostic[],
@@ -312,11 +345,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
   extensionContext.subscriptions.push(diagnosticCollection);
 
-  const configuredCliPath = getConfiguredDatabricksCliPath(getConfiguration());
+  function currentConfiguredCliPath(): string | undefined {
+    return getConfiguredDatabricksCliPath(getConfiguration());
+  }
 
   // Maps every bundle-related file (databricks.yml + all includes) to its bundle root.
   // Populated on activation via cheap YAML parse, then kept up-to-date after each CLI run.
   const fileToBundleRoot = new Map<string, string>();
+
+  extensionContext.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("databricksBundleInspector.cliPath")) {
+        invalidateDatabricksCliCache();
+      }
+    }),
+  );
 
   // On activation: build the include map then immediately run diagnostics for all
   // found bundles so the Problems panel is populated without any user interaction.
@@ -325,7 +368,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     const bundleRoots = new Set(fileToBundleRoot.values());
     await Promise.all(
       [...bundleRoots].map((root) =>
-        runBundleDiagnostics(root, configuredCliPath, diagnosticCollection, fileToBundleRoot).catch(
+        runBundleDiagnostics(root, currentConfiguredCliPath(), diagnosticCollection, fileToBundleRoot).catch(
           (err) => { console.warn(`[BundleInspector] diagnostics failed for ${root}:`, err); },
         ),
       ),
@@ -340,15 +383,34 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ? path.dirname(filePath)
         : fileToBundleRoot.get(filePath);
       if (!bundleRoot) return;
-      void runBundleDiagnostics(bundleRoot, configuredCliPath, diagnosticCollection, fileToBundleRoot);
+      void (async () => {
+        await runBundleDiagnostics(
+          bundleRoot,
+          currentConfiguredCliPath(),
+          diagnosticCollection,
+          fileToBundleRoot,
+        );
+        if (activePanel && activeBundleDir === bundleRoot) {
+          await refreshActiveBundlePanel(bundleRoot, {
+            refreshTargets: BUNDLE_YML_RE.test(filePath),
+          });
+        }
+      })();
     }),
   );
 
   let activePanel: vscode.WebviewPanel | undefined;
   let activeBundleData: unknown;
   let activeBundleDir: string | undefined;
+  let activeRequestedTarget: string | undefined;
+  let activeTargetOptions: string[] = [];
+  let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
 
-  async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
+  async function inspectBundleAtTarget(
+    bundleDir: string,
+    requestedTarget?: string,
+    options?: { silentFallback?: boolean },
+  ) {
     const configuredPath = getConfiguredDatabricksCliPath(getConfiguration());
     let result = await validateBundle(bundleDir, requestedTarget, configuredPath);
     let inspectedTarget = requestedTarget ?? BUNDLE_PROBE_TARGET;
@@ -361,9 +423,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       result = await validateBundle(bundleDir, undefined, configuredPath);
       inspectedTarget = BUNDLE_PROBE_TARGET;
       inspectedTargetMode = "probe";
-      vscode.window.showWarningMessage(
-        `Could not inspect target "${requestedTarget}". Showing structural preview instead.`,
-      );
+      if (!options?.silentFallback) {
+        vscode.window.showWarningMessage(
+          `Could not inspect target "${requestedTarget}". Showing structural preview instead.`,
+        );
+      }
     }
 
     if (!result.ok) {
@@ -371,13 +435,38 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     const bundleData = result.data;
+    const discoveredTargetOptions =
+      result.targetOptions && result.targetOptions.length > 0
+        ? result.targetOptions
+        : Object.keys(
+            (bundleData as { targets?: Record<string, unknown> }).targets ?? {},
+          );
+    if (discoveredTargetOptions.length > 0) {
+      activeTargetOptions = discoveredTargetOptions;
+      activeStructuralResolutionBundle = bundleData;
+    }
+    const previousResolutionBundle: Partial<ParsedBundleConfig> =
+      activeStructuralResolutionBundle ?? {};
+    const mergedVariables = {
+      ...(previousResolutionBundle.variables ?? {}),
+      ...(bundleData.variables ?? {}),
+    } as ParsedBundleConfig["variables"];
+    const mergedTargets =
+      (bundleData as { targets?: ParsedBundleConfig["targets"] }).targets ??
+      previousResolutionBundle.targets;
+    const resolutionBundle: ParsedBundleConfig = {
+      bundle: bundleData.bundle,
+      ...(mergedVariables ? { variables: mergedVariables } : {}),
+      ...(mergedTargets ? { targets: mergedTargets } : {}),
+    };
     const graph = await extractBundleGraph(bundleData, bundleDir);
     const enrichedGraph = await enrichGraphWithFileContent(graph);
     const inspectorIssues = buildInspectorIssues(
       enrichedGraph,
-      bundleData,
+      resolutionBundle,
       result.issues ?? [],
       bundleDir,
+      inspectedTargetMode === "target" ? inspectedTarget : undefined,
     );
 
     return {
@@ -385,6 +474,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundleData,
       enrichedGraph,
       inspectorIssues,
+      targetOptions: activeTargetOptions,
+      resolutionBundle,
       inspectedTarget,
       inspectedTargetMode,
       fallbackMessage,
@@ -399,11 +490,86 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     });
   }
 
+  function bundleMessageDataFromInspection(
+    inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
+    requestedTarget?: string,
+    options?: { focusIssues?: boolean },
+  ): object | undefined {
+    const { result } = inspection;
+    if (!result.ok) return undefined;
+
+    const bundleData = inspection.bundleData;
+    const enrichedGraph = inspection.enrichedGraph;
+    const inspectorIssues = inspection.inspectorIssues;
+    if (!bundleData || !enrichedGraph || !inspectorIssues) return undefined;
+
+    return {
+      parsedBundle: bundleData,
+      resolutionBundle: inspection.resolutionBundle ?? bundleData,
+      graph: enrichedGraph,
+      validationIssues: result.issues ?? [],
+      inspectorIssues,
+      targetOptions: inspection.targetOptions ?? [],
+      inspectedTarget: inspection.inspectedTarget,
+      inspectedTargetMode: inspection.inspectedTargetMode,
+      requestedTarget: requestedTarget ?? null,
+      targetFallbackMessage: inspection.fallbackMessage ?? null,
+      focusIssuesNonce: options?.focusIssues ? Date.now() : null,
+    };
+  }
+
+  async function refreshActiveBundlePanel(
+    bundleDir: string,
+    options?: { refreshTargets?: boolean },
+  ) {
+    try {
+      if (options?.refreshTargets) {
+        const probeInspection = await inspectBundleAtTarget(bundleDir, undefined, {
+          silentFallback: true,
+        });
+        if (
+          activeRequestedTarget &&
+          activeTargetOptions.length > 0 &&
+          !activeTargetOptions.includes(activeRequestedTarget)
+        ) {
+          activeRequestedTarget = undefined;
+        }
+        if (!activeRequestedTarget) {
+          const messageData = bundleMessageDataFromInspection(probeInspection);
+          if (messageData) {
+            postBundleData(messageData);
+          }
+          return;
+        }
+      }
+
+      const inspection = await inspectBundleAtTarget(
+        bundleDir,
+        activeRequestedTarget,
+        { silentFallback: true },
+      );
+      const messageData = bundleMessageDataFromInspection(
+        inspection,
+        activeRequestedTarget,
+      );
+      if (messageData) {
+        postBundleData(messageData);
+      }
+    } catch (error) {
+      console.warn(
+        `[BundleInspector] active panel refresh failed for ${bundleDir}:`,
+        error,
+      );
+    }
+  }
+
   async function inspectBundle(
     requestedTarget?: string,
     options?: { focusIssues?: boolean },
+    bundleDirOverride?: string,
   ) {
-    const bundleDir = getBundleDirFromEditor(vscode.window.activeTextEditor);
+    const bundleDir =
+      bundleDirOverride ?? getBundleDirFromEditor(vscode.window.activeTextEditor);
 
     if (!bundleDir) {
       if (options?.focusIssues && activePanel && activeBundleData) {
@@ -418,7 +584,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     try {
+      if (activeBundleDir !== bundleDir) {
+        activeTargetOptions = [];
+        activeStructuralResolutionBundle = undefined;
+      }
       activeBundleDir = bundleDir;
+      activeRequestedTarget = requestedTarget;
       const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
       const { result } = inspection;
 
@@ -439,12 +610,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         return;
       }
 
-      const bundleData = inspection.bundleData;
-      const enrichedGraph = inspection.enrichedGraph;
-      const inspectorIssues = inspection.inspectorIssues;
-      if (!bundleData || !enrichedGraph || !inspectorIssues) return;
-
-      const errorDiagnostics = result.issues?.flatMap((i) => i.diagnostics ?? []).filter((d) => d.severity === "error") ?? [];
+      const errorDiagnostics =
+        result.issues
+          ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
+          .flatMap((i) => i.diagnostics ?? [])
+          .filter((d) => d.severity === "error") ?? [];
       if (errorDiagnostics.length > 0) {
         const suffix = errorDiagnostics.length > 1 ? ` (+${errorDiagnostics.length - 1} more)` : "";
         const firstMessage = errorDiagnostics[0]?.message ?? "Unknown error";
@@ -458,17 +628,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         });
       }
 
-      const bundleMessageData = {
-        parsedBundle: bundleData,
-        graph: enrichedGraph,
-        validationIssues: result.issues ?? [],
-        inspectorIssues,
-        inspectedTarget: inspection.inspectedTarget,
-        inspectedTargetMode: inspection.inspectedTargetMode,
-        requestedTarget: requestedTarget ?? null,
-        targetFallbackMessage: inspection.fallbackMessage ?? null,
-        focusIssuesNonce: options?.focusIssues ? Date.now() : null,
-      };
+      const bundleMessageData = bundleMessageDataFromInspection(
+        inspection,
+        requestedTarget,
+        options,
+      );
+      if (!bundleMessageData) return;
 
       // Create or show webview panel
       if (activePanel) {
@@ -508,11 +673,27 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             if (!bundleDirForPanel) return;
             void inspectBundle(
               typeof message.target === "string" ? message.target : undefined,
+              undefined,
+              bundleDirForPanel,
             );
           }
           if (message?.type === "openFile" && typeof message.path === "string") {
-            const uri = vscode.Uri.file(message.path);
-            if (message.path.endsWith(".ipynb")) {
+            if (
+              !isOpenFilePathAllowed(
+                message.path,
+                activeBundleDir,
+                vscode.workspace.workspaceFolders,
+              )
+            ) {
+              console.warn(
+                `[BundleInspector] blocked webview file open outside workspace: ${message.path}`,
+              );
+              return;
+            }
+
+            const targetPath = path.resolve(message.path);
+            const uri = vscode.Uri.file(targetPath);
+            if (targetPath.endsWith(".ipynb")) {
               // Jupyter editor has no line-jump API — open at top
               void vscode.commands.executeCommand("vscode.open", uri);
             } else {

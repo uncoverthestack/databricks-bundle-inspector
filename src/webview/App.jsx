@@ -11,9 +11,13 @@ import {
 import { AlertTriangle, LocateFixed } from "lucide-react";
 import AppHeader from "./components/AppHeader";
 import HeaderChipPanel from "./components/HeaderChipPanel";
-import NodeLegend from "./components/NodeLegend";
 import TaskNode from "./components/TaskNode";
-import { kindLabel, kindMeta } from "./lib/kindMeta";
+import {
+  isVariableResolvedForTarget,
+  resolveExpressionForTarget,
+  resolveVariableForTarget,
+} from "../bundle/targetResolution";
+import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
 import "@xyflow/react/dist/style.css";
 
@@ -72,7 +76,7 @@ function getDefinedVariableNames(parsedBundle) {
   return new Set(Object.keys(parsedBundle?.variables ?? {}));
 }
 
-function getTaskIssueCounts(taskNode, definedVariableNames) {
+function getTaskIssueCounts(taskNode, parsedBundle, targetName) {
   const fileReferences = taskNode.taskData?.fileReferences ?? [];
   const variableReferences = taskNode.taskData?.variableReferences ?? [];
   const libraryReferences = taskNode.taskData?.libraryReferences ?? [];
@@ -86,7 +90,9 @@ function getTaskIssueCounts(taskNode, definedVariableNames) {
   const unresolvedVariables = new Set(
     variableReferences
       .map((ref) => ref.variableName)
-      .filter((name) => !definedVariableNames.has(name)),
+      .filter((name) =>
+        !isVariableResolvedForTarget(parsedBundle, name, targetName),
+      ),
   ).size;
 
   return {
@@ -99,13 +105,6 @@ function getTaskIssueCounts(taskNode, definedVariableNames) {
 
 function getTaskPath(taskNode, parentJob) {
   return [parentJob?.displayName, taskNode.displayName].filter(Boolean);
-}
-
-function getValidationDiagnosticCount(validationIssues) {
-  return (validationIssues ?? []).reduce(
-    (count, issue) => count + (issue.diagnostics?.length ?? 0),
-    0,
-  );
 }
 
 function compactTaskName(name) {
@@ -148,70 +147,11 @@ function getCurrentJobTaskNodes(graph, jobNode) {
   );
 }
 
-function getOverviewStats(graph, jobNode, definedVariableNames) {
-  const tasks = getCurrentJobTaskNodes(graph, jobNode);
-  const fileKeys = new Set();
-  const variableKeys = new Set();
-  const secretKeys = new Set();
-  const computeKeys = new Set();
-  const pipelineTaskCount = tasks.filter(isPipelineTask).length;
-
-  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const taskIds = new Set(tasks.map((task) => task.id));
-
-  for (const task of tasks) {
-    for (const ref of task.taskData?.fileReferences ?? []) {
-      fileKeys.add(ref.resolvedPath ?? ref.path);
-    }
-    for (const ref of task.taskData?.variableReferences ?? []) {
-      variableKeys.add(ref.variableName);
-    }
-  }
-
-  for (const edge of graph.edges) {
-    if (!taskIds.has(edge.source)) continue;
-    const target = nodeById.get(edge.target);
-    if (target?.nodeType === "cluster" || target?.nodeType === "warehouse") {
-      computeKeys.add(target.id);
-    }
-    if (target?.nodeType === "file") {
-      for (const fileEdge of graph.edges) {
-        if (fileEdge.source !== target.id) continue;
-        const fileTarget = nodeById.get(fileEdge.target);
-        if (fileTarget?.nodeType === "secret_scope") {
-          secretKeys.add(fileTarget.id);
-        }
-      }
-    }
-  }
-
-  const issueCounts = tasks.reduce(
-    (acc, task) => {
-      const counts = getTaskIssueCounts(task, definedVariableNames);
-      acc.missingFiles += counts.missingFiles;
-      acc.missingLibraries += counts.missingLibraries;
-      acc.unresolvedVariables += counts.unresolvedVariables;
-      acc.total += counts.total;
-      return acc;
-    },
-    { missingFiles: 0, missingLibraries: 0, unresolvedVariables: 0, total: 0 },
-  );
-
-  return {
-    tasks: tasks.length,
-    files: fileKeys.size,
-    variables: variableKeys.size,
-    secrets: secretKeys.size,
-    compute: computeKeys.size,
-    pipelines: pipelineTaskCount,
-    issues: issueCounts,
-  };
-}
-
 function buildIssueItems(
   graph,
   jobNode,
-  definedVariableNames,
+  parsedBundle,
+  targetName,
   validationIssues,
   inspectorIssues = [],
 ) {
@@ -231,6 +171,7 @@ function buildIssueItems(
             validation_diagnostic: "Validation Diagnostics",
             unknown_or_deprecated_field: "Unknown or Deprecated Fields",
             unknown_task_type: "Unknown or Deprecated Task Types",
+            git_source_not_recommended: "Git Source Warnings",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,
@@ -274,7 +215,9 @@ function buildIssueItems(
     }
 
     for (const ref of task.taskData?.variableReferences ?? []) {
-      if (definedVariableNames.has(ref.variableName)) continue;
+      if (isVariableResolvedForTarget(parsedBundle, ref.variableName, targetName)) {
+        continue;
+      }
       items.push({
         id: `unresolved-var:${task.id}:${ref.yamlPath}:${ref.variableName}`,
         group: "Unresolved Variables",
@@ -308,7 +251,8 @@ function buildIssueItems(
 function buildStatPanelItems(
   graph,
   jobNode,
-  definedVariableNames,
+  parsedBundle,
+  targetName,
   validationIssues,
   inspectorIssues,
 ) {
@@ -364,7 +308,12 @@ function buildStatPanelItems(
     }
 
     for (const ref of task.taskData?.variableReferences ?? []) {
-      const unresolved = !definedVariableNames.has(ref.variableName);
+      const resolution = resolveVariableForTarget(
+        parsedBundle,
+        ref.variableName,
+        targetName,
+      );
+      const unresolved = resolution.status === "unresolved";
       addTaskToMap(
         variables,
         ref.variableName,
@@ -372,20 +321,33 @@ function buildStatPanelItems(
           title: ref.variableName,
           kind: "variable",
           unresolved,
+          value: resolution.value,
+          resolutionSource: resolution.source,
         },
         task.id,
       );
       variables.get(ref.variableName).unresolved ||= unresolved;
+      variables.get(ref.variableName).value ??= resolution.value;
+      variables.get(ref.variableName).resolutionSource = resolution.source;
     }
   }
 
+  const definedVariableNames = getDefinedVariableNames(parsedBundle);
   for (const variableName of definedVariableNames) {
     if (variables.has(variableName)) continue;
+    const resolution = resolveVariableForTarget(
+      parsedBundle,
+      variableName,
+      targetName,
+    );
     variables.set(variableName, {
       title: variableName,
       kind: "variable",
       taskIds: new Set(),
       unusedInJob: true,
+      value: resolution.value,
+      unresolved: resolution.status === "unresolved",
+      resolutionSource: resolution.source,
     });
   }
 
@@ -400,7 +362,11 @@ function buildStatPanelItems(
         compute,
         target.id,
         {
-          title: target.displayName,
+          title: displayResolvedValue(
+            target.data?.expression ?? target.displayName,
+            parsedBundle,
+            targetName,
+          ),
           kind: target.kind,
           computeType: target.nodeType,
         },
@@ -460,7 +426,7 @@ function buildStatPanelItems(
         taskId: task.id,
         kind: task.kind,
         severity:
-          getTaskIssueCounts(task, definedVariableNames).total > 0
+          getTaskIssueCounts(task, parsedBundle, targetName).total > 0
             ? "error"
             : undefined,
       })),
@@ -479,7 +445,7 @@ function buildStatPanelItems(
     variables: fromMap(variables, "Variables", (item, taskCountLabel) =>
       item.unusedInJob
         ? "Not used by this job"
-        : `${item.unresolved ? "UNRESOLVED" : "BUNDLE"} · ${taskCountLabel}`,
+        : `${variableResolutionLabel(item)} · ${taskCountLabel}`,
     ),
     secrets: fromMap(
       secrets,
@@ -495,17 +461,33 @@ function buildStatPanelItems(
     issues: buildIssueItems(
       graph,
       jobNode,
-      definedVariableNames,
+      parsedBundle,
+      targetName,
       validationIssues,
       inspectorIssues,
     ),
   };
 }
 
-function buildSearchItems(graph, jobNode, definedVariableNames) {
+function variableResolutionLabel(item) {
+  if (item.unresolved) return "UNRESOLVED";
+  const source = item.resolutionSource ?? item.source;
+  if (source === "target_override") return "TARGET";
+  if (source === "cli_resolved") return "RESOLVED";
+  if (source === "global_default") return "DEFAULT";
+  if (source === "lookup") return "LOOKUP";
+  return "BUNDLE";
+}
+
+function displayResolvedValue(value, parsedBundle, targetName) {
+  if (typeof value !== "string" || !targetName) return value;
+  return resolveExpressionForTarget(value, parsedBundle, targetName).value;
+}
+
+function buildSearchItems(graph, jobNode, parsedBundle, targetName) {
   const tasks = getCurrentJobTaskNodes(graph, jobNode);
   return tasks.map((task) => {
-    const issues = getTaskIssueCounts(task, definedVariableNames);
+    const issues = getTaskIssueCounts(task, parsedBundle, targetName);
     return {
       id: `task:${task.id}`,
       label: task.displayName,
@@ -519,7 +501,7 @@ function buildSearchItems(graph, jobNode, definedVariableNames) {
 
 // ── DAG layout: left → right ──────────────────────────────────
 
-function buildDagFlow(graph, selectedJobKey, definedVariableNames) {
+function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
   const empty = { flowNodes: [], flowEdges: [], jobNode: null, taskCount: 0 };
 
   const jobNode = graph.nodes.find(
@@ -650,7 +632,7 @@ function buildDagFlow(graph, selectedJobKey, definedVariableNames) {
           kind: task.kind,
           subtitle: task.subtitle,
           hasMissingFile: task.hasMissingFile,
-          issueCounts: getTaskIssueCounts(task, definedVariableNames),
+          issueCounts: getTaskIssueCounts(task, parsedBundle, targetName),
         },
       });
     });
@@ -664,15 +646,14 @@ function buildDagFlow(graph, selectedJobKey, definedVariableNames) {
       target: e.target,
       type: "straight",
       style: {
-        stroke: "rgba(120,113,108,0.45)",
-        strokeWidth: 1.5,
-        strokeDasharray: "4 3",
+        stroke: "rgba(148,163,184,0.82)",
+        strokeWidth: 2,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        width: 12,
-        height: 12,
-        color: "rgba(120,113,108,0.45)",
+        width: 14,
+        height: 14,
+        color: "rgba(148,163,184,0.82)",
       },
     });
   });
@@ -694,8 +675,21 @@ function edgeKindLabel(kind) {
   );
 }
 
-function ConfigRow({ label, value, title, tone = "default", onClick }) {
-  if (!value) return null;
+function TaskPill({ task, onSelectTask }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectTask?.(task.id)}
+      className="rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
+      title={task.displayName}
+    >
+      {compactTaskName(task.displayName)}
+    </button>
+  );
+}
+
+function ConfigRow({ label, value, title, tone = "default", onClick, children }) {
+  if (!value && !children) return null;
   const clickable = Boolean(onClick);
   const valueClass =
     tone === "danger"
@@ -710,20 +704,44 @@ function ConfigRow({ label, value, title, tone = "default", onClick }) {
       onClick={onClick}
       onKeyDown={clickable ? (e) => e.key === "Enter" && onClick() : undefined}
       className={[
-        "group flex items-baseline gap-3 border-b border-stone-800/40 py-2 last:border-0",
+        "group flex items-start gap-4 border-b border-stone-800/40 py-2.5 last:border-0",
         clickable
           ? "cursor-pointer rounded-lg px-2 -mx-2 outline-none hover:bg-stone-800/30 focus:bg-stone-800/30 focus:ring-1 focus:ring-blue-500/40"
           : "",
       ].join(" ")}
     >
-      <span className="w-20 shrink-0 text-xs text-stone-500">{label}</span>
-      <span
+      <span className="w-24 shrink-0 pt-0.5 text-xs text-stone-500">
+        {label}
+      </span>
+      {children ? (
+        <div className="min-w-0 flex-1">{children}</div>
+      ) : (
+        <span
+          title={title}
+          className={[
+            "min-w-0 flex-1 [overflow-wrap:anywhere] text-xs leading-relaxed",
+            valueClass,
+          ].join(" ")}
+        >
+          {value}
+          {clickable && <span className="ml-1 text-[10px] no-underline">↗</span>}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ParameterRow({ name, value, title }) {
+  if (!value) return null;
+  return (
+    <div className="border-b border-stone-800/40 py-3 last:border-0">
+      <div className="mb-1.5 text-xs text-stone-500">{name}</div>
+      <div
         title={title}
-        className={["break-all text-xs leading-relaxed", valueClass].join(" ")}
+        className="[overflow-wrap:anywhere] text-xs leading-relaxed text-stone-100"
       >
         {value}
-        {clickable && <span className="ml-1 text-[10px] no-underline">↗</span>}
-      </span>
+      </div>
     </div>
   );
 }
@@ -898,7 +916,34 @@ function ComputeSection({ items }) {
             <span className="w-20 shrink-0 text-xs text-stone-500">
               Runs on
             </span>
-            <span className="text-xs text-stone-200">{item.name}</span>
+            <span className="min-w-0 text-xs text-stone-200">
+              <span title={item.expression} className="block break-all">
+                {item.name}
+              </span>
+              {item.expression && item.expression !== item.name && (
+                <span className="mt-0.5 block break-all text-[11px] text-stone-600">
+                  {item.expression}
+                </span>
+              )}
+              {item.details?.length > 0 && (
+                <div className="mt-2 grid gap-1.5">
+                  {item.details.map((detail) => (
+                    <div
+                      key={`${detail.label}:${detail.value}`}
+                      className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 text-[11px]"
+                    >
+                      <span className="text-stone-500">{detail.label}</span>
+                      <span
+                        title={detail.expression}
+                        className="[overflow-wrap:anywhere] text-stone-300"
+                      >
+                        {detail.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </span>
           </div>
         ))}
       </div>
@@ -936,10 +981,13 @@ function VariablesSection({ items }) {
                   ].join(" ")}
                 >
                   {item.name}
+                  {item.value && (
+                    <span className="ml-2 text-stone-500">{item.value}</span>
+                  )}
                 </span>
               </div>
               <span className="shrink-0 text-[10px] font-semibold tracking-widest text-stone-500">
-                {item.unresolved ? "UNRESOLVED" : "BUNDLE"}
+                {variableResolutionLabel(item)}
               </span>
             </div>
           );
@@ -952,7 +1000,6 @@ function VariablesSection({ items }) {
 function TaskImpactSection({
   upstreamCount,
   downstreamCount,
-  blockers,
   dependents,
   onSelectTask,
 }) {
@@ -979,48 +1026,22 @@ function TaskImpactSection({
           </div>
         </div>
       </div>
-      {(blockers.length > 0 || dependents.length > 0) && (
+      {dependents.length > 0 && (
         <div className="mt-2 space-y-2">
-          {blockers.length > 0 && (
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-600">
-                Direct Blockers
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {blockers.map((task) => (
-                  <button
-                    key={task.id}
-                    type="button"
-                    onClick={() => onSelectTask?.(task.id)}
-                    className="rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
-                    title={task.displayName}
-                  >
-                    {compactTaskName(task.displayName)}
-                  </button>
-                ))}
-              </div>
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-600">
+              Direct Dependents
             </div>
-          )}
-          {dependents.length > 0 && (
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-600">
-                Direct Dependents
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {dependents.map((task) => (
-                  <button
-                    key={task.id}
-                    type="button"
-                    onClick={() => onSelectTask?.(task.id)}
-                    className="rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
-                    title={task.displayName}
-                  >
-                    {compactTaskName(task.displayName)}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-1.5">
+              {dependents.map((task) => (
+                <TaskPill
+                  key={task.id}
+                  task={task}
+                  onSelectTask={onSelectTask}
+                />
+              ))}
             </div>
-          )}
+          </div>
         </div>
       )}
     </section>
@@ -1101,7 +1122,8 @@ function taskArtifactLabels(taskType) {
 function DetailPanel({
   nodeId,
   graph,
-  definedVariableNames,
+  parsedBundle,
+  targetName,
   onSelectTask,
   onClose,
   onOpenFile,
@@ -1115,7 +1137,7 @@ function DetailPanel({
   if (!node || node.nodeType !== "task") return null;
 
   const parentJob = nodeById.get(node.parentId);
-  const taskIssues = getTaskIssueCounts(node, definedVariableNames);
+  const taskIssues = getTaskIssueCounts(node, parsedBundle, targetName);
   const breadcrumbItems = getTaskPath(node, parentJob);
   const sourceFile = node.taskData?.sourceFile;
   const artifactLabels = taskArtifactLabels(node.taskData?.taskType);
@@ -1125,9 +1147,6 @@ function DetailPanel({
     .filter((e) => e.kind === "depends_on" && e.target === nodeId)
     .map((e) => nodeById.get(e.source))
     .filter((dependency) => dependency?.nodeType === "task");
-  const dependsOnNames =
-    dependencyItems.map((dependency) => dependency.displayName).join(", ") ||
-    undefined;
   const dependentItems = graph.edges
     .filter((e) => e.kind === "depends_on" && e.source === nodeId)
     .map((e) => nodeById.get(e.target))
@@ -1158,7 +1177,15 @@ function DetailPanel({
   const primaryFileStatus = primaryFileRef
     ? getFileStatus(primaryFileRef)
     : undefined;
-  const targetRows = getTaskTargetRows(node, primaryFileRef, primaryFileStatus);
+  const targetRows = getTaskTargetRows(node, primaryFileRef, primaryFileStatus)
+    .map((row) => ({
+      ...row,
+      value: displayResolvedValue(row.value, parsedBundle, targetName),
+      title:
+        row.title && row.title !== row.value && row.value?.includes?.("${")
+          ? `${row.value} → ${displayResolvedValue(row.value, parsedBundle, targetName)}`
+          : row.title,
+    }));
 
   // Compute nodes (cluster / warehouse)
   const computeItems = graph.edges
@@ -1168,7 +1195,22 @@ function DetailPanel({
       (n) => n && (n.nodeType === "cluster" || n.nodeType === "warehouse"),
     )
     .map((n) => ({
-      name: n.displayName,
+      name: displayResolvedValue(
+        n.data?.expression ?? n.displayName,
+        parsedBundle,
+        targetName,
+      ),
+      expression: n.data?.expression,
+      details: Array.isArray(n.data?.details)
+        ? n.data.details.map((detail) => ({
+            ...detail,
+            value: displayResolvedValue(
+              detail.expression ?? detail.value,
+              parsedBundle,
+              targetName,
+            ),
+          }))
+        : [],
       kind: n.kind,
       serverless: Boolean(n.data?.serverless),
     }));
@@ -1181,7 +1223,7 @@ function DetailPanel({
         : undefined;
     return {
       name: basename(ref.path) || ref.path,
-      detail: ref.path,
+      detail: ref.source ? `${ref.source} · ${ref.path}` : ref.path,
       kind: "file",
       edgeKind: ref.referenceType,
       resolvedPath,
@@ -1192,14 +1234,23 @@ function DetailPanel({
 
   const variableItems = [
     ...new Map(
-      (node.taskData?.variableReferences ?? []).map((ref) => [
-        ref.variableName,
-        {
-          name: ref.variableName,
-          expression: ref.expression,
-          unresolved: !definedVariableNames.has(ref.variableName),
-        },
-      ]),
+      (node.taskData?.variableReferences ?? []).map((ref) => {
+        const resolution = resolveVariableForTarget(
+          parsedBundle,
+          ref.variableName,
+          targetName,
+        );
+        return [
+          ref.variableName,
+          {
+            name: ref.variableName,
+            expression: ref.expression,
+            value: resolution.value,
+            source: resolution.source,
+            unresolved: resolution.status === "unresolved",
+          },
+        ];
+      }),
     ).values(),
   ];
 
@@ -1264,7 +1315,7 @@ function DetailPanel({
 
   return (
     <aside
-      className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-stone-800"
+      className="flex w-[400px] shrink-0 flex-col overflow-hidden border-l border-stone-800"
       style={{ backgroundColor: "#0d0d0d" }}
     >
       {/* Header */}
@@ -1300,7 +1351,15 @@ function DetailPanel({
             Task Configuration
           </div>
           <div className="rounded-xl border border-stone-800 px-3">
-            <ConfigRow label="Parent job" value={parentJob?.displayName} />
+            <ConfigRow
+              label="Parent job"
+              value={displayResolvedValue(
+                parentJob?.displayName,
+                parsedBundle,
+                targetName,
+              )}
+              title={parentJob?.displayName}
+            />
             <ConfigRow label="Kind" value={node.taskTypeLabel} />
             <ConfigRow
               label="Source"
@@ -1326,37 +1385,25 @@ function DetailPanel({
                 }
               />
             ))}
-            <ConfigRow
-              label="Depends on"
-              value={dependsOnNames}
-              onClick={
-                dependencyItems.length === 1 && onSelectTask
-                  ? () => onSelectTask(dependencyItems[0].id)
-                  : undefined
-              }
-            />
+            {dependencyItems.length > 0 && (
+              <ConfigRow label="Depends on">
+                <div className="flex flex-wrap gap-1.5">
+                  {dependencyItems.map((dependency) => (
+                    <TaskPill
+                      key={dependency.id}
+                      task={dependency}
+                      onSelectTask={onSelectTask}
+                    />
+                  ))}
+                </div>
+              </ConfigRow>
+            )}
           </div>
-          {dependencyItems.length > 1 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {dependencyItems.map((dependency) => (
-                <button
-                  key={dependency.id}
-                  type="button"
-                  onClick={() => onSelectTask?.(dependency.id)}
-                  className="rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
-                  title={dependency.displayName}
-                >
-                  {compactTaskName(dependency.displayName)}
-                </button>
-              ))}
-            </div>
-          )}
         </section>
 
         <TaskImpactSection
           upstreamCount={upstreamImpactCount}
           downstreamCount={downstreamImpactCount}
-          blockers={dependencyItems}
           dependents={dependentItems}
           onSelectTask={onSelectTask}
         />
@@ -1369,7 +1416,16 @@ function DetailPanel({
             </div>
             <div className="rounded-xl border border-stone-800 px-3">
               {node.parameters.map((p, i) => (
-                <ConfigRow key={i} label={p.name} value={p.value} />
+                <ParameterRow
+                  key={i}
+                  name={p.name}
+                  value={displayResolvedValue(
+                    p.expression ?? p.value,
+                    parsedBundle,
+                    targetName,
+                  )}
+                  title={p.expression ? `${p.expression} → ${p.value}` : p.value}
+                />
               ))}
             </div>
           </section>
@@ -1465,12 +1521,14 @@ function FocusViewportSync({ focusRequest, flowNodes }) {
 
 export default function App({
   parsedBundle,
+  resolutionBundle,
   graph,
   validationIssues = [],
   inspectorIssues = [],
   inspectedTarget,
   inspectedTargetMode,
   requestedTarget,
+  targetOptions: providedTargetOptions = [],
   targetFallbackMessage,
   focusIssuesNonce,
   onSelectTarget,
@@ -1487,15 +1545,6 @@ export default function App({
     focusIssuesNonce ? "issues" : "all",
   );
 
-  const definedVariableNames = useMemo(
-    () => getDefinedVariableNames(parsedBundle),
-    [parsedBundle],
-  );
-  const validationDiagnosticCount = useMemo(
-    () => getValidationDiagnosticCount(validationIssues),
-    [validationIssues],
-  );
-
   const jobsByKey = useMemo(
     () => parsedBundle?.resources?.jobs ?? parsedBundle?.resources?.job ?? {},
     [parsedBundle],
@@ -1507,21 +1556,12 @@ export default function App({
     [jobKeys, userSelectedJobKey],
   );
 
-  const jobOptions = useMemo(
-    () =>
-      jobKeys.map((key) => {
-        const name = jobsByKey[key]?.name;
-        return {
-          value: key,
-          label:
-            typeof name === "string" && name.trim() ? `${key} — ${name}` : key,
-        };
-      }),
-    [jobKeys, jobsByKey],
-  );
   const targetOptions = useMemo(
-    () => Object.keys(parsedBundle?.targets ?? {}),
-    [parsedBundle],
+    () =>
+      providedTargetOptions.length > 0
+        ? providedTargetOptions
+        : Object.keys(parsedBundle?.targets ?? {}),
+    [providedTargetOptions, parsedBundle],
   );
   const targetLabel =
     inspectedTargetMode === "probe"
@@ -1535,29 +1575,55 @@ export default function App({
       : inspectedTarget
         ? `Inspected target: ${inspectedTarget}`
         : "No explicit Databricks target was reported by the bundle output.";
+  const effectiveTargetName =
+    inspectedTargetMode === "target"
+      ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
+      : null;
+  const effectiveResolutionBundle = resolutionBundle ?? parsedBundle;
+  const jobOptions = useMemo(
+    () =>
+      jobKeys.map((key) => {
+        const name = jobsByKey[key]?.name;
+        const displayName =
+          typeof name === "string" && name.trim()
+            ? displayResolvedValue(
+                name,
+                effectiveResolutionBundle,
+                effectiveTargetName,
+              )
+            : "";
+        return {
+          value: key,
+          label: displayName ? `${key} — ${displayName}` : key,
+        };
+      }),
+    [jobKeys, jobsByKey, effectiveResolutionBundle, effectiveTargetName],
+  );
 
   const { flowNodes, flowEdges, jobNode } = useMemo(
     () =>
       graph
-        ? buildDagFlow(graph, selectedJobKey, definedVariableNames)
+        ? buildDagFlow(
+            graph,
+            selectedJobKey,
+            effectiveResolutionBundle,
+            effectiveTargetName,
+          )
         : { flowNodes: [], flowEdges: [], jobNode: null },
-    [graph, selectedJobKey, definedVariableNames],
-  );
-
-  const overviewStats = useMemo(
-    () =>
-      graph && jobNode
-        ? getOverviewStats(graph, jobNode, definedVariableNames)
-        : null,
-    [graph, jobNode, definedVariableNames],
+    [graph, selectedJobKey, effectiveResolutionBundle, effectiveTargetName],
   );
 
   const searchItems = useMemo(
     () =>
       graph && jobNode
-        ? buildSearchItems(graph, jobNode, definedVariableNames)
+        ? buildSearchItems(
+            graph,
+            jobNode,
+            effectiveResolutionBundle,
+            effectiveTargetName,
+          )
         : [],
-    [graph, jobNode, definedVariableNames],
+    [graph, jobNode, effectiveResolutionBundle, effectiveTargetName],
   );
 
   const headerPanelItems = useMemo(
@@ -1566,7 +1632,8 @@ export default function App({
         ? buildStatPanelItems(
             graph,
             jobNode,
-            definedVariableNames,
+            effectiveResolutionBundle,
+            effectiveTargetName,
             validationIssues,
             inspectorIssues,
           )
@@ -1579,7 +1646,14 @@ export default function App({
             compute: [],
             issues: [],
           },
-    [graph, jobNode, definedVariableNames, validationIssues, inspectorIssues],
+    [
+      graph,
+      jobNode,
+      effectiveResolutionBundle,
+      effectiveTargetName,
+      validationIssues,
+      inspectorIssues,
+    ],
   );
 
   const activeHeaderPanelItems = activeHeaderPanel
@@ -1595,18 +1669,6 @@ export default function App({
       compute: "Compute",
       issues: selectedJobKey ? "Issues in This Job" : "Bundle Issues",
     }[activeHeaderPanel] ?? "";
-  const visibleIssueCount =
-    inspectorIssues.length > 0
-      ? activeHeaderPanelItems.length && activeHeaderPanel === "issues"
-        ? activeHeaderPanelItems.length
-        : headerPanelItems.issues.length
-      : (overviewStats?.issues.total ?? 0) + validationDiagnosticCount;
-
-  const effectiveGraphMode =
-    !selectedNodeId && (graphMode === "upstream" || graphMode === "downstream")
-      ? "all"
-      : graphMode;
-
   const issueTaskIds = useMemo(() => {
     const ids = new Set();
     for (const node of flowNodes) {
@@ -1621,50 +1683,16 @@ export default function App({
   }, [flowNodes, inspectorIssues]);
 
   const focusedTaskIds = useMemo(() => {
-    if (flowNodes.length === 0) return null;
-    const taskIds = new Set(flowNodes.map((node) => node.id));
-    const { upstream, downstream } = buildTaskAdjacency(flowEdges, taskIds);
-
-    if (effectiveGraphMode === "issues") {
-      if (issueTaskIds.size === 0) return null;
-      const context = new Set(issueTaskIds);
-      for (const issueTaskId of issueTaskIds) {
-        for (const id of upstream.get(issueTaskId) ?? []) context.add(id);
-        for (const id of downstream.get(issueTaskId) ?? []) context.add(id);
-      }
-      return context;
-    }
-
-    if (!selectedNodeId) return null;
-
-    if (effectiveGraphMode === "upstream") {
-      return new Set([
-        selectedNodeId,
-        ...collectReachable(selectedNodeId, upstream),
-      ]);
-    }
-
-    if (effectiveGraphMode === "downstream") {
-      return new Set([
-        selectedNodeId,
-        ...collectReachable(selectedNodeId, downstream),
-      ]);
-    }
-
-    return new Set([
-      selectedNodeId,
-      ...collectReachable(selectedNodeId, upstream),
-      ...collectReachable(selectedNodeId, downstream),
-    ]);
-  }, [selectedNodeId, flowNodes, flowEdges, effectiveGraphMode, issueTaskIds]);
+    if (graphMode !== "issues" || issueTaskIds.size === 0) return null;
+    return issueTaskIds;
+  }, [graphMode, issueTaskIds]);
 
   const displayFlowNodes = useMemo(
     () =>
       flowNodes.map((node) => {
         const selected = node.id === selectedNodeId;
         const related = focusedTaskIds?.has(node.id) ?? false;
-        const issueMatched =
-          effectiveGraphMode === "issues" && issueTaskIds.has(node.id);
+        const issueMatched = graphMode === "issues" && issueTaskIds.has(node.id);
         return {
           ...node,
           selected,
@@ -1686,7 +1714,7 @@ export default function App({
       flowNodes,
       focusedTaskIds,
       selectedNodeId,
-      effectiveGraphMode,
+      graphMode,
       issueTaskIds,
     ],
   );
@@ -1707,7 +1735,7 @@ export default function App({
             strokeDasharray: highlighted
               ? undefined
               : edge.style?.strokeDasharray,
-            strokeWidth: highlighted ? 2.4 : edge.style?.strokeWidth,
+            strokeWidth: highlighted ? 2.8 : edge.style?.strokeWidth,
           },
           markerEnd: {
             ...edge.markerEnd,
@@ -1717,29 +1745,6 @@ export default function App({
       }),
     [flowEdges, focusedTaskIds],
   );
-
-  const legendItems = useMemo(() => {
-    const taskKinds = [
-      ...new Set(flowNodes.map((node) => node.data?.kind).filter(Boolean)),
-    ].sort((a, b) => kindLabel(a).localeCompare(kindLabel(b)));
-
-    const items = taskKinds.map((kind) => ({
-      label: kindLabel(kind),
-      kind,
-    }));
-
-    if (overviewStats?.compute > 0) {
-      items.push({ label: "COMPUTE", kind: "cluster" });
-    }
-    if (overviewStats?.secrets > 0) {
-      items.push({ label: "SECRET", kind: "secret_scope" });
-    }
-    if (overviewStats?.variables > 0) {
-      items.push({ label: "VARIABLE", kind: "variable" });
-    }
-
-    return items.length > 0 ? items : [{ label: "TASK", kind: "job" }];
-  }, [flowNodes, overviewStats]);
 
   const nonJobResourceTypes = useMemo(() => {
     if (!graph || jobKeys.length > 0) return [];
@@ -1780,6 +1785,11 @@ export default function App({
     setFocusRequest({ nodeId, nonce: Date.now() });
   }
 
+  function clearSelectedTask() {
+    setSelectedNodeId(null);
+    setFocusRequest(null);
+  }
+
   function selectPanelItem(item) {
     if (item.taskId) {
       selectTaskNode(item.taskId);
@@ -1803,12 +1813,6 @@ export default function App({
     setGraphMode("all");
   }
 
-  function toggleHeaderPanel(panelName) {
-    setActiveHeaderPanel((current) =>
-      current === panelName ? null : panelName,
-    );
-  }
-
   return (
     <div
       className="relative flex h-screen flex-col"
@@ -1830,13 +1834,8 @@ export default function App({
         searchItems={searchItems}
         onSearchChange={setSearchValue}
         onSearchSelect={handleSearchSelect}
-        graphMode={effectiveGraphMode}
+        graphMode={graphMode}
         onGraphModeChange={setGraphMode}
-        selectedNodeId={selectedNodeId}
-        overviewStats={overviewStats}
-        visibleIssueCount={visibleIssueCount}
-        validationDiagnosticCount={validationDiagnosticCount}
-        onTogglePanel={toggleHeaderPanel}
       />
 
       {activeHeaderPanel && (
@@ -1880,9 +1879,10 @@ export default function App({
               className="bundle-flow"
               onNodeClick={(_, node) =>
                 selectedNodeId === node.id
-                  ? setSelectedNodeId(null)
+                  ? clearSelectedTask()
                   : selectTaskNode(node.id)
               }
+              onPaneClick={clearSelectedTask}
               nodesDraggable={false}
               nodesConnectable={false}
               edgesReconnectable={false}
@@ -1936,15 +1936,15 @@ export default function App({
           <DetailPanel
             nodeId={selectedNodeId}
             graph={graph}
-            definedVariableNames={definedVariableNames}
+            parsedBundle={effectiveResolutionBundle}
+            targetName={effectiveTargetName}
             onSelectTask={selectTaskNode}
-            onClose={() => setSelectedNodeId(null)}
+            onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
           />
         )}
       </div>
 
-      <NodeLegend items={legendItems} />
     </div>
   );
 }

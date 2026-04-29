@@ -13,7 +13,9 @@
           "source": "./src/cleanup.py",
           "dependsOn": [],
           "dependents": [],
-          "compute": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
           "files": [
             {
               "path": "./src/cleanup.py",
@@ -46,7 +48,9 @@
           "dependents": [
             "transform"
           ],
-          "compute": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
           "files": [
             {
               "path": "./src/extract.py",
@@ -86,7 +90,9 @@
           "dependents": [
             "load"
           ],
-          "compute": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
           "files": [
             {
               "path": "./src/transform.py",

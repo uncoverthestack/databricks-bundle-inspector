@@ -124,7 +124,7 @@ describe("validateBundleWithDependencies", () => {
 
   test("tolerates auth errors when stdout contains valid JSON", async () => {
     const error = Object.assign(new Error("auth failed"), {
-      stderr: "cannot configure default credentials",
+      stderr: "Error: cannot configure default credentials",
       stdout: JSON.stringify(createBundle()),
     });
 
@@ -147,6 +147,7 @@ describe("validateBundleWithDependencies", () => {
     if (!result.ok) return;
 
     expect(result.issues?.[0]?.code).toBe("AUTH_NOT_CONFIGURED");
+    expect(result.issues?.[0]?.diagnostics?.[0]?.severity).toBe("warning");
   });
 
   test("treats non-zero exit with valid JSON as a CLI warning", async () => {
