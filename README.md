@@ -214,7 +214,7 @@ container.
 
 ## Project status
 
-Version 0.0.1. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.1.0. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
