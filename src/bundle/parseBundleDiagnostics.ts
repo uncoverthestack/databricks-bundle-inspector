@@ -7,6 +7,23 @@ export interface BundleDiagnostic {
 }
 
 const LOCATION_RE = /^\s+in (.+):(\d+):(\d+)$/;
+const AVAILABLE_TARGETS_RE = /Available targets:\s*(.+)$/i;
+
+export function parseAvailableTargets(stderr: string): string[] {
+  const targets = new Set<string>();
+
+  for (const line of stderr.split("\n")) {
+    const match = AVAILABLE_TARGETS_RE.exec(line);
+    if (!match?.[1]) continue;
+
+    for (const target of match[1].split(",")) {
+      const normalized = target.trim();
+      if (normalized) targets.add(normalized);
+    }
+  }
+
+  return [...targets];
+}
 
 /**
  * Parses the stderr output of `databricks bundle validate` into structured

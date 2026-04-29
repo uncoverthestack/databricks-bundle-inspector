@@ -41,6 +41,7 @@ export interface FileReference {
   path: string;
   resolvedPath: string | undefined;
   exists: boolean;
+  source: "GIT" | "WORKSPACE" | undefined;
   isInGitignore: boolean;
   referenceType:
     | "notebook"
@@ -94,6 +95,7 @@ export interface JobParameterReference {
   // TODO: Our Databricks Bundle Inspector Comment
   dbiComment: string | undefined;
   sourceLine: number;
+  sourceColumn?: number;
   referencedByTasks: string[];
   hasRuntimeOnlyUsage: boolean;
 }
@@ -117,6 +119,7 @@ export interface TaskParameterReference {
 
 const VAR_PATTERN = /\$\{var\.([^}]+)\}/g;
 const RESOURCE_PATTERN = /\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}/g;
+const GIT_NOTEBOOK_EXTENSIONS = [".py", ".sql", ".scala", ".r", ".ipynb"];
 
 interface SourceLocation {
   line: number;
@@ -143,6 +146,10 @@ function resolveLocalPath(
   rawPath: string,
   primaryDir: string,
   fallbackDir?: string,
+  options?: {
+    baseMode?: "primary_then_fallback" | "fallback_only";
+    extensions?: string[];
+  },
 ): { resolvedPath: string | undefined; exists: boolean } {
   if (isRemotePath(rawPath) || containsTemplate(rawPath)) {
     return { resolvedPath: undefined, exists: false };
@@ -150,17 +157,36 @@ function resolveLocalPath(
   if (isAbsolute(rawPath)) {
     return { resolvedPath: rawPath, exists: existsSync(rawPath) };
   }
-  const fromPrimary = resolve(primaryDir, rawPath);
-  if (existsSync(fromPrimary)) {
-    return { resolvedPath: fromPrimary, exists: true };
-  }
-  if (fallbackDir && fallbackDir !== primaryDir) {
-    const fromFallback = resolve(fallbackDir, rawPath);
-    if (existsSync(fromFallback)) {
-      return { resolvedPath: fromFallback, exists: true };
+
+  const baseDirs =
+    options?.baseMode === "fallback_only" && fallbackDir
+      ? [fallbackDir]
+      : fallbackDir && fallbackDir !== primaryDir
+        ? [primaryDir, fallbackDir]
+        : [primaryDir];
+  const candidates = (baseDir: string) => {
+    const exact = resolve(baseDir, rawPath);
+    return [
+      exact,
+      ...(options?.extensions ?? []).map((extension) => `${exact}${extension}`),
+    ];
+  };
+
+  for (const baseDir of baseDirs) {
+    for (const candidate of candidates(baseDir)) {
+      if (existsSync(candidate)) {
+        return { resolvedPath: candidate, exists: true };
+      }
     }
   }
-  return { resolvedPath: fromPrimary, exists: false };
+
+  return { resolvedPath: candidates(baseDirs[0] ?? primaryDir)[0], exists: false };
+}
+
+function normalizedNotebookSource(value: unknown): "GIT" | "WORKSPACE" | undefined {
+  if (value === "GIT") return "GIT";
+  if (value === "WORKSPACE") return "WORKSPACE";
+  return undefined;
 }
 
 function extractVarRefs(
@@ -305,12 +331,21 @@ function getFileReferences(
     rawPath: unknown,
     referenceType: FileReference["referenceType"],
     yamlSubPath: string,
+    source?: FileReference["source"],
   ): void {
     if (typeof rawPath !== "string" || !rawPath) return;
+    const gitNotebook =
+      referenceType === "notebook" && source === "GIT";
     const { resolvedPath, exists } = resolveLocalPath(
       rawPath,
       sourceFileDir,
       bundleRoot,
+      gitNotebook
+        ? {
+            baseMode: "fallback_only",
+            extensions: GIT_NOTEBOOK_EXTENSIONS,
+          }
+        : undefined,
     );
     const yamlPath = `tasks.${taskKey}.${yamlSubPath}`;
     const sourceLocation = resolveSourceLocation?.(yamlPath);
@@ -318,6 +353,7 @@ function getFileReferences(
       path: rawPath,
       resolvedPath,
       exists,
+      source,
       isInGitignore: false,
       referenceType,
       sourceFile,
@@ -328,7 +364,13 @@ function getFileReferences(
   }
 
   const nb = task.notebook_task as Record<string, unknown> | undefined;
-  if (nb) addRef(nb.notebook_path, "notebook", "notebook_task.notebook_path");
+  if (nb)
+    addRef(
+      nb.notebook_path,
+      "notebook",
+      "notebook_task.notebook_path",
+      normalizedNotebookSource(nb.source),
+    );
 
   const cleanNb = task.clean_rooms_notebook_task as
     | Record<string, unknown>
@@ -338,6 +380,7 @@ function getFileReferences(
       cleanNb.notebook_path,
       "notebook",
       "clean_rooms_notebook_task.notebook_path",
+      normalizedNotebookSource(cleanNb.source),
     );
 
   const py = task.spark_python_task as Record<string, unknown> | undefined;
@@ -576,28 +619,34 @@ function getTaskParameterReferences(
 function getJobParameterReferences(
   rawJob: Record<string, unknown>,
   taskKey: string,
+  resolveSourceLocation?: SourceLocationResolver,
 ): JobParameterReference[] {
   const jobParameters = Array.isArray(rawJob.parameters)
     ? rawJob.parameters
     : [];
   return (jobParameters as Array<Record<string, unknown>>)
     .filter((p) => typeof p.name === "string")
-    .map((p) => ({
-      name: p.name as string,
-      default: typeof p.default === "string" ? p.default : undefined,
-      // TODO: Our Databricks Bundle Inspector Comment
-      dbiComment: undefined,
-      sourceLine: 0,
-      referencedByTasks: [taskKey],
-      hasRuntimeOnlyUsage: typeof p.default !== "string",
-    }));
+    .map((p, index) => {
+      const sourceLocation = resolveSourceLocation?.(`parameters[${index}]`);
+      return {
+        name: p.name as string,
+        default: typeof p.default === "string" ? p.default : undefined,
+        // TODO: Our Databricks Bundle Inspector Comment
+        dbiComment: undefined,
+        sourceLine: sourceLocation?.line ?? 0,
+        ...(sourceLocation ? { sourceColumn: sourceLocation.column } : {}),
+        referencedByTasks: [taskKey],
+        hasRuntimeOnlyUsage: typeof p.default !== "string",
+      };
+    });
 }
 
 /**
  * Builds a `TaskNodeData` from raw task and job objects out of a parsed bundle config.
  *
- * `sourceLine` / `sourceColumn` fields are 0 — the CLI JSON output does not include
- * source locations. `isInGitignore` on file references is always false for the same reason.
+ * `sourceLine` / `sourceColumn` are populated when a YAML source-location resolver
+ * is available. `isInGitignore` on file references is always false because the CLI
+ * JSON output does not include gitignore state.
  *
  * @param rawTask Raw task object from the parsed bundle.
  * @param rawJob Raw job object that owns this task.
@@ -642,7 +691,11 @@ export function buildTaskNodeData(
     taskKey,
     resolveSourceLocation,
   );
-  const jobParameterReferences = getJobParameterReferences(rawJob, taskKey);
+  const jobParameterReferences = getJobParameterReferences(
+    rawJob,
+    taskKey,
+    resolveSourceLocation,
+  );
 
   const dependsOn = Array.isArray(rawTask.depends_on)
     ? (rawTask.depends_on as Array<Record<string, unknown>>)
@@ -651,6 +704,7 @@ export function buildTaskNodeData(
     : [];
 
   const runIf = typeof rawTask.run_if === "string" ? rawTask.run_if : undefined;
+  const taskSourceLocation = resolveSourceLocation?.(`tasks.${taskKey}`);
 
   let nestedTask: TaskNodeData | undefined;
   if (taskType === "for_each") {
@@ -681,8 +735,8 @@ export function buildTaskNodeData(
     taskType,
     parentJobId: jobId,
     sourceFile,
-    sourceLine: 0,
-    sourceColumn: 0,
+    sourceLine: taskSourceLocation?.line ?? 0,
+    sourceColumn: taskSourceLocation?.column ?? 0,
     fileReferences,
     variableReferences,
     libraryReferences,

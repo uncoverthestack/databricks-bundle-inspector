@@ -13,7 +13,9 @@
           "source": "./src/missing.py",
           "dependsOn": [],
           "dependents": [],
-          "compute": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
           "files": [
             {
               "path": "./src/missing.py",

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "@jest/globals";
-import { parseBundleDiagnostics } from "../../../bundle/parseBundleDiagnostics.js";
+import {
+  parseAvailableTargets,
+  parseBundleDiagnostics,
+} from "../../../bundle/parseBundleDiagnostics.js";
 
 const PROBE = "__bundle_inspector_probe__";
 
@@ -59,5 +62,17 @@ describe("parseBundleDiagnostics", () => {
       { severity: "warning", message: "unknown field: includ", path: "databricks.yml", line: 4, column: 1 },
       { severity: "error", message: "field is required", path: "resources/job.yml", line: 2, column: 1 },
     ]);
+  });
+});
+
+describe("parseAvailableTargets", () => {
+  it("extracts targets from the probe target error", () => {
+    const stderr = `Error: ${PROBE}: no such target. Available targets: dev, prod`;
+
+    expect(parseAvailableTargets(stderr)).toEqual(["dev", "prod"]);
+  });
+
+  it("returns an empty list when stderr has no target list", () => {
+    expect(parseAvailableTargets("Warning: no default target set")).toEqual([]);
   });
 });

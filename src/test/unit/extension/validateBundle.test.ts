@@ -1,5 +1,8 @@
-import { describe, test, expect } from "@jest/globals";
-import { validateBundleWithDependencies } from "../../../bundle/validateBundle.js";
+import { describe, test, expect, jest } from "@jest/globals";
+import {
+  BUNDLE_PROBE_TARGET,
+  validateBundleWithDependencies,
+} from "../../../bundle/validateBundle.js";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 function createBundle(): ParsedBundleConfig {
@@ -124,7 +127,7 @@ describe("validateBundleWithDependencies", () => {
 
   test("tolerates auth errors when stdout contains valid JSON", async () => {
     const error = Object.assign(new Error("auth failed"), {
-      stderr: "cannot configure default credentials",
+      stderr: "Error: cannot configure default credentials",
       stdout: JSON.stringify(createBundle()),
     });
 
@@ -147,6 +150,7 @@ describe("validateBundleWithDependencies", () => {
     if (!result.ok) return;
 
     expect(result.issues?.[0]?.code).toBe("AUTH_NOT_CONFIGURED");
+    expect(result.issues?.[0]?.diagnostics?.[0]?.severity).toBe("warning");
   });
 
   test("treats non-zero exit with valid JSON as a CLI warning", async () => {
@@ -174,6 +178,48 @@ describe("validateBundleWithDependencies", () => {
     if (!result.ok) return;
 
     expect(result.issues?.[0]?.code).toBe("CLI_WARNING");
+  });
+
+  test("does not warn for expected probe target failure with valid JSON", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
+    const error = Object.assign(new Error("probe target failed"), {
+      stderr: `Error: ${BUNDLE_PROBE_TARGET}: no such target. Available targets: dev`,
+      stdout: JSON.stringify(createBundle()),
+    });
+
+    const result = await validateBundleWithDependencies(
+      "/workspace/demo",
+      undefined,
+      {
+        execFileAsync: async () => {
+          throw error;
+        },
+        resolveDatabricksCli: async () => ({
+          ok: true,
+          candidate: "databricks",
+          versionOutput: "v0.295.0",
+        }),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.issues).toBeUndefined();
+    expect(result.targetOptions).toEqual(["dev"]);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(
+      "[validateBundle] probe target unavailable; parsing stdout",
+      expect.objectContaining({
+        cliPath: "databricks",
+        bundleDir: "/workspace/demo",
+        target: BUNDLE_PROBE_TARGET,
+      }),
+    );
+
+    warnSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 
   test("maps ETIMEDOUT to a timeout error", async () => {
@@ -228,5 +274,39 @@ describe("validateBundleWithDependencies", () => {
 
     expect(result.error.errorCode).toBe("VALIDATION_FAILED");
     expect(result.error.details ?? "").toMatch(/json parse failed/);
+  });
+
+  test("does not surface raw command text for probe target only failures", async () => {
+    const error = Object.assign(
+      new Error(
+        `Command failed: databricks bundle validate --output json --target ${BUNDLE_PROBE_TARGET}\nError: ${BUNDLE_PROBE_TARGET}: no such target. Available targets: dev, prod`,
+      ),
+      {
+        stderr: `Error: ${BUNDLE_PROBE_TARGET}: no such target. Available targets: dev, prod`,
+        stdout: "",
+      },
+    );
+
+    const result = await validateBundleWithDependencies(
+      "/workspace/demo",
+      undefined,
+      {
+        execFileAsync: async () => {
+          throw error;
+        },
+        resolveDatabricksCli: async () => ({
+          ok: true,
+          candidate: "databricks",
+          versionOutput: "v0.295.0",
+        }),
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.error.errorCode).toBe("VALIDATION_FAILED");
+    expect(result.error.error).toBe("Failed to validate Databricks bundle.");
+    expect(result.error.details).toBeUndefined();
   });
 });

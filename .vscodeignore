@@ -1,5 +1,8 @@
 .vscode/**
 .vscode-test/**
+.github/**
+.devcontainer/**
+.claude/**
 node_modules/**
 src/**
 public/**
@@ -7,6 +10,9 @@ public/**
 esbuild.js
 components.json
 eslint.config.js
+eslint.config.mjs
+jest.config.cjs
+jest.semantic-cli.config.cjs
 tsconfig.json
 vite.config.js
 vsc-extension-quickstart.md
@@ -17,3 +23,17 @@ vsc-extension-quickstart.md
 **/.vscode-test.*
 package-lock.json
 .env
+*sample-data
+Steps.md
+checks.md
+code-review.md
+src/test
+scripts/**
+.husky
+.vscode/**
+.gitignore
+semantic-cli-matrix.config.json
+semantic-cli-matrix.local.json
+**/tsconfig.jest.json
+vite.config.js
+repo-audit

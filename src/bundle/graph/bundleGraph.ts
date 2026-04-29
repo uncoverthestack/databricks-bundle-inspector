@@ -7,6 +7,7 @@ import {
   type YamlLocationMap,
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
+import { describeCronExpression } from "./cronDescription.js";
 
 export type { BundleEdge, EdgeKind };
 
@@ -22,12 +23,18 @@ export interface Variable {
 
 export type Variables = Record<string, Variable>;
 
+export interface TargetConfig {
+  variables?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface JobPermission {
   [key: string]: unknown;
 }
 
 export interface JobTaskDependency {
   task_key?: string;
+  outcome?: string;
   [key: string]: unknown;
 }
 
@@ -102,9 +109,33 @@ export interface Job {
   id?: string;
   url?: string;
   tasks?: JobTask[];
+  job_clusters?: Array<{
+    job_cluster_key?: string;
+    new_cluster?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
   permissions?: JobPermission[];
   parameters?: Array<{ name?: string; default?: string }>;
+  schedule?: {
+    quartz_cron_expression?: string;
+    timezone_id?: string;
+    pause_status?: string;
+  };
   trigger?: {
+    file_arrival?: {
+      url?: string;
+      min_time_between_triggers_seconds?: number;
+      wait_after_last_change_seconds?: number;
+    };
+    table?: {
+      table_names?: string[];
+      condition?: string;
+    };
+    table_update?: {
+      table_names?: string[];
+      condition?: string;
+      wait_after_last_change_seconds?: number;
+    };
     periodic?: {
       interval?: number;
       unit?: string;
@@ -164,6 +195,7 @@ export interface ParsedBundleConfig {
   bundle: Bundle;
   sync?: Sync;
   variables?: Variables;
+  targets?: Record<string, TargetConfig>;
   resources?: Resources;
   artifacts?: Record<string, unknown>;
   include?: string[];
@@ -181,11 +213,21 @@ export interface ResourceNode {
 export interface GraphParameter {
   name: string;
   value: string;
+  expression?: string;
 }
 
 export interface GraphCompute {
   kind: string;
   label: string;
+  expression?: string;
+  variableName?: string;
+  details?: GraphComputeDetail[];
+}
+
+export interface GraphComputeDetail {
+  label: string;
+  value: string;
+  expression?: string;
 }
 
 export type BundleNodeType =
@@ -210,6 +252,7 @@ export interface BundleGraphNode {
   subtitle?: string;
   status?: string;
   trigger?: string;
+  triggerTooltip?: string;
   runAs?: string;
   taskCount?: number;
   parameters?: GraphParameter[];
@@ -241,10 +284,22 @@ function toRecord(value: unknown): Record<string, unknown> {
 }
 
 function getResourceDisplayName(
+  resourceGroup: string,
   resourceKey: string,
   resourceData: Record<string, unknown>,
 ): string {
+  if (resourceGroup === "secret_scopes") return resourceKey;
   return typeof resourceData.name === "string" ? resourceData.name : resourceKey;
+}
+
+function resourceKind(resourceGroup: string): string {
+  if (resourceGroup === "secret_scopes") return "secret_scope";
+  return resourceGroup.replace(/s$/, "");
+}
+
+function resourceNodeType(resourceGroup: string): BundleNodeType {
+  if (resourceGroup === "secret_scopes") return "secret_scope";
+  return "resource";
 }
 
 function normalizeReference(value: string): string {
@@ -253,6 +308,76 @@ function normalizeReference(value: string): string {
     return variableReference[1];
   }
   return value;
+}
+
+function computeReference(value: string): Partial<GraphCompute> {
+  const variableReference = value.match(/^\$\{var\.([^}]+)\}$/);
+  if (variableReference?.[1]) {
+    return { expression: value, variableName: variableReference[1] };
+  }
+  return value.includes("${") ? { expression: value } : {};
+}
+
+function resourceReference(value: string): {
+  resourceType: string;
+  resourceKey: string;
+  field: string;
+} | undefined {
+  const match = value.match(/^\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}$/);
+  if (!match?.[1] || !match[2] || !match[3]) return undefined;
+  return {
+    resourceType: match[1],
+    resourceKey: match[2],
+    field: match[3],
+  };
+}
+
+function normalizeDependencyOutcome(outcome: unknown): string | undefined {
+  if (typeof outcome !== "string") return undefined;
+  const normalized = outcome.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+const CONDITION_OPERATOR_LABELS: Record<
+  string,
+  { symbol: string; label: string }
+> = {
+  EQUAL_TO: { symbol: "==", label: "Equal to" },
+  NOT_EQUAL: { symbol: "!=", label: "Not equal" },
+  GREATER_THAN: { symbol: ">", label: "Greater than" },
+  GREATER_THAN_OR_EQUAL: {
+    symbol: ">=",
+    label: "Greater than or equal",
+  },
+  LESS_THAN: { symbol: "<", label: "Less than" },
+  LESS_THAN_OR_EQUAL: { symbol: "<=", label: "Less than or equal" },
+};
+
+function normalizedString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function conditionExpression(
+  condition: JobTask["condition_task"],
+): string | undefined {
+  const left = typeof condition?.left === "string" ? condition.left : undefined;
+  const op = normalizedString(condition?.op);
+  const right = typeof condition?.right === "string" ? condition.right : undefined;
+  const operator = op ? CONDITION_OPERATOR_LABELS[op] : undefined;
+  const symbol = operator?.symbol ?? op;
+  const label = operator?.label;
+  const operatorText = [symbol, label].filter(Boolean).join(" ");
+
+  if (left !== undefined && symbol && right !== undefined) {
+    const leftDisplay = left || '""';
+    const rightDisplay = right || '""';
+    return label
+      ? `${leftDisplay} ${symbol} ${rightDisplay} - ${label}`
+      : `${leftDisplay} ${symbol} ${rightDisplay}`;
+  }
+  return operatorText || undefined;
 }
 
 function withOptionalSubtitle(
@@ -272,7 +397,7 @@ function detectTaskType(task: JobTask): {
     return withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task.notebook_path);
   }
   if (task.condition_task) {
-    return withOptionalSubtitle("job", "If/else", task.condition_task.op);
+    return withOptionalSubtitle("job", "If/else", conditionExpression(task.condition_task));
   }
   if (task.dashboard_task) {
     return withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task.dashboard_id);
@@ -324,10 +449,30 @@ function detectTaskType(task: JobTask): {
 }
 
 function formatTrigger(job: Job): string {
-  const periodic = job.trigger?.periodic;
-  if (!periodic?.interval || !periodic.unit) return "Not specified";
-  const unit = periodic.interval === 1 ? periodic.unit.slice(0, -1) : periodic.unit;
-  return `Every ${periodic.interval} ${unit.toLowerCase()}`;
+  if (job.schedule?.quartz_cron_expression) {
+    const tz = job.schedule.timezone_id ? ` (${job.schedule.timezone_id})` : "";
+    const pauseStatus = job.schedule.pause_status
+      ? ` - ${job.schedule.pause_status}`
+      : "";
+    return `Schedule: ${job.schedule.quartz_cron_expression}${tz}${pauseStatus}`;
+  }
+  const trigger = job.trigger;
+  if (!trigger) return "Not specified";
+  if (trigger.file_arrival?.url) {
+    return `File arrival: ${trigger.file_arrival.url}`;
+  }
+  if (trigger.table_update?.table_names?.length) {
+    return `Table update: ${trigger.table_update.table_names.join(", ")}`;
+  }
+  if (trigger.table?.table_names?.length) {
+    return `Table: ${trigger.table.table_names.join(", ")}`;
+  }
+  if (trigger.periodic?.interval && trigger.periodic.unit) {
+    const { interval, unit } = trigger.periodic;
+    const unitLabel = interval === 1 ? unit.slice(0, -1) : unit;
+    return `Every ${interval} ${unitLabel.toLowerCase()}`;
+  }
+  return "Not specified";
 }
 
 function formatRunAs(job: Job): string {
@@ -347,15 +492,99 @@ function getParameterSummary(job: Job): GraphParameter[] {
     .map((parameter) => ({
       name: parameter.name ?? "parameter",
       value: typeof parameter.default === "string" ? normalizeReference(parameter.default) : "set",
+      ...(typeof parameter.default === "string" &&
+      parameter.default.includes("${")
+        ? { expression: parameter.default }
+        : {}),
     }));
 }
 
-function stringifyParameterValue(value: unknown): string {
-  if (typeof value === "string") return normalizeReference(value);
-  if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
-  if (Array.isArray(value)) return value.map((item) => stringifyParameterValue(item)).join(", ");
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return "set";
+function stringifyParameterValue(value: unknown): Omit<GraphParameter, "name"> {
+  if (typeof value === "string") {
+    return {
+      value: normalizeReference(value),
+      ...(value.includes("${") ? { expression: value } : {}),
+    };
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return { value: String(value) };
+  }
+  if (Array.isArray(value)) {
+    return { value: value.map((item) => stringifyParameterValue(item).value).join(", ") };
+  }
+  if (typeof value === "object" && value !== null) return { value: JSON.stringify(value) };
+  return { value: "set" };
+}
+
+function computeDetail(
+  label: string,
+  value: unknown,
+): GraphComputeDetail | undefined {
+  if (value === undefined) return undefined;
+  const data = stringifyParameterValue(value);
+  return { label, ...data };
+}
+
+function clusterDetails(
+  cluster: Record<string, unknown> | undefined,
+): GraphComputeDetail[] | undefined {
+  if (!cluster) return undefined;
+
+  const autoscale =
+    typeof cluster.autoscale === "object" &&
+    cluster.autoscale !== null &&
+    !Array.isArray(cluster.autoscale)
+      ? (cluster.autoscale as Record<string, unknown>)
+      : undefined;
+  const autoscaleValue = autoscale
+    ? `${String(autoscale.min_workers ?? "?")} - ${String(
+        autoscale.max_workers ?? "?",
+      )} workers`
+    : undefined;
+
+  return [
+    computeDetail("Spark", cluster.spark_version),
+    computeDetail("Node type", cluster.node_type_id),
+    computeDetail("Workers", cluster.num_workers),
+    computeDetail("Autoscale", autoscaleValue),
+    computeDetail("Security", cluster.data_security_mode),
+    computeDetail("Runtime", cluster.runtime_engine),
+    computeDetail("Policy", cluster.policy_id),
+  ].filter((item): item is GraphComputeDetail => Boolean(item));
+}
+
+function getJobClusterDetails(
+  job: Job | undefined,
+  jobClusterKey: string,
+): GraphComputeDetail[] | undefined {
+  const jobCluster = (job?.job_clusters ?? []).find(
+    (cluster) => cluster.job_cluster_key === jobClusterKey,
+  );
+  return clusterDetails(jobCluster?.new_cluster);
+}
+
+function pipelineDetails(
+  pipeline: Record<string, unknown> | undefined,
+): GraphComputeDetail[] | undefined {
+  if (!pipeline) return undefined;
+  const clusters = Array.isArray(pipeline.clusters)
+    ? (pipeline.clusters as Array<Record<string, unknown>>)
+    : [];
+  const defaultCluster = clusters[0];
+  const defaultClusterDetails = clusterDetails(defaultCluster) ?? [];
+
+  return [
+    computeDetail("Name", pipeline.name),
+    computeDetail("Catalog", pipeline.catalog),
+    computeDetail("Schema", pipeline.schema ?? pipeline.target),
+    computeDetail("Channel", pipeline.channel),
+    computeDetail("Edition", pipeline.edition),
+    computeDetail("Photon", pipeline.photon),
+    computeDetail("Serverless", pipeline.serverless),
+    computeDetail("Development", pipeline.development),
+    computeDetail("Cluster", defaultCluster?.label),
+    ...defaultClusterDetails,
+  ].filter((item): item is GraphComputeDetail => Boolean(item));
 }
 
 function getTaskPayload(task: JobTask): Record<string, unknown> | null {
@@ -388,7 +617,7 @@ function getTaskPayload(task: JobTask): Record<string, unknown> | null {
 }
 
 function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] | undefined {
-  const mergedParameters = new Map<string, string>();
+  const mergedParameters = new Map<string, Omit<GraphParameter, "name">>();
 
   for (const parameter of job.parameters ?? []) {
     if (typeof parameter.name !== "string") continue;
@@ -409,10 +638,13 @@ function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] |
 
   if (mergedParameters.size === 0) return undefined;
 
-  return [...mergedParameters.entries()].map(([name, value]) => ({ name, value }));
+  return [...mergedParameters.entries()].map(([name, data]) => ({ name, ...data }));
 }
 
-/** Returns true for task types that require cluster compute and default to serverless when none is specified. */
+const DEFAULT_CLUSTER_COMPUTE_LABEL = "Serverless / inherited compute";
+const DEFAULT_SQL_WAREHOUSE_LABEL = "Serverless / inherited SQL warehouse";
+
+/** Returns true for task types that run on cluster/serverless compute when none is specified. */
 function requiresClusterCompute(task: JobTask): boolean {
   return !!(
     task.notebook_task ||
@@ -420,39 +652,119 @@ function requiresClusterCompute(task: JobTask): boolean {
     task.spark_jar_task ||
     task.spark_submit_task ||
     task.python_wheel_task ||
-    task.dbt_task ||
-    task.dbt_platform_task ||
+    task.pipeline_task ||
     task.clean_rooms_notebook_task
   );
 }
 
-function getTaskCompute(task: JobTask): GraphCompute[] {
+/** Returns true for task types that run on SQL warehouse compute when none is specified. */
+function requiresSqlWarehouseCompute(task: JobTask): boolean {
+  return !!(
+    task.sql_task ||
+    task.dbt_task ||
+    task.dbt_platform_task ||
+    task.dashboard_task
+  );
+}
+
+function getTaskCompute(
+  task: JobTask,
+  job?: Job,
+  resources?: Resources,
+): GraphCompute[] {
   const compute: GraphCompute[] = [];
 
   if (task.sql_task?.warehouse_id) {
-    compute.push({ kind: "sqlWarehouse", label: normalizeReference(task.sql_task.warehouse_id) });
+    compute.push({
+      kind: "sqlWarehouse",
+      label: normalizeReference(task.sql_task.warehouse_id),
+      ...computeReference(task.sql_task.warehouse_id),
+    });
+  }
+  if (task.dbt_task?.warehouse_id) {
+    compute.push({
+      kind: "sqlWarehouse",
+      label: normalizeReference(task.dbt_task.warehouse_id),
+      ...computeReference(task.dbt_task.warehouse_id),
+    });
+  }
+  if (task.dbt_platform_task?.warehouse_id) {
+    compute.push({
+      kind: "sqlWarehouse",
+      label: normalizeReference(task.dbt_platform_task.warehouse_id),
+      ...computeReference(task.dbt_platform_task.warehouse_id),
+    });
+  }
+  if (task.dashboard_task?.warehouse_id) {
+    compute.push({
+      kind: "sqlWarehouse",
+      label: normalizeReference(task.dashboard_task.warehouse_id),
+      ...computeReference(task.dashboard_task.warehouse_id),
+    });
   }
   if (task.job_cluster_key) {
-    compute.push({ kind: "cluster", label: task.job_cluster_key });
+    const details = getJobClusterDetails(job, task.job_cluster_key);
+    compute.push({
+      kind: "cluster",
+      label: task.job_cluster_key,
+      ...(details ? { details } : {}),
+    });
   }
   if (task.existing_cluster_id) {
-    compute.push({ kind: "cluster", label: task.existing_cluster_id });
+    const ref = resourceReference(task.existing_cluster_id);
+    const cluster =
+      ref?.resourceType === "clusters"
+        ? toRecord(resources?.clusters?.[ref.resourceKey])
+        : undefined;
+    const details = clusterDetails(cluster);
+    compute.push({
+      kind: "cluster",
+      label:
+        ref?.resourceType === "clusters"
+          ? ref.resourceKey
+          : normalizeReference(task.existing_cluster_id),
+      ...computeReference(task.existing_cluster_id),
+      ...(details ? { details } : {}),
+    });
+  }
+  if (task.pipeline_task?.pipeline_id) {
+    const ref = resourceReference(task.pipeline_task.pipeline_id);
+    const pipeline =
+      ref?.resourceType === "pipelines"
+        ? toRecord(resources?.pipelines?.[ref.resourceKey])
+        : undefined;
+    const details = pipelineDetails(pipeline);
+    if (details) {
+      compute.push({
+        kind: "pipeline",
+        label: ref?.resourceKey ?? normalizeReference(task.pipeline_task.pipeline_id),
+        ...computeReference(task.pipeline_task.pipeline_id),
+        details,
+      });
+    }
+  }
+
+  if (compute.length === 0 && requiresSqlWarehouseCompute(task)) {
+    compute.push({ kind: "sqlWarehouse", label: DEFAULT_SQL_WAREHOUSE_LABEL });
+  }
+  if (compute.length === 0 && requiresClusterCompute(task)) {
+    compute.push({ kind: "cluster", label: DEFAULT_CLUSTER_COMPUTE_LABEL });
   }
 
   return compute;
 }
 
-function getJobComputeSummary(tasks: JobTask[]): GraphCompute[] {
+function getJobComputeSummary(
+  job: Job,
+  tasks: JobTask[],
+  resources?: Resources,
+): GraphCompute[] {
   const computeMap = new Map<string, GraphCompute>();
   tasks.forEach((task) => {
-    getTaskCompute(task).forEach((item) => {
+    getTaskCompute(task, job, resources).forEach((item) => {
       computeMap.set(`${item.kind}:${item.label}`, item);
     });
   });
-
-  if (computeMap.size === 0) {
-    return [{ kind: "cluster", label: "Serverless / inherited compute" }];
-  }
 
   return [...computeMap.values()];
 }
@@ -472,6 +784,8 @@ function addTaskReferenceGraph(
   taskId: string,
   taskData: TaskNodeData,
   task: JobTask,
+  job: Job,
+  resources: Resources | undefined,
   addNode: (node: BundleGraphNode) => void,
   addEdge: (edge: BundleEdge) => void,
 ): void {
@@ -512,23 +826,39 @@ function addTaskReferenceGraph(
     addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
   }
 
-  const computeItems = getTaskCompute(task);
+  const computeItems = getTaskCompute(task, job, resources);
   for (const item of computeItems) {
     if (item.kind === "cluster") {
       const nodeId = `cluster:${item.label}`;
-      addNode({ id: nodeId, kind: "cluster", nodeType: "cluster", displayName: item.label, data: {} });
+      addNode({
+        id: nodeId,
+        kind: "cluster",
+        nodeType: "cluster",
+        displayName: item.label,
+        data: {
+          ...(item.label === DEFAULT_CLUSTER_COMPUTE_LABEL ? { serverless: true } : {}),
+          ...(item.expression ? { expression: item.expression } : {}),
+          ...(item.variableName ? { variableName: item.variableName } : {}),
+          ...(item.details ? { details: item.details } : {}),
+        },
+      });
       addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
     } else if (item.kind === "sqlWarehouse") {
       const nodeId = `warehouse:${item.label}`;
-      addNode({ id: nodeId, kind: "warehouse", nodeType: "warehouse", displayName: item.label, data: {} });
+      addNode({
+        id: nodeId,
+        kind: "warehouse",
+        nodeType: "warehouse",
+        displayName: item.label,
+        data: {
+          ...(item.label === DEFAULT_SQL_WAREHOUSE_LABEL ? { serverless: true } : {}),
+          ...(item.expression ? { expression: item.expression } : {}),
+          ...(item.variableName ? { variableName: item.variableName } : {}),
+          ...(item.details ? { details: item.details } : {}),
+        },
+      });
       addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
     }
-  }
-
-  if (computeItems.length === 0 && requiresClusterCompute(task)) {
-    const nodeId = `cluster:serverless`;
-    addNode({ id: nodeId, kind: "cluster", nodeType: "cluster", displayName: "Serverless", data: { serverless: true } });
-    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
   }
 
   if (task.run_job_task?.job_id) {
@@ -614,7 +944,11 @@ export function extractResourceNodes(parsedBundle: ParsedBundleConfig): Resource
         id: `resources.${resourceGroup}.${resourceKey}`,
         resourceGroup,
         resourceKey,
-        displayName: getResourceDisplayName(resourceKey, resourceData),
+        displayName: getResourceDisplayName(
+          resourceGroup,
+          resourceKey,
+          resourceData,
+        ),
         data: resourceData,
       });
     }
@@ -685,8 +1019,8 @@ export async function extractBundleGraph(
     if (!isJobGroup) {
       addNode({
         id: resourceNode.id,
-        kind: resourceNode.resourceGroup.replace(/s$/, ""),
-        nodeType: "resource",
+        kind: resourceKind(resourceNode.resourceGroup),
+        nodeType: resourceNodeType(resourceNode.resourceGroup),
         displayName: resourceNode.displayName,
         resourceGroup: resourceNode.resourceGroup,
         resourceKey: resourceNode.resourceKey,
@@ -705,19 +1039,41 @@ export async function extractBundleGraph(
       nodeType: "job",
       displayName: resourceNode.displayName,
       trigger: formatTrigger(job),
+      ...(job.schedule?.quartz_cron_expression
+        ? {
+            triggerTooltip: [
+              describeCronExpression(
+                job.schedule.quartz_cron_expression,
+                job.schedule.timezone_id,
+              ),
+              job.schedule.pause_status
+                ? `Status: ${job.schedule.pause_status}`
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(" - "),
+          }
+        : {}),
       runAs: formatRunAs(job),
       taskCount: tasks.length,
       parameters: getParameterSummary(job),
-      compute: getJobComputeSummary(tasks),
+      compute: getJobComputeSummary(job, tasks, parsedBundle.resources),
       resourceGroup: resourceNode.resourceGroup,
       resourceKey: resourceNode.resourceKey,
       data: resourceNode.data,
     });
 
+    const tasksByKey = new Map(
+      tasks.map((jobTask, index) => [
+        jobTask.task_key ?? `task-${index + 1}`,
+        jobTask,
+      ]),
+    );
+
     tasks.forEach((task, taskIndex) => {
       const taskKey = task.task_key ?? `task-${taskIndex + 1}`;
       const taskId = `${jobId}.tasks.${taskKey}`;
-      const taskCompute = getTaskCompute(task);
+      const taskCompute = getTaskCompute(task, job, parsedBundle.resources);
       const taskType = detectTaskType(task);
       const taskParameters = getEffectiveTaskParameters(job, task);
       const sourceFilePath = resourceSourceMap.get(
@@ -730,9 +1086,16 @@ export async function extractBundleGraph(
         : undefined;
       const resolveSourceLocation = (yamlPath: string) => {
         const taskPrefix = `tasks.${taskKey}`;
-        if (!yamlPath.startsWith(taskPrefix)) return undefined;
-        const suffix = yamlPath.slice(taskPrefix.length);
-        return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
+        if (yamlPath.startsWith(taskPrefix)) {
+          const suffix = yamlPath.slice(taskPrefix.length);
+          return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
+        }
+        if (yamlPath.startsWith("parameters")) {
+          return sourceLocations?.get(
+            `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.${yamlPath}`,
+          );
+        }
+        return undefined;
       };
       const taskData = bundleRoot
         ? buildTaskNodeData(
@@ -775,16 +1138,29 @@ export async function extractBundleGraph(
       const dependencies = Array.isArray(task.depends_on) ? task.depends_on : [];
       dependencies.forEach((dependency) => {
         if (!dependency.task_key) return;
+        const dependencySourceTask = tasksByKey.get(dependency.task_key);
+        const outcome = dependencySourceTask?.condition_task
+          ? normalizeDependencyOutcome(dependency.outcome)
+          : undefined;
         addEdge({
           id: `${jobId}.tasks.${dependency.task_key}->${taskId}`,
           source: `${jobId}.tasks.${dependency.task_key}`,
           target: taskId,
           kind: "depends_on",
+          ...(outcome ? { data: { outcome } } : {}),
         });
       });
 
       if (bundleRoot && taskData) {
-        addTaskReferenceGraph(taskId, taskData, task, addNode, addEdge);
+        addTaskReferenceGraph(
+          taskId,
+          taskData,
+          task,
+          job,
+          parsedBundle.resources,
+          addNode,
+          addEdge,
+        );
       }
     });
   });

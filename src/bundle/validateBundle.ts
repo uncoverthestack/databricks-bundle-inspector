@@ -5,7 +5,10 @@ import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
 import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
-import { parseBundleDiagnostics } from "./parseBundleDiagnostics.js";
+import {
+  parseAvailableTargets,
+  parseBundleDiagnostics,
+} from "./parseBundleDiagnostics.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -58,11 +61,13 @@ export type BundleResult =
       ok: true;
       data: ParsedBundleConfig;
       issues?: ValidationIssue[];
+      targetOptions?: string[];
     }
   | {
       ok: false;
       error: BundleError;
       data?: ParsedBundleConfig;
+      targetOptions?: string[];
     };
 
 // Fix #5: Runtime schema validation with Zod.
@@ -81,6 +86,7 @@ const ParsedBundleConfigSchema = z
       .record(z.string(), z.record(z.string(), z.unknown()))
       .optional(),
     variables: z.record(z.string(), z.unknown()).optional(),
+    targets: z.record(z.string(), z.unknown()).optional(),
     sync: z.unknown().optional(),
     artifacts: z.unknown().optional(),
     include: z.array(z.string()).optional(),
@@ -145,6 +151,17 @@ function extractStderr(error: unknown): string | undefined {
 
 function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
+}
+
+function isExpectedProbeTargetFailure(
+  target: string | undefined,
+  stderr?: string,
+): boolean {
+  const effectiveTarget = target ?? BUNDLE_PROBE_TARGET;
+  return (
+    effectiveTarget === BUNDLE_PROBE_TARGET &&
+    Boolean(stderr?.includes(`${BUNDLE_PROBE_TARGET}: no such target`))
+  );
 }
 
 /**
@@ -246,6 +263,7 @@ export async function validateBundleWithDependencies(
       stderr ?? "",
       target ?? BUNDLE_PROBE_TARGET,
     );
+    const targetOptions = parseAvailableTargets(stderr ?? "");
     const issues =
       diagnostics.length > 0
         ? [
@@ -257,21 +275,36 @@ export async function validateBundleWithDependencies(
           ]
         : undefined;
 
-    return issues
-      ? { ok: true, data: parsed.data, issues }
-      : { ok: true, data: parsed.data };
+    return {
+      ok: true,
+      data: parsed.data,
+      ...(issues ? { issues } : {}),
+      ...(targetOptions.length > 0 ? { targetOptions } : {}),
+    };
   } catch (error: unknown) {
     const stdout = extractStdout(error);
     const stderr = extractStderr(error);
-
-    console.warn("[validateBundle] command exited non-zero", {
-      cliPath,
-      bundleDir: resolvedBundleDir,
+    const expectedProbeTargetFailure = isExpectedProbeTargetFailure(
       target,
-      error: getErrorMessage(error),
-      stdout,
       stderr,
-    });
+    );
+
+    if (expectedProbeTargetFailure) {
+      console.debug("[validateBundle] probe target unavailable; parsing stdout", {
+        cliPath,
+        bundleDir: resolvedBundleDir,
+        target,
+      });
+    } else {
+      console.warn("[validateBundle] command exited non-zero", {
+        cliPath,
+        bundleDir: resolvedBundleDir,
+        target,
+        error: getErrorMessage(error),
+        stdout,
+        stderr,
+      });
+    }
 
     if (hasErrorCode(error, "ENOENT")) {
       return {
@@ -306,7 +339,11 @@ export async function validateBundleWithDependencies(
           const diagnostics = parseBundleDiagnostics(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
-          );
+          ).map((diagnostic) => ({
+            ...diagnostic,
+            severity: "warning" as const,
+          }));
+          const targetOptions = parseAvailableTargets(stderr ?? "");
           return {
             ok: true,
             data: parsed.data,
@@ -318,6 +355,7 @@ export async function validateBundleWithDependencies(
                 diagnostics,
               },
             ],
+            ...(targetOptions.length > 0 ? { targetOptions } : {}),
           };
         }
       } catch {
@@ -334,6 +372,7 @@ export async function validateBundleWithDependencies(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
           );
+          const targetOptions = parseAvailableTargets(stderr ?? "");
           const issues =
             diagnostics.length > 0
               ? [
@@ -343,6 +382,8 @@ export async function validateBundleWithDependencies(
                     diagnostics,
                   },
                 ]
+              : expectedProbeTargetFailure
+                ? undefined
               : [
                   {
                     code: "CLI_WARNING",
@@ -351,7 +392,12 @@ export async function validateBundleWithDependencies(
                     details: stderr?.trim() || getErrorMessage(error),
                   },
                 ];
-          return { ok: true, data: parsed.data, issues };
+          return {
+            ok: true,
+            data: parsed.data,
+            ...(issues ? { issues } : {}),
+            ...(targetOptions.length > 0 ? { targetOptions } : {}),
+          };
         }
       } catch {
         // stdout is not valid JSON, fall through to error
@@ -360,27 +406,36 @@ export async function validateBundleWithDependencies(
 
     const probeTarget = target ?? BUNDLE_PROBE_TARGET;
     const diagnostics = parseBundleDiagnostics(stderr ?? "", probeTarget);
+    const targetOptions = parseAvailableTargets(stderr ?? "");
     const filteredStderr = (stderr ?? "")
       .split("\n")
       .filter((line) => !line.includes(`${probeTarget}: no such target`))
       .join("\n")
       .trim();
+    const fallbackDetails = expectedProbeTargetFailure
+      ? undefined
+      : getErrorMessage(error);
+    const details =
+      diagnostics.length > 0
+        ? diagnostics
+            .map(
+              (d) =>
+                `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
+            )
+            .join("\n")
+        : filteredStderr || fallbackDetails;
     const bundleError: BundleError = {
       bundleDir: resolvedBundleDir,
       bundleName,
       error: "Failed to validate Databricks bundle.",
       errorCode: "VALIDATION_FAILED",
-      details:
-        diagnostics.length > 0
-          ? diagnostics
-              .map(
-                (d) =>
-                  `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
-              )
-              .join("\n")
-          : filteredStderr || getErrorMessage(error),
+      ...(details ? { details } : {}),
     };
     if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
-    return { ok: false, error: bundleError };
+    return {
+      ok: false,
+      error: bundleError,
+      ...(targetOptions.length > 0 ? { targetOptions } : {}),
+    };
   }
 }

@@ -17,21 +17,3 @@ export function kindMeta(kind) {
     map[kind] ?? { code: "T", color: "#78716c", bg: "rgba(120,113,108,0.12)" }
   );
 }
-
-export function kindLabel(kind) {
-  const labels = {
-    notebook: "NOTEBOOK",
-    pipeline: "PIPELINE",
-    sql: "SQL",
-    script: "SCRIPT",
-    job: "JOB/CONTROL",
-    dashboard: "DASHBOARD",
-    cluster: "CLUSTER",
-    warehouse: "WAREHOUSE",
-    file: "FILE",
-    variable: "VARIABLE",
-    secret_scope: "SECRET",
-    widget: "PARAMETER",
-  };
-  return labels[kind] ?? String(kind ?? "TASK").toUpperCase();
-}

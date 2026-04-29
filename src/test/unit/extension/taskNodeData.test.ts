@@ -10,6 +10,7 @@ beforeAll(async () => {
   bundleRoot = await mkdtemp(path.join(tmpdir(), "bdi-task-test-"));
   await writeFile(path.join(bundleRoot, "notebook.py"), "# notebook", "utf8");
   await writeFile(path.join(bundleRoot, "query.sql"), "SELECT 1", "utf8");
+  await writeFile(path.join(bundleRoot, "git_notebook.py"), "# git", "utf8");
 });
 
 afterAll(async () => {
@@ -166,6 +167,69 @@ describe("buildTaskNodeData — fileReferences", () => {
     expect(result.fileReferences[0]?.exists).toBe(true);
     expect(result.fileReferences[0]?.resolvedPath).toBe(
       path.join(bundleRoot, "notebook.py"),
+    );
+  });
+
+  test("notebook_task source GIT resolves extensionless notebook paths locally", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(true);
+    expect(result.fileReferences[0]?.source).toBe("GIT");
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook.py"),
+    );
+  });
+
+  test("notebook_task source GIT prefers an exact local path before extension probing", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "notebook.py", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(true);
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "notebook.py"),
+    );
+  });
+
+  test("notebook_task source omitted requires exact local path", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(false);
+    expect(result.fileReferences[0]?.source).toBeUndefined();
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook"),
+    );
+  });
+
+  test("notebook_task source WORKSPACE requires exact local path", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook", source: "WORKSPACE" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+
+    expect(result.fileReferences[0]?.exists).toBe(false);
+    expect(result.fileReferences[0]?.source).toBe("WORKSPACE");
+    expect(result.fileReferences[0]?.resolvedPath).toBe(
+      path.join(bundleRoot, "git_notebook"),
     );
   });
 
@@ -610,6 +674,28 @@ describe("buildTaskNodeData — jobParameterReferences", () => {
     );
     expect(result.jobParameterReferences).toHaveLength(0);
   });
+
+  test("jobParameterReferences use YAML locations when available", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: {} },
+      rawJob([{ name: "env", default: "dev" }]),
+      "job-1",
+      "t",
+      bundleRoot,
+      "/workspace/resources/job.yml",
+      "/workspace/resources",
+      (yamlPath) =>
+        yamlPath === "parameters[0]"
+          ? { file: "/workspace/resources/job.yml", line: 7, column: 9 }
+          : undefined,
+    );
+
+    expect(result.jobParameterReferences[0]).toMatchObject({
+      name: "env",
+      sourceLine: 7,
+      sourceColumn: 9,
+    });
+  });
 });
 
 // --- dependsOn / runIf ---
@@ -733,6 +819,25 @@ describe("buildTaskNodeData — metadata fields", () => {
     );
     expect(result.sourceLine).toBe(0);
     expect(result.sourceColumn).toBe(0);
+  });
+
+  test("sourceLine and sourceColumn use the task YAML location when available", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: {} },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      "/workspace/resources/job.yml",
+      "/workspace/resources",
+      (yamlPath) =>
+        yamlPath === "tasks.t"
+          ? { file: "/workspace/resources/job.yml", line: 12, column: 9 }
+          : undefined,
+    );
+
+    expect(result.sourceLine).toBe(12);
+    expect(result.sourceColumn).toBe(9);
   });
 
   test("dbiComment is undefined", () => {

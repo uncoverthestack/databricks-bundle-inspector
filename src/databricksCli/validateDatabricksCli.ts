@@ -25,7 +25,25 @@ export type DatabricksCliVerificationResult =
       reason?: string;
     };
 
-let resolveCliPromise: Promise<DatabricksCliVerificationResult | undefined> | undefined;
+const AUTO_DETECT_CACHE_KEY = "__auto_detect__";
+const resolveCliPromises = new Map<
+  string,
+  Promise<DatabricksCliVerificationResult | undefined>
+>();
+
+function cliCacheKey(configuredPath?: string): string {
+  const trimmedPath = configuredPath?.trim();
+  return trimmedPath ? trimmedPath : AUTO_DETECT_CACHE_KEY;
+}
+
+export function invalidateDatabricksCliCache(configuredPath?: string): void {
+  if (configuredPath === undefined) {
+    resolveCliPromises.clear();
+    return;
+  }
+
+  resolveCliPromises.delete(cliCacheKey(configuredPath));
+}
 
 /**
  * Verifies that the candidate executable is the Databricks CLI.
@@ -114,9 +132,25 @@ export async function autoDetectDatabricksCli(): Promise<
 export async function resolveDatabricksCli(
   configuredPath?: string,
 ): Promise<DatabricksCliVerificationResult | undefined> {
+  const cacheKey = cliCacheKey(configuredPath);
+  let resolveCliPromise = resolveCliPromises.get(cacheKey);
+
   if (!resolveCliPromise) {
-    resolveCliPromise = resolveCliInternal(configuredPath);
+    resolveCliPromise = resolveCliInternal(configuredPath).then(
+      (result) => {
+        if (!result) {
+          resolveCliPromises.delete(cacheKey);
+        }
+        return result;
+      },
+      (error: unknown) => {
+        resolveCliPromises.delete(cacheKey);
+        throw error;
+      },
+    );
+    resolveCliPromises.set(cacheKey, resolveCliPromise);
   }
+
   return resolveCliPromise;
 }
 

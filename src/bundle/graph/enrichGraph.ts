@@ -32,6 +32,16 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     }
   }
 
+  function secretScopeNodeId(scope: string): string {
+    const resourceNode = [...nodeMap.values()].find(
+      (node) =>
+        node.nodeType === "secret_scope" &&
+        node.resourceGroup === "secret_scopes" &&
+        node.resourceKey === scope,
+    );
+    return resourceNode?.id ?? `secret:${scope}`;
+  }
+
   const localFileNodes = graph.nodes.filter(
     (n) => n.nodeType === "file" && n.location === "local" && n.data.exists === true,
   );
@@ -52,7 +62,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
 
       for (const detection of secrets) {
         if (!detection.scope) continue;
-        const nodeId = `secret:${detection.scope}`;
+        const nodeId = secretScopeNodeId(detection.scope);
         addNode({
           id: nodeId,
           kind: "secret_scope",

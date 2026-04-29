@@ -123,7 +123,7 @@ describe("extractBundleGraph", () => {
       { kind: "sqlWarehouse", label: "0123456789" },
     ]);
     expect(loadTask?.parameters).toEqual([
-      { name: "env", value: "env" },
+      { name: "env", value: "env", expression: "${var.env}" },
       { name: "limit", value: "25" },
       { name: "mode", value: "append" },
     ]);
@@ -143,6 +143,277 @@ describe("extractBundleGraph", () => {
     expect(resourceNode).toBeDefined();
     expect(resourceNode?.nodeType).toBe("resource");
     expect(resourceNode?.kind).toBe("pipeline");
+  });
+
+  test("includes schedule pause status in job trigger summary", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          scheduled_job: {
+            name: "Scheduled Job",
+            schedule: {
+              quartz_cron_expression: "0 0 8 * * ?",
+              timezone_id: "UTC",
+              pause_status: "PAUSED",
+            },
+            tasks: [],
+          },
+        },
+      },
+    });
+
+    const jobNode = graph.nodes.find(
+      (node) => node.id === "resources.jobs.scheduled_job",
+    );
+
+    expect(jobNode?.trigger).toBe("Schedule: 0 0 8 * * ? (UTC) - PAUSED");
+    expect(jobNode?.triggerTooltip).toContain("Status: PAUSED");
+  });
+
+  test("represents secret scope resources as first-class secret scope nodes", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        secret_scopes: {
+          "jdbc-test": {
+            initial_manage_principal: "users",
+          },
+        },
+      },
+    });
+
+    const secretScopeNode = graph.nodes.find(
+      (node) => node.id === "resources.secret_scopes.jdbc-test",
+    );
+
+    expect(secretScopeNode).toMatchObject({
+      kind: "secret_scope",
+      nodeType: "secret_scope",
+      displayName: "jdbc-test",
+      resourceGroup: "secret_scopes",
+      resourceKey: "jdbc-test",
+      data: {
+        initial_manage_principal: "users",
+      },
+    });
+  });
+
+  test("preserves condition task dependency outcomes on edges", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          conditional_job: {
+            tasks: [
+              {
+                task_key: "check_score",
+                condition_task: {
+                  op: "GREATER_THAN",
+                  left: "{{tasks.score.values.score}}",
+                  right: "0.9",
+                },
+              },
+              {
+                task_key: "batch_predict",
+                depends_on: [{ task_key: "check_score", outcome: "true" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/batch_predict",
+                },
+              },
+              {
+                task_key: "retrain_model",
+                depends_on: [{ task_key: "check_score", outcome: "false" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/retrain_model",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const trueEdge = graph.edges.find(
+      (edge) =>
+        edge.id ===
+        "resources.jobs.conditional_job.tasks.check_score->resources.jobs.conditional_job.tasks.batch_predict",
+    );
+    const falseEdge = graph.edges.find(
+      (edge) =>
+        edge.id ===
+        "resources.jobs.conditional_job.tasks.check_score->resources.jobs.conditional_job.tasks.retrain_model",
+    );
+    const conditionNode = graph.nodes.find(
+      (node) =>
+        node.id === "resources.jobs.conditional_job.tasks.check_score",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: "{{tasks.score.values.score}} > 0.9 - Greater than",
+    });
+    expect(trueEdge).toMatchObject({
+      kind: "depends_on",
+      data: { outcome: "true" },
+    });
+    expect(falseEdge).toMatchObject({
+      kind: "depends_on",
+      data: { outcome: "false" },
+    });
+  });
+
+  test("formats Databricks condition task expression in the task subtitle", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          repair_job: {
+            tasks: [
+              {
+                task_key: "condition_task",
+                condition_task: {
+                  op: "LESS_THAN",
+                  left: "{{job.repair_count}}",
+                  right: "5",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const conditionNode = graph.nodes.find(
+      (node) =>
+        node.id === "resources.jobs.repair_job.tasks.condition_task",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: "{{job.repair_count}} < 5 - Less than",
+    });
+  });
+
+  test("renders empty-string right operand as quoted empty string", async () => {
+    const graph = await extractBundleGraph({
+      bundle: { name: "demo-bundle" },
+      resources: {
+        jobs: {
+          empty_right_job: {
+            tasks: [
+              {
+                task_key: "check_dataset",
+                condition_task: {
+                  op: "GREATER_THAN",
+                  left: "{{job.parameters.dataset}}",
+                  right: "",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const conditionNode = graph.nodes.find(
+      (node) => node.id === "resources.jobs.empty_right_job.tasks.check_dataset",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: `{{job.parameters.dataset}} > "" - Greater than`,
+    });
+  });
+
+  test.each([
+    ["EQUAL_TO", "==", "Equal to"],
+    ["NOT_EQUAL", "!=", "Not equal"],
+    ["GREATER_THAN", ">", "Greater than"],
+    ["GREATER_THAN_OR_EQUAL", ">=", "Greater than or equal"],
+    ["LESS_THAN", "<", "Less than"],
+    ["LESS_THAN_OR_EQUAL", "<=", "Less than or equal"],
+  ])(
+    "formats condition operator %s with symbol and readable label",
+    async (op, symbol, label) => {
+      const graph = await extractBundleGraph({
+        bundle: {
+          name: "demo-bundle",
+        },
+        resources: {
+          jobs: {
+            condition_operator_job: {
+              tasks: [
+                {
+                  task_key: "condition_task",
+                  condition_task: {
+                    op,
+                    left: "{{job.repair_count}}",
+                    right: "5",
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const conditionNode = graph.nodes.find(
+        (node) =>
+          node.id ===
+          "resources.jobs.condition_operator_job.tasks.condition_task",
+      );
+
+      expect(conditionNode?.subtitle).toBe(
+        `{{job.repair_count}} ${symbol} 5 - ${label}`,
+      );
+    },
+  );
+
+  test("ignores dependency outcomes when the dependency source is not a condition task", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          invalid_outcome_job: {
+            tasks: [
+              {
+                task_key: "extract",
+                notebook_task: {
+                  notebook_path: "/Workspace/extract",
+                },
+              },
+              {
+                task_key: "load",
+                depends_on: [{ task_key: "extract", outcome: "true" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/load",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const edge = graph.edges.find(
+      (item) =>
+        item.id ===
+        "resources.jobs.invalid_outcome_job.tasks.extract->resources.jobs.invalid_outcome_job.tasks.load",
+    );
+
+    expect(edge).toMatchObject({ kind: "depends_on" });
+    expect(edge?.data).toBeUndefined();
   });
 
   test("falls back to default compute and generated task keys", async () => {
@@ -179,5 +450,279 @@ describe("extractBundleGraph", () => {
     expect(generatedTask).toBeDefined();
     expect(generatedTask?.displayName).toBe("task-1");
     expect(generatedTask?.taskTypeLabel).toBe("Python script");
+  });
+
+  test("attaches job cluster details to job_cluster_key compute", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      variables: {
+        node_type_id: { default: "Standard_DS3_v2" },
+      },
+      resources: {
+        jobs: {
+          validation_job: {
+            job_clusters: [
+              {
+                job_cluster_key: "job_cluster",
+                new_cluster: {
+                  spark_version: "15.4.x-scala2.12",
+                  node_type_id: "${var.node_type_id}",
+                  data_security_mode: "USER_ISOLATION",
+                  autoscale: {
+                    min_workers: 1,
+                    max_workers: 2,
+                  },
+                },
+              },
+            ],
+            tasks: [
+              {
+                task_key: "validate",
+                job_cluster_key: "job_cluster",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.validate",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "cluster",
+        label: "job_cluster",
+        details: [
+          { label: "Spark", value: "15.4.x-scala2.12" },
+          {
+            label: "Node type",
+            value: "node_type_id",
+            expression: "${var.node_type_id}",
+          },
+          { label: "Autoscale", value: "1 - 2 workers" },
+          { label: "Security", value: "USER_ISOLATION" },
+        ],
+      },
+    ]);
+  });
+
+  test("attaches top-level cluster resource details to existing_cluster_id references", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        clusters: {
+          shared_cluster: {
+            spark_version: "15.4.x-scala2.12",
+            node_type_id: "i3.xlarge",
+            num_workers: 2,
+            data_security_mode: "SINGLE_USER",
+          },
+        },
+        jobs: {
+          validation_job: {
+            tasks: [
+              {
+                task_key: "validate",
+                existing_cluster_id: "${resources.clusters.shared_cluster.id}",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.validate",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "cluster",
+        label: "shared_cluster",
+        expression: "${resources.clusters.shared_cluster.id}",
+        details: [
+          { label: "Spark", value: "15.4.x-scala2.12" },
+          { label: "Node type", value: "i3.xlarge" },
+          { label: "Workers", value: "2" },
+          { label: "Security", value: "SINGLE_USER" },
+        ],
+      },
+    ]);
+  });
+
+  test("attaches pipeline resource details to pipeline tasks", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        pipelines: {
+          bronze_pipeline: {
+            name: "Bronze Pipeline",
+            catalog: "main",
+            schema: "bronze",
+            channel: "CURRENT",
+            edition: "CORE",
+            photon: true,
+            clusters: [
+              {
+                label: "default",
+                node_type_id: "i3.xlarge",
+                autoscale: {
+                  min_workers: 1,
+                  max_workers: 3,
+                },
+              },
+            ],
+          },
+        },
+        jobs: {
+          validation_job: {
+            tasks: [
+              {
+                task_key: "run_pipeline",
+                pipeline_task: {
+                  pipeline_id: "${resources.pipelines.bronze_pipeline.id}",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const task = graph.nodes.find(
+      (node) => node.id === "resources.jobs.validation_job.tasks.run_pipeline",
+    );
+
+    expect(task?.compute).toEqual([
+      {
+        kind: "pipeline",
+        label: "bronze_pipeline",
+        expression: "${resources.pipelines.bronze_pipeline.id}",
+        details: [
+          { label: "Name", value: "Bronze Pipeline" },
+          { label: "Catalog", value: "main" },
+          { label: "Schema", value: "bronze" },
+          { label: "Channel", value: "CURRENT" },
+          { label: "Edition", value: "CORE" },
+          { label: "Photon", value: "true" },
+          { label: "Cluster", value: "default" },
+          { label: "Node type", value: "i3.xlarge" },
+          { label: "Autoscale", value: "1 - 3 workers" },
+        ],
+      },
+    ]);
+  });
+
+  test("infers compute by Databricks task type", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          compute_job: {
+            tasks: [
+              {
+                task_key: "if_else",
+                condition_task: {
+                  op: "EQUAL_TO",
+                  left: "a",
+                  right: "b",
+                },
+              },
+              {
+                task_key: "pipeline",
+                pipeline_task: {
+                  pipeline_id: "pipeline-id",
+                },
+              },
+              {
+                task_key: "dashboard",
+                dashboard_task: {
+                  dashboard_id: "dashboard-id",
+                  warehouse_id: "dashboard-warehouse",
+                },
+              },
+              {
+                task_key: "dbt",
+                dbt_task: {
+                  commands: ["dbt run"],
+                  warehouse_id: "dbt-warehouse",
+                },
+              },
+              {
+                task_key: "sql_default",
+                sql_task: {
+                  file: {
+                    path: "query.sql",
+                  },
+                },
+              },
+              {
+                task_key: "jar",
+                spark_jar_task: {
+                  main_class_name: "com.acme.Main",
+                },
+              },
+              {
+                task_key: "wheel",
+                python_wheel_task: {
+                  package_name: "demo",
+                },
+              },
+              {
+                task_key: "notebook",
+                notebook_task: {
+                  notebook_path: "notebook.py",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    function taskCompute(taskKey: string) {
+      return graph.nodes.find(
+        (node) => node.id === `resources.jobs.compute_job.tasks.${taskKey}`,
+      )?.compute;
+    }
+
+    expect(taskCompute("if_else")).toEqual([]);
+    expect(taskCompute("pipeline")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("dashboard")).toEqual([
+      { kind: "sqlWarehouse", label: "dashboard-warehouse" },
+    ]);
+    expect(taskCompute("dbt")).toEqual([
+      { kind: "sqlWarehouse", label: "dbt-warehouse" },
+    ]);
+    expect(taskCompute("sql_default")).toEqual([
+      { kind: "sqlWarehouse", label: "Serverless / inherited SQL warehouse" },
+    ]);
+    expect(taskCompute("jar")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("wheel")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
+    expect(taskCompute("notebook")).toEqual([
+      { kind: "cluster", label: "Serverless / inherited compute" },
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
+import { isVariableResolvedForTarget } from "./targetResolution.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -12,7 +13,8 @@ export type InspectorIssueKind =
   | "unresolved_variable"
   | "validation_diagnostic"
   | "unknown_or_deprecated_field"
-  | "unknown_task_type";
+  | "unknown_task_type"
+  | "git_source_not_recommended";
 
 export interface InspectorIssue {
   id: string;
@@ -29,10 +31,6 @@ export interface InspectorIssue {
   fixHint?: string;
 }
 
-function definedVariableNames(parsedBundle: ParsedBundleConfig): Set<string> {
-  return new Set(Object.keys(parsedBundle.variables ?? {}));
-}
-
 function isMissingLocalPath(ref: {
   resolvedPath: string | undefined;
   exists: boolean | undefined;
@@ -43,6 +41,17 @@ function isMissingLocalPath(ref: {
 function sourceFileForTask(task: BundleGraphNode): string | undefined {
   const sourceFile = task.taskData?.sourceFile;
   return sourceFile && sourceFile.trim() ? sourceFile : undefined;
+}
+
+function parentJobHasGitSource(
+  graph: BundleGraph,
+  task: BundleGraphNode,
+): boolean {
+  const parentJobId = task.parentId ?? task.taskData?.parentJobId;
+  if (!parentJobId) return false;
+  const parentJob = graph.nodes.find((node) => node.id === parentJobId);
+  const gitSource = parentJob?.data?.git_source;
+  return Boolean(gitSource && typeof gitSource === "object");
 }
 
 function validationFile(
@@ -91,9 +100,9 @@ export function buildInspectorIssues(
   parsedBundle: ParsedBundleConfig,
   validationIssues: ValidationIssue[],
   bundleRoot: string,
+  targetName?: string | null,
 ): InspectorIssue[] {
   const issues: InspectorIssue[] = [];
-  const variables = definedVariableNames(parsedBundle);
   const tasks = graph.nodes.filter((node) => node.nodeType === "task");
 
   for (const task of tasks) {
@@ -116,6 +125,26 @@ export function buildInspectorIssues(
     }
 
     for (const ref of taskData.fileReferences) {
+      if (ref.source === "GIT" && !parentJobHasGitSource(graph, task)) {
+        issues.push({
+          id: `git-source:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "warning",
+          kind: "git_source_not_recommended",
+          title: "Git-sourced task path is not recommended for bundles",
+          detail: ref.path,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          fixHint:
+            "Prefer workspace-synced local task files by omitting source or using WORKSPACE.",
+          ...issueLocation(
+            ref.sourceFile || sourceFileForTask(task),
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
+        });
+      }
+
       if (!isMissingLocalPath(ref)) continue;
       issues.push({
         id: `missing-file:${task.id}:${ref.yamlPath}:${ref.path}`,
@@ -158,7 +187,9 @@ export function buildInspectorIssues(
     }
 
     for (const ref of taskData.variableReferences) {
-      if (variables.has(ref.variableName)) continue;
+      if (isVariableResolvedForTarget(parsedBundle, ref.variableName, targetName)) {
+        continue;
+      }
       issues.push({
         id: `unresolved-var:${task.id}:${ref.yamlPath}:${ref.variableName}`,
         severity: "error",
@@ -179,6 +210,7 @@ export function buildInspectorIssues(
   }
 
   for (const [issueIndex, issue] of validationIssues.entries()) {
+    if (issue.code === "AUTH_NOT_CONFIGURED") continue;
     for (const [diagnosticIndex, diagnostic] of (
       issue.diagnostics ?? []
     ).entries()) {
