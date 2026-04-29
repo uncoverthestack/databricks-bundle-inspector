@@ -674,6 +674,28 @@ describe("buildTaskNodeData — jobParameterReferences", () => {
     );
     expect(result.jobParameterReferences).toHaveLength(0);
   });
+
+  test("jobParameterReferences use YAML locations when available", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: {} },
+      rawJob([{ name: "env", default: "dev" }]),
+      "job-1",
+      "t",
+      bundleRoot,
+      "/workspace/resources/job.yml",
+      "/workspace/resources",
+      (yamlPath) =>
+        yamlPath === "parameters[0]"
+          ? { file: "/workspace/resources/job.yml", line: 7, column: 9 }
+          : undefined,
+    );
+
+    expect(result.jobParameterReferences[0]).toMatchObject({
+      name: "env",
+      sourceLine: 7,
+      sourceColumn: 9,
+    });
+  });
 });
 
 // --- dependsOn / runIf ---
@@ -797,6 +819,25 @@ describe("buildTaskNodeData — metadata fields", () => {
     );
     expect(result.sourceLine).toBe(0);
     expect(result.sourceColumn).toBe(0);
+  });
+
+  test("sourceLine and sourceColumn use the task YAML location when available", () => {
+    const result = buildTaskNodeData(
+      { notebook_task: {} },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      "/workspace/resources/job.yml",
+      "/workspace/resources",
+      (yamlPath) =>
+        yamlPath === "tasks.t"
+          ? { file: "/workspace/resources/job.yml", line: 12, column: 9 }
+          : undefined,
+    );
+
+    expect(result.sourceLine).toBe(12);
+    expect(result.sourceColumn).toBe(9);
   });
 
   test("dbiComment is undefined", () => {

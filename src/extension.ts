@@ -123,7 +123,11 @@ function inspectorIssuesToVsCodeDiagnostics(
 
 function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>): BundleDiagnostic[] {
   if (result.ok) {
-    return result.issues?.flatMap((i) => i.diagnostics ?? []) ?? [];
+    return (
+      result.issues
+        ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
+        .flatMap((i) => i.diagnostics ?? []) ?? []
+    );
   }
   return result.error.diagnostics ?? [];
 }
@@ -707,6 +711,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
                 selection: new vscode.Range(pos, pos),
               });
             }
+          }
+          if (
+            message?.type === "copyReviewSummary" &&
+            typeof message.markdown === "string"
+          ) {
+            void vscode.env.clipboard
+              .writeText(message.markdown)
+              .then(
+                () =>
+                  vscode.window.showInformationMessage(
+                    "Bundle review summary copied.",
+                  ),
+                (error: unknown) =>
+                  vscode.window.showWarningMessage(
+                    `Could not copy bundle review summary: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  ),
+              );
           }
         });
 

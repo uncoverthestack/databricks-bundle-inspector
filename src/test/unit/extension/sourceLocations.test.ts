@@ -17,6 +17,13 @@ describe("parseYamlLocations", () => {
     );
 
     expect(
+      locations.get("resources.jobs.ingest_job.tasks[0]"),
+    ).toMatchObject({
+      file: "/bundle/resources/job.yml",
+      line: 5,
+      column: 11,
+    });
+    expect(
       locations.get(
         "resources.jobs.ingest_job.tasks[0].notebook_task.notebook_path",
       ),

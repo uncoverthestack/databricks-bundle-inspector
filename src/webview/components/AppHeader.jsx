@@ -1,3 +1,4 @@
+import { ClipboardCopy } from "lucide-react";
 import GraphModeToggle from "./GraphModeToggle";
 import SearchBox from "./SearchBox";
 
@@ -19,6 +20,8 @@ export default function AppHeader({
   onSearchSelect,
   graphMode,
   onGraphModeChange,
+  issueCount,
+  onCopyReviewSummary,
 }) {
   return (
     <header
@@ -87,7 +90,19 @@ export default function AppHeader({
       <GraphModeToggle
         value={graphMode}
         onChange={onGraphModeChange}
+        issueCount={issueCount}
       />
+      {onCopyReviewSummary && (
+        <button
+          type="button"
+          onClick={onCopyReviewSummary}
+          className="hidden shrink-0 items-center gap-1.5 rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-300 outline-none hover:border-stone-600 hover:bg-stone-800 hover:text-stone-100 focus:border-blue-400 md:inline-flex"
+          title="Copy bundle review summary"
+        >
+          <ClipboardCopy size={13} />
+          <span>Copy review</span>
+        </button>
+      )}
     </header>
   );
 }

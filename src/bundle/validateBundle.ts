@@ -153,6 +153,17 @@ function isAuthError(stderr?: string): boolean {
   return Boolean(stderr?.includes("cannot configure default credentials"));
 }
 
+function isExpectedProbeTargetFailure(
+  target: string | undefined,
+  stderr?: string,
+): boolean {
+  const effectiveTarget = target ?? BUNDLE_PROBE_TARGET;
+  return (
+    effectiveTarget === BUNDLE_PROBE_TARGET &&
+    Boolean(stderr?.includes(`${BUNDLE_PROBE_TARGET}: no such target`))
+  );
+}
+
 /**
  * Returns whether a working Databricks CLI can be resolved on this machine.
  *
@@ -273,15 +284,27 @@ export async function validateBundleWithDependencies(
   } catch (error: unknown) {
     const stdout = extractStdout(error);
     const stderr = extractStderr(error);
-
-    console.warn("[validateBundle] command exited non-zero", {
-      cliPath,
-      bundleDir: resolvedBundleDir,
+    const expectedProbeTargetFailure = isExpectedProbeTargetFailure(
       target,
-      error: getErrorMessage(error),
-      stdout,
       stderr,
-    });
+    );
+
+    if (expectedProbeTargetFailure) {
+      console.debug("[validateBundle] probe target unavailable; parsing stdout", {
+        cliPath,
+        bundleDir: resolvedBundleDir,
+        target,
+      });
+    } else {
+      console.warn("[validateBundle] command exited non-zero", {
+        cliPath,
+        bundleDir: resolvedBundleDir,
+        target,
+        error: getErrorMessage(error),
+        stdout,
+        stderr,
+      });
+    }
 
     if (hasErrorCode(error, "ENOENT")) {
       return {
@@ -359,6 +382,8 @@ export async function validateBundleWithDependencies(
                     diagnostics,
                   },
                 ]
+              : expectedProbeTargetFailure
+                ? undefined
               : [
                   {
                     code: "CLI_WARNING",
@@ -370,7 +395,7 @@ export async function validateBundleWithDependencies(
           return {
             ok: true,
             data: parsed.data,
-            issues,
+            ...(issues ? { issues } : {}),
             ...(targetOptions.length > 0 ? { targetOptions } : {}),
           };
         }
@@ -387,20 +412,24 @@ export async function validateBundleWithDependencies(
       .filter((line) => !line.includes(`${probeTarget}: no such target`))
       .join("\n")
       .trim();
+    const fallbackDetails = expectedProbeTargetFailure
+      ? undefined
+      : getErrorMessage(error);
+    const details =
+      diagnostics.length > 0
+        ? diagnostics
+            .map(
+              (d) =>
+                `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
+            )
+            .join("\n")
+        : filteredStderr || fallbackDetails;
     const bundleError: BundleError = {
       bundleDir: resolvedBundleDir,
       bundleName,
       error: "Failed to validate Databricks bundle.",
       errorCode: "VALIDATION_FAILED",
-      details:
-        diagnostics.length > 0
-          ? diagnostics
-              .map(
-                (d) =>
-                  `${d.severity}: ${d.message}${d.path ? ` in ${d.path}:${d.line ?? 0}:${d.column ?? 0}` : ""}`,
-              )
-              .join("\n")
-          : filteredStderr || getErrorMessage(error),
+      ...(details ? { details } : {}),
     };
     if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
     return {

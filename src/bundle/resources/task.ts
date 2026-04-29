@@ -95,6 +95,7 @@ export interface JobParameterReference {
   // TODO: Our Databricks Bundle Inspector Comment
   dbiComment: string | undefined;
   sourceLine: number;
+  sourceColumn?: number;
   referencedByTasks: string[];
   hasRuntimeOnlyUsage: boolean;
 }
@@ -618,28 +619,34 @@ function getTaskParameterReferences(
 function getJobParameterReferences(
   rawJob: Record<string, unknown>,
   taskKey: string,
+  resolveSourceLocation?: SourceLocationResolver,
 ): JobParameterReference[] {
   const jobParameters = Array.isArray(rawJob.parameters)
     ? rawJob.parameters
     : [];
   return (jobParameters as Array<Record<string, unknown>>)
     .filter((p) => typeof p.name === "string")
-    .map((p) => ({
-      name: p.name as string,
-      default: typeof p.default === "string" ? p.default : undefined,
-      // TODO: Our Databricks Bundle Inspector Comment
-      dbiComment: undefined,
-      sourceLine: 0,
-      referencedByTasks: [taskKey],
-      hasRuntimeOnlyUsage: typeof p.default !== "string",
-    }));
+    .map((p, index) => {
+      const sourceLocation = resolveSourceLocation?.(`parameters[${index}]`);
+      return {
+        name: p.name as string,
+        default: typeof p.default === "string" ? p.default : undefined,
+        // TODO: Our Databricks Bundle Inspector Comment
+        dbiComment: undefined,
+        sourceLine: sourceLocation?.line ?? 0,
+        ...(sourceLocation ? { sourceColumn: sourceLocation.column } : {}),
+        referencedByTasks: [taskKey],
+        hasRuntimeOnlyUsage: typeof p.default !== "string",
+      };
+    });
 }
 
 /**
  * Builds a `TaskNodeData` from raw task and job objects out of a parsed bundle config.
  *
- * `sourceLine` / `sourceColumn` fields are 0 — the CLI JSON output does not include
- * source locations. `isInGitignore` on file references is always false for the same reason.
+ * `sourceLine` / `sourceColumn` are populated when a YAML source-location resolver
+ * is available. `isInGitignore` on file references is always false because the CLI
+ * JSON output does not include gitignore state.
  *
  * @param rawTask Raw task object from the parsed bundle.
  * @param rawJob Raw job object that owns this task.
@@ -684,7 +691,11 @@ export function buildTaskNodeData(
     taskKey,
     resolveSourceLocation,
   );
-  const jobParameterReferences = getJobParameterReferences(rawJob, taskKey);
+  const jobParameterReferences = getJobParameterReferences(
+    rawJob,
+    taskKey,
+    resolveSourceLocation,
+  );
 
   const dependsOn = Array.isArray(rawTask.depends_on)
     ? (rawTask.depends_on as Array<Record<string, unknown>>)
@@ -693,6 +704,7 @@ export function buildTaskNodeData(
     : [];
 
   const runIf = typeof rawTask.run_if === "string" ? rawTask.run_if : undefined;
+  const taskSourceLocation = resolveSourceLocation?.(`tasks.${taskKey}`);
 
   let nestedTask: TaskNodeData | undefined;
   if (taskType === "for_each") {
@@ -723,8 +735,8 @@ export function buildTaskNodeData(
     taskType,
     parentJobId: jobId,
     sourceFile,
-    sourceLine: 0,
-    sourceColumn: 0,
+    sourceLine: taskSourceLocation?.line ?? 0,
+    sourceColumn: taskSourceLocation?.column ?? 0,
     fileReferences,
     variableReferences,
     libraryReferences,

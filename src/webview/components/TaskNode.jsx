@@ -6,6 +6,9 @@ export default function TaskNode({ data, selected }) {
   const missing = data.hasMissingFile;
   const dimmed = data.focusState === "dimmed";
   const issueCount = data.issueCounts?.total ?? 0;
+  const branchOutcomes = Array.isArray(data.branchOutcomes)
+    ? data.branchOutcomes
+    : [];
   return (
     <div
       style={{
@@ -50,6 +53,27 @@ export default function TaskNode({ data, selected }) {
         >
           {issueCount}
         </span>
+      )}
+      {branchOutcomes.length > 0 && (
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          {branchOutcomes.slice(0, 2).map((outcome) => {
+            const normalized = String(outcome).toLowerCase();
+            const className =
+              normalized === "true"
+                ? "border-green-500/35 bg-green-500/15 text-green-200"
+                : normalized === "false"
+                  ? "border-slate-500/35 bg-slate-500/15 text-slate-200"
+                  : "border-blue-500/35 bg-blue-500/15 text-blue-200";
+            return (
+              <span
+                key={outcome}
+                className={`rounded border px-1 text-[9px] font-bold leading-3 ${className}`}
+              >
+                {outcome}
+              </span>
+            );
+          })}
+        </div>
       )}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>

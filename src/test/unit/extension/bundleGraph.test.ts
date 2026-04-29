@@ -145,6 +145,277 @@ describe("extractBundleGraph", () => {
     expect(resourceNode?.kind).toBe("pipeline");
   });
 
+  test("includes schedule pause status in job trigger summary", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          scheduled_job: {
+            name: "Scheduled Job",
+            schedule: {
+              quartz_cron_expression: "0 0 8 * * ?",
+              timezone_id: "UTC",
+              pause_status: "PAUSED",
+            },
+            tasks: [],
+          },
+        },
+      },
+    });
+
+    const jobNode = graph.nodes.find(
+      (node) => node.id === "resources.jobs.scheduled_job",
+    );
+
+    expect(jobNode?.trigger).toBe("Schedule: 0 0 8 * * ? (UTC) - PAUSED");
+    expect(jobNode?.triggerTooltip).toContain("Status: PAUSED");
+  });
+
+  test("represents secret scope resources as first-class secret scope nodes", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        secret_scopes: {
+          "jdbc-test": {
+            initial_manage_principal: "users",
+          },
+        },
+      },
+    });
+
+    const secretScopeNode = graph.nodes.find(
+      (node) => node.id === "resources.secret_scopes.jdbc-test",
+    );
+
+    expect(secretScopeNode).toMatchObject({
+      kind: "secret_scope",
+      nodeType: "secret_scope",
+      displayName: "jdbc-test",
+      resourceGroup: "secret_scopes",
+      resourceKey: "jdbc-test",
+      data: {
+        initial_manage_principal: "users",
+      },
+    });
+  });
+
+  test("preserves condition task dependency outcomes on edges", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          conditional_job: {
+            tasks: [
+              {
+                task_key: "check_score",
+                condition_task: {
+                  op: "GREATER_THAN",
+                  left: "{{tasks.score.values.score}}",
+                  right: "0.9",
+                },
+              },
+              {
+                task_key: "batch_predict",
+                depends_on: [{ task_key: "check_score", outcome: "true" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/batch_predict",
+                },
+              },
+              {
+                task_key: "retrain_model",
+                depends_on: [{ task_key: "check_score", outcome: "false" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/retrain_model",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const trueEdge = graph.edges.find(
+      (edge) =>
+        edge.id ===
+        "resources.jobs.conditional_job.tasks.check_score->resources.jobs.conditional_job.tasks.batch_predict",
+    );
+    const falseEdge = graph.edges.find(
+      (edge) =>
+        edge.id ===
+        "resources.jobs.conditional_job.tasks.check_score->resources.jobs.conditional_job.tasks.retrain_model",
+    );
+    const conditionNode = graph.nodes.find(
+      (node) =>
+        node.id === "resources.jobs.conditional_job.tasks.check_score",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: "{{tasks.score.values.score}} > 0.9 - Greater than",
+    });
+    expect(trueEdge).toMatchObject({
+      kind: "depends_on",
+      data: { outcome: "true" },
+    });
+    expect(falseEdge).toMatchObject({
+      kind: "depends_on",
+      data: { outcome: "false" },
+    });
+  });
+
+  test("formats Databricks condition task expression in the task subtitle", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          repair_job: {
+            tasks: [
+              {
+                task_key: "condition_task",
+                condition_task: {
+                  op: "LESS_THAN",
+                  left: "{{job.repair_count}}",
+                  right: "5",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const conditionNode = graph.nodes.find(
+      (node) =>
+        node.id === "resources.jobs.repair_job.tasks.condition_task",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: "{{job.repair_count}} < 5 - Less than",
+    });
+  });
+
+  test("renders empty-string right operand as quoted empty string", async () => {
+    const graph = await extractBundleGraph({
+      bundle: { name: "demo-bundle" },
+      resources: {
+        jobs: {
+          empty_right_job: {
+            tasks: [
+              {
+                task_key: "check_dataset",
+                condition_task: {
+                  op: "GREATER_THAN",
+                  left: "{{job.parameters.dataset}}",
+                  right: "",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const conditionNode = graph.nodes.find(
+      (node) => node.id === "resources.jobs.empty_right_job.tasks.check_dataset",
+    );
+
+    expect(conditionNode).toMatchObject({
+      taskTypeLabel: "If/else",
+      subtitle: `{{job.parameters.dataset}} > "" - Greater than`,
+    });
+  });
+
+  test.each([
+    ["EQUAL_TO", "==", "Equal to"],
+    ["NOT_EQUAL", "!=", "Not equal"],
+    ["GREATER_THAN", ">", "Greater than"],
+    ["GREATER_THAN_OR_EQUAL", ">=", "Greater than or equal"],
+    ["LESS_THAN", "<", "Less than"],
+    ["LESS_THAN_OR_EQUAL", "<=", "Less than or equal"],
+  ])(
+    "formats condition operator %s with symbol and readable label",
+    async (op, symbol, label) => {
+      const graph = await extractBundleGraph({
+        bundle: {
+          name: "demo-bundle",
+        },
+        resources: {
+          jobs: {
+            condition_operator_job: {
+              tasks: [
+                {
+                  task_key: "condition_task",
+                  condition_task: {
+                    op,
+                    left: "{{job.repair_count}}",
+                    right: "5",
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const conditionNode = graph.nodes.find(
+        (node) =>
+          node.id ===
+          "resources.jobs.condition_operator_job.tasks.condition_task",
+      );
+
+      expect(conditionNode?.subtitle).toBe(
+        `{{job.repair_count}} ${symbol} 5 - ${label}`,
+      );
+    },
+  );
+
+  test("ignores dependency outcomes when the dependency source is not a condition task", async () => {
+    const graph = await extractBundleGraph({
+      bundle: {
+        name: "demo-bundle",
+      },
+      resources: {
+        jobs: {
+          invalid_outcome_job: {
+            tasks: [
+              {
+                task_key: "extract",
+                notebook_task: {
+                  notebook_path: "/Workspace/extract",
+                },
+              },
+              {
+                task_key: "load",
+                depends_on: [{ task_key: "extract", outcome: "true" }],
+                notebook_task: {
+                  notebook_path: "/Workspace/load",
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const edge = graph.edges.find(
+      (item) =>
+        item.id ===
+        "resources.jobs.invalid_outcome_job.tasks.extract->resources.jobs.invalid_outcome_job.tasks.load",
+    );
+
+    expect(edge).toMatchObject({ kind: "depends_on" });
+    expect(edge?.data).toBeUndefined();
+  });
+
   test("falls back to default compute and generated task keys", async () => {
     const graph = await extractBundleGraph({
       bundle: {

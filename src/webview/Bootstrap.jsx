@@ -108,6 +108,13 @@ export default function Bootstrap() {
     });
   }
 
+  function handleCopyReviewSummary(markdown) {
+    vscodeApi?.postMessage({
+      type: "copyReviewSummary",
+      markdown,
+    });
+  }
+
   return (
     <App
       key={focusIssuesNonce ?? "inspector"}
@@ -124,6 +131,7 @@ export default function Bootstrap() {
       focusIssuesNonce={focusIssuesNonce}
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}
+      onCopyReviewSummary={handleCopyReviewSummary}
     />
   );
 }

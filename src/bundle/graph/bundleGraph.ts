@@ -7,6 +7,7 @@ import {
   type YamlLocationMap,
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
+import { describeCronExpression } from "./cronDescription.js";
 
 export type { BundleEdge, EdgeKind };
 
@@ -33,6 +34,7 @@ export interface JobPermission {
 
 export interface JobTaskDependency {
   task_key?: string;
+  outcome?: string;
   [key: string]: unknown;
 }
 
@@ -114,7 +116,26 @@ export interface Job {
   }>;
   permissions?: JobPermission[];
   parameters?: Array<{ name?: string; default?: string }>;
+  schedule?: {
+    quartz_cron_expression?: string;
+    timezone_id?: string;
+    pause_status?: string;
+  };
   trigger?: {
+    file_arrival?: {
+      url?: string;
+      min_time_between_triggers_seconds?: number;
+      wait_after_last_change_seconds?: number;
+    };
+    table?: {
+      table_names?: string[];
+      condition?: string;
+    };
+    table_update?: {
+      table_names?: string[];
+      condition?: string;
+      wait_after_last_change_seconds?: number;
+    };
     periodic?: {
       interval?: number;
       unit?: string;
@@ -231,6 +252,7 @@ export interface BundleGraphNode {
   subtitle?: string;
   status?: string;
   trigger?: string;
+  triggerTooltip?: string;
   runAs?: string;
   taskCount?: number;
   parameters?: GraphParameter[];
@@ -262,10 +284,22 @@ function toRecord(value: unknown): Record<string, unknown> {
 }
 
 function getResourceDisplayName(
+  resourceGroup: string,
   resourceKey: string,
   resourceData: Record<string, unknown>,
 ): string {
+  if (resourceGroup === "secret_scopes") return resourceKey;
   return typeof resourceData.name === "string" ? resourceData.name : resourceKey;
+}
+
+function resourceKind(resourceGroup: string): string {
+  if (resourceGroup === "secret_scopes") return "secret_scope";
+  return resourceGroup.replace(/s$/, "");
+}
+
+function resourceNodeType(resourceGroup: string): BundleNodeType {
+  if (resourceGroup === "secret_scopes") return "secret_scope";
+  return "resource";
 }
 
 function normalizeReference(value: string): string {
@@ -298,6 +332,54 @@ function resourceReference(value: string): {
   };
 }
 
+function normalizeDependencyOutcome(outcome: unknown): string | undefined {
+  if (typeof outcome !== "string") return undefined;
+  const normalized = outcome.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+const CONDITION_OPERATOR_LABELS: Record<
+  string,
+  { symbol: string; label: string }
+> = {
+  EQUAL_TO: { symbol: "==", label: "Equal to" },
+  NOT_EQUAL: { symbol: "!=", label: "Not equal" },
+  GREATER_THAN: { symbol: ">", label: "Greater than" },
+  GREATER_THAN_OR_EQUAL: {
+    symbol: ">=",
+    label: "Greater than or equal",
+  },
+  LESS_THAN: { symbol: "<", label: "Less than" },
+  LESS_THAN_OR_EQUAL: { symbol: "<=", label: "Less than or equal" },
+};
+
+function normalizedString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function conditionExpression(
+  condition: JobTask["condition_task"],
+): string | undefined {
+  const left = typeof condition?.left === "string" ? condition.left : undefined;
+  const op = normalizedString(condition?.op);
+  const right = typeof condition?.right === "string" ? condition.right : undefined;
+  const operator = op ? CONDITION_OPERATOR_LABELS[op] : undefined;
+  const symbol = operator?.symbol ?? op;
+  const label = operator?.label;
+  const operatorText = [symbol, label].filter(Boolean).join(" ");
+
+  if (left !== undefined && symbol && right !== undefined) {
+    const leftDisplay = left || '""';
+    const rightDisplay = right || '""';
+    return label
+      ? `${leftDisplay} ${symbol} ${rightDisplay} - ${label}`
+      : `${leftDisplay} ${symbol} ${rightDisplay}`;
+  }
+  return operatorText || undefined;
+}
+
 function withOptionalSubtitle(
   kind: string,
   label: string,
@@ -315,7 +397,7 @@ function detectTaskType(task: JobTask): {
     return withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task.notebook_path);
   }
   if (task.condition_task) {
-    return withOptionalSubtitle("job", "If/else", task.condition_task.op);
+    return withOptionalSubtitle("job", "If/else", conditionExpression(task.condition_task));
   }
   if (task.dashboard_task) {
     return withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task.dashboard_id);
@@ -367,10 +449,30 @@ function detectTaskType(task: JobTask): {
 }
 
 function formatTrigger(job: Job): string {
-  const periodic = job.trigger?.periodic;
-  if (!periodic?.interval || !periodic.unit) return "Not specified";
-  const unit = periodic.interval === 1 ? periodic.unit.slice(0, -1) : periodic.unit;
-  return `Every ${periodic.interval} ${unit.toLowerCase()}`;
+  if (job.schedule?.quartz_cron_expression) {
+    const tz = job.schedule.timezone_id ? ` (${job.schedule.timezone_id})` : "";
+    const pauseStatus = job.schedule.pause_status
+      ? ` - ${job.schedule.pause_status}`
+      : "";
+    return `Schedule: ${job.schedule.quartz_cron_expression}${tz}${pauseStatus}`;
+  }
+  const trigger = job.trigger;
+  if (!trigger) return "Not specified";
+  if (trigger.file_arrival?.url) {
+    return `File arrival: ${trigger.file_arrival.url}`;
+  }
+  if (trigger.table_update?.table_names?.length) {
+    return `Table update: ${trigger.table_update.table_names.join(", ")}`;
+  }
+  if (trigger.table?.table_names?.length) {
+    return `Table: ${trigger.table.table_names.join(", ")}`;
+  }
+  if (trigger.periodic?.interval && trigger.periodic.unit) {
+    const { interval, unit } = trigger.periodic;
+    const unitLabel = interval === 1 ? unit.slice(0, -1) : unit;
+    return `Every ${interval} ${unitLabel.toLowerCase()}`;
+  }
+  return "Not specified";
 }
 
 function formatRunAs(job: Job): string {
@@ -842,7 +944,11 @@ export function extractResourceNodes(parsedBundle: ParsedBundleConfig): Resource
         id: `resources.${resourceGroup}.${resourceKey}`,
         resourceGroup,
         resourceKey,
-        displayName: getResourceDisplayName(resourceKey, resourceData),
+        displayName: getResourceDisplayName(
+          resourceGroup,
+          resourceKey,
+          resourceData,
+        ),
         data: resourceData,
       });
     }
@@ -913,8 +1019,8 @@ export async function extractBundleGraph(
     if (!isJobGroup) {
       addNode({
         id: resourceNode.id,
-        kind: resourceNode.resourceGroup.replace(/s$/, ""),
-        nodeType: "resource",
+        kind: resourceKind(resourceNode.resourceGroup),
+        nodeType: resourceNodeType(resourceNode.resourceGroup),
         displayName: resourceNode.displayName,
         resourceGroup: resourceNode.resourceGroup,
         resourceKey: resourceNode.resourceKey,
@@ -933,6 +1039,21 @@ export async function extractBundleGraph(
       nodeType: "job",
       displayName: resourceNode.displayName,
       trigger: formatTrigger(job),
+      ...(job.schedule?.quartz_cron_expression
+        ? {
+            triggerTooltip: [
+              describeCronExpression(
+                job.schedule.quartz_cron_expression,
+                job.schedule.timezone_id,
+              ),
+              job.schedule.pause_status
+                ? `Status: ${job.schedule.pause_status}`
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(" - "),
+          }
+        : {}),
       runAs: formatRunAs(job),
       taskCount: tasks.length,
       parameters: getParameterSummary(job),
@@ -941,6 +1062,13 @@ export async function extractBundleGraph(
       resourceKey: resourceNode.resourceKey,
       data: resourceNode.data,
     });
+
+    const tasksByKey = new Map(
+      tasks.map((jobTask, index) => [
+        jobTask.task_key ?? `task-${index + 1}`,
+        jobTask,
+      ]),
+    );
 
     tasks.forEach((task, taskIndex) => {
       const taskKey = task.task_key ?? `task-${taskIndex + 1}`;
@@ -958,9 +1086,16 @@ export async function extractBundleGraph(
         : undefined;
       const resolveSourceLocation = (yamlPath: string) => {
         const taskPrefix = `tasks.${taskKey}`;
-        if (!yamlPath.startsWith(taskPrefix)) return undefined;
-        const suffix = yamlPath.slice(taskPrefix.length);
-        return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
+        if (yamlPath.startsWith(taskPrefix)) {
+          const suffix = yamlPath.slice(taskPrefix.length);
+          return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
+        }
+        if (yamlPath.startsWith("parameters")) {
+          return sourceLocations?.get(
+            `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.${yamlPath}`,
+          );
+        }
+        return undefined;
       };
       const taskData = bundleRoot
         ? buildTaskNodeData(
@@ -1003,11 +1138,16 @@ export async function extractBundleGraph(
       const dependencies = Array.isArray(task.depends_on) ? task.depends_on : [];
       dependencies.forEach((dependency) => {
         if (!dependency.task_key) return;
+        const dependencySourceTask = tasksByKey.get(dependency.task_key);
+        const outcome = dependencySourceTask?.condition_task
+          ? normalizeDependencyOutcome(dependency.outcome)
+          : undefined;
         addEdge({
           id: `${jobId}.tasks.${dependency.task_key}->${taskId}`,
           source: `${jobId}.tasks.${dependency.task_key}`,
           target: taskId,
           kind: "depends_on",
+          ...(outcome ? { data: { outcome } } : {}),
         });
       });
 

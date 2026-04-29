@@ -43,6 +43,17 @@ function sourceFileForTask(task: BundleGraphNode): string | undefined {
   return sourceFile && sourceFile.trim() ? sourceFile : undefined;
 }
 
+function parentJobHasGitSource(
+  graph: BundleGraph,
+  task: BundleGraphNode,
+): boolean {
+  const parentJobId = task.parentId ?? task.taskData?.parentJobId;
+  if (!parentJobId) return false;
+  const parentJob = graph.nodes.find((node) => node.id === parentJobId);
+  const gitSource = parentJob?.data?.git_source;
+  return Boolean(gitSource && typeof gitSource === "object");
+}
+
 function validationFile(
   bundleRoot: string,
   diagnostic: BundleDiagnostic,
@@ -114,7 +125,7 @@ export function buildInspectorIssues(
     }
 
     for (const ref of taskData.fileReferences) {
-      if (ref.source === "GIT") {
+      if (ref.source === "GIT" && !parentJobHasGitSource(graph, task)) {
         issues.push({
           id: `git-source:${task.id}:${ref.yamlPath}:${ref.path}`,
           severity: "warning",
@@ -199,6 +210,7 @@ export function buildInspectorIssues(
   }
 
   for (const [issueIndex, issue] of validationIssues.entries()) {
+    if (issue.code === "AUTH_NOT_CONFIGURED") continue;
     for (const [diagnosticIndex, diagnostic] of (
       issue.diagnostics ?? []
     ).entries()) {

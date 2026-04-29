@@ -42,6 +42,16 @@ function taskNode(overrides: Partial<TaskNodeData> = {}): BundleGraphNode {
   };
 }
 
+function jobNode(data: Record<string, unknown> = {}): BundleGraphNode {
+  return {
+    id: "resources.jobs.ingest",
+    kind: "job",
+    nodeType: "job",
+    displayName: "ingest",
+    data,
+  };
+}
+
 describe("buildInspectorIssues", () => {
   test("reports missing local file references", () => {
     const graph: BundleGraph = {
@@ -82,9 +92,10 @@ describe("buildInspectorIssues", () => {
     ]);
   });
 
-  test("warns when task file references use Git source", () => {
+  test("warns when task file references use Git source without job git_source", () => {
     const graph: BundleGraph = {
       nodes: [
+        jobNode(),
         taskNode({
           fileReferences: [
             {
@@ -124,6 +135,46 @@ describe("buildInspectorIssues", () => {
         column: 11,
       },
     ]);
+  });
+
+  test("does not warn when Git-sourced task files belong to a Git-sourced job", () => {
+    const graph: BundleGraph = {
+      nodes: [
+        jobNode({
+          git_source: {
+            git_url: "https://github.com/acme/demo",
+            git_provider: "gitHub",
+            git_branch: "main",
+          },
+        }),
+        taskNode({
+          fileReferences: [
+            {
+              path: "ingest/highlights",
+              resolvedPath: "/workspace/demo/ingest/highlights.py",
+              exists: true,
+              source: "GIT",
+              isInGitignore: false,
+              referenceType: "notebook",
+              sourceFile: "/workspace/demo/resources/job.yml",
+              sourceLine: 14,
+              sourceColumn: 11,
+              yamlPath: "resources.jobs.ingest.tasks.extract.notebook_task.notebook_path",
+            },
+          ],
+        }),
+      ],
+      edges: [],
+    };
+
+    expect(
+      buildInspectorIssues(
+        graph,
+        { bundle: { name: "demo" } },
+        [],
+        "/workspace/demo",
+      ),
+    ).toEqual([]);
   });
 
   test("reports missing local libraries", () => {
@@ -311,5 +362,33 @@ describe("buildInspectorIssues", () => {
         column: 2,
       },
     ]);
+  });
+
+  test("does not turn Databricks auth failures into inspector issues", () => {
+    const graph: BundleGraph = { nodes: [], edges: [] };
+    const validationIssues: ValidationIssue[] = [
+      {
+        code: "AUTH_NOT_CONFIGURED",
+        message: "Databricks authentication is not configured.",
+        details:
+          "failed during request visitor: default auth: cannot configure default credentials",
+        diagnostics: [
+          {
+            severity: "warning",
+            message:
+              "failed during request visitor: default auth: cannot configure default credentials",
+          },
+        ],
+      },
+    ];
+
+    expect(
+      buildInspectorIssues(
+        graph,
+        { bundle: { name: "demo" } },
+        validationIssues,
+        "/workspace/demo",
+      ),
+    ).toEqual([]);
   });
 });
