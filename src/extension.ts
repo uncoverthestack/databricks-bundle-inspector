@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "path";
 import {
@@ -14,25 +14,17 @@ import {
   type InspectorIssue,
 } from "./bundle/issues.js";
 import {
-  collectNativeDocumentationSignals,
-  type DocumentationSignal,
-} from "./bundle/documentationSignals.js";
-import {
-  buildJobDocumentation,
-  documentationFileName,
-  renderJobDocumentationMarkdown,
-} from "./bundle/jobDocumentation.js";
-import { decideDocumentationGeneration } from "./bundle/documentationPolicy.js";
-import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
 } from "./databricksCli/config.js";
 import { invalidateDatabricksCliCache } from "./databricksCli/validateDatabricksCli.js";
-import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
+import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
 import { getIncludedFiles } from "./bundle/bundleIncludes.js";
 import type { ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
 
-const BUNDLE_YML_RE = /databricks\.ya?ml$/;
+function isBundlePath(filePath: string): boolean {
+  return isBundleFile(path.basename(filePath));
+}
 
 function isPathInDirectory(filePath: string, directoryPath: string): boolean {
   const resolvedFilePath = path.resolve(filePath);
@@ -132,93 +124,20 @@ function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>):
   return result.error.diagnostics ?? [];
 }
 
-async function collectDocumentationSignals(
-  _bundleYmlPath: string,
-  parsedBundle: NonNullable<
-    Awaited<ReturnType<typeof validateBundle>>["data"]
-  >,
-): Promise<DocumentationSignal[]> {
-  // DBI comments are intentionally not part of the v0 product path. Keep the
-  // parser available for future versions, but generate docs from native bundle
-  // description/comment fields until the convention is stable.
-  //
-  // const signalFiles = new Set<string>([
-  //   bundleYmlPath,
-  //   ...(await getIncludedFiles(bundleYmlPath)),
-  // ]);
-  // const signals = collectNativeDocumentationSignals(parsedBundle);
-  //
-  // await Promise.all(
-  //   [...signalFiles].map(async (filePath) => {
-  //     try {
-  //       const content = await readFile(filePath, "utf-8");
-  //       signals.push(...parseDbiCommentSignals(filePath, content));
-  //     } catch {
-  //       // Ignore unreadable include files. The generated doc still contains
-  //       // graph facts and native descriptions from the validated bundle.
-  //     }
-  //   }),
-  // );
-  //
-  // return signals;
-
-  return collectNativeDocumentationSignals(parsedBundle);
-}
-
-function jobOptionsForDocumentation(
-  parsedBundle: NonNullable<
-    Awaited<ReturnType<typeof validateBundle>>["data"]
-  >,
-): Array<{ label: string; description?: string; jobKey: string }> {
-  const resources = parsedBundle.resources as
-    | (typeof parsedBundle.resources & { job?: Record<string, unknown> })
-    | undefined;
-  const jobs = resources?.jobs ?? resources?.job ?? {};
-  return Object.entries(jobs).map(([jobKey, jobValue]) => {
-    const jobRecord =
-      typeof jobValue === "object" && jobValue !== null
-        ? (jobValue as Record<string, unknown>)
-        : {};
-    const name =
-      typeof jobRecord.name === "string" && jobRecord.name.trim()
-        ? jobRecord.name
-        : undefined;
-    return {
-      label: jobKey,
-      ...(name ? { description: name } : {}),
-      jobKey,
-    };
-  });
-}
-
-function issueLabel(issue: InspectorIssue): string {
-  const location = issue.file
-    ? ` (${path.basename(issue.file)}${issue.line ? `:${issue.line}` : ""})`
-    : "";
-  return `${issue.detail ? `${issue.title}: ${issue.detail}` : issue.title}${location}`;
-}
-
-function issueSummary(issues: InspectorIssue[]): string {
-  const count = issues.length === 1 ? "1 issue" : `${issues.length} issues`;
-  const first = issues[0] ? ` First: ${issueLabel(issues[0])}` : "";
-  return ` (${count}).${first}`;
-}
+type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 
 /**
- * Runs bundle validate for a single bundle root, updates diagnostics for all
- * affected files, and refreshes the fileToBundleRoot map with the resolved includes.
+ * Updates diagnostics for one bundle root from an existing validation result.
  *
- * Diagnostics are updated per-file — existing entries for files not in the new
- * result are cleared so stale errors don't linger after a fix.
+ * Diagnostics are updated per-file so existing entries for files not in the new
+ * result are cleared and stale errors do not linger after a fix.
  */
-async function runBundleDiagnostics(
+async function updateBundleDiagnostics(
+  result: BundleValidationResult,
   bundleRoot: string,
-  configuredCliPath: string | undefined,
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
 ): Promise<void> {
-  const result = await validateBundle(bundleRoot, undefined, configuredCliPath);
-
   // Update the include map with CLI-resolved paths
   if (result.ok) {
     for (const included of result.data.include ?? []) {
@@ -272,28 +191,40 @@ async function runBundleDiagnostics(
 }
 
 /**
- * Builds the fileToBundleRoot map cheaply (YAML parse + glob, no CLI) for all
- * discovered databricks.yml files. This runs on activation so that opening an
- * included file is recognised immediately without waiting for a CLI call.
+ * Runs bundle validate for a single bundle root and updates diagnostics for
+ * files that belong to that bundle.
  */
-async function buildIncludeMap(
+async function runBundleDiagnostics(
+  bundleRoot: string,
+  configuredCliPath: string | undefined,
+  collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
 ): Promise<void> {
-  const bundleFiles = await vscode.workspace.findFiles(
-    "**/databricks.{yml,yaml}",
-    "{node_modules,dist,out}/**",
-  );
+  const result = await validateBundle(bundleRoot, undefined, configuredCliPath);
+  await updateBundleDiagnostics(result, bundleRoot, collection, fileToBundleRoot);
+}
 
-  await Promise.all(
-    bundleFiles.map(async (uri) => {
-      const bundleRoot = path.dirname(uri.fsPath);
-      fileToBundleRoot.set(uri.fsPath, bundleRoot);
-      const included = await getIncludedFiles(uri.fsPath);
+/**
+ * Tracks the inspected bundle file and its declared includes so saves can refresh
+ * diagnostics without scanning unrelated bundle YAML files in the workspace.
+ */
+async function trackBundleFiles(
+  bundleRoot: string,
+  fileToBundleRoot: Map<string, string>,
+): Promise<void> {
+  for (const fileName of ["databricks.yml", "databricks.yaml"]) {
+    const bundlePath = path.join(bundleRoot, fileName);
+    try {
+      await readFile(bundlePath, "utf-8");
+      fileToBundleRoot.set(bundlePath, bundleRoot);
+      const included = await getIncludedFiles(bundlePath);
       for (const f of included) {
         fileToBundleRoot.set(f, bundleRoot);
       }
-    }),
-  );
+    } catch {
+      // Ignore the alternate bundle filename when it is not present.
+    }
+  }
 }
 
 function getWebviewPaths(extensionUri: vscode.Uri) {
@@ -353,8 +284,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return getConfiguredDatabricksCliPath(getConfiguration());
   }
 
-  // Maps every bundle-related file (databricks.yml + all includes) to its bundle root.
-  // Populated on activation via cheap YAML parse, then kept up-to-date after each CLI run.
+  // Maps inspected bundle-related files (databricks.yml + its includes) to their bundle root.
+  // Populated lazily for the active bundle, then kept up-to-date after each CLI run.
   const fileToBundleRoot = new Map<string, string>();
 
   extensionContext.subscriptions.push(
@@ -365,25 +296,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }),
   );
 
-  // On activation: build the include map then immediately run diagnostics for all
-  // found bundles so the Problems panel is populated without any user interaction.
-  void (async () => {
-    await buildIncludeMap(fileToBundleRoot);
-    const bundleRoots = new Set(fileToBundleRoot.values());
-    await Promise.all(
-      [...bundleRoots].map((root) =>
-        runBundleDiagnostics(root, currentConfiguredCliPath(), diagnosticCollection, fileToBundleRoot).catch(
-          (err) => { console.warn(`[BundleInspector] diagnostics failed for ${root}:`, err); },
-        ),
-      ),
-    );
-  })();
-
   // On save: re-run diagnostics for the bundle that owns the saved file.
   extensionContext.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
       const filePath = document.uri.fsPath;
-      const bundleRoot = BUNDLE_YML_RE.test(filePath)
+      const isSavedBundleFile = isBundlePath(filePath);
+      const bundleRoot = isSavedBundleFile
         ? path.dirname(filePath)
         : fileToBundleRoot.get(filePath);
       if (!bundleRoot) return;
@@ -396,7 +314,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         );
         if (activePanel && activeBundleDir === bundleRoot) {
           await refreshActiveBundlePanel(bundleRoot, {
-            refreshTargets: BUNDLE_YML_RE.test(filePath),
+            refreshTargets: isSavedBundleFile,
           });
         }
       })();
@@ -594,8 +512,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
       activeBundleDir = bundleDir;
       activeRequestedTarget = requestedTarget;
+      await trackBundleFiles(bundleDir, fileToBundleRoot);
       const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
       const { result } = inspection;
+      await updateBundleDiagnostics(
+        result,
+        bundleDir,
+        diagnosticCollection,
+        fileToBundleRoot,
+      );
 
       if (!result.ok) {
         console.error("[inspectBundle] validation failed", result.error);
@@ -754,126 +679,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     "databricksBundleInspector.openBundleIssues",
     () => inspectBundle(undefined, { focusIssues: true }),
   );
-  const generateJobDocumentationDisposable = vscode.commands.registerCommand(
-    "databricksBundleInspector.generateJobDocumentation",
-    async () => {
-      const editor = vscode.window.activeTextEditor;
-      const bundleYmlPath = editor?.document.fileName;
-      const bundleDir = getBundleDirFromEditor(editor);
-
-      if (!bundleYmlPath || !bundleDir) {
-        vscode.window.showInformationMessage(
-          "Open a databricks.yaml or databricks.yml file, then run Generate Databricks Job Documentation.",
-        );
-        return;
-      }
-
-      try {
-        const inspection = await inspectBundleAtTarget(bundleDir);
-        const { result } = inspection;
-
-        if (!result.ok) {
-          if (result.error.diagnostics?.length) {
-            void vscode.commands.executeCommand("workbench.actions.view.problems");
-            vscode.window.showWarningMessage(
-              "Bundle has errors. Fix the Problems panel diagnostics before generating job documentation.",
-            );
-          } else {
-            vscode.window.showErrorMessage(
-              result.error.details
-                ? `${result.error.error}: ${result.error.details}`
-                : result.error.error,
-            );
-          }
-          return;
-        }
-
-        const bundleData = inspection.bundleData;
-        const enrichedGraph = inspection.enrichedGraph;
-        const inspectorIssues = inspection.inspectorIssues;
-        if (!bundleData || !enrichedGraph || !inspectorIssues) return;
-
-        const jobOptions = jobOptionsForDocumentation(bundleData);
-        if (jobOptions.length === 0) {
-          vscode.window.showInformationMessage(
-            "No jobs were found in this bundle.",
-          );
-          return;
-        }
-
-        const selectedJob =
-          jobOptions.length === 1
-            ? jobOptions[0]
-            : await vscode.window.showQuickPick(jobOptions, {
-                placeHolder: "Select the job to document",
-                matchOnDescription: true,
-              });
-        if (!selectedJob) return;
-
-        const signals = await collectDocumentationSignals(
-          bundleYmlPath,
-          bundleData,
-        );
-        const doc = buildJobDocumentation(
-          bundleData,
-          enrichedGraph,
-          selectedJob.jobKey,
-          signals,
-          inspectorIssues,
-        );
-
-        const generationDecision = decideDocumentationGeneration(doc.issues);
-        if (generationDecision.action === "block") {
-          const choice = await vscode.window.showErrorMessage(
-            `Job documentation was not generated because "${selectedJob.jobKey}" has error-level inspector issues${issueSummary(generationDecision.blockingIssues)}`,
-            "Open Issues",
-          );
-          if (choice === "Open Issues") {
-            await inspectBundle(undefined, { focusIssues: true });
-          }
-          return;
-        }
-
-        if (generationDecision.action === "warn") {
-          const choice = await vscode.window.showWarningMessage(
-            `This job has warning-level inspector issues${issueSummary(generationDecision.warningIssues)} Generate documentation anyway?`,
-            "Generate Anyway",
-            "Open Issues",
-          );
-          if (choice === "Open Issues") {
-            await inspectBundle(undefined, { focusIssues: true });
-            return;
-          }
-          if (choice !== "Generate Anyway") return;
-        }
-
-        const markdown = renderJobDocumentationMarkdown(doc);
-        const outputDir = path.join(bundleDir, "docs", "databricks", "jobs");
-        const outputPath = path.join(
-          outputDir,
-          documentationFileName(selectedJob.jobKey),
-        );
-
-        await mkdir(outputDir, { recursive: true });
-        await writeFile(outputPath, markdown, "utf-8");
-
-        const document = await vscode.workspace.openTextDocument(outputPath);
-        await vscode.window.showTextDocument(document);
-        vscode.window.showInformationMessage(
-          `Generated job documentation for "${selectedJob.jobKey}".`,
-        );
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `Failed to generate job documentation: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    },
-  );
-
   extensionContext.subscriptions.push(
     disposable,
     openIssuesDisposable,
-    generateJobDocumentationDisposable,
   );
 }
 

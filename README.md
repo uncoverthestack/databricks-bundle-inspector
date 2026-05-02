@@ -1,10 +1,10 @@
 # Databricks Bundle Inspector
 
-A VS Code extension for inspecting Databricks Asset Bundles before you deploy or review them. It runs `databricks bundle validate --output json`, turns the CLI-resolved bundle into an interactive job graph, surfaces bundle issues in context, and can generate job documentation once the selected job is clean enough to document.
+A VS Code extension for inspecting Declarative Automation Bundles (previously known as Databricks Asset Bundles) before you deploy or review them. It runs `databricks bundle validate --output json`, turns the CLI-resolved bundle into an interactive job graph, and surfaces bundle issues in context.
 
 ## What it does
 
-Databricks Asset Bundles (DABs) describe jobs, tasks, dependencies, and compute in YAML that can span many files and layers of variable substitution. Reading the raw YAML rarely tells you what will actually run. This extension closes that gap inside your editor.
+Declarative Automation Bundles (previously known as Databricks Asset Bundles) (DABs) describe jobs, tasks, dependencies, and compute in YAML that can span many files and layers of variable substitution. Reading the raw YAML rarely tells you what will actually run. This extension closes that gap inside your editor.
 
 Open a `databricks.yml` file, run **Inspect Databricks Bundle**, and you get:
 
@@ -12,7 +12,6 @@ Open a `databricks.yml` file, run **Inspect Databricks Bundle**, and you get:
 - Task details including type, source file, parameters, compute, dependencies, and direct dependents.
 - Bundle issue detection for missing local files/libraries, unresolved variables, unknown task types, and Databricks CLI diagnostics.
 - File-content enrichment for local task files, including detected secret scopes and widgets where supported.
-- Optional markdown job documentation generated from the CLI-resolved bundle and native Databricks `description` / `comment` fields.
 
 The graph is powered by React Flow and includes pan, zoom, a minimap, search, job switching, issue-focused views, and layout controls.
 
@@ -36,19 +35,12 @@ Databricks authentication is not strictly required for structural inspection. Th
 
 The webview opens in a new editor column and hot-reloads if you re-run the command after editing the YAML.
 
-Markdown job documentation is intentionally gated:
-
-- Error-level inspector issues block documentation generation for the selected job.
-- Warning-level issues prompt before generation.
-- Generated markdown is a job description, not an issue report; fix issues in the inspector before treating generated docs as final.
-
 ## Commands
 
 | Command ID | Title | When available |
 | --- | --- | --- |
 | `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
 | `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette |
-| `databricksBundleInspector.generateJobDocumentation` | Generate Databricks Job Documentation | Active file is named `databricks.yml` or `databricks.yaml` |
 
 ## How it works
 

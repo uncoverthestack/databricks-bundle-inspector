@@ -38,10 +38,7 @@
     "url": "https://github.com/uncoverthestack/databricks-bundle-inspector.git"
   },
   "main": "./dist/extension.js",
-  "activationEvents": [
-    "workspaceContains:**/databricks.yml",
-    "workspaceContains:**/databricks.yaml"
-  ],
+  "activationEvents": [],
   "contributes": {
     "commands": [
       {
@@ -52,11 +49,6 @@
       {
         "command": "databricksBundleInspector.openBundleIssues",
         "title": "Open Bundle Issues"
-      },
-      {
-        "command": "databricksBundleInspector.generateJobDocumentation",
-        "title": "Generate Databricks Job Documentation",
-        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
       }
     ],
     "configuration": {
@@ -75,21 +67,11 @@
           "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
-        },
-        {
-          "command": "databricksBundleInspector.generateJobDocumentation",
-          "group": "navigation",
-          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }
       ],
       "editor/context": [
         {
           "command": "databricksBundleInspector.inspectBundle",
-          "group": "navigation",
-          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
-        },
-        {
-          "command": "databricksBundleInspector.generateJobDocumentation",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
         }

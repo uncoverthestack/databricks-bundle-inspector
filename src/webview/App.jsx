@@ -2728,6 +2728,11 @@ export default function App({
     setGraphMode("all");
   }
 
+  function handleGraphModeChange(value) {
+    setGraphMode(value);
+    setActiveHeaderPanel(value === "issues" ? "issues" : null);
+  }
+
   function handleCopyReviewSummary() {
     if (!onCopyReviewSummary) return;
     onCopyReviewSummary(
@@ -2764,7 +2769,7 @@ export default function App({
         onSearchChange={setSearchValue}
         onSearchSelect={handleSearchSelect}
         graphMode={graphMode}
-        onGraphModeChange={setGraphMode}
+        onGraphModeChange={handleGraphModeChange}
         issueCount={selectedJobIssueCount}
         onCopyReviewSummary={
           onCopyReviewSummary ? handleCopyReviewSummary : undefined

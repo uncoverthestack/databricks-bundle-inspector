@@ -4,7 +4,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [0.1.0] - 2026-05-05
 
-Initial public release. The extension is a read-only inspector for Databricks Asset Bundles. It runs `databricks bundle validate --output json`, renders the resolved bundle as an interactive graph, surfaces bundle issues in VS Code's native Problems panel, and generates per-job Markdown documentation. Everything operates on the CLI-resolved bundle. The extension does not modify YAML and does not call Databricks workspace APIs.
+Initial public release. The extension is a read-only inspector for Declarative Automation Bundles (previously known as Databricks Asset Bundles). It runs `databricks bundle validate --output json`, renders the resolved bundle as an interactive graph, surfaces bundle issues in VS Code's native Problems panel, and generates per-job Markdown documentation. Everything operates on the CLI-resolved bundle. The extension does not modify YAML and does not call Databricks workspace APIs.
 
 ### Added
 

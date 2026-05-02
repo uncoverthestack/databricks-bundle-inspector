@@ -46,11 +46,12 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                     key={item.id}
                     type="button"
                     disabled={!clickable}
+                    title={clickable ? "Open source location" : undefined}
                     onClick={clickable ? () => onSelectItem(item) : undefined}
                     className={[
                       "flex w-full items-start gap-2 px-3 py-2 text-left outline-none",
                       clickable
-                        ? "hover:bg-stone-900 focus:bg-stone-900"
+                        ? "cursor-pointer hover:bg-stone-900 focus:bg-stone-900"
                         : "cursor-default",
                     ].join(" ")}
                   >
