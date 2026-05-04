@@ -30,17 +30,17 @@ Databricks authentication is not strictly required for structural inspection. Th
 2. Open the bundle file in the editor.
 3. Run a command from one of these entry points:
    * The **Inspect Databricks Bundle** button in the editor title bar (only shown for bundle files).
-   * Right-click in the editor and choose an inspector command.
+   * Right-click in the editor and choose **Inspect Databricks Bundle**.
    * The Command Palette.
 
-The webview opens in a new editor column and hot-reloads if you re-run the command after editing the YAML.
+The webview opens in a new editor column. After a bundle has been inspected, saving the bundle file or a tracked related file refreshes diagnostics and updates the active inspector panel.
 
 ## Commands
 
 | Command ID | Title | When available |
 | --- | --- | --- |
 | `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
-| `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette |
+| `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
 
 ## How it works
 
@@ -50,7 +50,7 @@ The **extension host** (`src/extension.ts`) resolves the Databricks CLI, invokes
 
 The **webview** (`src/webview/`) is a React 19 + Vite + Tailwind v4 app that receives the parsed bundle graph and renders it with `@xyflow/react`. Layout is computed with a topological level assignment and a row-packing heuristic so parallel branches stay visually separated.
 
-The bundle graph model lives in `src/bundle/graph/`. Issue building, semantic graph export, documentation policy, and markdown rendering live under `src/bundle/`.
+The bundle graph model lives in `src/bundle/graph/`. Issue building, semantic graph export, source location handling, target resolution, and task file detection live under `src/bundle/`.
 
 ## Development
 
@@ -62,7 +62,7 @@ npm run watch:tsc      # type-check the extension on change
 npm run verify         # unit tests, semantic baselines, typecheck, lint
 ```
 
-Press `F5` in VS Code to launch an Extension Development Host with the extension loaded. Sample bundles for manual testing live in `src/sample-data/`.
+Press `F5` in VS Code to launch an Extension Development Host with the extension loaded. Fixture bundles for tests and manual smoke checks live under `src/test/fixtures/`.
 
 ## Testing
 

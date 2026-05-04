@@ -3,6 +3,8 @@
 .github/**
 .devcontainer/**
 .claude/**
+.test-artifacts/**
+.tools/**
 node_modules/**
 src/**
 public/**
@@ -20,6 +22,8 @@ vsc-extension-quickstart.md
 **/eslint.config.mjs
 **/*.map
 **/*.ts
+**/.DS_Store
+*.vsix
 **/.vscode-test.*
 package-lock.json
 .env

@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/webview"),
-    emptyOutDir: false,
+    emptyOutDir: true,
     rollupOptions: {
       input: path.resolve(__dirname, "index.html"),
     },
