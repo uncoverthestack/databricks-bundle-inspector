@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    outputs:
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      package_name: ${{ steps.package.outputs.package_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Repair native optional bindings
+        run: npm run deps:repair-native
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Build
+        run: npm run build
+
+      - name: Check tag matches package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          tag_name="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag_name="${{ inputs.tag }}"
+          fi
+          if [ "$tag_name" != "v$package_version" ]; then
+            echo "Tag $tag_name does not match package.json version $package_version" >&2
+            exit 1
+          fi
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+
+      - name: Package VSIX
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run package:vsix
+          package_name="$(ls databricks-bundle-inspector-*.vsix)"
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+
+      - name: Generate SHA-256 checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum "${{ steps.package.outputs.package_name }}" > "${{ steps.package.outputs.package_name }}.sha256"
+          cat "${{ steps.package.outputs.package_name }}.sha256"
+
+      - name: Verify checksum
+        run: sha256sum --check "${{ steps.package.outputs.package_name }}.sha256"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vsix-release-package
+          path: |
+            ${{ steps.package.outputs.package_name }}
+            ${{ steps.package.outputs.package_name }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.version.outputs.tag_name }}" \
+            "${{ steps.package.outputs.package_name }}" \
+            "${{ steps.package.outputs.package_name }}.sha256" \
+            --title "${{ steps.version.outputs.tag_name }}" \
+            --notes-file CHANGELOG.md \
+            --verify-tag
+
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    needs: package
+    runs-on: ubuntu-latest
+    environment:
+      name: vscode-marketplace
+      url: https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ needs.package.outputs.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Download package artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: vsix-release-package
+
+      - name: Verify checksum
+        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
+
+      - name: Publish VSIX
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath "${{ needs.package.outputs.package_name }}"

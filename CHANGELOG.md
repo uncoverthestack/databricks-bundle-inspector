@@ -2,9 +2,9 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
-## [0.1.0] - 2026-05-05
+## [0.1.0] - 2026-05-04
 
-Initial public release. The extension is a read-only inspector for Databricks Asset Bundles. It runs `databricks bundle validate --output json`, renders the resolved bundle as an interactive graph, surfaces bundle issues in VS Code's native Problems panel, and generates per-job Markdown documentation. Everything operates on the CLI-resolved bundle. The extension does not modify YAML and does not call Databricks workspace APIs.
+Initial public release. The extension is a read-only inspector for Declarative Automation Bundles (previously known as Databricks Asset Bundles). It runs `databricks bundle validate --output json`, renders the resolved bundle as an interactive graph, and surfaces bundle issues in VS Code's native Problems panel. Everything operates on the CLI-resolved bundle. The extension does not modify YAML and does not call Databricks workspace APIs.
 
 ### Added
 
@@ -27,18 +27,7 @@ Initial public release. The extension is a read-only inspector for Databricks As
 - Each issue carries `severity`, `kind`, `title`, `detail`, `taskId`, `taskName`, `yamlPath`, `fixHint`, and resolved `file`/`line`/`column`.
 - Inspector issues are emitted to VS Code's Problems panel under the source label `Databricks Bundle Inspector (<bundle name>)` so they appear alongside other diagnostics.
 - CLI bundle diagnostics are emitted under a separate source `Databricks Bundle (<bundle name>)`.
-- **Background diagnostics**: on activation, the extension scans every `databricks.yml` and `databricks.yaml` in the workspace, builds an include map, and runs validation for each bundle so the Problems panel is populated without any user interaction.
-- **On-save diagnostics**: saving any file that belongs to a bundle (the YAML, an include, or a referenced source file) re-runs validation for the owning bundle and clears stale diagnostics for files that are now clean.
-
-#### Job documentation generator
-- New command **Generate Databricks Job Documentation** (`databricksBundleInspector.generateJobDocumentation`). Generates a per-job Markdown document.
-- Output written to `docs/databricks/jobs/<job_key>.md` next to the bundle.
-- Includes a job summary, parameter and compute tables, a per-task breakdown (type, source file, parameters, compute, dependencies, notes), and an embedded Mermaid DAG (capped at 25 tasks).
-- **Severity-gated generation**:
-  - Error-level inspector issues block generation. The user is prompted to open the issues panel.
-  - Warning-level issues prompt before generating.
-  - Info-level issues pass through.
-- Uses native Databricks `description` and `comment` fields as documentation signals. Custom comment-based signal parsing is intentionally deferred to a later version.
+- **On-save diagnostics**: after a bundle has been inspected, saving the bundle file, an included YAML file, or a tracked referenced source file re-runs validation for the owning bundle and clears stale diagnostics for files that are now clean.
 
 #### Databricks CLI integration
 - New configuration setting `databricksBundleInspector.cliPath`. When empty, the extension uses `databricks` from the system `PATH`.
@@ -63,13 +52,8 @@ Initial public release. The extension is a read-only inspector for Databricks As
 - Enrichment is read-only and best-effort; unreadable files do not fail the inspector.
 
 #### Editor surface
-- Title bar buttons for **Inspect Databricks Bundle** and **Generate Databricks Job Documentation**, gated to `databricks.yml` and `databricks.yaml`.
-- Editor context menu entries for both commands, gated identically.
-- All commands available from the Command Palette.
-
-#### Activation
-- Extension activates on `workspaceContains:**/databricks.yml` and `workspaceContains:**/databricks.yaml`.
-- Cheap YAML-include parsing on activation populates the bundle-to-file map without waiting for the CLI.
+- Title bar and editor context menu entries for **Inspect Databricks Bundle**, gated to `databricks.yml` and `databricks.yaml`.
+- **Inspect Databricks Bundle** and **Open Bundle Issues** are available from the Command Palette.
 
 ### Engineering
 
@@ -99,8 +83,7 @@ Initial public release. The extension is a read-only inspector for Databricks As
 - Paths under `/Workspace/...`, `/Repos/...`, `/Volumes/...`, `dbfs:/...`, and cloud URIs (`s3://`, `abfss://`, `gs://`) cannot be validated locally. They are accepted as resolved references; only local paths are checked for existence.
 - The extension does not call Databricks workspace APIs and does not detect drift between the local bundle and a deployed workspace. This is intentional.
 - The extension does not edit `databricks.yml` or any included YAML. For graphical authoring, see complementary tools that operate on the YAML directly.
-- The webview operates on one bundle at a time. Multi-bundle workspaces are supported via background diagnostics, but the inspector panel itself targets the bundle owning the active editor.
-- Mermaid DAGs in generated documentation are capped at 25 tasks to keep the diagram readable.
+- The webview operates on one bundle at a time. Multi-bundle workspaces can be inspected by opening each bundle file and running the inspector.
 
 ### Compatibility
 

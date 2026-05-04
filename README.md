@@ -1,10 +1,10 @@
 # Databricks Bundle Inspector
 
-A VS Code extension for inspecting Databricks Asset Bundles before you deploy or review them. It runs `databricks bundle validate --output json`, turns the CLI-resolved bundle into an interactive job graph, surfaces bundle issues in context, and can generate job documentation once the selected job is clean enough to document.
+A VS Code extension for inspecting Declarative Automation Bundles (previously known as Databricks Asset Bundles) before you deploy or review them. It runs `databricks bundle validate --output json`, turns the CLI-resolved bundle into an interactive job graph, and surfaces bundle issues in context.
 
 ## What it does
 
-Databricks Asset Bundles (DABs) describe jobs, tasks, dependencies, and compute in YAML that can span many files and layers of variable substitution. Reading the raw YAML rarely tells you what will actually run. This extension closes that gap inside your editor.
+Declarative Automation Bundles (previously known as Databricks Asset Bundles) (DABs) describe jobs, tasks, dependencies, and compute in YAML that can span many files and layers of variable substitution. Reading the raw YAML rarely tells you what will actually run. This extension closes that gap inside your editor.
 
 Open a `databricks.yml` file, run **Inspect Databricks Bundle**, and you get:
 
@@ -12,7 +12,6 @@ Open a `databricks.yml` file, run **Inspect Databricks Bundle**, and you get:
 - Task details including type, source file, parameters, compute, dependencies, and direct dependents.
 - Bundle issue detection for missing local files/libraries, unresolved variables, unknown task types, and Databricks CLI diagnostics.
 - File-content enrichment for local task files, including detected secret scopes and widgets where supported.
-- Optional markdown job documentation generated from the CLI-resolved bundle and native Databricks `description` / `comment` fields.
 
 The graph is powered by React Flow and includes pan, zoom, a minimap, search, job switching, issue-focused views, and layout controls.
 
@@ -31,24 +30,17 @@ Databricks authentication is not strictly required for structural inspection. Th
 2. Open the bundle file in the editor.
 3. Run a command from one of these entry points:
    * The **Inspect Databricks Bundle** button in the editor title bar (only shown for bundle files).
-   * Right-click in the editor and choose an inspector command.
+   * Right-click in the editor and choose **Inspect Databricks Bundle**.
    * The Command Palette.
 
-The webview opens in a new editor column and hot-reloads if you re-run the command after editing the YAML.
-
-Markdown job documentation is intentionally gated:
-
-- Error-level inspector issues block documentation generation for the selected job.
-- Warning-level issues prompt before generation.
-- Generated markdown is a job description, not an issue report; fix issues in the inspector before treating generated docs as final.
+The webview opens in a new editor column. After a bundle has been inspected, saving the bundle file or a tracked related file refreshes diagnostics and updates the active inspector panel.
 
 ## Commands
 
 | Command ID | Title | When available |
 | --- | --- | --- |
 | `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
-| `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette |
-| `databricksBundleInspector.generateJobDocumentation` | Generate Databricks Job Documentation | Active file is named `databricks.yml` or `databricks.yaml` |
+| `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
 
 ## How it works
 
@@ -58,7 +50,7 @@ The **extension host** (`src/extension.ts`) resolves the Databricks CLI, invokes
 
 The **webview** (`src/webview/`) is a React 19 + Vite + Tailwind v4 app that receives the parsed bundle graph and renders it with `@xyflow/react`. Layout is computed with a topological level assignment and a row-packing heuristic so parallel branches stay visually separated.
 
-The bundle graph model lives in `src/bundle/graph/`. Issue building, semantic graph export, documentation policy, and markdown rendering live under `src/bundle/`.
+The bundle graph model lives in `src/bundle/graph/`. Issue building, semantic graph export, source location handling, target resolution, and task file detection live under `src/bundle/`.
 
 ## Development
 
@@ -70,7 +62,7 @@ npm run watch:tsc      # type-check the extension on change
 npm run verify         # unit tests, semantic baselines, typecheck, lint
 ```
 
-Press `F5` in VS Code to launch an Extension Development Host with the extension loaded. Sample bundles for manual testing live in `src/sample-data/`.
+Press `F5` in VS Code to launch an Extension Development Host with the extension loaded. Fixture bundles for tests and manual smoke checks live under `src/test/fixtures/`.
 
 ## Testing
 
@@ -211,6 +203,28 @@ Recommended workflow:
 The dev container sets `databricksBundleInspector.cliPath` to
 `/usr/local/bin/databricks` for extension development hosts launched from the
 container.
+
+## Release process
+
+Releases are tag-driven. After merging a release PR with `package.json`,
+`package-lock.json`, `CHANGELOG.md`, and `README.md` ready for the target
+version, create and push a matching version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow verifies, builds, packages a VSIX, writes a SHA-256
+checksum, verifies that checksum, and publishes both files to a GitHub Release.
+The Marketplace publish job then waits for approval on the `vscode-marketplace`
+GitHub Environment. After approval, it downloads the same VSIX artifact, verifies
+the checksum again, and publishes that exact package to the VS Code Marketplace.
+
+Maintainers need to configure the `vscode-marketplace` environment in GitHub
+with required reviewers and a `VSCE_PAT` environment secret. The token must be an
+Azure DevOps Personal Access Token with Marketplace Manage scope for the
+`UncoverTheStack` publisher.
 
 ## Project status
 
