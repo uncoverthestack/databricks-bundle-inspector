@@ -2,7 +2,7 @@
   "name": "databricks-bundle-inspector",
   "displayName": "Databricks Bundle Inspector",
   "description": "Inspect and visualize Databricks bundle structure",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "UncoverTheStack",
   "icon": "resources/dark/logo.png",
   "license": "Apache-2.0",
