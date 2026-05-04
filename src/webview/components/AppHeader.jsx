@@ -4,12 +4,7 @@ import SearchBox from "./SearchBox";
 
 export default function AppHeader({
   bundleName,
-  targetLabel,
   targetTitle,
-  targetMode,
-  targetOptions,
-  selectedTarget,
-  onTargetChange,
   jobKeys,
   selectedJobKey,
   jobOptions,
