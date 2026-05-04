@@ -204,6 +204,28 @@ The dev container sets `databricksBundleInspector.cliPath` to
 `/usr/local/bin/databricks` for extension development hosts launched from the
 container.
 
+## Release process
+
+Releases are tag-driven. After merging a release PR with `package.json`,
+`package-lock.json`, `CHANGELOG.md`, and `README.md` ready for the target
+version, create and push a matching version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow verifies, builds, packages a VSIX, writes a SHA-256
+checksum, verifies that checksum, and publishes both files to a GitHub Release.
+The Marketplace publish job then waits for approval on the `vscode-marketplace`
+GitHub Environment. After approval, it downloads the same VSIX artifact, verifies
+the checksum again, and publishes that exact package to the VS Code Marketplace.
+
+Maintainers need to configure the `vscode-marketplace` environment in GitHub
+with required reviewers and a `VSCE_PAT` environment secret. The token must be an
+Azure DevOps Personal Access Token with Marketplace Manage scope for the
+`UncoverTheStack` publisher.
+
 ## Project status
 
 Version 0.1.0. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).

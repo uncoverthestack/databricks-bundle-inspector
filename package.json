@@ -82,6 +82,7 @@
     "build:ext": "node esbuild.js",
     "build:webview": "node scripts/repair-native-optional-deps.mjs && vite build",
     "build": "npm run build:ext && npm run build:webview",
+    "package:vsix": "vsce package --no-dependencies",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch",
     "watch-tests": "tsc -p . --outDir out --watch",
