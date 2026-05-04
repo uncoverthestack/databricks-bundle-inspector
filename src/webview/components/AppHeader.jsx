@@ -31,38 +31,12 @@ export default function AppHeader({
       <span className="truncate text-sm font-semibold text-stone-200">
         {bundleName ?? "Bundle Inspector"}
       </span>
-      {targetOptions.length > 0 ? (
-        <select
-          title={targetTitle}
-          value={selectedTarget ?? ""}
-          onChange={(e) => onTargetChange(e.target.value || undefined)}
-          className={[
-            "hidden cursor-pointer rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 md:block",
-            targetMode === "probe"
-              ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-300"
-              : "border-stone-700 bg-stone-900 text-stone-300",
-          ].join(" ")}
-        >
-          <option value="">structural preview</option>
-          {targetOptions.map((target) => (
-            <option key={target} value={target}>
-              target: {target}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <span
-          title={targetTitle}
-          className={[
-            "hidden shrink-0 rounded-md border px-2 py-0.5 text-[11px] md:inline-flex",
-            targetMode === "probe"
-              ? "border-yellow-500/25 bg-yellow-500/10 text-yellow-300"
-              : "border-stone-800 bg-stone-900/70 text-stone-400",
-          ].join(" ")}
-        >
-          {targetLabel}
-        </span>
-      )}
+      <span
+        title={targetTitle}
+        className="hidden shrink-0 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-stone-400 md:inline-flex"
+      >
+        structural preview
+      </span>
       {jobKeys.length > 0 && <span className="text-xs text-stone-700">·</span>}
       {jobKeys.length > 1 ? (
         <select

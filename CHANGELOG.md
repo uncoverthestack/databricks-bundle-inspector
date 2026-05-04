@@ -2,6 +2,13 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
+## [0.1.1] - 2026-05-04
+
+### Changed
+
+- Simplified README to focus on structural DAG visualization and removed development/testing documentation.
+- Disabled target selection dropdown in the panel. The extension now displays "structural preview" only, removing the ability to switch between targets. This aligns with the focus on structural inspection.
+
 ## [0.1.0] - 2026-05-04
 
 Initial public release. The extension is a read-only inspector for Declarative Automation Bundles (previously known as Databricks Asset Bundles). It runs `databricks bundle validate --output json`, renders the resolved bundle as an interactive graph, and surfaces bundle issues in VS Code's native Problems panel. Everything operates on the CLI-resolved bundle. The extension does not modify YAML and does not call Databricks workspace APIs.
@@ -91,5 +98,6 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
-[Unreleased]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.1.0
