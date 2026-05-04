@@ -125,6 +125,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
