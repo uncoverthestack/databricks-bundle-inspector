@@ -2,6 +2,12 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
+## [0.1.2] - 2026-05-27
+
+### Fixed
+
+- **Parameter precedence corrected**: job parameters now correctly take precedence over task `base_parameters` when computing effective parameter values in the graph, matching Databricks runtime behaviour. Previously, task `base_parameters` were incorrectly overriding job parameters with the same key.
+
 ## [0.1.1] - 2026-05-04
 
 ### Changed
