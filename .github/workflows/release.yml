@@ -33,7 +33,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+
+      - name: Create tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/tags/${{ inputs.tag }}" > /dev/null 2>&1; then
+            echo "Tag ${{ inputs.tag }} already exists — skipping creation"
+          else
+            git tag "${{ inputs.tag }}"
+            git push origin "${{ inputs.tag }}"
+            echo "Created tag ${{ inputs.tag }}"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -118,8 +133,7 @@ jobs:
               "${{ steps.package.outputs.package_name }}" \
               "${{ steps.package.outputs.package_name }}.sha256" \
               --title "${{ steps.version.outputs.tag_name }}" \
-              --notes-file CHANGELOG.md \
-              --verify-tag
+              --notes-file CHANGELOG.md
           fi
 
   publish-marketplace:
