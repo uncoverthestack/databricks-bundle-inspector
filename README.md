@@ -45,7 +45,7 @@ The extension runs `databricks bundle validate --output json` to resolve your bu
 
 ## Project status
 
-Version 0.1.1. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.1.2. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
