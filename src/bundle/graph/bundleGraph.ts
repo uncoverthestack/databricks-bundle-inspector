@@ -619,11 +619,8 @@ function getTaskPayload(task: JobTask): Record<string, unknown> | null {
 function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] | undefined {
   const mergedParameters = new Map<string, Omit<GraphParameter, "name">>();
 
-  for (const parameter of job.parameters ?? []) {
-    if (typeof parameter.name !== "string") continue;
-    mergedParameters.set(parameter.name, stringifyParameterValue(parameter.default));
-  }
-
+  // Task base_parameters are set first so that job parameters can override them.
+  // Job parameters take precedence over task parameters (Databricks runtime behaviour).
   const taskPayload = getTaskPayload(task);
   const taskBaseParameters =
     taskPayload && typeof taskPayload.base_parameters === "object" && taskPayload.base_parameters !== null
@@ -634,6 +631,11 @@ function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] |
     for (const [parameterName, parameterValue] of Object.entries(taskBaseParameters)) {
       mergedParameters.set(parameterName, stringifyParameterValue(parameterValue));
     }
+  }
+
+  for (const parameter of job.parameters ?? []) {
+    if (typeof parameter.name !== "string") continue;
+    mergedParameters.set(parameter.name, stringifyParameterValue(parameter.default));
   }
 
   if (mergedParameters.size === 0) return undefined;

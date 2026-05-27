@@ -107,10 +107,12 @@ describe("extractBundleGraph", () => {
     expect(extractTask).toBeDefined();
     expect(extractTask?.taskTypeLabel).toBe("Notebook");
     expect(extractTask?.subtitle).toBe("/Workspace/extract");
+    // Job parameters take precedence over task base_parameters.
+    // Task entries appear first (in insertion order), then job-only entries are appended.
     expect(extractTask?.parameters).toEqual([
-      { name: "env", value: "prod" },
-      { name: "limit", value: "25" },
-      { name: "batch", value: "10" },
+      { name: "env", value: "env", expression: "${var.env}" }, // job param overrides task "prod"
+      { name: "batch", value: "10" },                          // task-only param
+      { name: "limit", value: "25" },                          // job-only param
     ]);
 
     const loadTask = graph.nodes.find(
@@ -122,10 +124,11 @@ describe("extractBundleGraph", () => {
     expect(loadTask?.compute).toEqual([
       { kind: "sqlWarehouse", label: "0123456789" },
     ]);
+    // Task-only param appears first, then job params (which also override matching task keys).
     expect(loadTask?.parameters).toEqual([
-      { name: "env", value: "env", expression: "${var.env}" },
-      { name: "limit", value: "25" },
-      { name: "mode", value: "append" },
+      { name: "mode", value: "append" },                       // task-only param
+      { name: "env", value: "env", expression: "${var.env}" }, // job-only param
+      { name: "limit", value: "25" },                          // job-only param
     ]);
 
     expect(
