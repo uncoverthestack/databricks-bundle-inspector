@@ -6,6 +6,7 @@ import {
   BUNDLE_PROBE_TARGET,
   validateBundle,
   extractBundleGraph,
+  inspectBundleWithFallback,
 } from "./bundle/validateBundle.js";
 import type { BundleDiagnostic } from "./bundle/validateBundle.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
@@ -334,22 +335,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     options?: { silentFallback?: boolean },
   ) {
     const configuredPath = getConfiguredDatabricksCliPath(getConfiguration());
-    let result = await validateBundle(bundleDir, requestedTarget, configuredPath);
-    let inspectedTarget = requestedTarget ?? BUNDLE_PROBE_TARGET;
-    let inspectedTargetMode: "target" | "probe" =
-      requestedTarget ? "target" : "probe";
-    let fallbackMessage: string | undefined;
+    const fallback = await inspectBundleWithFallback(
+      bundleDir,
+      requestedTarget,
+      (dir, target) => validateBundle(dir, target, configuredPath),
+    );
+    let { result, inspectedTarget, inspectedTargetMode, fallbackMessage } =
+      fallback;
 
-    if (!result.ok && requestedTarget) {
-      fallbackMessage = result.error.details ?? result.error.error;
-      result = await validateBundle(bundleDir, undefined, configuredPath);
-      inspectedTarget = BUNDLE_PROBE_TARGET;
-      inspectedTargetMode = "probe";
-      if (!options?.silentFallback) {
-        vscode.window.showWarningMessage(
-          `Could not inspect target "${requestedTarget}". Showing structural preview instead.`,
-        );
-      }
+    if (fallbackMessage && !options?.silentFallback) {
+      vscode.window.showWarningMessage(
+        `Could not inspect target "${requestedTarget}". Showing structural preview instead.`,
+      );
     }
 
     if (!result.ok) {
