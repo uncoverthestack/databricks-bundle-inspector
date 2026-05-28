@@ -2785,6 +2785,16 @@ export default function App({
         />
       )}
 
+      {targetFallbackMessage && requestedTarget && inspectedTargetMode === "probe" && (
+        <div className="flex shrink-0 items-start gap-2 border-b border-amber-900/40 bg-amber-950/30 px-4 py-2 text-xs text-amber-300">
+          <span className="mt-0.5 shrink-0">⚠</span>
+          <span>
+            Could not inspect target <strong className="text-amber-200">{requestedTarget}</strong> — showing structural preview instead.{" "}
+            <span className="text-amber-500/80">{targetFallbackMessage}</span>
+          </span>
+        </div>
+      )}
+
       {/* Canvas + Detail */}
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 overflow-hidden">
