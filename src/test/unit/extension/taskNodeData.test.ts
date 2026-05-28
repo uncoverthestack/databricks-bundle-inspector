@@ -618,6 +618,250 @@ describe("buildTaskNodeData — taskParameterReferences", () => {
       "tasks.my_task.notebook_task.base_parameters.env",
     );
   });
+
+  // python_wheel_task — named_parameters
+  test("python_wheel_task named_parameters: parses --key=value entries", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { named_parameters: ["--env=prod", "--batch=10"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(2);
+    expect(result.taskParameterReferences[0]?.name).toBe("env");
+    expect(result.taskParameterReferences[0]?.value).toBe("prod");
+    expect(result.taskParameterReferences[1]?.name).toBe("batch");
+    expect(result.taskParameterReferences[1]?.value).toBe("10");
+  });
+
+  test("python_wheel_task named_parameters: yamlPath uses array index", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { named_parameters: ["--env=prod"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.python_wheel_task.named_parameters[0]",
+    );
+  });
+
+  test("python_wheel_task named_parameters: job default raises confidence to MEDIUM", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { named_parameters: ["--env=prod"] } },
+      rawJob([{ name: "env", default: "dev" }]),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.confidence).toBe("MEDIUM");
+    expect(result.taskParameterReferences[0]?.jobParameterDefault).toBe("dev");
+  });
+
+  test("python_wheel_task named_parameters: single-dash prefix also stripped", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { named_parameters: ["-env=prod"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.name).toBe("env");
+    expect(result.taskParameterReferences[0]?.value).toBe("prod");
+  });
+
+  // python_wheel_task — parameters (positional)
+  test("python_wheel_task parameters: positional args shown as [0],[1],...", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { parameters: ["prod", "10"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(2);
+    expect(result.taskParameterReferences[0]?.name).toBe("[0]");
+    expect(result.taskParameterReferences[0]?.value).toBe("prod");
+    expect(result.taskParameterReferences[1]?.name).toBe("[1]");
+    expect(result.taskParameterReferences[1]?.value).toBe("10");
+  });
+
+  test("python_wheel_task parameters: yamlPath uses array index", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { parameters: ["prod"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.python_wheel_task.parameters[0]",
+    );
+  });
+
+  test("python_wheel_task parameters: not overridable by job params", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { parameters: ["prod"] } },
+      rawJob([{ name: "[0]", default: "dev" }]),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    // Positional params are not job-overridable — no jobParameterDefault even if key matches
+    expect(result.taskParameterReferences[0]?.isOverriddenByJob).toBe(false);
+    expect(result.taskParameterReferences[0]?.jobParameterDefault).toBeUndefined();
+  });
+
+  test("python_wheel_task with no named_parameters and no parameters → empty refs", () => {
+    const result = buildTaskNodeData(
+      { python_wheel_task: { package_name: "my_pkg", entry_point: "main" } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(0);
+  });
+
+  // spark_jar_task
+  test("spark_jar_task parameters: positional args shown as [0],[1],...", () => {
+    const result = buildTaskNodeData(
+      { spark_jar_task: { main_class_name: "com.example.Main", parameters: ["prod", "10"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(2);
+    expect(result.taskParameterReferences[0]?.name).toBe("[0]");
+    expect(result.taskParameterReferences[0]?.value).toBe("prod");
+    expect(result.taskParameterReferences[1]?.name).toBe("[1]");
+    expect(result.taskParameterReferences[1]?.value).toBe("10");
+  });
+
+  test("spark_jar_task parameters: yamlPath uses array index", () => {
+    const result = buildTaskNodeData(
+      { spark_jar_task: { parameters: ["prod"] } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.spark_jar_task.parameters[0]",
+    );
+  });
+
+  test("spark_jar_task parameters: not job-overridable", () => {
+    const result = buildTaskNodeData(
+      { spark_jar_task: { parameters: ["prod"] } },
+      rawJob([{ name: "[0]", default: "dev" }]),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.isOverriddenByJob).toBe(false);
+    expect(result.taskParameterReferences[0]?.jobParameterDefault).toBeUndefined();
+  });
+
+  // sql_task parameters dict
+  test("sql_task parameters: named dict shown as key-value refs", () => {
+    const result = buildTaskNodeData(
+      { sql_task: { file: { path: "query.sql" }, parameters: { date: "2024-01-01", env: "prod" } } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(2);
+    expect(result.taskParameterReferences[0]?.name).toBe("date");
+    expect(result.taskParameterReferences[0]?.value).toBe("2024-01-01");
+    expect(result.taskParameterReferences[1]?.name).toBe("env");
+    expect(result.taskParameterReferences[1]?.value).toBe("prod");
+  });
+
+  test("sql_task parameters: yamlPath uses parameter key", () => {
+    const result = buildTaskNodeData(
+      { sql_task: { parameters: { date: "2024-01-01" } } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.sql_task.parameters.date",
+    );
+  });
+
+  test("sql_task parameters: not job-overridable", () => {
+    const result = buildTaskNodeData(
+      { sql_task: { parameters: { env: "prod" } } },
+      rawJob([{ name: "env", default: "dev" }]),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.isOverriddenByJob).toBe(false);
+    expect(result.taskParameterReferences[0]?.jobParameterDefault).toBeUndefined();
+  });
+
+  // run_job_task
+  test("run_job_task job_parameters: shown as key-value refs", () => {
+    const result = buildTaskNodeData(
+      { run_job_task: { job_id: "123", job_parameters: { env: "prod", region: "us-east-1" } } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(2);
+    expect(result.taskParameterReferences[0]?.name).toBe("env");
+    expect(result.taskParameterReferences[0]?.value).toBe("prod");
+    expect(result.taskParameterReferences[1]?.name).toBe("region");
+    expect(result.taskParameterReferences[1]?.value).toBe("us-east-1");
+  });
+
+  test("run_job_task job_parameters: yamlPath uses parameter key", () => {
+    const result = buildTaskNodeData(
+      { run_job_task: { job_id: "123", job_parameters: { env: "prod" } } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.run_job_task.job_parameters.env",
+    );
+  });
+
+  test("run_job_task pipeline_params.full_refresh: shown as boolean ref", () => {
+    const result = buildTaskNodeData(
+      { run_job_task: { job_id: "123", pipeline_params: { full_refresh: true } } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(1);
+    expect(result.taskParameterReferences[0]?.name).toBe("pipeline_params.full_refresh");
+    expect(result.taskParameterReferences[0]?.value).toBe("true");
+    expect(result.taskParameterReferences[0]?.yamlPath).toBe(
+      "tasks.my_task.run_job_task.pipeline_params.full_refresh",
+    );
+  });
+
+  test("run_job_task with no job_parameters and no pipeline_params → empty refs", () => {
+    const result = buildTaskNodeData(
+      { run_job_task: { job_id: "123" } },
+      rawJob(),
+      "job-1",
+      "my_task",
+      bundleRoot,
+    );
+    expect(result.taskParameterReferences).toHaveLength(0);
+  });
 });
 
 // --- jobParameterReferences ---
