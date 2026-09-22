@@ -1,0 +1,45 @@
+{
+  "events": {
+    "inspect_bundle": {
+      "description": "Inspect Databricks Bundle ran, via the command, the Open Bundle Issues command, or a target switch in the panel.",
+      "properties": {
+        "trigger": "command | issues_command | target_switch",
+        "outcome": "ok | ok_with_errors | no_bundle_file | cli_not_found | cli_not_executable | validation_timeout | invalid_bundle_shape | validation_failed | exception",
+        "duration_ms": "Time the inspection took.",
+        "has_diagnostics": "Failed inspections only: whether the CLI reported file diagnostics.",
+        "target_mode": "target | probe",
+        "fell_back_to_probe": "Whether the requested target failed and a structural preview was shown instead.",
+        "auth_configured": "Whether Databricks authentication was configured.",
+        "target_count": "Number of targets, as a range (0, 1, 2-5, 6-20, 21-50, 51+).",
+        "job_count": "Number of jobs, as a range.",
+        "task_count": "Number of tasks, as a range.",
+        "task_kinds": "Databricks task type keys present, e.g. notebook_task,sql_task.",
+        "issue_count": "Number of inspector issues, as a range."
+      }
+    },
+    "bundle_refreshed_on_save": {
+      "description": "The open inspector refreshed after a bundle-related file was saved.",
+      "properties": { "bundle_file": "Whether the saved file was databricks.yml itself." }
+    },
+    "file_opened": {
+      "description": "A file was opened from the inspector.",
+      "properties": { "file_kind": "py | ipynb | sql | yml | json | whl | jar | scala | r | other" }
+    },
+    "review_summary_copied": { "description": "The bundle review summary was copied." },
+    "graph_mode_changed": {
+      "description": "The graph was switched between all tasks and issues only.",
+      "properties": { "mode": "all | issues" }
+    },
+    "job_selected": { "description": "A different job was picked in the header." },
+    "search_result_selected": { "description": "A task was picked from search results." },
+    "issue_item_selected": { "description": "An item in the issues panel was clicked." },
+    "extension_uninstalled": {
+      "description": "Sent once by the vscode:uninstall hook, only if the extension last recorded that usage telemetry was enabled.",
+      "properties": {}
+    }
+  },
+  "commonProperties": {
+    "common.*": "Added by VS Code's TelemetryLogger: extension version, VS Code version, OS, session ID, UI kind, remote type. The VS Code machine ID is removed.",
+    "common.appname": "Host editor name, e.g. Visual Studio Code or Cursor."
+  }
+}

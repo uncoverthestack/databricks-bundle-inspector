@@ -2443,6 +2443,7 @@ export default function App({
   onSelectTarget,
   onOpenFile,
   onCopyReviewSummary,
+  onTelemetry,
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [userSelectedJobKey, setUserSelectedJobKey] = useState(undefined);
@@ -2706,6 +2707,7 @@ export default function App({
   }
 
   function selectPanelItem(item) {
+    onTelemetry?.("issue_item_selected");
     if (item.taskId) {
       selectTaskNode(item.taskId);
     }
@@ -2716,11 +2718,13 @@ export default function App({
   }
 
   function handleSearchSelect(item) {
+    onTelemetry?.("search_result_selected");
     setSearchValue(item.label);
     selectTaskNode(item.taskId);
   }
 
   function handleJobChange(value) {
+    onTelemetry?.("job_selected");
     setUserSelectedJobKey(value);
     setSelectedNodeId(null);
     setSearchValue("");
@@ -2729,6 +2733,7 @@ export default function App({
   }
 
   function handleGraphModeChange(value) {
+    if (value !== graphMode) onTelemetry?.("graph_mode_changed", { mode: value });
     setGraphMode(value);
     setActiveHeaderPanel(value === "issues" ? "issues" : null);
   }

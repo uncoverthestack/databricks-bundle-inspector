@@ -21,6 +21,13 @@ import { invalidateDatabricksCliCache } from "./databricksCli/validateDatabricks
 import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
 import { getIncludedFiles } from "./bundle/bundleIncludes.js";
 import type { ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
+import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
+import {
+  countBucket,
+  fileKind,
+  parseWebviewTelemetryMessage,
+  taskKinds,
+} from "./telemetry/events.js";
 
 function isBundlePath(filePath: string): boolean {
   return isBundleFile(path.basename(filePath));
@@ -272,8 +279,13 @@ async function getWebviewContent(
   return html;
 }
 
+type InspectTrigger = "command" | "issues_command" | "target_switch";
+
+let telemetry: Telemetry | undefined;
+
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
+  telemetry = createTelemetry(extensionContext);
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection(
     "databricks-bundle-inspector",
@@ -313,6 +325,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           fileToBundleRoot,
         );
         if (activePanel && activeBundleDir === bundleRoot) {
+          telemetry?.logUsage("bundle_refreshed_on_save", {
+            bundle_file: isSavedBundleFile,
+          });
           await refreshActiveBundlePanel(bundleRoot, {
             refreshTargets: isSavedBundleFile,
           });
@@ -487,9 +502,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
   async function inspectBundle(
     requestedTarget?: string,
-    options?: { focusIssues?: boolean },
+    options?: { focusIssues?: boolean; trigger?: InspectTrigger },
     bundleDirOverride?: string,
   ) {
+    const startedAt = Date.now();
+    const logInspect = (
+      outcome: string,
+      properties: Record<string, string | number | boolean> = {},
+    ) =>
+      telemetry?.logUsage("inspect_bundle", {
+        trigger: options?.trigger ?? "command",
+        outcome,
+        duration_ms: Date.now() - startedAt,
+        ...properties,
+      });
     const bundleDir =
       bundleDirOverride ?? getBundleDirFromEditor(vscode.window.activeTextEditor);
 
@@ -499,6 +525,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         activePanel.webview.postMessage({ type: "focusIssues" });
         return;
       }
+      logInspect("no_bundle_file");
       vscode.window.showInformationMessage(
         "Open a databricks.yaml or databricks.yml file, then run Inspect Databricks Bundle.",
       );
@@ -523,6 +550,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       );
 
       if (!result.ok) {
+        logInspect(result.error.errorCode?.toLowerCase() ?? "validation_failed", {
+          has_diagnostics: Boolean(result.error.diagnostics?.length),
+        });
         console.error("[inspectBundle] validation failed", result.error);
         if (result.error.diagnostics?.length) {
           void vscode.commands.executeCommand("workbench.actions.view.problems");
@@ -556,6 +586,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           }
         });
       }
+
+      const graphNodes = inspection.enrichedGraph?.nodes ?? [];
+      logInspect(errorDiagnostics.length > 0 ? "ok_with_errors" : "ok", {
+        target_mode: inspection.inspectedTargetMode,
+        fell_back_to_probe: inspection.fallbackMessage !== undefined,
+        auth_configured: !(result.issues ?? []).some(
+          (issue) => issue.code === "AUTH_NOT_CONFIGURED",
+        ),
+        target_count: countBucket(inspection.targetOptions?.length ?? 0),
+        job_count: countBucket(graphNodes.filter((n) => n.nodeType === "job").length),
+        task_count: countBucket(graphNodes.filter((n) => n.nodeType === "task").length),
+        task_kinds: taskKinds(graphNodes),
+        issue_count: countBucket(inspection.inspectorIssues?.length ?? 0),
+      });
 
       const bundleMessageData = bundleMessageDataFromInspection(
         inspection,
@@ -602,7 +646,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             if (!bundleDirForPanel) return;
             void inspectBundle(
               typeof message.target === "string" ? message.target : undefined,
-              undefined,
+              { trigger: "target_switch" },
               bundleDirForPanel,
             );
           }
@@ -621,6 +665,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             }
 
             const targetPath = path.resolve(message.path);
+            telemetry?.logUsage("file_opened", { file_kind: fileKind(targetPath) });
             const uri = vscode.Uri.file(targetPath);
             if (targetPath.endsWith(".ipynb")) {
               // Jupyter editor has no line-jump API — open at top
@@ -641,6 +686,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             message?.type === "copyReviewSummary" &&
             typeof message.markdown === "string"
           ) {
+            telemetry?.logUsage("review_summary_copied");
             void vscode.env.clipboard
               .writeText(message.markdown)
               .then(
@@ -656,6 +702,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
                   ),
               );
           }
+          if (message?.type === "telemetry") {
+            const parsed = parseWebviewTelemetryMessage(message);
+            if (parsed) telemetry?.logUsage(parsed.event, parsed.properties);
+          }
         });
 
         activePanel.onDidDispose(() => {
@@ -665,6 +715,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         postBundleData(bundleMessageData);
       }
     } catch (error) {
+      logInspect("exception");
       vscode.window.showErrorMessage(
         `Error: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -677,7 +728,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
   const openIssuesDisposable = vscode.commands.registerCommand(
     "databricksBundleInspector.openBundleIssues",
-    () => inspectBundle(undefined, { focusIssues: true }),
+    () => inspectBundle(undefined, { focusIssues: true, trigger: "issues_command" }),
   );
   extensionContext.subscriptions.push(
     disposable,
@@ -685,4 +736,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {}
+export function deactivate(): Promise<void> | undefined {
+  const pending = telemetry?.shutdown();
+  telemetry = undefined;
+  return pending;
+}

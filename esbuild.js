@@ -27,14 +27,18 @@ const esbuildProblemMatcherPlugin = {
 
 async function main() {
   const ctx = await esbuild.context({
-    entryPoints: ["src/extension.ts"],
+    entryPoints: {
+      extension: "src/extension.ts",
+      // Run by VS Code's `vscode:uninstall` hook; see src/telemetry/uninstall.ts.
+      uninstall: "src/telemetry/uninstall.ts",
+    },
     bundle: true,
     format: "esm",
     minify: production,
     sourcemap: !production,
     sourcesContent: false,
     platform: "node",
-    outfile: "dist/extension.js",
+    outdir: "dist",
     external: ["vscode"],
     logLevel: "silent",
     banner: {
