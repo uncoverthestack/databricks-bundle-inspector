@@ -2,7 +2,7 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
-## [Unreleased]
+## [0.1.4] - 2026-09-22
 
 ### Added
 
