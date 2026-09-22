@@ -16,6 +16,8 @@ out
 .test-artifacts
 .tools
 semantic-cli-matrix.local.json
+.telemetry-state.json
+.wrangler
 
 # Editor directories and files
 .vscode/*

@@ -58,6 +58,16 @@
           "type": "string",
           "default": "",
           "description": "Optional path to the Databricks CLI executable. When empty, the extension uses databricks from PATH."
+        },
+        "databricksBundleInspector.telemetry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Send anonymous usage data (features used, never paths, names or file contents) to help improve the extension. Nothing is sent when `#telemetry.telemetryLevel#` is not `all`, regardless of this setting. [What is collected](https://github.com/uncoverthestack/databricks-bundle-inspector#telemetry)",
+          "tags": [
+            "telemetry",
+            "usesOnlineServices"
+          ]
         }
       }
     },
@@ -79,6 +89,7 @@
     }
   },
   "scripts": {
+    "vscode:uninstall": "node ./dist/uninstall.js",
     "build:ext": "node esbuild.js",
     "build:webview": "node scripts/repair-native-optional-deps.mjs && vite build",
     "build": "npm run build:ext && npm run build:webview",

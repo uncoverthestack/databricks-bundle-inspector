@@ -2,6 +2,14 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Anonymous usage telemetry.** This release starts collecting anonymous usage data: which features are used, how bundle inspections turn out, and an event when the extension is uninstalled. It never collects file paths, file contents, or bundle, job, task or target names. A one-time notice explains this, with a button to turn it off.
+  - **Opt out** with the new `databricksBundleInspector.telemetry.enabled` setting, or turn off `telemetry.telemetryLevel` for all of VS Code. Either one stops all collection.
+  - Every event is listed in [telemetry.json](./telemetry.json). See the [Telemetry](./README.md#telemetry) section of the README for details.
+
 ## [0.1.3] - 2026-05-27
 
 ### Fixed

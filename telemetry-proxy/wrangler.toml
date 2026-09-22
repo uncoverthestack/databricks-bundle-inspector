@@ -1,0 +1,16 @@
+name = "databricks-bundle-inspector-telemetry"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+# Use https://us.i.posthog.com if the PostHog project is in the US region.
+POSTHOG_HOST = "https://eu.i.posthog.com"
+# POSTHOG_API_KEY is a secret: set it with `npx wrangler secret put POSTHOG_API_KEY`.
+
+# At most 60 requests per minute per client IP. namespace_id is any integer
+# that is unique among rate limiters in your Cloudflare account.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }

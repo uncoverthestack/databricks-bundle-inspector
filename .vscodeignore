@@ -41,3 +41,4 @@ semantic-cli-matrix.local.json
 **/tsconfig.jest.json
 vite.config.js
 repo-audit
+telemetry-proxy/**

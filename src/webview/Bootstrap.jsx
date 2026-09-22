@@ -108,6 +108,11 @@ export default function Bootstrap() {
     });
   }
 
+  // Only allow-listed event names and properties are forwarded by the extension.
+  function handleTelemetry(event, properties) {
+    vscodeApi?.postMessage({ type: "telemetry", event, properties });
+  }
+
   function handleCopyReviewSummary(markdown) {
     vscodeApi?.postMessage({
       type: "copyReviewSummary",
@@ -132,6 +137,7 @@ export default function Bootstrap() {
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}
       onCopyReviewSummary={handleCopyReviewSummary}
+      onTelemetry={handleTelemetry}
     />
   );
 }
