@@ -219,6 +219,7 @@ export function buildInspectorIssues(
         id: `validation:${issueIndex}:${diagnosticIndex}`,
         severity: diagnostic.severity ?? "warning",
         ...normalized,
+        ...(diagnostic.yamlPath ? { yamlPath: diagnostic.yamlPath } : {}),
         ...issueLocation(
           validationFile(bundleRoot, diagnostic),
           diagnostic.line,

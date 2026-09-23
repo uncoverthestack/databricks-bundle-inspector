@@ -364,6 +364,47 @@ describe("buildInspectorIssues", () => {
     ]);
   });
 
+  test("carries the yaml path of resource-scoped validation diagnostics", () => {
+    const graph: BundleGraph = { nodes: [], edges: [] };
+    const validationIssues: ValidationIssue[] = [
+      {
+        code: "BUNDLE_DIAGNOSTICS",
+        message: "Databricks CLI reported bundle diagnostics.",
+        diagnostics: [
+          {
+            severity: "error",
+            message: "invalid bundle",
+            yamlPath: "resources.pipelines.p1",
+            path: "resources/pipelines.yml",
+            line: 6,
+            column: 7,
+          },
+        ],
+      },
+    ];
+
+    expect(
+      buildInspectorIssues(
+        graph,
+        { bundle: { name: "demo" } },
+        validationIssues,
+        "/workspace/demo",
+      ),
+    ).toEqual([
+      {
+        id: "validation:0:0",
+        severity: "error",
+        kind: "validation_diagnostic",
+        title: "invalid bundle",
+        fixHint: "Review the Databricks CLI validation diagnostic.",
+        yamlPath: "resources.pipelines.p1",
+        file: path.resolve("/workspace/demo", "resources/pipelines.yml"),
+        line: 6,
+        column: 7,
+      },
+    ]);
+  });
+
   test("does not turn Databricks auth failures into inspector issues", () => {
     const graph: BundleGraph = { nodes: [], edges: [] };
     const validationIssues: ValidationIssue[] = [
