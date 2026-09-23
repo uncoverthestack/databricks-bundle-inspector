@@ -70,6 +70,7 @@ export interface JobTask {
   };
   spark_jar_task?: {
     main_class_name?: string;
+    parameters?: string[];
   };
   notebook_task?: {
     notebook_path?: string;
@@ -85,6 +86,7 @@ export interface JobTask {
       path?: string;
     };
     warehouse_id?: string;
+    parameters?: Record<string, string>;
   };
   spark_python_task?: {
     python_file?: string;
@@ -92,9 +94,13 @@ export interface JobTask {
   python_wheel_task?: {
     package_name?: string;
     entry_point?: string;
+    named_parameters?: string[];
+    parameters?: string[];
   };
   run_job_task?: {
     job_id?: string;
+    job_parameters?: Record<string, string>;
+    pipeline_params?: { full_refresh?: boolean };
   };
   spark_submit_task?: {
     parameters?: string[];
@@ -289,7 +295,9 @@ function getResourceDisplayName(
   resourceData: Record<string, unknown>,
 ): string {
   if (resourceGroup === "secret_scopes") return resourceKey;
-  return typeof resourceData.name === "string" ? resourceData.name : resourceKey;
+  return typeof resourceData.name === "string"
+    ? resourceData.name
+    : resourceKey;
 }
 
 function resourceKind(resourceGroup: string): string {
@@ -318,11 +326,13 @@ function computeReference(value: string): Partial<GraphCompute> {
   return value.includes("${") ? { expression: value } : {};
 }
 
-function resourceReference(value: string): {
-  resourceType: string;
-  resourceKey: string;
-  field: string;
-} | undefined {
+function resourceReference(value: string):
+  | {
+      resourceType: string;
+      resourceKey: string;
+      field: string;
+    }
+  | undefined {
   const match = value.match(/^\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}$/);
   if (!match?.[1] || !match[2] || !match[3]) return undefined;
   return {
@@ -364,7 +374,8 @@ function conditionExpression(
 ): string | undefined {
   const left = typeof condition?.left === "string" ? condition.left : undefined;
   const op = normalizedString(condition?.op);
-  const right = typeof condition?.right === "string" ? condition.right : undefined;
+  const right =
+    typeof condition?.right === "string" ? condition.right : undefined;
   const operator = op ? CONDITION_OPERATOR_LABELS[op] : undefined;
   const symbol = operator?.symbol ?? op;
   const label = operator?.label;
@@ -394,47 +405,93 @@ function detectTaskType(task: JobTask): {
   subtitle?: string;
 } {
   if (task.clean_rooms_notebook_task) {
-    return withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task.notebook_path);
+    return withOptionalSubtitle(
+      "notebook",
+      "Clean room",
+      task.clean_rooms_notebook_task.notebook_path,
+    );
   }
   if (task.condition_task) {
-    return withOptionalSubtitle("job", "If/else", conditionExpression(task.condition_task));
+    return withOptionalSubtitle(
+      "job",
+      "If/else",
+      conditionExpression(task.condition_task),
+    );
   }
   if (task.dashboard_task) {
-    return withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task.dashboard_id);
+    return withOptionalSubtitle(
+      "dashboard",
+      "Dashboards",
+      task.dashboard_task.dashboard_id,
+    );
   }
   if (task.sql_alert_task) {
-    return withOptionalSubtitle("alert", "SQL Alert (Beta)", task.sql_alert_task.alert_id);
+    return withOptionalSubtitle(
+      "alert",
+      "SQL Alert (Beta)",
+      task.sql_alert_task.alert_id,
+    );
   }
   if (task.dbt_task) {
-    return withOptionalSubtitle("script", "dbt", task.dbt_task.commands?.join(" "));
+    return withOptionalSubtitle(
+      "script",
+      "dbt",
+      task.dbt_task.commands?.join(" "),
+    );
   }
   if (task.dbt_platform_task) {
-    return withOptionalSubtitle("script", "dbt platform (Beta)", task.dbt_platform_task.commands?.join(" "));
+    return withOptionalSubtitle(
+      "script",
+      "dbt platform (Beta)",
+      task.dbt_platform_task.commands?.join(" "),
+    );
   }
   if (task.for_each_task) {
     return withOptionalSubtitle("job", "For each", task.for_each_task.inputs);
   }
   if (task.spark_jar_task) {
-    return withOptionalSubtitle("script", "JAR", task.spark_jar_task.main_class_name);
+    return withOptionalSubtitle(
+      "script",
+      "JAR",
+      task.spark_jar_task.main_class_name,
+    );
   }
   if (task.notebook_task) {
-    return withOptionalSubtitle("notebook", "Notebook", task.notebook_task.notebook_path);
+    return withOptionalSubtitle(
+      "notebook",
+      "Notebook",
+      task.notebook_task.notebook_path,
+    );
   }
   if (task.pipeline_task) {
     return withOptionalSubtitle(
       "pipeline",
       "Pipeline",
-      task.pipeline_task.pipeline_id ? normalizeReference(task.pipeline_task.pipeline_id) : undefined,
+      task.pipeline_task.pipeline_id
+        ? normalizeReference(task.pipeline_task.pipeline_id)
+        : undefined,
     );
   }
   if (task.power_bi_task) {
-    return withOptionalSubtitle("dashboard", "Power BI", task.power_bi_task.dashboard_id);
+    return withOptionalSubtitle(
+      "dashboard",
+      "Power BI",
+      task.power_bi_task.dashboard_id,
+    );
   }
   if (task.spark_python_task) {
-    return withOptionalSubtitle("script", "Python script", task.spark_python_task.python_file);
+    return withOptionalSubtitle(
+      "script",
+      "Python script",
+      task.spark_python_task.python_file,
+    );
   }
   if (task.python_wheel_task) {
-    return withOptionalSubtitle("script", "Python wheel", task.python_wheel_task.package_name);
+    return withOptionalSubtitle(
+      "script",
+      "Python wheel",
+      task.python_wheel_task.package_name,
+    );
   }
   if (task.run_job_task) {
     return withOptionalSubtitle("job", "Run Job", task.run_job_task.job_id);
@@ -443,7 +500,11 @@ function detectTaskType(task: JobTask): {
     return withOptionalSubtitle("sql", "SQL", task.sql_task.file?.path);
   }
   if (task.spark_submit_task) {
-    return withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task.parameters?.join(" "));
+    return withOptionalSubtitle(
+      "script",
+      "Spark Submit",
+      task.spark_submit_task.parameters?.join(" "),
+    );
   }
   return { kind: "job", label: "Task", subtitle: "Other task settings" };
 }
@@ -491,7 +552,10 @@ function getParameterSummary(job: Job): GraphParameter[] {
     .slice(0, 3)
     .map((parameter) => ({
       name: parameter.name ?? "parameter",
-      value: typeof parameter.default === "string" ? normalizeReference(parameter.default) : "set",
+      value:
+        typeof parameter.default === "string"
+          ? normalizeReference(parameter.default)
+          : "set",
       ...(typeof parameter.default === "string" &&
       parameter.default.includes("${")
         ? { expression: parameter.default }
@@ -506,13 +570,22 @@ function stringifyParameterValue(value: unknown): Omit<GraphParameter, "name"> {
       ...(value.includes("${") ? { expression: value } : {}),
     };
   }
-  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
     return { value: String(value) };
   }
   if (Array.isArray(value)) {
-    return { value: value.map((item) => stringifyParameterValue(item).value).join(", ") };
+    return {
+      value: value
+        .map((item) => stringifyParameterValue(item).value)
+        .join(", "),
+    };
   }
-  if (typeof value === "object" && value !== null) return { value: JSON.stringify(value) };
+  if (typeof value === "object" && value !== null)
+    return { value: JSON.stringify(value) };
   return { value: "set" };
 }
 
@@ -616,31 +689,111 @@ function getTaskPayload(task: JobTask): Record<string, unknown> | null {
   return null;
 }
 
-function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] | undefined {
+function parsePythonWheelNamedParameters(
+  raw: string[],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const stripped = item.replace(/^--?/, "");
+    const eqIdx = stripped.indexOf("=");
+    if (eqIdx >= 0) {
+      result[stripped.slice(0, eqIdx)] = stripped.slice(eqIdx + 1);
+    } else {
+      result[stripped] = "";
+    }
+  }
+  return result;
+}
+
+function getEffectiveTaskParameters(
+  job: Job,
+  task: JobTask,
+): GraphParameter[] | undefined {
   const mergedParameters = new Map<string, Omit<GraphParameter, "name">>();
 
-  // Task base_parameters are set first so that job parameters can override them.
-  // Job parameters take precedence over task parameters (Databricks runtime behaviour).
+  // Task base_parameters / named_parameters are set first so that job parameters
+  // can override them. Job parameters take precedence (Databricks runtime behaviour).
   const taskPayload = getTaskPayload(task);
   const taskBaseParameters =
-    taskPayload && typeof taskPayload.base_parameters === "object" && taskPayload.base_parameters !== null
+    taskPayload &&
+    typeof taskPayload.base_parameters === "object" &&
+    taskPayload.base_parameters !== null
       ? (taskPayload.base_parameters as Record<string, unknown>)
       : null;
 
   if (taskBaseParameters) {
-    for (const [parameterName, parameterValue] of Object.entries(taskBaseParameters)) {
-      mergedParameters.set(parameterName, stringifyParameterValue(parameterValue));
+    for (const [parameterName, parameterValue] of Object.entries(
+      taskBaseParameters,
+    )) {
+      mergedParameters.set(
+        parameterName,
+        stringifyParameterValue(parameterValue),
+      );
     }
   }
 
+  // Python wheel tasks use named_parameters (--key=value, job-overridable) or
+  // parameters (positional, shown as [0],[1],... and not overridable by job params).
+  const wheelTask = task.python_wheel_task;
+  if (wheelTask) {
+    if (Array.isArray(wheelTask.named_parameters)) {
+      const parsed = parsePythonWheelNamedParameters(wheelTask.named_parameters);
+      for (const [k, v] of Object.entries(parsed)) {
+        mergedParameters.set(k, stringifyParameterValue(v));
+      }
+    } else if (Array.isArray(wheelTask.parameters)) {
+      for (let i = 0; i < wheelTask.parameters.length; i++) {
+        mergedParameters.set(`[${i}]`, stringifyParameterValue(wheelTask.parameters[i]));
+      }
+    }
+  }
+
+  // JAR tasks use a positional parameters array (not job-overridable).
+  const jarTask = task.spark_jar_task;
+  if (jarTask && Array.isArray(jarTask.parameters)) {
+    for (let i = 0; i < jarTask.parameters.length; i++) {
+      mergedParameters.set(`[${i}]`, stringifyParameterValue(jarTask.parameters[i]));
+    }
+  }
+
+  // SQL tasks support a named parameters dict (separate from base_parameters).
+  const sqlTask = task.sql_task;
+  if (sqlTask && typeof sqlTask.parameters === "object" && sqlTask.parameters !== null) {
+    for (const [k, v] of Object.entries(sqlTask.parameters)) {
+      mergedParameters.set(k, stringifyParameterValue(v));
+    }
+  }
+
+  // Run job tasks pass job_parameters (named dict) and pipeline_params to the child job.
+  const runJobTask = task.run_job_task;
+  if (runJobTask) {
+    if (typeof runJobTask.job_parameters === "object" && runJobTask.job_parameters !== null) {
+      for (const [k, v] of Object.entries(runJobTask.job_parameters)) {
+        mergedParameters.set(k, stringifyParameterValue(v));
+      }
+    }
+    if (runJobTask.pipeline_params?.full_refresh !== undefined) {
+      mergedParameters.set("pipeline_params.full_refresh", stringifyParameterValue(runJobTask.pipeline_params.full_refresh));
+    }
+  }
+
+  // Job parameters override task-level named entries. Positional entries ([0], [1], ...)
+  // cannot clash with named job param keys, so this loop is safe for both param styles.
   for (const parameter of job.parameters ?? []) {
     if (typeof parameter.name !== "string") continue;
-    mergedParameters.set(parameter.name, stringifyParameterValue(parameter.default));
+    mergedParameters.set(
+      parameter.name,
+      stringifyParameterValue(parameter.default),
+    );
   }
 
   if (mergedParameters.size === 0) return undefined;
 
-  return [...mergedParameters.entries()].map(([name, data]) => ({ name, ...data }));
+  return [...mergedParameters.entries()].map(([name, data]) => ({
+    name,
+    ...data,
+  }));
 }
 
 const DEFAULT_CLUSTER_COMPUTE_LABEL = "Serverless / inherited compute";
@@ -739,7 +892,9 @@ function getTaskCompute(
     if (details) {
       compute.push({
         kind: "pipeline",
-        label: ref?.resourceKey ?? normalizeReference(task.pipeline_task.pipeline_id),
+        label:
+          ref?.resourceKey ??
+          normalizeReference(task.pipeline_task.pipeline_id),
         ...computeReference(task.pipeline_task.pipeline_id),
         details,
       });
@@ -771,7 +926,10 @@ function getJobComputeSummary(
   return [...computeMap.values()];
 }
 
-function fileLocation(rawPath: string, resolvedPath: string | undefined): "local" | "workspace" | "dbfs" {
+function fileLocation(
+  rawPath: string,
+  resolvedPath: string | undefined,
+): "local" | "workspace" | "dbfs" {
   if (resolvedPath) return "local";
   if (rawPath.startsWith("/Workspace/")) return "workspace";
   return "dbfs";
@@ -799,15 +957,36 @@ function addTaskReferenceGraph(
       nodeType: "file",
       displayName: fileDisplayName(ref.path),
       location: fileLocation(ref.path, ref.resolvedPath),
-      data: { path: ref.path, resolvedPath: ref.resolvedPath, exists: ref.exists, referenceType: ref.referenceType },
+      data: {
+        path: ref.path,
+        resolvedPath: ref.resolvedPath,
+        exists: ref.exists,
+        referenceType: ref.referenceType,
+      },
     });
-    addEdge({ id: `${taskId}->references->${nodeId}`, source: taskId, target: nodeId, kind: "references" });
+    addEdge({
+      id: `${taskId}->references->${nodeId}`,
+      source: taskId,
+      target: nodeId,
+      kind: "references",
+    });
   }
 
   for (const ref of taskData.variableReferences) {
     const nodeId = `var:${ref.variableName}`;
-    addNode({ id: nodeId, kind: "variable", nodeType: "variable", displayName: ref.variableName, data: {} });
-    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+    addNode({
+      id: nodeId,
+      kind: "variable",
+      nodeType: "variable",
+      displayName: ref.variableName,
+      data: {},
+    });
+    addEdge({
+      id: `${taskId}->uses->${nodeId}`,
+      source: taskId,
+      target: nodeId,
+      kind: "uses",
+    });
   }
 
   for (const ref of taskData.libraryReferences) {
@@ -818,14 +997,29 @@ function addTaskReferenceGraph(
       nodeType: "library",
       displayName: ref.identifier,
       ...(ref.isLocal ? { location: "local" as const } : {}),
-      data: { libraryType: ref.libraryType, identifier: ref.identifier, isLocal: ref.isLocal, exists: ref.exists },
+      data: {
+        libraryType: ref.libraryType,
+        identifier: ref.identifier,
+        isLocal: ref.isLocal,
+        exists: ref.exists,
+      },
     });
-    addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+    addEdge({
+      id: `${taskId}->uses->${nodeId}`,
+      source: taskId,
+      target: nodeId,
+      kind: "uses",
+    });
   }
 
   for (const ref of taskData.resourceReferences) {
     const targetId = `resources.${ref.resourceType}.${ref.resourceName}`;
-    addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
+    addEdge({
+      id: `${taskId}->references->${targetId}`,
+      source: taskId,
+      target: targetId,
+      kind: "references",
+    });
   }
 
   const computeItems = getTaskCompute(task, job, resources);
@@ -838,13 +1032,20 @@ function addTaskReferenceGraph(
         nodeType: "cluster",
         displayName: item.label,
         data: {
-          ...(item.label === DEFAULT_CLUSTER_COMPUTE_LABEL ? { serverless: true } : {}),
+          ...(item.label === DEFAULT_CLUSTER_COMPUTE_LABEL
+            ? { serverless: true }
+            : {}),
           ...(item.expression ? { expression: item.expression } : {}),
           ...(item.variableName ? { variableName: item.variableName } : {}),
           ...(item.details ? { details: item.details } : {}),
         },
       });
-      addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+      addEdge({
+        id: `${taskId}->uses->${nodeId}`,
+        source: taskId,
+        target: nodeId,
+        kind: "uses",
+      });
     } else if (item.kind === "sqlWarehouse") {
       const nodeId = `warehouse:${item.label}`;
       addNode({
@@ -853,21 +1054,37 @@ function addTaskReferenceGraph(
         nodeType: "warehouse",
         displayName: item.label,
         data: {
-          ...(item.label === DEFAULT_SQL_WAREHOUSE_LABEL ? { serverless: true } : {}),
+          ...(item.label === DEFAULT_SQL_WAREHOUSE_LABEL
+            ? { serverless: true }
+            : {}),
           ...(item.expression ? { expression: item.expression } : {}),
           ...(item.variableName ? { variableName: item.variableName } : {}),
           ...(item.details ? { details: item.details } : {}),
         },
       });
-      addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });
+      addEdge({
+        id: `${taskId}->uses->${nodeId}`,
+        source: taskId,
+        target: nodeId,
+        kind: "uses",
+      });
     }
   }
 
   if (task.run_job_task?.job_id) {
     const jobIdRef = task.run_job_task.job_id;
-    const resourceMatch = jobIdRef.match(/^\$\{resources\.jobs\.([^.}]+)\.id\}$/);
-    const targetId = resourceMatch ? `resources.jobs.${resourceMatch[1]}` : `external-job:${jobIdRef}`;
-    addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
+    const resourceMatch = jobIdRef.match(
+      /^\$\{resources\.jobs\.([^.}]+)\.id\}$/,
+    );
+    const targetId = resourceMatch
+      ? `resources.jobs.${resourceMatch[1]}`
+      : `external-job:${jobIdRef}`;
+    addEdge({
+      id: `${taskId}->references->${targetId}`,
+      source: taskId,
+      target: targetId,
+      kind: "references",
+    });
   }
 }
 
@@ -894,7 +1111,10 @@ async function buildSourceIndex(
       const content = await readFile(filePath, "utf-8");
       yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content));
       const yaml = parseYaml(content) as Record<string, unknown> | null;
-      const resources = (yaml?.resources ?? {}) as Record<string, Record<string, unknown>>;
+      const resources = (yaml?.resources ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
       for (const [resourceGroup, resourceMap] of Object.entries(resources)) {
         for (const resourceKey of Object.keys(resourceMap ?? {})) {
           const key = `${resourceGroup}.${resourceKey}`;
@@ -909,7 +1129,12 @@ async function buildSourceIndex(
   for (const pattern of includePatterns) {
     const parts = pattern.split("/");
     const [dir0, glob] = parts;
-    if (parts.length === 2 && glob !== undefined && glob.startsWith("*.") && dir0 !== undefined) {
+    if (
+      parts.length === 2 &&
+      glob !== undefined &&
+      glob.startsWith("*.") &&
+      dir0 !== undefined
+    ) {
       const ext = glob.slice(1);
       const dir = join(bundleRoot, dir0);
       try {
@@ -917,7 +1142,9 @@ async function buildSourceIndex(
         for (const entry of entries) {
           if (entry.endsWith(ext)) await parseResourceFile(join(dir, entry));
         }
-      } catch { /* directory missing */ }
+      } catch {
+        /* directory missing */
+      }
     } else {
       await parseResourceFile(join(bundleRoot, pattern));
     }
@@ -935,12 +1162,18 @@ async function buildSourceIndex(
 /**
  * Flattens all resource entries from a parsed bundle config into a uniform list.
  */
-export function extractResourceNodes(parsedBundle: ParsedBundleConfig): ResourceNode[] {
+export function extractResourceNodes(
+  parsedBundle: ParsedBundleConfig,
+): ResourceNode[] {
   const nodes: ResourceNode[] = [];
 
-  for (const [resourceGroup, resourceMap] of Object.entries(parsedBundle.resources ?? {})) {
+  for (const [resourceGroup, resourceMap] of Object.entries(
+    parsedBundle.resources ?? {},
+  )) {
     const typedResourceMap = (resourceMap ?? {}) as Record<string, unknown>;
-    for (const [resourceKey, resourceValue] of Object.entries(typedResourceMap)) {
+    for (const [resourceKey, resourceValue] of Object.entries(
+      typedResourceMap,
+    )) {
       const resourceData = toRecord(resourceValue);
       nodes.push({
         id: `resources.${resourceGroup}.${resourceKey}`,
@@ -993,23 +1226,43 @@ export async function extractBundleGraph(
   const sourceIndex = bundleRoot
     ? await buildSourceIndex(
         bundleRoot,
-        (parsedBundle.include ?? []).filter((p): p is string => typeof p === "string"),
+        (parsedBundle.include ?? []).filter(
+          (p): p is string => typeof p === "string",
+        ),
       )
-    : { resourceSourceMap: new Map<string, string>(), yamlLocationMaps: new Map<string, YamlLocationMap>() };
+    : {
+        resourceSourceMap: new Map<string, string>(),
+        yamlLocationMaps: new Map<string, YamlLocationMap>(),
+      };
   const { resourceSourceMap, yamlLocationMaps } = sourceIndex;
 
   // Variable nodes from bundle definition (always, when bundleRoot provided)
   if (bundleRoot) {
-    for (const [varName, varDef] of Object.entries(parsedBundle.variables ?? {})) {
+    for (const [varName, varDef] of Object.entries(
+      parsedBundle.variables ?? {},
+    )) {
       const varId = `var:${varName}`;
-      addNode({ id: varId, kind: "variable", nodeType: "variable", displayName: varName, data: toRecord(varDef) });
+      addNode({
+        id: varId,
+        kind: "variable",
+        nodeType: "variable",
+        displayName: varName,
+        data: toRecord(varDef),
+      });
 
-      const lookup = toRecord(varDef).lookup as Record<string, unknown> | undefined;
+      const lookup = toRecord(varDef).lookup as
+        | Record<string, unknown>
+        | undefined;
       if (lookup) {
         for (const [resourceType, resourceName] of Object.entries(lookup)) {
           if (typeof resourceName === "string") {
             const targetId = `resources.${resourceType}s.${resourceName}`;
-            addEdge({ id: `${varId}->lookup->${targetId}`, source: varId, target: targetId, kind: "lookup" });
+            addEdge({
+              id: `${varId}->lookup->${targetId}`,
+              source: varId,
+              target: targetId,
+              kind: "lookup",
+            });
           }
         }
       }
@@ -1017,7 +1270,9 @@ export async function extractBundleGraph(
   }
 
   resourceNodes.forEach((resourceNode) => {
-    const isJobGroup = resourceNode.resourceGroup === "jobs" || resourceNode.resourceGroup === "job";
+    const isJobGroup =
+      resourceNode.resourceGroup === "jobs" ||
+      resourceNode.resourceGroup === "job";
     if (!isJobGroup) {
       addNode({
         id: resourceNode.id,
@@ -1078,9 +1333,10 @@ export async function extractBundleGraph(
       const taskCompute = getTaskCompute(task, job, parsedBundle.resources);
       const taskType = detectTaskType(task);
       const taskParameters = getEffectiveTaskParameters(job, task);
-      const sourceFilePath = resourceSourceMap.get(
-        `${resourceNode.resourceGroup}.${resourceNode.resourceKey}`,
-      ) ?? "";
+      const sourceFilePath =
+        resourceSourceMap.get(
+          `${resourceNode.resourceGroup}.${resourceNode.resourceKey}`,
+        ) ?? "";
       const sourceFileDir = sourceFilePath ? dirname(sourceFilePath) : "";
       const taskYamlPrefix = `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.tasks[${taskIndex}]`;
       const sourceLocations = sourceFilePath
@@ -1112,9 +1368,10 @@ export async function extractBundleGraph(
           )
         : undefined;
 
-      const hasMissingFile = taskData?.fileReferences.some(
-        (ref) => ref.resolvedPath !== undefined && !ref.exists,
-      ) ?? false;
+      const hasMissingFile =
+        taskData?.fileReferences.some(
+          (ref) => ref.resolvedPath !== undefined && !ref.exists,
+        ) ?? false;
 
       addNode({
         id: taskId,
@@ -1135,9 +1392,16 @@ export async function extractBundleGraph(
         ...(taskData ? { taskData } : {}),
       });
 
-      addEdge({ id: `${jobId}->${taskId}`, source: jobId, target: taskId, kind: "contains" });
+      addEdge({
+        id: `${jobId}->${taskId}`,
+        source: jobId,
+        target: taskId,
+        kind: "contains",
+      });
 
-      const dependencies = Array.isArray(task.depends_on) ? task.depends_on : [];
+      const dependencies = Array.isArray(task.depends_on)
+        ? task.depends_on
+        : [];
       dependencies.forEach((dependency) => {
         if (!dependency.task_key) return;
         const dependencySourceTask = tasksByKey.get(dependency.task_key);

@@ -729,3 +729,77 @@ describe("extractBundleGraph", () => {
     ]);
   });
 });
+
+describe("extractBundleGraph — python_wheel_task parameters", () => {
+  function makeWheelBundle(taskOverrides: Record<string, unknown>): ParsedBundleConfig {
+    return {
+      bundle: { name: "demo-bundle" },
+      resources: {
+        jobs: {
+          wheel_job: {
+            name: "Wheel Job",
+            tasks: [{ task_key: "run_wheel", python_wheel_task: { package_name: "my_pkg", ...taskOverrides } }],
+          },
+        },
+      },
+    } as unknown as ParsedBundleConfig;
+  }
+
+  test("named_parameters parsed as key=value and shown in graph node", async () => {
+    const graph = await extractBundleGraph(
+      makeWheelBundle({ named_parameters: ["--env=prod", "--batch=10"] }),
+    );
+    const taskNode = graph.nodes.find((n) => n.id?.includes("run_wheel"));
+    expect(taskNode?.parameters).toEqual([
+      { name: "env", value: "prod" },
+      { name: "batch", value: "10" },
+    ]);
+  });
+
+  test("positional parameters shown as [0],[1],...", async () => {
+    const graph = await extractBundleGraph(
+      makeWheelBundle({ parameters: ["prod", "10"] }),
+    );
+    const taskNode = graph.nodes.find((n) => n.id?.includes("run_wheel"));
+    expect(taskNode?.parameters).toEqual([
+      { name: "[0]", value: "prod" },
+      { name: "[1]", value: "10" },
+    ]);
+  });
+
+  test("job parameter overrides matching named_parameter key", async () => {
+    const bundle = {
+      bundle: { name: "demo-bundle" },
+      resources: {
+        jobs: {
+          wheel_job: {
+            name: "Wheel Job",
+            parameters: [{ name: "env", default: "${var.env}" }],
+            tasks: [
+              {
+                task_key: "run_wheel",
+                python_wheel_task: {
+                  package_name: "my_pkg",
+                  named_parameters: ["--env=dev", "--batch=10"],
+                },
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as ParsedBundleConfig;
+    const graph = await extractBundleGraph(bundle);
+    const taskNode = graph.nodes.find((n) => n.id?.includes("run_wheel"));
+    // Job param env overrides task's --env=dev; batch is task-only
+    expect(taskNode?.parameters).toEqual([
+      { name: "env", value: "env", expression: "${var.env}" },
+      { name: "batch", value: "10" },
+    ]);
+  });
+
+  test("no named_parameters and no parameters → no parameters on node", async () => {
+    const graph = await extractBundleGraph(makeWheelBundle({}));
+    const taskNode = graph.nodes.find((n) => n.id?.includes("run_wheel"));
+    expect(taskNode?.parameters).toBeUndefined();
+  });
+});

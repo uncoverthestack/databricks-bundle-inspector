@@ -519,7 +519,6 @@ function getTaskBaseParameters(
     "notebook_task",
     "sql_task",
     "spark_python_task",
-    "python_wheel_task",
     "spark_jar_task",
     "dbt_task",
     "dbt_platform_task",
@@ -544,6 +543,47 @@ function getTaskBaseParameters(
   return null;
 }
 
+type PythonWheelParams =
+  | { kind: "named"; entries: Array<{ key: string; value: string; index: number }> }
+  | { kind: "positional"; entries: Array<{ key: string; value: string; index: number }> };
+
+function getPythonWheelTaskParameters(
+  task: Record<string, unknown>,
+): PythonWheelParams | null {
+  const wheelTask = task.python_wheel_task;
+  if (!wheelTask || typeof wheelTask !== "object") return null;
+  const w = wheelTask as Record<string, unknown>;
+
+  if (Array.isArray(w.named_parameters)) {
+    const entries: Array<{ key: string; value: string; index: number }> = [];
+    for (let i = 0; i < w.named_parameters.length; i++) {
+      const raw = w.named_parameters[i];
+      if (typeof raw !== "string") continue;
+      const stripped = raw.replace(/^--?/, "");
+      const eqIdx = stripped.indexOf("=");
+      const key = eqIdx >= 0 ? stripped.slice(0, eqIdx) : stripped;
+      const value = eqIdx >= 0 ? stripped.slice(eqIdx + 1) : "";
+      entries.push({ key, value, index: i });
+    }
+    return { kind: "named", entries };
+  }
+
+  if (Array.isArray(w.parameters)) {
+    const entries: Array<{ key: string; value: string; index: number }> = [];
+    for (let i = 0; i < w.parameters.length; i++) {
+      const raw = w.parameters[i];
+      entries.push({
+        key: `[${i}]`,
+        value: typeof raw === "string" ? raw : String(raw ?? ""),
+        index: i,
+      });
+    }
+    return { kind: "positional", entries };
+  }
+
+  return null;
+}
+
 function getJobParamDefaults(
   rawJob: Record<string, unknown>,
 ): Map<string, string> {
@@ -560,57 +600,120 @@ function getJobParamDefaults(
   );
 }
 
+function buildParamRef(
+  paramName: string,
+  valueStr: string,
+  yamlPath: string,
+  jobParamDefaults: Map<string, string>,
+  resolveSourceLocation: SourceLocationResolver | undefined,
+  jobOverridable: boolean,
+): TaskParameterReference {
+  const sourceLocation = resolveSourceLocation?.(yamlPath);
+  VAR_PATTERN.lastIndex = 0;
+  const containsVariableRef = VAR_PATTERN.test(valueStr);
+  const isOverriddenByJob =
+    jobOverridable &&
+    (valueStr.includes("{{job.parameters.") ||
+      valueStr.includes("${job.parameters."));
+  const jobDefault = jobOverridable ? jobParamDefaults.get(paramName) : undefined;
+
+  let confidence: TaskParameterReference["confidence"];
+  if (containsVariableRef || (isOverriddenByJob && jobDefault === undefined)) {
+    confidence = "LOW";
+  } else if (isOverriddenByJob || jobDefault !== undefined) {
+    confidence = "MEDIUM";
+  } else {
+    confidence = "HIGH";
+  }
+
+  return {
+    name: paramName,
+    value: valueStr || undefined,
+    jobParameterDefault: jobDefault,
+    isOverriddenByJob,
+    effectiveValue: isOverriddenByJob ? jobDefault : valueStr || undefined,
+    confidence,
+    containsVariableRef,
+    dbiComment: undefined,
+    sourceLine: sourceLocation?.line ?? 0,
+    ...(sourceLocation ? { sourceColumn: sourceLocation.column } : {}),
+    yamlPath,
+  };
+}
+
 function getTaskParameterReferences(
   task: Record<string, unknown>,
   rawJob: Record<string, unknown>,
   taskKey: string,
   resolveSourceLocation?: SourceLocationResolver,
 ): TaskParameterReference[] {
-  const result = getTaskBaseParameters(task);
-  if (!result) return [];
-
-  const { params, payloadKey } = result;
   const jobParamDefaults = getJobParamDefaults(rawJob);
   const refs: TaskParameterReference[] = [];
 
-  for (const [paramName, paramValue] of Object.entries(params)) {
-    const yamlPath = `tasks.${taskKey}.${payloadKey}.base_parameters.${paramName}`;
-    const sourceLocation = resolveSourceLocation?.(yamlPath);
-    const valueStr =
-      typeof paramValue === "string" ? paramValue : String(paramValue ?? "");
-    VAR_PATTERN.lastIndex = 0;
-    const containsVariableRef = VAR_PATTERN.test(valueStr);
-    const isOverriddenByJob =
-      valueStr.includes("{{job.parameters.") ||
-      valueStr.includes("${job.parameters.");
-    const jobDefault = jobParamDefaults.get(paramName);
-
-    let confidence: TaskParameterReference["confidence"];
-    if (
-      containsVariableRef ||
-      (isOverriddenByJob && jobDefault === undefined)
-    ) {
-      confidence = "LOW";
-    } else if (isOverriddenByJob || jobDefault !== undefined) {
-      confidence = "MEDIUM";
-    } else {
-      confidence = "HIGH";
+  // Dict-style base_parameters (notebook, sql, spark_python, spark_jar, dbt, etc.)
+  const baseResult = getTaskBaseParameters(task);
+  if (baseResult) {
+    const { params, payloadKey } = baseResult;
+    for (const [paramName, paramValue] of Object.entries(params)) {
+      const yamlPath = `tasks.${taskKey}.${payloadKey}.base_parameters.${paramName}`;
+      const valueStr =
+        typeof paramValue === "string" ? paramValue : String(paramValue ?? "");
+      refs.push(
+        buildParamRef(paramName, valueStr, yamlPath, jobParamDefaults, resolveSourceLocation, true),
+      );
     }
+  }
 
-    refs.push({
-      name: paramName,
-      value: valueStr || undefined,
-      jobParameterDefault: jobDefault,
-      isOverriddenByJob,
-      effectiveValue: isOverriddenByJob ? jobDefault : valueStr || undefined,
-      confidence,
-      containsVariableRef,
-      // TODO: Our Databricks Bundle Inspector Comment
-      dbiComment: undefined,
-      sourceLine: sourceLocation?.line ?? 0,
-      ...(sourceLocation ? { sourceColumn: sourceLocation.column } : {}),
-      yamlPath,
-    });
+  // Python wheel tasks use named_parameters (--key=value, job-overridable) or
+  // parameters (positional, not job-overridable — no named key to match).
+  const wheelResult = getPythonWheelTaskParameters(task);
+  if (wheelResult) {
+    const arrayField =
+      wheelResult.kind === "named" ? "named_parameters" : "parameters";
+    for (const { key, value, index } of wheelResult.entries) {
+      const yamlPath = `tasks.${taskKey}.python_wheel_task.${arrayField}[${index}]`;
+      refs.push(
+        buildParamRef(key, value, yamlPath, jobParamDefaults, resolveSourceLocation, wheelResult.kind === "named"),
+      );
+    }
+  }
+
+  // JAR tasks: positional parameters array (not job-overridable).
+  const jarTask = task.spark_jar_task as Record<string, unknown> | undefined;
+  if (jarTask && Array.isArray(jarTask.parameters)) {
+    for (let i = 0; i < jarTask.parameters.length; i++) {
+      const value = typeof jarTask.parameters[i] === "string" ? jarTask.parameters[i] : String(jarTask.parameters[i] ?? "");
+      const yamlPath = `tasks.${taskKey}.spark_jar_task.parameters[${i}]`;
+      refs.push(buildParamRef(`[${i}]`, value, yamlPath, jobParamDefaults, resolveSourceLocation, false));
+    }
+  }
+
+  // SQL tasks: named parameters dict passed to the SQL query (not job-overridable).
+  const sqlTask = task.sql_task as Record<string, unknown> | undefined;
+  if (sqlTask && typeof sqlTask.parameters === "object" && sqlTask.parameters !== null && !Array.isArray(sqlTask.parameters)) {
+    for (const [k, v] of Object.entries(sqlTask.parameters as Record<string, unknown>)) {
+      const value = typeof v === "string" ? v : String(v ?? "");
+      const yamlPath = `tasks.${taskKey}.sql_task.parameters.${k}`;
+      refs.push(buildParamRef(k, value, yamlPath, jobParamDefaults, resolveSourceLocation, false));
+    }
+  }
+
+  // Run job tasks: job_parameters passed to the child job, and pipeline_params.
+  const runJobTask = task.run_job_task as Record<string, unknown> | undefined;
+  if (runJobTask) {
+    if (typeof runJobTask.job_parameters === "object" && runJobTask.job_parameters !== null && !Array.isArray(runJobTask.job_parameters)) {
+      for (const [k, v] of Object.entries(runJobTask.job_parameters as Record<string, unknown>)) {
+        const value = typeof v === "string" ? v : String(v ?? "");
+        const yamlPath = `tasks.${taskKey}.run_job_task.job_parameters.${k}`;
+        refs.push(buildParamRef(k, value, yamlPath, jobParamDefaults, resolveSourceLocation, false));
+      }
+    }
+    const pipelineParams = runJobTask.pipeline_params as Record<string, unknown> | undefined;
+    if (pipelineParams?.full_refresh !== undefined) {
+      const value = String(pipelineParams.full_refresh);
+      const yamlPath = `tasks.${taskKey}.run_job_task.pipeline_params.full_refresh`;
+      refs.push(buildParamRef("pipeline_params.full_refresh", value, yamlPath, jobParamDefaults, resolveSourceLocation, false));
+    }
   }
 
   return refs;
