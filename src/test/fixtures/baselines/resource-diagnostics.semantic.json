@@ -1,0 +1,83 @@
+{
+  "bundle": "resource-diagnostics",
+  "jobs": [
+    {
+      "key": "ingest_job",
+      "name": "Ingest Job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "extract",
+          "type": "Notebook",
+          "source": "../src/extract.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/extract.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 4
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "warning",
+      "kind": "unknown_or_deprecated_field",
+      "title": "Unknown or deprecated field",
+      "detail": "bogus_job_field",
+      "file": "resources/resources.yml",
+      "line": 5,
+      "column": 7,
+      "yamlPath": "resources.jobs.ingest_job"
+    },
+    {
+      "severity": "warning",
+      "kind": "unknown_or_deprecated_field",
+      "title": "Unknown or deprecated field",
+      "detail": "bogus_pipeline_field",
+      "file": "resources/resources.yml",
+      "line": 14,
+      "column": 7,
+      "yamlPath": "resources.pipelines.ingest_pipeline"
+    },
+    {
+      "severity": "warning",
+      "kind": "unknown_or_deprecated_field",
+      "title": "Unknown or deprecated field",
+      "detail": "bogus_task_field",
+      "file": "resources/resources.yml",
+      "line": 10,
+      "column": 11,
+      "yamlPath": "resources.jobs.ingest_job.tasks[0]"
+    },
+    {
+      "severity": "warning",
+      "kind": "unknown_or_deprecated_field",
+      "title": "Unknown or deprecated field",
+      "detail": "bogus_top_level",
+      "file": "databricks.yml",
+      "line": 6,
+      "column": 1
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

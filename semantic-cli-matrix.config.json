@@ -15,6 +15,16 @@
       "name": "multi-job-dag",
       "fixture": "src/test/fixtures/multi-job-dag",
       "baseline": "src/test/fixtures/baselines/multi-job-dag.semantic.json"
+    },
+    {
+      "name": "resource-diagnostics",
+      "fixture": "src/test/fixtures/resource-diagnostics",
+      "baseline": "src/test/fixtures/baselines/resource-diagnostics.semantic.json"
+    },
+    {
+      "name": "all-task-types",
+      "fixture": "src/test/fixtures/all-task-types",
+      "baseline": "src/test/fixtures/baselines/all-task-types.semantic.json"
     }
   ]
 }

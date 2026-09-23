@@ -1,3 +1,4 @@
+import path from "node:path";
 import { decideDocumentationGeneration } from "./documentationPolicy.js";
 import type { BundleGraph, BundleGraphNode, ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { InspectorIssue } from "./issues.js";
@@ -49,6 +50,11 @@ export interface SemanticIssue {
   title: string;
   detail?: string;
   taskKey?: string;
+  /** Location fields are only exported when a bundle root is given, so paths stay portable. */
+  file?: string;
+  line?: number;
+  column?: number;
+  yamlPath?: string;
 }
 
 export interface SemanticDetectedReferences {
@@ -188,13 +194,19 @@ function semanticTask(
   };
 }
 
-function semanticIssue(issue: InspectorIssue): SemanticIssue {
+function semanticIssue(issue: InspectorIssue, bundleRoot?: string): SemanticIssue {
   return {
     severity: issue.severity,
     kind: issue.kind,
     title: issue.title,
     ...(issue.detail ? { detail: issue.detail } : {}),
     ...(issue.taskId ? { taskKey: taskKeyFromId(issue.taskId) } : {}),
+    ...(bundleRoot && issue.file
+      ? { file: path.relative(bundleRoot, issue.file).split(path.sep).join("/") }
+      : {}),
+    ...(bundleRoot && issue.line ? { line: issue.line } : {}),
+    ...(bundleRoot && issue.column ? { column: issue.column } : {}),
+    ...(bundleRoot && issue.yamlPath ? { yamlPath: issue.yamlPath } : {}),
   };
 }
 
@@ -233,10 +245,14 @@ function detectedReferences(graph: BundleGraph): SemanticDetectedReferences {
   };
 }
 
+/**
+ * @param bundleRoot When given, issues include their location relative to it.
+ */
 export function exportSemanticGraph(
   parsedBundle: ParsedBundleConfig,
   graph: BundleGraph,
   issues: InspectorIssue[],
+  bundleRoot?: string,
 ): SemanticBundleGraph {
   const jobs = jobNodes(graph).map((job): SemanticJob => {
     const tasks = taskNodesForJob(graph, job);
@@ -264,10 +280,10 @@ export function exportSemanticGraph(
     bundle: parsedBundle.bundle.name,
     jobs,
     issues: issues
-      .map(semanticIssue)
+      .map((issue) => semanticIssue(issue, bundleRoot))
       .sort((a, b) =>
-        `${a.severity}:${a.kind}:${a.taskKey ?? ""}:${a.detail ?? a.title}`.localeCompare(
-          `${b.severity}:${b.kind}:${b.taskKey ?? ""}:${b.detail ?? b.title}`,
+        `${a.severity}:${a.kind}:${a.taskKey ?? ""}:${a.detail ?? a.title}:${a.file ?? ""}:${a.line ?? 0}`.localeCompare(
+          `${b.severity}:${b.kind}:${b.taskKey ?? ""}:${b.detail ?? b.title}:${b.file ?? ""}:${b.line ?? 0}`,
         ),
       ),
     detectedReferences: detectedReferences(graph),
