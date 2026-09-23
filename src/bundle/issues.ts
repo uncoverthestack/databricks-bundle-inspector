@@ -109,17 +109,20 @@ export function buildInspectorIssues(
     const taskData = task.taskData;
     if (!taskData) continue;
 
+    // An unrecognised task type is a gap in the inspector, not a problem in the
+    // bundle: an invalid task key is already reported by the CLI as an unknown field.
     if (taskData.taskType === "unknown") {
       issues.push({
         id: `unknown-task:${task.id}`,
-        severity: "warning",
+        severity: "info",
         kind: "unknown_task_type",
-        title: "Unknown or deprecated task type",
+        title: "Task type not recognised by the inspector",
         detail: task.displayName,
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: `tasks.${taskData.taskKey}`,
-        fixHint: "Check whether this task type is supported by the inspector.",
+        fixHint:
+          "The inspector shows this task without type-specific details. It does not mean the task is invalid.",
         ...issueLocation(sourceFileForTask(task)),
       });
     }

@@ -729,3 +729,44 @@ describe("extractBundleGraph", () => {
     ]);
   });
 });
+
+describe("extractBundleGraph — task labels", () => {
+  async function taskNodes(tasks: Array<Record<string, unknown>>) {
+    const graph = await extractBundleGraph({
+      bundle: { name: "demo-bundle" },
+      resources: { jobs: { j: { name: "J", tasks } } },
+    } as ParsedBundleConfig);
+    return graph.nodes.filter((node) => node.nodeType === "task");
+  }
+
+  test("labels task types added to the bundle schema since 0.1.0", async () => {
+    const nodes = await taskNodes([
+      { task_key: "alert", alert_task: { workspace_path: "/Workspace/alerts/a.alert.json" } },
+      { task_key: "power_bi", power_bi_task: { connection_resource_name: "pbi_conn" } },
+      { task_key: "dbt_cloud", dbt_cloud_task: { dbt_cloud_job_id: 456 } },
+      { task_key: "dbt_platform", dbt_platform_task: { dbt_platform_job_id: "123" } },
+      { task_key: "clean_room", clean_rooms_notebook_task: { clean_room_name: "cr", notebook_name: "nb1" } },
+      { task_key: "ai_runtime", ai_runtime_task: { code_source_path: "../src/ai" } },
+      { task_key: "gen_ai", gen_ai_compute_task: { training_script_path: "../src/train.py" } },
+      { task_key: "python_operator", python_operator_task: { main: "../src/op.py" } },
+    ]);
+
+    expect(
+      nodes.map((node) => [node.displayName, node.taskTypeLabel, node.subtitle]),
+    ).toEqual([
+      ["alert", "Alert", "/Workspace/alerts/a.alert.json"],
+      ["power_bi", "Power BI", "pbi_conn"],
+      ["dbt_cloud", "dbt Cloud", "456"],
+      ["dbt_platform", "dbt platform (Beta)", "123"],
+      ["clean_room", "Clean room", "nb1"],
+      ["ai_runtime", "AI Runtime", "../src/ai"],
+      ["gen_ai", "Gen AI compute", "../src/train.py"],
+      ["python_operator", "Python operator", "../src/op.py"],
+    ]);
+  });
+
+  test("shows an unrecognised task type by its key", async () => {
+    const [node] = await taskNodes([{ task_key: "future", brand_new_task: {} }]);
+    expect(node).toMatchObject({ taskTypeLabel: "Task", subtitle: "brand_new_task" });
+  });
+});

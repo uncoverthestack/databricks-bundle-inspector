@@ -851,3 +851,51 @@ describe("buildTaskNodeData — metadata fields", () => {
     expect(result.dbiComment).toBeUndefined();
   });
 });
+
+// Every task payload key in `databricks bundle schema` (CLI 1.17.0).
+describe("buildTaskNodeData — taskType covers every schema task type", () => {
+  const cases: Array<[string, string]> = [
+    ["notebook_task", "notebook"],
+    ["clean_rooms_notebook_task", "notebook"],
+    ["sql_task", "sql"],
+    ["python_wheel_task", "python_wheel"],
+    ["spark_jar_task", "spark_jar"],
+    ["spark_python_task", "spark_python"],
+    ["spark_submit_task", "spark_submit"],
+    ["pipeline_task", "pipeline"],
+    ["run_job_task", "run_job"],
+    ["dbt_task", "dbt"],
+    ["dbt_platform_task", "dbt"],
+    ["dbt_cloud_task", "dbt_cloud"],
+    ["condition_task", "condition"],
+    ["for_each_task", "for_each"],
+    ["dashboard_task", "dashboard"],
+    ["power_bi_task", "power_bi"],
+    ["alert_task", "alert"],
+    ["ai_runtime_task", "ai_runtime"],
+    ["gen_ai_compute_task", "gen_ai_compute"],
+    ["python_operator_task", "python_operator"],
+  ];
+
+  test.each(cases)("%s → %s", (payloadKey, expected) => {
+    const result = buildTaskNodeData(
+      { [payloadKey]: {} },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(result.taskType).toBe(expected);
+  });
+
+  test("an unrecognised *_task key → unknown", () => {
+    const result = buildTaskNodeData(
+      { brand_new_task: {} },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(result.taskType).toBe("unknown");
+  });
+});
