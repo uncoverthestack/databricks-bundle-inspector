@@ -2,6 +2,12 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Minimum Databricks CLI raised to `v0.299.0`** (previously `v0.270.1`). The compatibility matrix now covers `v0.299.0` through the 1.x releases. `v0.299.x` is the only 0.x line Databricks still patches, and older versions are no longer tested.
+
 ## [0.1.4] - 2026-09-22
 
 ### Added

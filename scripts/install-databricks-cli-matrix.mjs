@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const DEFAULT_MIN_VERSION = "0.270.1";
+const DEFAULT_MIN_VERSION = "0.299.0";
 const DEFAULT_INSTALL_DIR = ".tools/databricks-cli";
 const DEFAULT_OUTPUT_CONFIG = "semantic-cli-matrix.local.json";
 const DEFAULT_FIXTURE_CONFIG = "semantic-cli-matrix.config.json";
@@ -20,7 +20,7 @@ function usage() {
     "  node scripts/install-databricks-cli-matrix.mjs [--min <version>] [--strategy <all|latest-patch-per-minor>] [--install-dir <path>] [--output <path>] [--fixture-config <path>]",
     "",
     "Example:",
-    "  npm run cli:install-matrix -- --min 0.270.1 --output semantic-cli-matrix.local.json",
+    "  npm run cli:install-matrix -- --min 0.299.0 --output semantic-cli-matrix.local.json",
     "",
     "Downloads Databricks CLI releases at or above --min,",
     "installs each binary under .tools/databricks-cli/<version>/, and writes a matrix config.",
