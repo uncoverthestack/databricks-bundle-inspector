@@ -199,6 +199,41 @@ export async function validateBundle(
   });
 }
 
+export interface FallbackInspectionResult {
+  result: BundleResult;
+  inspectedTarget: string;
+  inspectedTargetMode: "target" | "probe";
+  fallbackMessage: string | undefined;
+}
+
+/**
+ * Runs bundle validation against `requestedTarget`, falling back to the probe
+ * target if validation fails. Returns the mode and fallback message so callers
+ * can surface the degraded state to the user without embedding this logic in
+ * the VS Code extension host.
+ */
+export async function inspectBundleWithFallback(
+  bundleDir: string,
+  requestedTarget: string | undefined,
+  validateFn: (dir: string, target?: string) => Promise<BundleResult>,
+): Promise<FallbackInspectionResult> {
+  let result = await validateFn(bundleDir, requestedTarget);
+  let inspectedTarget = requestedTarget ?? BUNDLE_PROBE_TARGET;
+  let inspectedTargetMode: "target" | "probe" = requestedTarget
+    ? "target"
+    : "probe";
+  let fallbackMessage: string | undefined;
+
+  if (!result.ok && requestedTarget) {
+    fallbackMessage = result.error.details ?? result.error.error;
+    result = await validateFn(bundleDir, undefined);
+    inspectedTarget = BUNDLE_PROBE_TARGET;
+    inspectedTargetMode = "probe";
+  }
+
+  return { result, inspectedTarget, inspectedTargetMode, fallbackMessage };
+}
+
 /**
  * Testable core of {@link validateBundle} with injectable dependencies.
  *
