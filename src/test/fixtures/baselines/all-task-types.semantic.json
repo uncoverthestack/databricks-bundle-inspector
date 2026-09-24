@@ -1,0 +1,291 @@
+{
+  "bundle": "all-task-types",
+  "jobs": [
+    {
+      "key": "all_tasks",
+      "name": "all_tasks",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "t_alert",
+          "type": "Alert",
+          "source": "alert123",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_clean_rooms",
+          "type": "Clean room",
+          "source": "nb1",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_condition",
+          "type": "If/else",
+          "source": "1 == 1 - Equal to",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_dashboard",
+          "type": "Dashboards",
+          "source": "dash123",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "abc123"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_dbt",
+          "type": "dbt",
+          "source": "dbt run",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "abc123"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_dbt_cloud",
+          "type": "dbt Cloud",
+          "source": "456",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_dbt_platform",
+          "type": "dbt platform (Beta)",
+          "source": "123",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_for_each",
+          "type": "For each",
+          "source": "[\"a\",\"b\"]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_gen_ai",
+          "type": "Gen AI compute",
+          "source": "../src/ai/train.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_jar",
+          "type": "JAR",
+          "source": "com.example.Main",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_notebook",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_pipeline",
+          "type": "Pipeline",
+          "source": "${resources.pipelines.p1.id}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "p1"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_power_bi",
+          "type": "Power BI",
+          "source": "pbi_conn",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_run_job",
+          "type": "Run Job",
+          "source": "${resources.jobs.other.id}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_spark_python",
+          "type": "Python script",
+          "source": "../src/script.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/script.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_spark_submit",
+          "type": "Spark Submit",
+          "source": "--class com.example.Main",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_sql",
+          "type": "SQL",
+          "source": "../src/q.sql",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "abc123"
+          ],
+          "files": [
+            {
+              "path": "../src/q.sql",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_wheel",
+          "type": "Python wheel",
+          "source": "my_pkg",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "other",
+      "name": "other",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "nb",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}
