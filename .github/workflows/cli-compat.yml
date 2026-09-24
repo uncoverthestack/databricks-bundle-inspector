@@ -45,14 +45,16 @@ jobs:
 
       - name: Install Databricks CLI
         env:
-          GH_TOKEN: ${{ github.token }}
           CLI_VERSION: ${{ matrix.cli }}
         run: |
           set -euo pipefail
           if [ "$CLI_VERSION" = "latest" ]; then
-            CLI_VERSION="$(gh release view --repo databricks/cli --json tagName --jq .tagName)"
-            CLI_VERSION="${CLI_VERSION#v}"
+            # Follow the web redirect: the GitHub API is blocked for the databricks org
+            # by an IP allow list, but release pages and downloads are public.
+            latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/databricks/cli/releases/latest)"
+            CLI_VERSION="${latest_url##*/v}"
           fi
+          echo "Installing Databricks CLI ${CLI_VERSION}"
           archive="databricks_cli_${CLI_VERSION}_linux_amd64.tar.gz"
           base="https://github.com/databricks/cli/releases/download/v${CLI_VERSION}"
           workdir="$RUNNER_TEMP/databricks-cli"

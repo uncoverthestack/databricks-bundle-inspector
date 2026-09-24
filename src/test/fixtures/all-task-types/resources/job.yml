@@ -1,3 +1,5 @@
+# Every job task type supported by all CLIs the inspector supports (0.299.0+).
+# Task types added later live in ../newer-task-types.
 resources:
   pipelines:
     p1:
@@ -82,16 +84,7 @@ resources:
           alert_task:
             alert_id: alert123
             warehouse_id: abc123
-        - task_key: t_ai_runtime
-          ai_runtime_task:
-            code_source_path: ../src/ai
-            experiment: /Shared/exp
-            deployments:
-              - name: d1
         - task_key: t_gen_ai
           gen_ai_compute_task:
             dl_runtime_image: runtime-image:latest
             training_script_path: ../src/ai/train.py
-        - task_key: t_python_operator
-          python_operator_task:
-            main: ../src/op.py

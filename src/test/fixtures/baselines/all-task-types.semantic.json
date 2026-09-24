@@ -8,17 +8,6 @@
       "runAs": "Not specified",
       "tasks": [
         {
-          "key": "t_ai_runtime",
-          "type": "AI Runtime",
-          "source": "../src/ai",
-          "dependsOn": [],
-          "dependents": [],
-          "compute": [],
-          "files": [],
-          "variables": [],
-          "libraries": []
-        },
-        {
           "key": "t_alert",
           "type": "Alert",
           "source": "alert123",
@@ -171,17 +160,6 @@
           "key": "t_power_bi",
           "type": "Power BI",
           "source": "pbi_conn",
-          "dependsOn": [],
-          "dependents": [],
-          "compute": [],
-          "files": [],
-          "variables": [],
-          "libraries": []
-        },
-        {
-          "key": "t_python_operator",
-          "type": "Python operator",
-          "source": "../src/op.py",
           "dependsOn": [],
           "dependents": [],
           "compute": [],

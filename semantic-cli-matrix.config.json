@@ -25,6 +25,12 @@
       "name": "all-task-types",
       "fixture": "src/test/fixtures/all-task-types",
       "baseline": "src/test/fixtures/baselines/all-task-types.semantic.json"
+    },
+    {
+      "name": "newer-task-types",
+      "fixture": "src/test/fixtures/newer-task-types",
+      "baseline": "src/test/fixtures/baselines/newer-task-types.semantic.json",
+      "minCliVersion": "1.6.0"
     }
   ]
 }

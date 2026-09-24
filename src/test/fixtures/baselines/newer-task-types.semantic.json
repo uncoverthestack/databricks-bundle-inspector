@@ -1,0 +1,46 @@
+{
+  "bundle": "newer-task-types",
+  "jobs": [
+    {
+      "key": "newer_tasks",
+      "name": "newer_tasks",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "t_ai_runtime",
+          "type": "AI Runtime",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "t_python_operator",
+          "type": "Python operator",
+          "source": "../src/op.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}
