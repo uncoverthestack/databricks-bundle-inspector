@@ -730,7 +730,7 @@ describe("extractBundleGraph", () => {
   });
 });
 
-describe("extractBundleGraph — task labels", () => {
+describe("extractBundleGraph: task labels", () => {
   async function taskNodes(tasks: Array<Record<string, unknown>>) {
     const graph = await extractBundleGraph({
       bundle: { name: "demo-bundle" },
