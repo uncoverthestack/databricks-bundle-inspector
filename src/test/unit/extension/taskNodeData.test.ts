@@ -853,7 +853,7 @@ describe("buildTaskNodeData — metadata fields", () => {
 });
 
 // Every task payload key in `databricks bundle schema` (CLI 1.17.0).
-describe("buildTaskNodeData — taskType covers every schema task type", () => {
+describe("buildTaskNodeData: taskType covers every schema task type", () => {
   const cases: Array<[string, string]> = [
     ["notebook_task", "notebook"],
     ["clean_rooms_notebook_task", "notebook"],
