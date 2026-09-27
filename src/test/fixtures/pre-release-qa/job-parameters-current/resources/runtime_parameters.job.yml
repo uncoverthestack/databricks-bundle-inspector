@@ -1,0 +1,32 @@
+resources:
+  jobs:
+    runtime_parameter_job:
+      name: runtime_parameter_job_${bundle.target}
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: source_table
+          default: ${var.source_table}
+        - name: processing_date
+          default: "2026-09-27"
+
+      tasks:
+        - task_key: prepare_inputs
+          notebook_task:
+            notebook_path: ../src/jobs/prepare_inputs.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              source_table: "{{job.parameters.source_table}}"
+              processing_date: "{{job.parameters.processing_date}}"
+
+        - task_key: validate_counts
+          depends_on:
+            - task_key: prepare_inputs
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/sql/validate_counts.sql

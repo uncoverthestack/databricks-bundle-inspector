@@ -1,0 +1,25 @@
+bundle:
+  name: pre_release_qa_edge_cases
+
+include:
+  - resources/**/*.yml
+
+variables:
+  catalog:
+    default: main
+  schema:
+    description: Target-specific schema value.
+  required_without_default:
+    description: Intentionally has no default so probe/target behavior is visible.
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      schema: qa_dev
+
+  prod:
+    mode: production
+    variables:
+      schema: qa_prod

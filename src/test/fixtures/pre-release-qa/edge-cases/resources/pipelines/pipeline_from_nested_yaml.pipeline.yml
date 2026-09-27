@@ -1,0 +1,9 @@
+resources:
+  pipelines:
+    pipeline_from_nested_yaml:
+      name: pipeline_from_nested_yaml_${var.schema}
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      libraries:
+        - glob:
+            include: ../../src/dlt/**

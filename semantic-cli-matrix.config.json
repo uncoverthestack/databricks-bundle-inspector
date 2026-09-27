@@ -36,6 +36,21 @@
       "name": "pipeline-sources",
       "fixture": "src/test/fixtures/pipeline-sources",
       "baseline": "src/test/fixtures/baselines/pipeline-sources.semantic.json"
+    },
+    {
+      "name": "pre-release-qa-edge-cases",
+      "fixture": "src/test/fixtures/pre-release-qa/edge-cases",
+      "baseline": "src/test/fixtures/baselines/pre-release-qa-edge-cases.semantic.json"
+    },
+    {
+      "name": "pre-release-qa-job-parameters-current",
+      "fixture": "src/test/fixtures/pre-release-qa/job-parameters-current",
+      "baseline": "src/test/fixtures/baselines/pre-release-qa-job-parameters-current.semantic.json"
+    },
+    {
+      "name": "pre-release-qa-uc-pipeline-schema",
+      "fixture": "src/test/fixtures/pre-release-qa/uc-pipeline-schema",
+      "baseline": "src/test/fixtures/baselines/pre-release-qa-uc-pipeline-schema.semantic.json"
     }
   ]
 }

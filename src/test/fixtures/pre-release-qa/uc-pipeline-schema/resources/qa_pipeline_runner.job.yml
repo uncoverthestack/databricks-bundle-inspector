@@ -1,0 +1,8 @@
+resources:
+  jobs:
+    qa_pipeline_runner:
+      name: qa_pipeline_runner_${bundle.target}
+      tasks:
+        - task_key: refresh_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.qa_pipeline.id}

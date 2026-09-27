@@ -1,0 +1,9 @@
+resources:
+  pipelines:
+    qa_pipeline:
+      name: qa_pipeline_${bundle.target}
+      catalog: ${resources.schemas.qa_schema.catalog_name}
+      schema: ${resources.schemas.qa_schema.name}
+      libraries:
+        - file:
+            path: ../src/pipelines/bronze_customers.py
