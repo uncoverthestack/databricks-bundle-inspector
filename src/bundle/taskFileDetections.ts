@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { notebookViews, type NotebookViews } from "./code/notebookViews.js";
+import { notebookViews, type CodeLanguage, type NotebookViews } from "./code/notebookViews.js";
 import {
   literalValue,
   readArguments,
@@ -369,7 +369,8 @@ export type WidgetMethod =
   | "getArgument"
   | "getAll"
   | "sqlParameterMarker"
-  | "sqlLegacyReference";
+  | "sqlLegacyReference"
+  | "sqlGetArgument";
 
 /**
  * A single detected use of a Databricks widget-retrieval call within a file.
@@ -529,6 +530,16 @@ function scanSqlWidgets(view: string, document: string): { reads: WidgetDetectio
         reads.push({ ...at(token.start), name: next.value, method: "sqlParameterMarker" });
       }
     }
+    // Deprecated `getArgument('name')`, which reads a widget from SQL.
+    if (token.kind === "word" && token.value.toLowerCase() === "getargument" && next?.value === "(") {
+      const name = sqlLiteral(sqlArguments(tokens, i + 1)[0]);
+      reads.push({
+        ...at(token.start),
+        name,
+        method: "sqlGetArgument",
+        note: "getArgument() is deprecated; use :param",
+      });
+    }
     if (token.kind === "legacy_reference" && WIDGET_NAME.test(token.value)) {
       legacy.push({ ...at(token.start), name: token.value, method: "sqlLegacyReference", note: LEGACY_NOTE });
     }
@@ -611,9 +622,18 @@ export async function detectWidgetsInFile(
  * define widgets the inspector does not see.
  */
 export interface WidgetUsage {
-  reads: Array<{ name: string; line: number }>;
-  /** Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect`. */
+  reads: Array<{ name: string; line: number; language: CodeLanguage }>;
+  /**
+   * Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect` in
+   * Python, `CREATE WIDGET` in SQL. Includes widgets created by notebooks run with `%run`.
+   */
   defaults: string[];
+  /**
+   * The language of the cells that create each of this notebook's own defaults. A widget
+   * created in one language can't be read in another when the notebook runs as a job
+   * (https://docs.databricks.com/aws/en/notebooks/notebook-limitations).
+   */
+  defaultLanguages: Record<string, CodeLanguage[]>;
   /**
    * Reads whose names the inspector can't know: a name held in a variable, `getAll()`,
    * or `dbutils.widgets` passed to other code, e.g. `helper(widgets=dbutils.widgets)`.
@@ -668,11 +688,17 @@ export async function detectWidgetUsageInFile(
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const python = scanPythonWidgets(views.python, views.document);
   const sql = scanSqlWidgets(views.sql, views.document);
+  const pythonDefaults = scanPythonWidgetDefaults(views.python);
+  const defaultLanguages: Record<string, CodeLanguage[]> = {};
+  for (const [language, names] of [["python", pythonDefaults], ["sql", sql.defaults]] as const) {
+    for (const name of names) defaultLanguages[name] = [...(defaultLanguages[name] ?? []), language];
+  }
+  const withLanguage = (language: CodeLanguage) => (d: WidgetDetection) =>
+    d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line, language }] : [];
   const usage: WidgetUsage = {
-    reads: [...python, ...sql.reads].sort(byLine).flatMap((d) =>
-      d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line }] : [],
-    ),
-    defaults: [...scanPythonWidgetDefaults(views.python), ...sql.defaults],
+    reads: [...python.flatMap(withLanguage("python")), ...sql.reads.flatMap(withLanguage("sql"))].sort(byLine),
+    defaults: [...pythonDefaults, ...sql.defaults],
+    defaultLanguages,
     hasDynamicReads: python.some((d) => d.name === null) || passesWidgetsObject(views.python),
     hasUnresolvedRuns: false,
     runReadNames: [],

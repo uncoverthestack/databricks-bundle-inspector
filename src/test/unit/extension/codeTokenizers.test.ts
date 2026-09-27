@@ -130,8 +130,8 @@ describe("detections on real-world shapes", () => {
     );
     const usage = await detectWidgetUsageInFile(f);
     expect(usage.reads).toEqual([
-      { name: "storage_location", line: 4 },
-      { name: "latest_update_id", line: 8 },
+      { name: "storage_location", line: 4, language: "python" },
+      { name: "latest_update_id", line: 8, language: "sql" },
     ]);
     expect(usage.defaults).toEqual(["storage_location"]);
   });
@@ -192,12 +192,13 @@ describe("dbutils under other names", () => {
     );
     expect(await detectWidgetUsageInFile(f)).toEqual({
       reads: [
-        { name: "env", line: 3 },
-        { name: "region", line: 5 },
-        { name: "run_date", line: 8 },
-        { name: "table", line: 10 },
+        { name: "env", line: 3, language: "python" },
+        { name: "region", line: 5, language: "python" },
+        { name: "run_date", line: 8, language: "python" },
+        { name: "table", line: 10, language: "python" },
       ],
       defaults: ["run_date"],
+      defaultLanguages: { run_date: ["python"] },
       // `w = dbutils.widgets` is followed, not treated as passing the widgets on.
       hasDynamicReads: false,
       hasUnresolvedRuns: false,
@@ -295,6 +296,14 @@ describe("dbutils in any form", () => {
       [4, "s1", "k1"],
       [6, "s2", "k2"],
     ]);
+  });
+});
+
+// https://docs.databricks.com/aws/en/notebooks/notebook-limitations
+describe("SQL getArgument", () => {
+  test("reads a widget with the deprecated getArgument() in SQL", async () => {
+    const f = await file("get-argument.sql", "SELECT * FROM t WHERE d = getArgument('run_day') AND x = 'getArgument(\"no\")'");
+    expect((await detectWidgetsInFile(f)).map((w) => [w.name, w.method])).toEqual([["run_day", "sqlGetArgument"]]);
   });
 });
 

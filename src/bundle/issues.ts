@@ -209,7 +209,28 @@ function widgetParameterIssues(
     const reported = new Set<string>();
 
     for (const read of usage.reads) {
-      if (passed.has(read.name) || defaults.has(read.name) || reported.has(read.name)) continue;
+      if (passed.has(read.name) || reported.has(read.name)) continue;
+      // A default created in the other language's cells doesn't reach this read when
+      // the notebook runs as a job; one from a %run notebook is not language-bound here.
+      const ownLanguages = usage.defaultLanguages[read.name];
+      if (ownLanguages && !ownLanguages.includes(read.language)) {
+        reported.add(read.name);
+        const where = read.language === "sql" ? "a SQL cell" : "a Python cell";
+        const created = ownLanguages[0] === "sql" ? "a SQL cell" : "a Python cell";
+        issues.push({
+          id: `widget-other-language:${task.id}:${ref.resolvedPath}:${read.name}`,
+          severity: "warning",
+          kind: "widget_parameter_mismatch",
+          title: `Widget "${read.name}" is read in ${where} but created in ${created}, so it may not be set when the notebook runs as a job.`,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          fixHint: `Widgets can't pass between languages under Run All or in a job. Pass "${read.name}" in the task's base_parameters or the job's parameters, or create it in ${where}.`,
+          ...issueLocation(ref.resolvedPath, read.line),
+        });
+        continue;
+      }
+      if (defaults.has(read.name)) continue;
       reported.add(read.name);
       const suggestion = closestName(read.name, unreadParameters);
       if (suggestion) suggested.add(suggestion);
