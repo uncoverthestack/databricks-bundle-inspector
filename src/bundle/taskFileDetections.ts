@@ -712,6 +712,59 @@ export async function detectWidgetUsageInFile(
   return usage;
 }
 
+/**
+ * How a task's code uses task values
+ * (https://docs.databricks.com/aws/en/jobs/task-values): the keys it sets with
+ * `dbutils.jobs.taskValues.set(key=..., value=...)` and the values it reads with
+ * `dbutils.jobs.taskValues.get(taskKey=..., key=..., default=..., debugValue=...)`.
+ * A `null` key or task key is not a string literal.
+ */
+export interface TaskValueUsage {
+  sets: Array<{ key: string | null; line: number }>;
+  gets: Array<{ taskKey: string | null; key: string | null; hasDefault: boolean; line: number }>;
+  /** A `%run`, which can set task values in a notebook the scan doesn't cover. */
+  runsOtherNotebooks: boolean;
+}
+
+/** `<receiver>.jobs.taskValues.<set|get>(...)`, whatever the receiver is called. */
+function taskValueCalls(tokens: PythonToken[]): Array<{ method: string; args: PythonArgument[]; offset: number }> {
+  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+  tokens.forEach((token, i) => {
+    if (!isOp(token, ".") || tokens[i + 1]?.value !== "jobs" || !isOp(tokens[i + 2], ".")) return;
+    if (tokens[i + 3]?.value !== "taskValues" || !isOp(tokens[i + 4], ".")) return;
+    const receiver = tokens[i - 1];
+    if (!receiver || !(receiver.kind === "name" || isOp(receiver, ")") || isOp(receiver, "]"))) return;
+    const method = tokens[i + 5];
+    if (method?.kind !== "name" || (method.value !== "set" && method.value !== "get")) return;
+    if (!isOp(tokens[i + 6], "(")) return;
+    const call = readArguments(tokens, i + 6);
+    if (call) calls.push({ method: method.value, args: call.args, offset: receiver.start });
+  });
+  return calls;
+}
+
+export async function detectTaskValuesInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<TaskValueUsage> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const usage: TaskValueUsage = { sets: [], gets: [], runsOtherNotebooks: views.runs.length > 0 };
+  for (const call of taskValueCalls(tokenizePython(views.python))) {
+    const line = getStartLine(views.document, call.offset);
+    if (call.method === "set") {
+      usage.sets.push({ key: literalValue(argument(call.args, "key", 0)), line });
+    } else {
+      usage.gets.push({
+        taskKey: literalValue(argument(call.args, "taskKey", 0)),
+        key: literalValue(argument(call.args, "key", 1)),
+        hasDefault: call.args.some((arg) => arg.keyword === "default") || call.args.filter((arg) => !arg.keyword).length > 2,
+        line,
+      });
+    }
+  }
+  return usage;
+}
+
 export type SourceFormatNotebook = "SQLSourceNotebook" | "PythonSourceNotebook";
 export type NoteBookType = "JupyterNotebook" | SourceFormatNotebook;
 

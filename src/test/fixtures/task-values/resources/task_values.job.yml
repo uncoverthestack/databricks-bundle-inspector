@@ -1,0 +1,47 @@
+resources:
+  jobs:
+    task_values:
+      name: task_values
+      tasks:
+        - task_key: producer
+          notebook_task:
+            notebook_path: ../src/producer.py
+        - task_key: py_producer
+          spark_python_task:
+            python_file: ../src/py_producer.py
+          environment_key: default
+        - task_key: dynamic_producer
+          notebook_task:
+            notebook_path: ../src/dynamic_producer.py
+        - task_key: consumer
+          depends_on:
+            - task_key: producer
+          notebook_task:
+            notebook_path: ../src/consumer.py
+        - task_key: wrong_task
+          depends_on:
+            - task_key: producer
+          notebook_task:
+            notebook_path: ../src/wrong_task.py
+        - task_key: not_upstream
+          notebook_task:
+            notebook_path: ../src/not_upstream.py
+        - task_key: transitive
+          depends_on:
+            - task_key: consumer
+            - task_key: py_producer
+            - task_key: dynamic_producer
+          notebook_task:
+            notebook_path: ../src/transitive.py
+        - task_key: yaml_refs
+          depends_on:
+            - task_key: producer
+          notebook_task:
+            notebook_path: ../src/yaml_refs.py
+            base_parameters:
+              count: "{{tasks.producer.values.row_count}}"
+              missing: "{{tasks.producer.values.missing}}"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"

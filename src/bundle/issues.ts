@@ -4,7 +4,7 @@ import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import type { TaskNodeData } from "./resources/task.js";
-import type { WidgetUsage } from "./taskFileDetections.js";
+import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
@@ -22,6 +22,7 @@ export type InspectorIssueKind =
   | "secret_scope_name_mismatch"
   | "notebook_type_mismatch"
   | "widget_parameter_mismatch"
+  | "task_value_mismatch"
   | "excluded_from_sync";
 
 export interface InspectorIssue {
@@ -586,6 +587,7 @@ export function buildInspectorIssues(
   }
 
   issues.push(...secretScopeNameIssues(graph));
+  issues.push(...taskValueIssues(graph));
 
   return issues;
 }
@@ -639,3 +641,132 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
   }
   return [...issues.values()];
 }
+
+// `{{tasks.<task_key>.values.<key>}}` in task settings.
+const TASK_VALUE_REFERENCE = /\{\{\s*tasks\.([\w-]+)\.values\.([\w-]+)\s*\}\}/g;
+
+/**
+ * Checks task values (https://docs.databricks.com/aws/en/jobs/task-values), read with
+ * `dbutils.jobs.taskValues.get(taskKey=..., key=...)` or `{{tasks.<task>.values.<key>}}`:
+ * the task must exist in the job, run before the reader (be upstream through
+ * `depends_on`), and set the key. Databricks reports a missing key or a wrongly named
+ * task as an error when the job runs.
+ */
+function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
+  const issues: InspectorIssue[] = [];
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const tasksByJob = new Map<string, Map<string, BundleGraphNode>>();
+  for (const node of graph.nodes) {
+    if (node.nodeType !== "task" || !node.taskData || !node.parentId) continue;
+    const tasks = tasksByJob.get(node.parentId) ?? new Map<string, BundleGraphNode>();
+    tasks.set(node.taskData.taskKey, node);
+    tasksByJob.set(node.parentId, tasks);
+  }
+
+  const usagesOf = (task: BundleGraphNode): TaskValueUsage[] => {
+    const data = task.taskData;
+    if (!data) return [];
+    return [data, ...(data.nestedTask ? [data.nestedTask] : [])]
+      .flatMap((d) => d.fileReferences)
+      .flatMap((ref) => {
+        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.data.taskValueUsage;
+        return usage ? [usage as TaskValueUsage] : [];
+      });
+  };
+
+  /** The keys a task sets, or `undefined` when the inspector can't know them all. */
+  const keysSetBy = (task: BundleGraphNode): Set<string> | undefined => {
+    const data = task.taskData;
+    const refs = data ? [data, ...(data.nestedTask ? [data.nestedTask] : [])].flatMap((d) => d.fileReferences) : [];
+    const scanned = refs.filter((ref) => ref.referenceType === "notebook" || ref.referenceType === "python_script");
+    const usages = usagesOf(task);
+    // Only tasks whose code was all read, with no %run and no key known only at runtime.
+    if (scanned.length === 0 || usages.length !== scanned.length) return undefined;
+    if (usages.some((usage) => usage.runsOtherNotebooks || usage.sets.some((set) => set.key === null))) {
+      return undefined;
+    }
+    return new Set(usages.flatMap((usage) => usage.sets.map((set) => set.key!)));
+  };
+
+  for (const [, tasks] of tasksByJob) {
+    const upstreamCache = new Map<string, Set<string>>();
+    const upstreamOf = (taskKey: string): Set<string> => {
+      const cached = upstreamCache.get(taskKey);
+      if (cached) return cached;
+      const result = new Set<string>();
+      upstreamCache.set(taskKey, result);
+      for (const dependency of tasks.get(taskKey)?.taskData?.dependsOn ?? []) {
+        result.add(dependency);
+        for (const further of upstreamOf(dependency)) result.add(further);
+      }
+      return result;
+    };
+
+    for (const [readerKey, reader] of tasks) {
+      if (parentJobHasGitSource(graph, reader)) continue;
+      const reads: Array<{ taskKey: string; key: string | null; file?: string; line?: number; yamlPath?: string }> = [];
+      const readerRefs = reader.taskData
+        ? [reader.taskData, ...(reader.taskData.nestedTask ? [reader.taskData.nestedTask] : [])].flatMap((d) => d.fileReferences)
+        : [];
+      for (const ref of readerRefs) {
+        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.data.taskValueUsage as TaskValueUsage | undefined;
+        for (const get of usage?.gets ?? []) {
+          if (!get.taskKey) continue;
+          reads.push({ taskKey: get.taskKey, key: get.key, line: get.line, ...(ref.resolvedPath ? { file: ref.resolvedPath } : {}) });
+        }
+      }
+      const settings = JSON.stringify(reader.data ?? {});
+      for (const match of settings.matchAll(TASK_VALUE_REFERENCE)) {
+        reads.push({ taskKey: match[1]!, key: match[2]!, yamlPath: `tasks.${readerKey}` });
+      }
+
+      const reported = new Set<string>();
+      for (const read of reads) {
+        const id = `task-value:${reader.id}:${read.taskKey}:${read.key ?? ""}`;
+        if (reported.has(id) || read.taskKey === readerKey) continue;
+        reported.add(id);
+        const location = read.file
+          ? issueLocation(read.file, read.line)
+          : issueLocation(sourceFileForTask(reader), reader.taskData?.sourceLine || undefined);
+        const base = {
+          id,
+          severity: "warning" as const,
+          kind: "task_value_mismatch" as const,
+          taskId: reader.id,
+          taskName: reader.displayName,
+          yamlPath: read.yamlPath ?? `tasks.${readerKey}`,
+          ...location,
+        };
+        const valueName = read.key ? `"${read.key}"` : "a value";
+        if (!tasks.has(read.taskKey)) {
+          const suggestion = closestName(read.taskKey, [...tasks.keys()]);
+          issues.push({
+            ...base,
+            title: `Task value ${valueName} is read from task "${read.taskKey}", which may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+            fixHint: "taskKey must be the task_key of a task in the same job. Databricks reports an incorrectly named task as an error when the job runs.",
+          });
+          continue;
+        }
+        if (!upstreamOf(readerKey).has(read.taskKey)) {
+          issues.push({
+            ...base,
+            title: `Task "${read.taskKey}" isn't upstream of this task, so its value ${valueName} may not be set yet.`,
+            fixHint: `Add "${read.taskKey}" to this task's depends_on, directly or through another dependency, so it runs first.`,
+          });
+          continue;
+        }
+        const keys = read.key ? keysSetBy(tasks.get(read.taskKey)!) : undefined;
+        if (keys && read.key && !keys.has(read.key)) {
+          const suggestion = closestName(read.key, [...keys]);
+          issues.push({
+            ...base,
+            title: `Task "${read.taskKey}" may not set value "${read.key}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+            fixHint: `The task's code has no dbutils.jobs.taskValues.set(key="${read.key}", ...). Databricks reports a missing key as an error when the job runs.`,
+          });
+        }
+      }
+    }
+  }
+  return issues;
+}
+
