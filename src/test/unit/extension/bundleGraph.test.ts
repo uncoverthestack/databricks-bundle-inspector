@@ -792,3 +792,29 @@ describe("extractBundleGraph: task labels", () => {
     expect(node).toMatchObject({ taskTypeLabel: "Task", subtitle: "brand_new_task" });
   });
 });
+
+// Shapes from the Databricks CLI's acceptance bundles that used to crash the graph.
+describe("extractBundleGraph: unusual but valid bundles", () => {
+  test("handles a job declared with no body", async () => {
+    const graph = await extractBundleGraph({
+      bundle: { name: "undefined-job" },
+      resources: { jobs: { "undefined-job": null, test: { name: "Test Job" } } },
+    } as unknown as ParsedBundleConfig);
+    expect(graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining(["resources.jobs.undefined-job", "resources.jobs.test"]),
+    );
+  });
+
+  test("handles a run_job_task whose job_id is a number", async () => {
+    const graph = await extractBundleGraph({
+      bundle: { name: "big-id" },
+      resources: {
+        jobs: {
+          caller: { tasks: [{ task_key: "run", run_job_task: { job_id: 9223372036854775807 } }] },
+        },
+      },
+    } as unknown as ParsedBundleConfig, "/tmp/bundle-root");
+    // IDs above 2^53 are rounded by JSON.parse, as in the CLI output, so only the edge is checked.
+    expect(graph.edges.some((edge) => edge.target.startsWith("external-job:"))).toBe(true);
+  });
+});

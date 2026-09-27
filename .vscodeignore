@@ -17,6 +17,9 @@ eslint.config.js
 eslint.config.mjs
 jest.config.cjs
 jest.semantic-cli.config.cjs
+jest.schema-coverage.config.cjs
+# Vite's build input; the extension loads dist/webview/index.html.
+index.html
 tsconfig.json
 vite.config.js
 vsc-extension-quickstart.md

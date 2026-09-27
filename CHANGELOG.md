@@ -8,6 +8,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **Task values are checked.** A task that reads a value with `dbutils.jobs.taskValues.get(...)` or `{{tasks.<task>.values.<key>}}` gets a warning when that task doesn't exist, isn't upstream through `depends_on`, or never sets the key, with "Did you mean" for close names. `bundle validate` passes for these, and Databricks reports them as errors only when the job runs.
+- **`%run` is followed.** Widgets a `%run` notebook defines count as defaults, and a `%run` notebook that reads a widget its `%run` line doesn't pass (`$name="value"`) and that has no default gets a warning. A `%run` of a workspace path or a missing file still skips the check.
+- **Widgets created in another language's cells are flagged.** A widget created in a Python cell and read in a SQL cell (or the other way round) isn't set when the notebook runs as a job.
+- **dbutils is followed wherever it can be traced.** `self.dbutils`, variables assigned from it, `DBUtils(spark)`, `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils` and `w.secrets.get_secret(...)`). Calls on something that can't be traced to dbutils aren't counted, so a settings object with a `secrets` attribute isn't taken for Databricks secrets. SQL's deprecated `getArgument('name')` is read too.
 - **Notebook widgets are checked against the task's parameters.** A notebook task whose notebook reads a widget that neither the task's `base_parameters` nor the job's parameters pass, and that has no default, gets a warning at the line that reads it: "Notebook reads widget "schema", which this task may not pass. Did you mean "schema_name"?". A task parameter the notebook never reads gets an info note. Python and SQL notebooks are both read: `dbutils.widgets.get`, SQL `:name` markers (including inside `IDENTIFIER()`), legacy `${name}`, and defaults from `dbutils.widgets.text` or `CREATE WIDGET ... DEFAULT`. When a notebook reads widgets by names only known at runtime, the inspector says it couldn't check its parameters instead of guessing. Notebooks that use `%run` are not checked.
 - **SQL files are scanned for widgets.** Widget reads in SQL notebooks and files now show in the graph, like Python ones.
 - **Files that won't be deployed are flagged.** A task or pipeline that points at a file skipped by `.gitignore` (at any level) or `sync.exclude` gets a warning naming the rule, for example ""../src/helper.py" may not be deployed: it matches .gitignore." `bundle validate` passes for these, so they used to fail only when the job ran. Files added back by `sync.include`, and jobs with a `git_source`, are not flagged.
@@ -21,6 +25,13 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Bundles with a job that has no body, or a numeric `run_job_task.job_id`, no longer break the inspector.** Found by running it over the 605 bundles in the Databricks CLI's acceptance tests.
+- **Code is read with real Python and SQL tokenizers instead of patterns.** Widget and secret detection now tells code from strings and comments exactly, and reads each notebook cell in its own language. Checked against every Python, SQL and notebook file in Databricks' bundle-examples and delta-live-tables-notebooks repositories (246 files) and this repository's sample bundles (247 more). Fixes:
+  - Calls inside multi-line `"""` strings and Jupyter markdown cells are no longer read as code.
+  - `%sql` cells in Python notebooks and `%python` cells in SQL notebooks are now read.
+  - A JSON path with a space before the colon, such as `details :cluster_utilization.num_executors`, is no longer taken for a widget.
+  - Legacy `${name}` references inside backtick identifiers are found.
+  - f-strings that reuse their quote inside an expression (Python 3.12) are read correctly.
 - **Notebook and file paths follow the Databricks CLI's rules.** The inspector now reports the same path errors `bundle deploy` would, checked against CLI v1.17.0:
   - A local notebook path without its extension is not found, even when `name.py` exists: "Notebook "../src/ingest" may not be found. Did you mean "../src/ingest.py"?". Pipeline notebooks without an extension were wrongly accepted.
   - A notebook task or pipeline notebook pointing at a file whose first line isn't the Databricks notebook header (for example `-- Databricks notebook source`) "may not be a notebook".

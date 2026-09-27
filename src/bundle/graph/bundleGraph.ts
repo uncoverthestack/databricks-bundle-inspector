@@ -126,7 +126,7 @@ export interface JobTask {
     entry_point?: string;
   };
   run_job_task?: {
-    job_id?: string;
+    job_id?: string | number;
   };
   spark_submit_task?: {
     parameters?: string[];
@@ -513,7 +513,7 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
     withOptionalSubtitle("script", "Python script", task.spark_python_task?.python_file),
   python_wheel_task: (task) =>
     withOptionalSubtitle("script", "Python wheel", task.python_wheel_task?.package_name),
-  run_job_task: (task) => withOptionalSubtitle("job", "Run Job", task.run_job_task?.job_id),
+  run_job_task: (task) => withOptionalSubtitle("job", "Run Job", task.run_job_task?.job_id === undefined ? undefined : String(task.run_job_task.job_id)),
   sql_task: (task) => withOptionalSubtitle("sql", "SQL", task.sql_task?.file?.path),
   spark_submit_task: (task) =>
     withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task?.parameters?.join(" ")),
@@ -927,7 +927,8 @@ function addTaskReferenceGraph(
   }
 
   if (task.run_job_task?.job_id) {
-    const jobIdRef = task.run_job_task.job_id;
+    // A job_id can be a number (an existing job's ID) or a string reference.
+    const jobIdRef = String(task.run_job_task.job_id);
     const resourceMatch = jobIdRef.match(/^\$\{resources\.jobs\.([^.}]+)\.id\}$/);
     const targetId = resourceMatch ? `resources.jobs.${resourceMatch[1]}` : `external-job:${jobIdRef}`;
     addEdge({ id: `${taskId}->references->${targetId}`, source: taskId, target: targetId, kind: "references" });
@@ -1322,7 +1323,8 @@ function addConfigSecretReferences(
   }
 
   for (const [jobKey, rawJob] of Object.entries(resources.jobs ?? {})) {
-    const job = rawJob as Job;
+    // A job declared with no body (`my_job:`) is null in the CLI output.
+    const job = toRecord(rawJob) as Job;
     const jobId = `resources.jobs.${jobKey}`;
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const taskId = (task: JobTask, index: number) =>
