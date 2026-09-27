@@ -3,7 +3,6 @@ import path from "node:path";
 import { notebookViews, type NotebookViews } from "./code/notebookViews.js";
 import {
   literalValue,
-  matchesDottedName,
   readArguments,
   tokenizePython,
   type PythonArgument,
@@ -68,26 +67,131 @@ function argument(
 }
 
 /**
- * Finds calls to `dbutils.<module>.<method>(...)` in Python code.
+ * The names `dbutils` goes by in a file: `dbutils` itself, and variables assigned
+ * from it, such as `dbu = dbutils`, `dbu = DBUtils(spark)`, `dbu = get_dbutils(spark)`,
+ * `dbutils = w.dbutils` (Databricks SDK) or `from databricks.sdk.runtime import dbutils as dbu`.
+ * Also variables holding one of its modules, such as `w = dbutils.widgets`, and
+ * Databricks SDK clients (`w = WorkspaceClient()`), whose `secrets` API reads secrets.
+ */
+interface DbutilsNames {
+  dbutils: Set<string>;
+  /** Variables holding a Databricks SDK `WorkspaceClient`. */
+  workspaceClients: Set<string>;
+  /** Variable name to the dbutils module it holds (`widgets`, `secrets`, ...). */
+  modules: Map<string, string>;
+  /** Offsets of `dbutils.<module>` that only feed such an assignment. */
+  assignedModuleOffsets: Set<number>;
+}
+
+const DBUTILS_FACTORIES = new Set(["DBUtils", "get_dbutils"]);
+
+function isOp(token: PythonToken | undefined, value: string): boolean {
+  return token?.kind === "op" && token.value === value;
+}
+
+/**
+ * The index just past a primary expression starting at `start`: names joined by `.`,
+ * with call brackets, such as `w.dbutils` or `WorkspaceClient().dbutils`.
+ */
+function primaryExpressionEnd(tokens: PythonToken[], start: number): number {
+  let i = start;
+  while (i < tokens.length) {
+    if (tokens[i]?.kind !== "name") return i;
+    i += 1;
+    while (isOp(tokens[i], "(")) {
+      const call = readArguments(tokens, i);
+      if (!call) return i;
+      i = call.close + 1;
+    }
+    if (!isOp(tokens[i], ".")) return i;
+    i += 1;
+  }
+  return i;
+}
+
+function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
+  const names: DbutilsNames = {
+    dbutils: new Set(["dbutils"]),
+    workspaceClients: new Set(),
+    modules: new Map(),
+    assignedModuleOffsets: new Set(),
+  };
+  // `import ... dbutils as dbu`
+  tokens.forEach((token, i) => {
+    if (token.kind === "name" && token.value === "dbutils" && tokens[i + 1]?.value === "as") {
+      const alias = tokens[i + 2];
+      if (alias?.kind === "name") names.dbutils.add(alias.value);
+    }
+  });
+  // Twice, so an alias of an alias (`a = dbutils`, `b = a`) is found too.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < tokens.length; i++) {
+      const target = tokens[i]!;
+      const previous = tokens[i - 1];
+      // `name = ...` as a statement, not `f(name=...)`, `a.name = ...` or `name == ...`.
+      if (target.kind !== "name" || !isOp(tokens[i + 1], "=") || isOp(tokens[i + 2], "=")) continue;
+      if (previous && previous.kind === "op" && "(,.=".includes(previous.value)) continue;
+      const value = tokens[i + 2];
+      const after = tokens[i + 3];
+      if (value?.kind !== "name") continue;
+      const chainEnd = primaryExpressionEnd(tokens, i + 2);
+      const last = tokens[chainEnd - 1];
+      const clientCall = isOp(after, "(") ? readArguments(tokens, i + 3) : undefined;
+      if (value.value === "WorkspaceClient" && clientCall && chainEnd === clientCall.close + 1) {
+        names.workspaceClients.add(target.value);
+      } else if (chainEnd > i + 3 && last?.kind === "name" && last.value === "dbutils") {
+        // `dbutils = w.dbutils` or `dbu = WorkspaceClient().dbutils`
+        names.dbutils.add(target.value);
+      } else if (names.dbutils.has(value.value) && !isOp(after, ".") && !isOp(after, "(")) {
+        names.dbutils.add(target.value);
+      } else if (DBUTILS_FACTORIES.has(value.value) && isOp(after, "(")) {
+        names.dbutils.add(target.value);
+      } else if (names.dbutils.has(value.value) && isOp(after, ".")) {
+        const module = tokens[i + 4];
+        const end = tokens[i + 5];
+        if (module?.kind === "name" && !isOp(end, ".") && !isOp(end, "(")) {
+          names.modules.set(target.value, module.value);
+          names.assignedModuleOffsets.add(value.start);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * Finds calls to `dbutils.<module>.<method>(...)` in Python code, through any name
+ * `dbutils` or the module goes by (see {@link dbutilsNames}).
  *
- * @returns Each call's method, its arguments and the offset of `dbutils`.
+ * @returns Each call's method, its arguments and the offset where the call starts.
  */
 function dbutilsCalls(
   tokens: PythonToken[],
   module: string,
   methods: readonly string[],
+  names: DbutilsNames = dbutilsNames(tokens),
 ): Array<{ method: string; args: PythonArgument[]; offset: number }> {
   const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (!matchesDottedName(tokens, i, ["dbutils", module])) continue;
-    const dot = tokens[i + 3];
-    const method = tokens[i + 4];
-    const open = tokens[i + 5];
-    if (dot?.value !== "." || method?.kind !== "name" || !methods.includes(method.value)) continue;
-    if (open?.kind !== "op" || open.value !== "(") continue;
-    const call = readArguments(tokens, i + 5);
+    const token = tokens[i]!;
+    if (token.kind !== "name") continue;
+    // `dbutils.<module>.<method>(` or `<module variable>.<method>(`
+    let methodIndex: number;
+    if (names.dbutils.has(token.value) && isOp(tokens[i + 1], ".") && tokens[i + 2]?.value === module) {
+      methodIndex = i + 4;
+      if (!isOp(tokens[i + 3], ".")) continue;
+    } else if (names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
+      methodIndex = i + 2;
+      if (!isOp(tokens[i + 1], ".")) continue;
+    } else {
+      continue;
+    }
+    const method = tokens[methodIndex];
+    if (method?.kind !== "name" || !methods.includes(method.value)) continue;
+    if (!isOp(tokens[methodIndex + 1], "(")) continue;
+    const call = readArguments(tokens, methodIndex + 1);
     if (!call) continue;
-    calls.push({ method: method.value, args: call.args, offset: tokens[i]!.start });
+    calls.push({ method: method.value, args: call.args, offset: token.start });
   }
   return calls;
 }
@@ -112,12 +216,50 @@ function viewsFor(
  * are `null` when not a string literal.
  */
 function scanPythonSecrets(view: string, document: string): SecretDetection[] {
-  return dbutilsCalls(tokenizePython(view), "secrets", ["get", "getBytes"]).map((call) => ({
+  const tokens = tokenizePython(view);
+  const names = dbutilsNames(tokens);
+  const detection = (call: { args: PythonArgument[]; offset: number }): SecretDetection => ({
     line: getStartLine(document, call.offset),
     raw: getLineText(document, call.offset),
     scope: literalValue(argument(call.args, "scope", 0)),
     key: literalValue(argument(call.args, "key", 1)),
-  }));
+  });
+  return [
+    ...dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names),
+    ...sdkSecretCalls(tokens, names),
+  ]
+    .sort((a, b) => a.offset - b.offset)
+    .map(detection);
+}
+
+/**
+ * The Databricks SDK's Secrets API: `w.secrets.get_secret(scope, key)` on a
+ * `WorkspaceClient` variable, or `WorkspaceClient().secrets.get_secret(...)`.
+ */
+function sdkSecretCalls(
+  tokens: PythonToken[],
+  names: DbutilsNames,
+): Array<{ args: PythonArgument[]; offset: number }> {
+  const calls: Array<{ args: PythonArgument[]; offset: number }> = [];
+  tokens.forEach((token, i) => {
+    if (token.kind !== "name") return;
+    let secretsIndex: number;
+    if (names.workspaceClients.has(token.value) && !isOp(tokens[i - 1], ".")) {
+      secretsIndex = i + 2;
+      if (!isOp(tokens[i + 1], ".")) return;
+    } else if (token.value === "WorkspaceClient" && isOp(tokens[i + 1], "(")) {
+      const client = readArguments(tokens, i + 1);
+      if (!client || !isOp(tokens[client.close + 1], ".")) return;
+      secretsIndex = client.close + 2;
+    } else {
+      return;
+    }
+    if (tokens[secretsIndex]?.value !== "secrets" || !isOp(tokens[secretsIndex + 1], ".")) return;
+    if (tokens[secretsIndex + 2]?.value !== "get_secret" || !isOp(tokens[secretsIndex + 3], "(")) return;
+    const call = readArguments(tokens, secretsIndex + 3);
+    if (call) calls.push({ args: call.args, offset: token.start });
+  });
+  return calls;
 }
 
 const SQL_PREVIEW_NOTE =
@@ -253,9 +395,26 @@ function scanPythonWidgetDefaults(view: string): string[] {
 /** `dbutils.widgets` used as a value, not followed by a method call. */
 function passesWidgetsObject(view: string): boolean {
   const tokens = tokenizePython(view);
-  return tokens.some(
-    (_, i) => matchesDottedName(tokens, i, ["dbutils", "widgets"]) && tokens[i + 3]?.value !== ".",
-  );
+  const names = dbutilsNames(tokens);
+  return tokens.some((token, i) => {
+    if (token.kind !== "name") return false;
+    // `dbutils.widgets` passed on, but not `w = dbutils.widgets`, which is followed instead.
+    if (
+      names.dbutils.has(token.value) &&
+      isOp(tokens[i + 1], ".") &&
+      tokens[i + 2]?.value === "widgets" &&
+      !isOp(tokens[i + 3], ".")
+    ) {
+      return !names.assignedModuleOffsets.has(token.start);
+    }
+    // A variable holding dbutils.widgets, passed on: `helper(w)`.
+    return (
+      names.modules.get(token.value) === "widgets" &&
+      !isOp(tokens[i - 1], ".") &&
+      !isOp(tokens[i + 1], ".") &&
+      !isOp(tokens[i + 1], "=")
+    );
+  });
 }
 
 const WIDGET_NAME = /^[A-Za-z_]\w*$/;
