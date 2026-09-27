@@ -4,11 +4,17 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-27
+
 ### Added
 
 - **Secrets in cluster config are detected.** `{{secrets/<scope>/<key>}}` in `spark_conf` and `spark_env_vars` of job clusters, task clusters, `clusters` resources and pipeline clusters is linked to the scope and to every task using that cluster, at the YAML line.
 - **Secrets used inside `for_each` tasks and in pipeline sources are detected.**
 - **A hint when code names a secret scope by its bundle resource key.** For example `app_scope` where the bundle's scope is named `app-secrets`: "Secret scope "app_scope" may not exist. Did you mean "app-secrets"?"
+
+### Changed
+
+- **The Marketplace listing and README lead with what the inspector catches** before deploy, and name Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) so pipeline users can find it.
 
 ### Fixed
 
@@ -17,6 +23,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
   - A notebook task or pipeline notebook pointing at a file whose first line isn't the Databricks notebook header (for example `-- Databricks notebook source`) "may not be a notebook".
   - A Python file, SQL file or pipeline file that has the notebook header "may be a notebook, not a file".
   - Paths in a job with a `git_source` are not checked, as the CLI doesn't check them.
+- **Fixing a problem clears it without saving bundle YAML.** Issues were only re-checked when `databricks.yml` or an included YAML file was saved, so creating a missing notebook, or fixing code, left the error in place. The inspector now re-checks when any file the bundle points at is created, changed or deleted, including from the terminal or a branch switch. New YAML files matching `include` and new files under a pipeline glob are picked up too. Files `bundle deploy` would skip (`.gitignore`, `sync.exclude`) don't trigger a re-check.
+- **Issues found in code are cleared once fixed.** An issue on a notebook or file, such as a secret scope named by its resource key, could stay in the Problems panel after the fix.
 - **Secret scopes are matched by their real name.** Code using a bundle scope's `name` was shown as an external scope, and code using the resource key, which fails at runtime, was linked to the bundle scope. Bundle scopes are now also shown by their name.
 - **Issues found in code now reach the Problems panel.** The Problems panel was built without reading file contents, so issues found in notebooks and files only showed in the inspector.
 - **Long issue titles wrap to two lines** in the issues panel and a task's issue summary, instead of being cut off. Hover for the full text.
@@ -162,6 +170,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.1.6]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.1...v0.1.3

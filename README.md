@@ -1,15 +1,26 @@
 # Databricks Bundle Inspector
 
-A VS Code extension that visualizes Databricks Bundles as interactive job dependency graphs. See the actual structure of your bundle jobs, task dependencies, and configurations at a glance.
+A VS Code extension that catches Databricks bundle errors before you deploy. It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for the mistakes `databricks bundle validate` lets through, puts them in the Problems panel at the exact line, and shows your jobs and pipelines as an interactive graph.
 
-## What it does
+## What it catches
 
-Open a `databricks.yml` file and run **Inspect Databricks Bundle** to see:
+Open a `databricks.yml` file and run **Inspect Databricks Bundle**. Every issue links to the file and line it comes from.
 
-- **Visual DAG**: Interactive graph of jobs and `depends_on` relationships with pan, zoom, and search.
-- **Task details**: Type, source file, parameters, compute, and dependencies.
-- **Issue detection**: Missing files, unresolved variables, and Databricks CLI diagnostics, linked to the file and line they come from.
-- **Layout controls**: Automatic graph layout to keep parallel branches visually separated.
+- **Missing local files**: notebooks and files referenced by tasks that don't exist, including the inner task of a `for_each` task.
+- **Missing libraries**: local wheels and JARs a task installs that aren't there.
+- **Pipeline sources**: Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) whose `libraries` point at a missing notebook or file, or at a `folder/**` glob with no files. The CLI doesn't check these during validation, so they otherwise surface only on `bundle deploy`.
+- **Secret scope mix-ups**: code that reads a secret using the scope's resource key instead of its name, which fails at runtime.
+- **Unresolved variables**: `${var.*}` values with no default and no value for the selected target.
+- **Databricks CLI diagnostics**: validation errors and warnings, including unknown or deprecated fields, sent to the Problems panel.
+- **Risky patterns**: task types the inspector doesn't recognise, and tasks that load code from Git when the job has no `git_source`.
+
+## What it shows
+
+- **Job graph**: tasks and their `depends_on` relationships, with pan, zoom and search. Hover a job's trigger to read its cron schedule in plain English.
+- **Task details**: type, source file, parameters, compute, and linked pipelines with their catalog, schema and channel.
+- **Secrets and widgets**: secret scopes (`dbutils.secrets`, SQL `secret()`, and `{{secrets/...}}` in cluster config) and notebook widgets found in each task's code.
+- **Targets**: switch between the bundle's targets to see variables and issues resolved for each one.
+- **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request or code review.
 
 <div>
     <a href="https://www.loom.com/share/634c3b8081f545b198e947ff68f99f3d">
@@ -43,7 +54,7 @@ The graph opens in a new editor panel. It refreshes automatically when you save 
 
 ## How it works
 
-The extension runs `databricks bundle validate --output json` to resolve your bundle structure, builds a dependency graph from the jobs and their `depends_on` relationships, and renders it as an interactive visual DAG using React Flow.
+The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
 
 ## Telemetry
 
@@ -66,7 +77,7 @@ Every event and property is listed in [telemetry.json](./telemetry.json). To see
 
 ## Project status
 
-Version 0.1.5. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.1.6. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 

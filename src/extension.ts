@@ -19,8 +19,15 @@ import {
 } from "./databricksCli/config.js";
 import { invalidateDatabricksCliCache } from "./databricksCli/validateDatabricksCli.js";
 import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
-import { getIncludedFiles } from "./bundle/bundleIncludes.js";
-import type { ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
+import { getIncludedFiles, parseBundleIncludes } from "./bundle/bundleIncludes.js";
+import type { BundleGraph, ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
+import {
+  classifyChange,
+  collectWatchSpec,
+  filesOutsideRoot,
+  type BundleChange,
+  type BundleWatchSpec,
+} from "./bundle/watchedFiles.js";
 import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
 import {
   countBucket,
@@ -133,18 +140,24 @@ function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>):
 
 type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 
+// Files that got diagnostics on the last run, per bundle root, so they are cleared
+// once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
+const diagnosticFilesByBundle = new Map<string, Set<string>>();
+
 /**
  * Updates diagnostics for one bundle root from an existing validation result.
  *
  * Diagnostics are updated per-file so existing entries for files not in the new
  * result are cleared and stale errors do not linger after a fix.
+ *
+ * @returns The bundle graph read for the issues, or `undefined` when validation failed.
  */
 async function updateBundleDiagnostics(
   result: BundleValidationResult,
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
-): Promise<void> {
+): Promise<BundleGraph | undefined> {
   // Update the include map with CLI-resolved paths
   if (result.ok) {
     for (const included of result.data.include ?? []) {
@@ -153,18 +166,20 @@ async function updateBundleDiagnostics(
   }
 
   // Collect files previously tracked for this bundle so we can clear stale ones
-  const prevFiles = new Set(
-    [...fileToBundleRoot.entries()]
+  const prevFiles = new Set([
+    ...[...fileToBundleRoot.entries()]
       .filter(([, root]) => root === bundleRoot)
       .map(([f]) => f),
-  );
+    ...(diagnosticFilesByBundle.get(bundleRoot) ?? []),
+  ]);
 
   const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
+  let graph: BundleGraph | undefined;
   if (result.ok) {
     try {
       // Read file contents as the inspector panel does, so issues found in code
       // (e.g. a secret scope named by its resource key) also reach the Problems panel.
-      const graph = await enrichGraphWithFileContent(
+      graph = await enrichGraphWithFileContent(
         await extractBundleGraph(result.data, bundleRoot),
       );
       const inspectorIssues = buildInspectorIssues(
@@ -199,6 +214,8 @@ async function updateBundleDiagnostics(
   for (const [absPath, diags] of fresh) {
     collection.set(vscode.Uri.file(absPath), diags);
   }
+  diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
+  return graph;
 }
 
 /**
@@ -210,9 +227,29 @@ async function runBundleDiagnostics(
   configuredCliPath: string | undefined,
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
-): Promise<void> {
+): Promise<{ result: BundleValidationResult; graph: BundleGraph | undefined }> {
   const result = await validateBundle(bundleRoot, undefined, configuredCliPath);
-  await updateBundleDiagnostics(result, bundleRoot, collection, fileToBundleRoot);
+  const graph = await updateBundleDiagnostics(
+    result,
+    bundleRoot,
+    collection,
+    fileToBundleRoot,
+  );
+  return { result, graph };
+}
+
+/** The raw `include` patterns of a bundle, read from its `databricks.yml`. */
+async function readIncludePatterns(bundleRoot: string): Promise<string[]> {
+  for (const fileName of ["databricks.yml", "databricks.yaml"]) {
+    try {
+      return parseBundleIncludes(
+        await readFile(path.join(bundleRoot, fileName), "utf-8"),
+      );
+    } catch {
+      // Try the alternate bundle filename.
+    }
+  }
+  return [];
 }
 
 /**
@@ -312,7 +349,153 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }),
   );
 
-  // On save: re-run diagnostics for the bundle that owns the saved file.
+  // Re-checks a bundle when a file it depends on is saved, created, changed or
+  // deleted. Saves and watcher events share one debounce, so a save (which also
+  // fires a change event) or a branch switch runs a single check.
+  const REFRESH_DEBOUNCE_MS = 500;
+  interface PendingRefresh {
+    timer: ReturnType<typeof setTimeout>;
+    config: boolean;
+    saved: boolean;
+    bundleFileSaved: boolean;
+  }
+  const pendingRefreshes = new Map<string, PendingRefresh>();
+  const runningRefreshes = new Set<string>();
+
+  function scheduleRefresh(
+    bundleRoot: string,
+    change: BundleChange,
+    save?: { bundleFile: boolean },
+  ): void {
+    const pending = pendingRefreshes.get(bundleRoot);
+    if (pending) clearTimeout(pending.timer);
+    const next: PendingRefresh = {
+      config: Boolean(pending?.config) || change === "config",
+      saved: Boolean(pending?.saved) || save !== undefined,
+      bundleFileSaved: Boolean(pending?.bundleFileSaved) || Boolean(save?.bundleFile),
+      timer: setTimeout(() => {
+        pendingRefreshes.delete(bundleRoot);
+        void refreshBundle(bundleRoot, next);
+      }, REFRESH_DEBOUNCE_MS),
+    };
+    pendingRefreshes.set(bundleRoot, next);
+  }
+
+  async function refreshBundle(
+    bundleRoot: string,
+    flags: Omit<PendingRefresh, "timer">,
+  ): Promise<void> {
+    // One check per bundle at a time, so an older result never overwrites a newer one.
+    if (runningRefreshes.has(bundleRoot)) {
+      scheduleRefresh(
+        bundleRoot,
+        flags.config ? "config" : "source",
+        flags.saved ? { bundleFile: flags.bundleFileSaved } : undefined,
+      );
+      return;
+    }
+    runningRefreshes.add(bundleRoot);
+    try {
+      const { result, graph } = await runBundleDiagnostics(
+        bundleRoot,
+        currentConfiguredCliPath(),
+        diagnosticCollection,
+        fileToBundleRoot,
+      );
+      if (result.ok && graph) {
+        await watchBundle(bundleRoot, result.data, graph);
+      }
+      if (activePanel && activeBundleDir === bundleRoot) {
+        if (flags.saved) {
+          telemetry?.logUsage("bundle_refreshed_on_save", {
+            bundle_file: flags.bundleFileSaved,
+          });
+        }
+        await refreshActiveBundlePanel(bundleRoot, {
+          refreshTargets: flags.config,
+        });
+      }
+    } finally {
+      runningRefreshes.delete(bundleRoot);
+    }
+  }
+
+  interface BundleWatch {
+    spec: BundleWatchSpec;
+    rootWatcher: vscode.FileSystemWatcher;
+    outsideWatchers: vscode.FileSystemWatcher[];
+    outsideFiles: string;
+  }
+  const bundleWatches = new Map<string, BundleWatch>();
+
+  function createWatcher(
+    bundleRoot: string,
+    pattern: vscode.RelativePattern,
+  ): vscode.FileSystemWatcher {
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const onEvent = (uri: vscode.Uri) => {
+      const spec = bundleWatches.get(bundleRoot)?.spec;
+      const change = spec && classifyChange(spec, uri.fsPath);
+      if (change) scheduleRefresh(bundleRoot, change);
+    };
+    watcher.onDidCreate(onEvent);
+    watcher.onDidChange(onEvent);
+    watcher.onDidDelete(onEvent);
+    return watcher;
+  }
+
+  /**
+   * Updates what a bundle watches from its latest check: the files and folders
+   * `databricks.yml` points at. One watcher covers the bundle root; files outside
+   * it (for example through `sync.paths`) get their own.
+   */
+  async function watchBundle(
+    bundleRoot: string,
+    config: ParsedBundleConfig,
+    graph: BundleGraph,
+  ): Promise<void> {
+    const spec = collectWatchSpec(
+      graph,
+      config,
+      bundleRoot,
+      await readIncludePatterns(bundleRoot),
+    );
+    const outside = filesOutsideRoot(spec).sort();
+    const existing = bundleWatches.get(bundleRoot);
+    if (existing && existing.outsideFiles === outside.join("\n")) {
+      existing.spec = spec;
+      return;
+    }
+    existing?.outsideWatchers.forEach((watcher) => watcher.dispose());
+    bundleWatches.set(bundleRoot, {
+      spec,
+      rootWatcher:
+        existing?.rootWatcher ??
+        createWatcher(bundleRoot, new vscode.RelativePattern(bundleRoot, "**/*")),
+      outsideWatchers: outside.map((file) =>
+        createWatcher(
+          bundleRoot,
+          new vscode.RelativePattern(path.dirname(file), path.basename(file)),
+        ),
+      ),
+      outsideFiles: outside.join("\n"),
+    });
+  }
+
+  extensionContext.subscriptions.push({
+    dispose: () => {
+      for (const pending of pendingRefreshes.values()) clearTimeout(pending.timer);
+      pendingRefreshes.clear();
+      for (const watch of bundleWatches.values()) {
+        watch.rootWatcher.dispose();
+        watch.outsideWatchers.forEach((watcher) => watcher.dispose());
+      }
+      bundleWatches.clear();
+    },
+  });
+
+  // On save: re-check the bundle that owns the saved file. Also covers bundles
+  // not inspected yet, which have no watcher.
   extensionContext.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
       const filePath = document.uri.fsPath;
@@ -321,22 +504,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ? path.dirname(filePath)
         : fileToBundleRoot.get(filePath);
       if (!bundleRoot) return;
-      void (async () => {
-        await runBundleDiagnostics(
-          bundleRoot,
-          currentConfiguredCliPath(),
-          diagnosticCollection,
-          fileToBundleRoot,
-        );
-        if (activePanel && activeBundleDir === bundleRoot) {
-          telemetry?.logUsage("bundle_refreshed_on_save", {
-            bundle_file: isSavedBundleFile,
-          });
-          await refreshActiveBundlePanel(bundleRoot, {
-            refreshTargets: isSavedBundleFile,
-          });
-        }
-      })();
+      scheduleRefresh(bundleRoot, "config", { bundleFile: isSavedBundleFile });
     }),
   );
 
@@ -546,12 +714,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       await trackBundleFiles(bundleDir, fileToBundleRoot);
       const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
       const { result } = inspection;
-      await updateBundleDiagnostics(
+      const diagnosticsGraph = await updateBundleDiagnostics(
         result,
         bundleDir,
         diagnosticCollection,
         fileToBundleRoot,
       );
+      if (result.ok && diagnosticsGraph) {
+        await watchBundle(bundleDir, result.data, diagnosticsGraph);
+      }
 
       if (!result.ok) {
         logInspect(result.error.errorCode?.toLowerCase() ?? "validation_failed", {
