@@ -52,8 +52,10 @@ describe("widget and parameter mismatches", () => {
       'info python_notebook: Parameter "unused_flag" may not be used: the notebook doesn\'t read a widget with that name. @ resources/widget_parameters.job.yml:14',
       'info widgets_object: Not checked whether the notebook uses "warehouse_id": it reads widgets by names only known at runtime. @ src/widgets_object.py:undefined',
       'warning for_each_item: Notebook reads widget "missing_inner", which this task may not pass. @ src/item_notebook.py:3',
+      'warning mixed_languages: Widget "region" is read in a SQL cell but created in a Python cell, so it may not be set when the notebook runs as a job. @ src/mixed_languages.py:7',
       'warning python_notebook: Notebook reads widget "run_date", which this task may not pass. @ src/py_notebook.py:9',
       'warning python_notebook: Notebook reads widget "schema", which this task may not pass. Did you mean "schema_name"? @ src/py_notebook.py:7',
+      'warning runs_child: Notebook "./child_setup", run with %run, reads widget "batch_id", which may not be set. @ src/child_setup.py:5',
       'warning sql_notebook: Notebook reads widget "region", which this task may not pass. @ src/sql_notebook.sql:10',
     ]);
   });

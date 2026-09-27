@@ -130,8 +130,8 @@ describe("detections on real-world shapes", () => {
     );
     const usage = await detectWidgetUsageInFile(f);
     expect(usage.reads).toEqual([
-      { name: "storage_location", line: 4 },
-      { name: "latest_update_id", line: 8 },
+      { name: "storage_location", line: 4, language: "python" },
+      { name: "latest_update_id", line: 8, language: "sql" },
     ]);
     expect(usage.defaults).toEqual(["storage_location"]);
   });
@@ -172,3 +172,138 @@ describe("detections on real-world shapes", () => {
     ]);
   });
 });
+
+describe("dbutils under other names", () => {
+  test("follows aliases of dbutils and of its modules", async () => {
+    const f = await file(
+      "aliases.py",
+      [
+        "from pyspark.dbutils import DBUtils",
+        "dbu = DBUtils(spark)",
+        'env = dbu.widgets.get("env")',
+        "helper = get_dbutils(spark)",
+        'region = helper.widgets.get("region")',
+        "w = dbutils.widgets",
+        'w.text("run_date", "2026-01-01")',
+        'run_date = w.get("run_date")',
+        "d2 = dbu",
+        'table = d2.widgets.get("table")',
+      ].join("\n"),
+    );
+    expect(await detectWidgetUsageInFile(f)).toEqual({
+      reads: [
+        { name: "env", line: 3, language: "python" },
+        { name: "region", line: 5, language: "python" },
+        { name: "run_date", line: 8, language: "python" },
+        { name: "table", line: 10, language: "python" },
+      ],
+      defaults: ["run_date"],
+      defaultLanguages: { run_date: ["python"] },
+      // `w = dbutils.widgets` is followed, not treated as passing the widgets on.
+      hasDynamicReads: false,
+      hasUnresolvedRuns: false,
+      runReadNames: [],
+      unsetRunReads: [],
+    });
+  });
+
+  test("still treats a widgets alias passed to other code as dynamic", async () => {
+    const f = await file("alias-passed.py", "w = dbutils.widgets\nconfig = load(w)");
+    expect((await detectWidgetUsageInFile(f)).hasDynamicReads).toBe(true);
+  });
+
+  // https://databricks-sdk-py.readthedocs.io/en/latest/dbutils.html, SDK 0.143.0
+  test("finds secrets read through the Databricks SDK", async () => {
+    const f = await file(
+      "sdk.py",
+      [
+        "from databricks.sdk import WorkspaceClient",
+        "from databricks.sdk.runtime import dbutils as rt_dbutils",
+        "w = WorkspaceClient()",
+        "dbutils = w.dbutils",
+        'a = dbutils.secrets.get("scope-a", "key-a")',
+        'b = w.dbutils.secrets.get(scope="scope-b", key="key-b")',
+        'c = WorkspaceClient().dbutils.secrets.get("scope-c", "key-c")',
+        'd = w.secrets.get_secret(scope="scope-d", key="key-d")',
+        'e = WorkspaceClient(profile="DEFAULT").secrets.get_secret("scope-e", "key-e")',
+        'f = rt_dbutils.secrets.get("scope-f", "key-f")',
+        "broken = WorkspaceClient(",
+      ].join("\n"),
+    );
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([
+      [5, "scope-a", "key-a"],
+      [6, "scope-b", "key-b"],
+      [7, "scope-c", "key-c"],
+      [8, "scope-d", "key-d"],
+      [9, "scope-e", "key-e"],
+      [10, "scope-f", "key-f"],
+    ]);
+  });
+});
+
+describe("dbutils in any form", () => {
+  test("finds widget reads whatever the receiver is called", async () => {
+    const f = await file(
+      "any-receiver.py",
+      [
+        "from databricks.sdk.runtime import (dbutils, spark)",
+        "def main(dbu):",
+        '    return dbu.widgets.get("from_param")',
+        "class Job:",
+        "    def run(self):",
+        '        self.dbutils.widgets.get("from_attribute")',
+        '        get_dbutils(spark).widgets.get("from_helper")',
+        '        ctx["dbu"].widgets.get("from_index")',
+      ].join("\n"),
+    );
+    const usage = await detectWidgetUsageInFile(f);
+    expect(usage.reads.map((r) => r.name)).toEqual([
+      "from_param",
+      "from_attribute",
+      "from_helper",
+      "from_index",
+    ]);
+    // A name in an import list is not dbutils being handed to other code.
+    expect(usage.hasDynamicReads).toBe(false);
+  });
+
+  test("treats dbutils handed to other code as reads it can't see", async () => {
+    const f = await file("handed-on.py", "run_pipeline(spark, dbutils)");
+    expect((await detectWidgetUsageInFile(f)).hasDynamicReads).toBe(true);
+  });
+
+  test("needs a scope and a key before an unknown receiver's secrets.get counts", async () => {
+    const f = await file(
+      "secrets-shape.py",
+      ['cfg.secrets.get("password")', 'self.dbutils.secrets.get(scope="s", key="k")'].join("\n"),
+    );
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([[2, "s", "k"]]);
+  });
+
+  test("follows classes imported under another name", async () => {
+    const f = await file(
+      "import-as.py",
+      [
+        "from pyspark.dbutils import DBUtils as DBU",
+        "from databricks.sdk import WorkspaceClient as WC",
+        "x = DBU(spark)",
+        'a = x.secrets.get("s1", "k1")',
+        "c = WC()",
+        'b = c.secrets.get_secret("s2", "k2")',
+      ].join("\n"),
+    );
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([
+      [4, "s1", "k1"],
+      [6, "s2", "k2"],
+    ]);
+  });
+});
+
+// https://docs.databricks.com/aws/en/notebooks/notebook-limitations
+describe("SQL getArgument", () => {
+  test("reads a widget with the deprecated getArgument() in SQL", async () => {
+    const f = await file("get-argument.sql", "SELECT * FROM t WHERE d = getArgument('run_day') AND x = 'getArgument(\"no\")'");
+    expect((await detectWidgetsInFile(f)).map((w) => [w.name, w.method])).toEqual([["run_day", "sqlGetArgument"]]);
+  });
+});
+

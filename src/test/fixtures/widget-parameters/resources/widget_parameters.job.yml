@@ -26,6 +26,16 @@ resources:
             base_parameters:
               a: "1"
               c: "3"
+        - task_key: runs_child
+          notebook_task:
+            notebook_path: ../src/runs_child.py
+            base_parameters:
+              region: us
+        - task_key: mixed_languages
+          notebook_task:
+            notebook_path: ../src/mixed_languages.py
+            base_parameters:
+              run_day: mon
         - task_key: widgets_object
           notebook_task:
             notebook_path: ../src/widgets_object.py

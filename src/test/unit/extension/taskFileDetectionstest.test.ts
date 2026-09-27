@@ -689,12 +689,15 @@ describe("detectWidgetUsageInFile — SQL", () => {
     );
     expect(await detectWidgetUsageInFile(file)).toEqual({
       reads: [
-        { name: "catalog", line: 5 },
-        { name: "schema", line: 5 },
+        { name: "catalog", line: 5, language: "sql" },
+        { name: "schema", line: 5, language: "sql" },
       ],
       defaults: ["catalog", "state"],
+      defaultLanguages: { catalog: ["sql"], state: ["sql"] },
       hasDynamicReads: false,
-      runsOtherNotebooks: true,
+      hasUnresolvedRuns: true,
+      runReadNames: [],
+      unsetRunReads: [],
     });
   });
 });
@@ -729,10 +732,13 @@ describe("detectWidgetUsageInFile — Python", () => {
       ].join("\n"),
     );
     expect(await detectWidgetUsageInFile(file)).toEqual({
-      reads: [{ name: "catalog", line: 4 }],
+      reads: [{ name: "catalog", line: 4, language: "python" }],
       defaults: ["catalog", "env"],
+      defaultLanguages: { catalog: ["python"], env: ["python"] },
       hasDynamicReads: true,
-      runsOtherNotebooks: false,
+      hasUnresolvedRuns: false,
+      runReadNames: [],
+      unsetRunReads: [],
     });
   });
 });

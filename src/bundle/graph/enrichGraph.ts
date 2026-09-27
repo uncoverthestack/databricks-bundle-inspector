@@ -2,6 +2,7 @@ import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
   detectSecretInNotebook,
+  detectTaskValuesInFile,
   detectWidgetUsageInFile,
   detectWidgetsInFile,
 } from "../taskFileDetections.js";
@@ -70,18 +71,27 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           ? "sql"
           : undefined;
 
-      const [secrets, widgets, widgetUsage] = await Promise.all([
+      const referenceType = fileNode.data.referenceType;
+      const [secrets, widgets, widgetUsage, taskValueUsage] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
         fileNode.data.referenceType === "notebook"
           ? detectWidgetUsageInFile(resolvedPath, fileTypeHint).catch(() => undefined)
           : undefined,
+        // Notebooks and Python files set and read task values.
+        referenceType === "notebook" || referenceType === "python_script"
+          ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          : undefined,
       ]);
-      if (widgetUsage) {
+      if (widgetUsage || taskValueUsage) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
-          data: { ...fileNode.data, widgetUsage },
+          data: {
+            ...fileNode.data,
+            ...(widgetUsage ? { widgetUsage } : {}),
+            ...(taskValueUsage ? { taskValueUsage } : {}),
+          },
         });
       }
 

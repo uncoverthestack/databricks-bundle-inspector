@@ -1,9 +1,9 @@
+import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { notebookViews, type NotebookViews } from "./code/notebookViews.js";
+import { notebookViews, type CodeLanguage, type NotebookViews } from "./code/notebookViews.js";
 import {
   literalValue,
-  matchesDottedName,
   readArguments,
   tokenizePython,
   type PythonArgument,
@@ -68,26 +68,162 @@ function argument(
 }
 
 /**
- * Finds calls to `dbutils.<module>.<method>(...)` in Python code.
+ * The names `dbutils` goes by in a file: `dbutils` itself, and variables assigned
+ * from it, such as `dbu = dbutils`, `dbu = DBUtils(spark)`, `dbu = get_dbutils(spark)`,
+ * `dbutils = w.dbutils` (Databricks SDK) or `from databricks.sdk.runtime import dbutils as dbu`.
+ * Also variables holding one of its modules, such as `w = dbutils.widgets`, and
+ * Databricks SDK clients (`w = WorkspaceClient()`), whose `secrets` API reads secrets.
+ */
+interface DbutilsNames {
+  dbutils: Set<string>;
+  /** Variables holding a Databricks SDK `WorkspaceClient`. */
+  workspaceClients: Set<string>;
+  /** Names the `WorkspaceClient` class is imported as. */
+  clientClasses: Set<string>;
+  /** Variable name to the dbutils module it holds (`widgets`, `secrets`, ...). */
+  modules: Map<string, string>;
+  /** Offsets of `dbutils.<module>` that only feed such an assignment. */
+  assignedModuleOffsets: Set<number>;
+}
+
+// `DBUtils` is the class in `pyspark.dbutils`; `get_dbutils` is not an API but the
+// helper name Databricks examples use to build one, so it is matched by convention.
+const DBUTILS_FACTORIES = ["DBUtils", "get_dbutils"];
+
+function isOp(token: PythonToken | undefined, value: string): boolean {
+  return token?.kind === "op" && token.value === value;
+}
+
+/**
+ * The index just past a primary expression starting at `start`: names joined by `.`,
+ * with call brackets, such as `w.dbutils` or `WorkspaceClient().dbutils`.
+ */
+function primaryExpressionEnd(tokens: PythonToken[], start: number): number {
+  let i = start;
+  while (i < tokens.length) {
+    if (tokens[i]?.kind !== "name") return i;
+    i += 1;
+    while (isOp(tokens[i], "(")) {
+      const call = readArguments(tokens, i);
+      if (!call) return i;
+      i = call.close + 1;
+    }
+    if (!isOp(tokens[i], ".")) return i;
+    i += 1;
+  }
+  return i;
+}
+
+function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
+  const names: DbutilsNames = {
+    dbutils: new Set(["dbutils"]),
+    workspaceClients: new Set(),
+    clientClasses: new Set(["WorkspaceClient"]),
+    modules: new Map(),
+    assignedModuleOffsets: new Set(),
+  };
+  const factories = new Set(DBUTILS_FACTORIES);
+  const clientClasses = names.clientClasses;
+  // Imports under another name: `import ... dbutils as dbu`, `DBUtils as DBU`, `WorkspaceClient as WC`.
+  tokens.forEach((token, i) => {
+    const alias = tokens[i + 2];
+    if (token.kind !== "name" || tokens[i + 1]?.value !== "as" || alias?.kind !== "name") return;
+    if (token.value === "dbutils") names.dbutils.add(alias.value);
+    if (token.value === "DBUtils") factories.add(alias.value);
+    if (token.value === "WorkspaceClient") clientClasses.add(alias.value);
+  });
+  // Twice, so an alias of an alias (`a = dbutils`, `b = a`) is found too.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < tokens.length; i++) {
+      const target = tokens[i]!;
+      const previous = tokens[i - 1];
+      // `name = ...` as a statement, not `f(name=...)`, `a.name = ...` or `name == ...`.
+      if (target.kind !== "name" || !isOp(tokens[i + 1], "=") || isOp(tokens[i + 2], "=")) continue;
+      if (previous && previous.kind === "op" && "(,.=".includes(previous.value)) continue;
+      const value = tokens[i + 2];
+      const after = tokens[i + 3];
+      if (value?.kind !== "name") continue;
+      const chainEnd = primaryExpressionEnd(tokens, i + 2);
+      const last = tokens[chainEnd - 1];
+      const clientCall = isOp(after, "(") ? readArguments(tokens, i + 3) : undefined;
+      if (clientClasses.has(value.value) && clientCall && chainEnd === clientCall.close + 1) {
+        names.workspaceClients.add(target.value);
+      } else if (chainEnd > i + 3 && last?.kind === "name" && last.value === "dbutils") {
+        // `dbutils = w.dbutils` or `dbu = WorkspaceClient().dbutils`
+        names.dbutils.add(target.value);
+      } else if (names.dbutils.has(value.value) && !isOp(after, ".") && !isOp(after, "(")) {
+        names.dbutils.add(target.value);
+      } else if (factories.has(value.value) && isOp(after, "(")) {
+        names.dbutils.add(target.value);
+      } else if (names.dbutils.has(value.value) && isOp(after, ".")) {
+        const module = tokens[i + 4];
+        const end = tokens[i + 5];
+        if (module?.kind === "name" && !isOp(end, ".") && !isOp(end, "(")) {
+          names.modules.set(target.value, module.value);
+          names.assignedModuleOffsets.add(value.start);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+interface DbutilsCall {
+  method: string;
+  args: PythonArgument[];
+  offset: number;
+  /** Whether the receiver is known to be dbutils (see {@link dbutilsNames}). */
+  knownReceiver: boolean;
+}
+
+/**
+ * Finds calls to `<receiver>.<module>.<method>(...)` in Python code. dbutils can
+ * reach code under any name (a function parameter, an attribute, a helper's return
+ * value), so the receiver can be anything: `dbutils`, `dbu`, `self.dbutils`,
+ * `get_dbutils(spark)`. Variables holding the module itself (`w = dbutils.widgets`)
+ * are followed through {@link dbutilsNames}.
  *
- * @returns Each call's method, its arguments and the offset of `dbutils`.
+ * @returns Each call's method, its arguments, where it starts, and whether its
+ *   receiver is known to be dbutils.
  */
 function dbutilsCalls(
   tokens: PythonToken[],
   module: string,
   methods: readonly string[],
-): Array<{ method: string; args: PythonArgument[]; offset: number }> {
-  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+  names: DbutilsNames = dbutilsNames(tokens),
+): DbutilsCall[] {
+  const calls: DbutilsCall[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    if (!matchesDottedName(tokens, i, ["dbutils", module])) continue;
-    const dot = tokens[i + 3];
-    const method = tokens[i + 4];
-    const open = tokens[i + 5];
-    if (dot?.value !== "." || method?.kind !== "name" || !methods.includes(method.value)) continue;
-    if (open?.kind !== "op" || open.value !== "(") continue;
-    const call = readArguments(tokens, i + 5);
+    const token = tokens[i]!;
+    let methodIndex: number;
+    let knownReceiver: boolean;
+    let offset = token.start;
+    // `<receiver>.<module>.<method>(`: the receiver ends in a name, `)` or `]`.
+    if (
+      isOp(token, ".") &&
+      tokens[i + 1]?.kind === "name" &&
+      tokens[i + 1]!.value === module &&
+      isOp(tokens[i + 2], ".")
+    ) {
+      const receiver = tokens[i - 1];
+      if (!receiver || !(receiver.kind === "name" || isOp(receiver, ")") || isOp(receiver, "]"))) continue;
+      methodIndex = i + 3;
+      knownReceiver = receiver.kind === "name" && names.dbutils.has(receiver.value);
+      offset = receiver.start;
+    } else if (token.kind === "name" && names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
+      // `<module variable>.<method>(`
+      if (!isOp(tokens[i + 1], ".")) continue;
+      methodIndex = i + 2;
+      knownReceiver = true;
+    } else {
+      continue;
+    }
+    const method = tokens[methodIndex];
+    if (method?.kind !== "name" || !methods.includes(method.value)) continue;
+    if (!isOp(tokens[methodIndex + 1], "(")) continue;
+    const call = readArguments(tokens, methodIndex + 1);
     if (!call) continue;
-    calls.push({ method: method.value, args: call.args, offset: tokens[i]!.start });
+    calls.push({ method: method.value, args: call.args, offset, knownReceiver });
   }
   return calls;
 }
@@ -112,12 +248,55 @@ function viewsFor(
  * are `null` when not a string literal.
  */
 function scanPythonSecrets(view: string, document: string): SecretDetection[] {
-  return dbutilsCalls(tokenizePython(view), "secrets", ["get", "getBytes"]).map((call) => ({
+  const tokens = tokenizePython(view);
+  const names = dbutilsNames(tokens);
+  const detection = (call: { args: PythonArgument[]; offset: number }): SecretDetection => ({
     line: getStartLine(document, call.offset),
     raw: getLineText(document, call.offset),
     scope: literalValue(argument(call.args, "scope", 0)),
     key: literalValue(argument(call.args, "key", 1)),
-  }));
+  });
+  // Through an unknown receiver, only the full shape counts as a secret read:
+  // `config.secrets.get("password")` on a plain dict has no scope and key.
+  const secretCalls = dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names).filter(
+    (call) =>
+      call.knownReceiver ||
+      (literalValue(argument(call.args, "scope", 0)) !== null &&
+        literalValue(argument(call.args, "key", 1)) !== null),
+  );
+  return [...secretCalls, ...sdkSecretCalls(tokens, names)]
+    .sort((a, b) => a.offset - b.offset)
+    .map(detection);
+}
+
+/**
+ * The Databricks SDK's Secrets API: `w.secrets.get_secret(scope, key)` on a
+ * `WorkspaceClient` variable, or `WorkspaceClient().secrets.get_secret(...)`.
+ */
+function sdkSecretCalls(
+  tokens: PythonToken[],
+  names: DbutilsNames,
+): Array<{ args: PythonArgument[]; offset: number }> {
+  const calls: Array<{ args: PythonArgument[]; offset: number }> = [];
+  tokens.forEach((token, i) => {
+    if (token.kind !== "name") return;
+    let secretsIndex: number;
+    if (names.workspaceClients.has(token.value) && !isOp(tokens[i - 1], ".")) {
+      secretsIndex = i + 2;
+      if (!isOp(tokens[i + 1], ".")) return;
+    } else if (names.clientClasses.has(token.value) && isOp(tokens[i + 1], "(")) {
+      const client = readArguments(tokens, i + 1);
+      if (!client || !isOp(tokens[client.close + 1], ".")) return;
+      secretsIndex = client.close + 2;
+    } else {
+      return;
+    }
+    if (tokens[secretsIndex]?.value !== "secrets" || !isOp(tokens[secretsIndex + 1], ".")) return;
+    if (tokens[secretsIndex + 2]?.value !== "get_secret" || !isOp(tokens[secretsIndex + 3], "(")) return;
+    const call = readArguments(tokens, secretsIndex + 3);
+    if (call) calls.push({ args: call.args, offset: token.start });
+  });
+  return calls;
 }
 
 const SQL_PREVIEW_NOTE =
@@ -190,7 +369,8 @@ export type WidgetMethod =
   | "getArgument"
   | "getAll"
   | "sqlParameterMarker"
-  | "sqlLegacyReference";
+  | "sqlLegacyReference"
+  | "sqlGetArgument";
 
 /**
  * A single detected use of a Databricks widget-retrieval call within a file.
@@ -251,11 +431,49 @@ function scanPythonWidgetDefaults(view: string): string[] {
 }
 
 /** `dbutils.widgets` used as a value, not followed by a method call. */
+/** Whether `tokens[index]` is a name in `from x import (a, b)`. */
+function inImportList(tokens: PythonToken[], index: number): boolean {
+  for (let j = index - 1; j >= 0; j--) {
+    const token = tokens[j]!;
+    if (token.kind === "name" && token.value === "import") return true;
+    if (!(token.kind === "name" || isOp(token, ",") || isOp(token, "("))) return false;
+  }
+  return false;
+}
+
 function passesWidgetsObject(view: string): boolean {
   const tokens = tokenizePython(view);
-  return tokens.some(
-    (_, i) => matchesDottedName(tokens, i, ["dbutils", "widgets"]) && tokens[i + 3]?.value !== ".",
-  );
+  const names = dbutilsNames(tokens);
+  return tokens.some((token, i) => {
+    if (token.kind !== "name") return false;
+    // dbutils itself handed to other code, `run(dbutils)` or `run(dbu=dbutils)`,
+    // which can read widgets where the inspector can't see.
+    if (
+      names.dbutils.has(token.value) &&
+      !inImportList(tokens, i) &&
+      !isOp(tokens[i - 1], ".") &&
+      (isOp(tokens[i - 1], "(") || isOp(tokens[i - 1], ",") || (isOp(tokens[i - 1], "=") && tokens[i - 2]?.kind === "name" && (isOp(tokens[i - 3], "(") || isOp(tokens[i - 3], ",")))) &&
+      (isOp(tokens[i + 1], ")") || isOp(tokens[i + 1], ","))
+    ) {
+      return true;
+    }
+    // `dbutils.widgets` passed on, but not `w = dbutils.widgets`, which is followed instead.
+    if (
+      names.dbutils.has(token.value) &&
+      isOp(tokens[i + 1], ".") &&
+      tokens[i + 2]?.value === "widgets" &&
+      !isOp(tokens[i + 3], ".")
+    ) {
+      return !names.assignedModuleOffsets.has(token.start);
+    }
+    // A variable holding dbutils.widgets, passed on: `helper(w)`.
+    return (
+      names.modules.get(token.value) === "widgets" &&
+      !isOp(tokens[i - 1], ".") &&
+      !isOp(tokens[i + 1], ".") &&
+      !isOp(tokens[i + 1], "=")
+    );
+  });
 }
 
 const WIDGET_NAME = /^[A-Za-z_]\w*$/;
@@ -311,6 +529,16 @@ function scanSqlWidgets(view: string, document: string): { reads: WidgetDetectio
       if (!isJsonPath && next?.kind === "word" && next.start === token.end && WIDGET_NAME.test(next.value)) {
         reads.push({ ...at(token.start), name: next.value, method: "sqlParameterMarker" });
       }
+    }
+    // Deprecated `getArgument('name')`, which reads a widget from SQL.
+    if (token.kind === "word" && token.value.toLowerCase() === "getargument" && next?.value === "(") {
+      const name = sqlLiteral(sqlArguments(tokens, i + 1)[0]);
+      reads.push({
+        ...at(token.start),
+        name,
+        method: "sqlGetArgument",
+        note: "getArgument() is deprecated; use :param",
+      });
     }
     if (token.kind === "legacy_reference" && WIDGET_NAME.test(token.value)) {
       legacy.push({ ...at(token.start), name: token.value, method: "sqlLegacyReference", note: LEGACY_NOTE });
@@ -394,35 +622,173 @@ export async function detectWidgetsInFile(
  * define widgets the inspector does not see.
  */
 export interface WidgetUsage {
-  reads: Array<{ name: string; line: number }>;
-  /** Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect`. */
+  reads: Array<{ name: string; line: number; language: CodeLanguage }>;
+  /**
+   * Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect` in
+   * Python, `CREATE WIDGET` in SQL. Includes widgets created by notebooks run with `%run`.
+   */
   defaults: string[];
+  /**
+   * The language of the cells that create each of this notebook's own defaults. A widget
+   * created in one language can't be read in another when the notebook runs as a job
+   * (https://docs.databricks.com/aws/en/notebooks/notebook-limitations).
+   */
+  defaultLanguages: Record<string, CodeLanguage[]>;
   /**
    * Reads whose names the inspector can't know: a name held in a variable, `getAll()`,
    * or `dbutils.widgets` passed to other code, e.g. `helper(widgets=dbutils.widgets)`.
    */
   hasDynamicReads: boolean;
-  runsOtherNotebooks: boolean;
+  /**
+   * A `%run` the inspector could not follow: a workspace path, a missing file, or
+   * one nested too deep. That notebook can define widgets the inspector does not see.
+   */
+  hasUnresolvedRuns: boolean;
+  /** Widget names read by notebooks this one runs with `%run`. */
+  runReadNames: string[];
+  /**
+   * Widgets read by a notebook run with `%run` that neither the `%run` line passes
+   * (`$name="value"`) nor that notebook gives a default. `%run` runs a notebook with
+   * its own widget defaults (https://docs.databricks.com/aws/en/notebooks/widgets).
+   */
+  unsetRunReads: Array<{ name: string; line: number; file: string; target: string }>;
+}
+
+const NOTEBOOK_FILE_EXTENSIONS = [".py", ".sql", ".ipynb"];
+const MAX_RUN_DEPTH = 5;
+
+/**
+ * The local file a `%run` path points at. Only relative paths (`./x`, `../x`) are
+ * local; `%run` paths name notebooks without their extension.
+ */
+function resolveRunTarget(fromFile: string, target: string): string | undefined {
+  if (!target.startsWith("./") && !target.startsWith("../")) return undefined;
+  const base = path.resolve(path.dirname(fromFile), target);
+  for (const candidate of [base, ...NOTEBOOK_FILE_EXTENSIONS.map((ext) => base + ext)]) {
+    try {
+      if (statSync(candidate).isFile() && NOTEBOOK_FILE_EXTENSIONS.includes(path.extname(candidate).toLowerCase())) {
+        return candidate;
+      }
+    } catch {
+      // Try the next extension.
+    }
+  }
+  return undefined;
 }
 
 /**
- * Reads how a Python or SQL notebook takes widget parameters.
+ * Reads how a Python or SQL notebook takes widget parameters, following `%run` into
+ * the notebooks it runs.
  */
 export async function detectWidgetUsageInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
+  visited: ReadonlySet<string> = new Set([path.resolve(filePath)]),
 ): Promise<WidgetUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const python = scanPythonWidgets(views.python, views.document);
   const sql = scanSqlWidgets(views.sql, views.document);
-  return {
-    reads: [...python, ...sql.reads].sort(byLine).flatMap((d) =>
-      d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line }] : [],
-    ),
-    defaults: [...scanPythonWidgetDefaults(views.python), ...sql.defaults],
+  const pythonDefaults = scanPythonWidgetDefaults(views.python);
+  const defaultLanguages: Record<string, CodeLanguage[]> = {};
+  for (const [language, names] of [["python", pythonDefaults], ["sql", sql.defaults]] as const) {
+    for (const name of names) defaultLanguages[name] = [...(defaultLanguages[name] ?? []), language];
+  }
+  const withLanguage = (language: CodeLanguage) => (d: WidgetDetection) =>
+    d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line, language }] : [];
+  const usage: WidgetUsage = {
+    reads: [...python.flatMap(withLanguage("python")), ...sql.reads.flatMap(withLanguage("sql"))].sort(byLine),
+    defaults: [...pythonDefaults, ...sql.defaults],
+    defaultLanguages,
     hasDynamicReads: python.some((d) => d.name === null) || passesWidgetsObject(views.python),
-    runsOtherNotebooks: views.runsOtherNotebooks,
+    hasUnresolvedRuns: false,
+    runReadNames: [],
+    unsetRunReads: [],
   };
+
+  for (const run of views.runs) {
+    const target = resolveRunTarget(filePath, run.target);
+    if (!target || visited.size > MAX_RUN_DEPTH) {
+      usage.hasUnresolvedRuns = true;
+      continue;
+    }
+    if (visited.has(target)) continue;
+    let child: WidgetUsage;
+    try {
+      child = await detectWidgetUsageInFile(target, undefined, new Set([...visited, target]));
+    } catch {
+      usage.hasUnresolvedRuns = true;
+      continue;
+    }
+    // Widgets the run notebook defines exist for this notebook too.
+    usage.defaults.push(...child.defaults);
+    usage.hasDynamicReads ||= child.hasDynamicReads;
+    usage.hasUnresolvedRuns ||= child.hasUnresolvedRuns;
+    usage.runReadNames.push(...child.reads.map((read) => read.name), ...child.runReadNames);
+    usage.unsetRunReads.push(...child.unsetRunReads);
+    // A notebook that itself runs one we can't see may get its widgets from there.
+    if (child.hasUnresolvedRuns || child.hasDynamicReads) continue;
+    const childDefaults = new Set(child.defaults);
+    const reported = new Set<string>();
+    for (const read of child.reads) {
+      if (read.name in run.args || childDefaults.has(read.name) || reported.has(read.name)) continue;
+      reported.add(read.name);
+      usage.unsetRunReads.push({ name: read.name, line: read.line, file: target, target: run.target });
+    }
+  }
+  return usage;
+}
+
+/**
+ * How a task's code uses task values
+ * (https://docs.databricks.com/aws/en/jobs/task-values): the keys it sets with
+ * `dbutils.jobs.taskValues.set(key=..., value=...)` and the values it reads with
+ * `dbutils.jobs.taskValues.get(taskKey=..., key=..., default=..., debugValue=...)`.
+ * A `null` key or task key is not a string literal.
+ */
+export interface TaskValueUsage {
+  sets: Array<{ key: string | null; line: number }>;
+  gets: Array<{ taskKey: string | null; key: string | null; hasDefault: boolean; line: number }>;
+  /** A `%run`, which can set task values in a notebook the scan doesn't cover. */
+  runsOtherNotebooks: boolean;
+}
+
+/** `<receiver>.jobs.taskValues.<set|get>(...)`, whatever the receiver is called. */
+function taskValueCalls(tokens: PythonToken[]): Array<{ method: string; args: PythonArgument[]; offset: number }> {
+  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+  tokens.forEach((token, i) => {
+    if (!isOp(token, ".") || tokens[i + 1]?.value !== "jobs" || !isOp(tokens[i + 2], ".")) return;
+    if (tokens[i + 3]?.value !== "taskValues" || !isOp(tokens[i + 4], ".")) return;
+    const receiver = tokens[i - 1];
+    if (!receiver || !(receiver.kind === "name" || isOp(receiver, ")") || isOp(receiver, "]"))) return;
+    const method = tokens[i + 5];
+    if (method?.kind !== "name" || (method.value !== "set" && method.value !== "get")) return;
+    if (!isOp(tokens[i + 6], "(")) return;
+    const call = readArguments(tokens, i + 6);
+    if (call) calls.push({ method: method.value, args: call.args, offset: receiver.start });
+  });
+  return calls;
+}
+
+export async function detectTaskValuesInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<TaskValueUsage> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const usage: TaskValueUsage = { sets: [], gets: [], runsOtherNotebooks: views.runs.length > 0 };
+  for (const call of taskValueCalls(tokenizePython(views.python))) {
+    const line = getStartLine(views.document, call.offset);
+    if (call.method === "set") {
+      usage.sets.push({ key: literalValue(argument(call.args, "key", 0)), line });
+    } else {
+      usage.gets.push({
+        taskKey: literalValue(argument(call.args, "taskKey", 0)),
+        key: literalValue(argument(call.args, "key", 1)),
+        hasDefault: call.args.some((arg) => arg.keyword === "default") || call.args.filter((arg) => !arg.keyword).length > 2,
+        line,
+      });
+    }
+  }
+  return usage;
 }
 
 export type SourceFormatNotebook = "SQLSourceNotebook" | "PythonSourceNotebook";
