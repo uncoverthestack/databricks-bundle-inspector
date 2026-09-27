@@ -1,0 +1,13 @@
+resources:
+  pipelines:
+    notebook_paths_pipeline:
+      name: notebook_paths_pipeline
+      libraries:
+        - notebook:
+            path: ../src/nb_noext
+        - notebook:
+            path: ../src/nb_plain.sql
+        - file:
+            path: ../src/script_nb.py
+        - notebook:
+            path: ../src/nb_ok.sql

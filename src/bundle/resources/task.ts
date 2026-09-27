@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { checkNotebookPath, type NotebookPathProblem } from "../notebookFiles.js";
 import { isAbsolute, resolve } from "node:path";
 
 export interface TaskNodeData {
@@ -106,6 +107,8 @@ export interface FileReference {
   exists: boolean;
   source: "GIT" | "WORKSPACE" | undefined;
   isInGitignore: boolean;
+  /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
+  notebookProblem?: NotebookPathProblem;
   referenceType:
     | "notebook"
     | "sql"
@@ -390,6 +393,7 @@ function getFileReferences(
     referenceType: FileReference["referenceType"],
     yamlSubPath: string,
     source?: FileReference["source"],
+    expects?: "notebook" | "file",
   ): void {
     if (typeof rawPath !== "string" || !rawPath) return;
     const gitNotebook =
@@ -407,12 +411,17 @@ function getFileReferences(
     );
     const yamlPath = `tasks.${taskKey}.${yamlSubPath}`;
     const sourceLocation = resolveSourceLocation?.(yamlPath);
+    const notebookProblem =
+      expects && resolvedPath
+        ? checkNotebookPath(rawPath, resolvedPath, expects)
+        : undefined;
     refs.push({
       path: rawPath,
       resolvedPath,
       exists,
       source,
       isInGitignore: false,
+      ...(notebookProblem ? { notebookProblem } : {}),
       referenceType,
       sourceFile,
       sourceLine: sourceLocation?.line ?? 0,
@@ -428,6 +437,7 @@ function getFileReferences(
       "notebook",
       "notebook_task.notebook_path",
       normalizedNotebookSource(nb.source),
+      normalizedNotebookSource(nb.source) === "GIT" ? undefined : "notebook",
     );
 
   const cleanNb = task.clean_rooms_notebook_task as
@@ -443,12 +453,24 @@ function getFileReferences(
 
   const py = task.spark_python_task as Record<string, unknown> | undefined;
   if (py)
-    addRef(py.python_file, "python_script", "spark_python_task.python_file");
+    addRef(
+      py.python_file,
+      "python_script",
+      "spark_python_task.python_file",
+      undefined,
+      normalizedNotebookSource(py.source) === "GIT" ? undefined : "file",
+    );
 
   const sql = task.sql_task as Record<string, unknown> | undefined;
   if (sql) {
     const sqlFile = sql.file as Record<string, unknown> | undefined;
-    addRef(sqlFile?.path, "sql", "sql_task.file.path");
+    addRef(
+      sqlFile?.path,
+      "sql",
+      "sql_task.file.path",
+      undefined,
+      normalizedNotebookSource(sqlFile?.source) === "GIT" ? undefined : "file",
+    );
   }
 
   const dbt = (task.dbt_task ?? task.dbt_platform_task) as

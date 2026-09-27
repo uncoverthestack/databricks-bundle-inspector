@@ -4,6 +4,7 @@ import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
+import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -15,7 +16,8 @@ export type InspectorIssueKind =
   | "unknown_or_deprecated_field"
   | "unknown_task_type"
   | "git_source_not_recommended"
-  | "secret_scope_name_mismatch";
+  | "secret_scope_name_mismatch"
+  | "notebook_type_mismatch";
 
 export interface InspectorIssue {
   id: string;
@@ -86,6 +88,42 @@ export function issueBelongsToJob(
 ): boolean {
   if (issue.taskId) return jobTaskIds.has(issue.taskId);
   return !issue.resourceId || issue.resourceId === jobId;
+}
+
+/**
+ * The title and fix for a path that breaks the CLI's notebook rules. Worded as a
+ * hint: the inspector reads the local file, while the CLI decides at deploy.
+ */
+function notebookProblemIssue(
+  path: string,
+  problem: NotebookPathProblem,
+): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  if (problem.kind === "missing_extension") {
+    return {
+      kind: "missing_file",
+      title: `Notebook "${path}" may not be found. Did you mean "${problem.suggestedPath}"?`,
+      fixHint:
+        "Local notebook paths need their file extension (.py, .r, .scala, .sql or .ipynb).",
+    };
+  }
+  if (problem.kind === "is_a_notebook") {
+    return {
+      kind: "notebook_type_mismatch",
+      title: `"${path}" may be a notebook, not a file.`,
+      fixHint:
+        "Its first line is the Databricks notebook header, so the CLI treats it as a notebook. Remove that line, or run it from a notebook task or a pipeline notebook library.",
+    };
+  }
+  const header = notebookHeaderFor(path);
+  return {
+    kind: "notebook_type_mismatch",
+    title: `"${path}" may not be a notebook.`,
+    fixHint: header
+      ? `Add "${header}" as its first line, or run it from a task that takes a file.`
+      : /\.ipynb$/i.test(path)
+        ? "It is not a valid Jupyter notebook: it needs cells and metadata, at nbformat 4 or later."
+        : "Notebooks need a .py, .r, .scala, .sql or .ipynb extension.",
+  };
 }
 
 function issueLocation(file?: string, line?: number, column?: number) {
@@ -176,6 +214,24 @@ export function buildInspectorIssues(
         });
       }
 
+      // The CLI does not check task paths in a job with a git_source.
+      if (ref.notebookProblem && !parentJobHasGitSource(graph, task)) {
+        issues.push({
+          id: `notebook-path:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "error",
+          ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          ...issueLocation(
+            ref.sourceFile || sourceFileForTask(task),
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
+        });
+        continue;
+      }
+
       if (!isMissingLocalPath(ref)) continue;
       issues.push({
         id: `missing-file:${task.id}:${ref.yamlPath}:${ref.path}`,
@@ -242,6 +298,17 @@ export function buildInspectorIssues(
 
   for (const pipeline of graph.nodes) {
     for (const ref of pipeline.pipelineLibraries ?? []) {
+      if (ref.checked && ref.notebookProblem) {
+        issues.push({
+          id: `notebook-path:${pipeline.id}:${ref.yamlPath}`,
+          severity: "error",
+          ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
       if (!ref.checked || ref.exists) continue;
       issues.push({
         id: `missing-pipeline-source:${pipeline.id}:${ref.yamlPath}`,

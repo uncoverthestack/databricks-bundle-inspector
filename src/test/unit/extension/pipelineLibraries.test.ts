@@ -45,10 +45,20 @@ describe("getPipelineLibraryReferences", () => {
     ]);
   });
 
-  test("resolves a notebook path given without its extension", () => {
+  test("treats a notebook path without its extension as not found, as the CLI does", () => {
     expect(refsFor([{ notebook: { path: "../src/dlt/bronze" } }])).toEqual([
-      { kind: "notebook", path: "../src/dlt/bronze", exists: true, checked: true },
+      { kind: "notebook", path: "../src/dlt/bronze", exists: false, checked: true },
     ]);
+    const [ref] = getPipelineLibraryReferences(
+      { libraries: [{ notebook: { path: "../src/dlt/bronze" } }] },
+      path.join(resourcesDir, "pipelines.yml"),
+      resourcesDir,
+      bundleRoot,
+    );
+    expect(ref?.notebookProblem).toEqual({
+      kind: "missing_extension",
+      suggestedPath: "../src/dlt/bronze.py",
+    });
   });
 
   test("reports missing notebook and file sources", () => {
