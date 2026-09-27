@@ -307,10 +307,13 @@ function buildIssueItems(
     return inspectorIssues
       // Same rule as issueBelongsToJob in src/bundle/issues.ts: the job's own tasks,
       // the job itself, or bundle-wide. Issues on another resource (e.g. a pipeline) are left out.
+      // With no job (e.g. a pipeline-only bundle) this is the bundle-wide list, so keep everything.
       .filter((issue) =>
-        issue.taskId
-          ? jobTaskIds.has(issue.taskId)
-          : !issue.resourceId || issue.resourceId === jobNode?.id,
+        !jobNode
+          ? true
+          : issue.taskId
+            ? jobTaskIds.has(issue.taskId)
+            : !issue.resourceId || issue.resourceId === jobNode.id,
       )
       .map((issue) => ({
         id: issue.id,
@@ -2565,7 +2568,17 @@ export default function App({
             variables: [],
             secrets: [],
             compute: [],
-            issues: [],
+            // A bundle without jobs (e.g. pipelines only) still has bundle-wide issues.
+            issues: graph
+              ? buildIssueItems(
+                  graph,
+                  null,
+                  effectiveResolutionBundle,
+                  effectiveTargetName,
+                  validationIssues,
+                  inspectorIssues,
+                )
+              : [],
           },
     [
       graph,
