@@ -1,0 +1,12 @@
+# Pipeline library checks. broken_pipeline points at sources that don't exist;
+# workspace_pipeline uses a workspace path, which must not be flagged; the
+# unknown field on ok_pipeline must be attributed to the pipeline, not the job.
+bundle:
+  name: pipeline-sources
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://example.cloud.databricks.com

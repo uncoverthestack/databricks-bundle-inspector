@@ -24,6 +24,11 @@ export interface InspectorIssue {
   detail?: string;
   taskId?: string;
   taskName?: string;
+  /**
+   * The job or other resource an issue belongs to, when it is not tied to a task
+   * (e.g. `resources.pipelines.bronze`). Issues with neither this nor a taskId are bundle-wide.
+   */
+  resourceId?: string;
   file?: string;
   line?: number;
   column?: number;
@@ -61,6 +66,25 @@ function validationFile(
   return diagnostic.path
     ? path.resolve(bundleRoot, diagnostic.path)
     : undefined;
+}
+
+/** `resources.<group>.<key>` for a config path inside a resource, e.g. `resources.jobs.ingest.tasks[0]`. */
+function resourceIdFromYamlPath(yamlPath: string | undefined): string | undefined {
+  const match = /^(resources\.[^.[\]]+\.[^.[\]]+)/.exec(yamlPath ?? "");
+  return match?.[1];
+}
+
+/**
+ * Whether an issue should be listed for a job: issues on one of its tasks, on the
+ * job itself, or bundle-wide. Issues on another resource (e.g. a pipeline) are not.
+ */
+export function issueBelongsToJob(
+  issue: Pick<InspectorIssue, "taskId" | "resourceId">,
+  jobId: string,
+  jobTaskIds: ReadonlySet<string>,
+): boolean {
+  if (issue.taskId) return jobTaskIds.has(issue.taskId);
+  return !issue.resourceId || issue.resourceId === jobId;
 }
 
 function issueLocation(file?: string, line?: number, column?: number) {
@@ -212,17 +236,42 @@ export function buildInspectorIssues(
     }
   }
 
+  for (const pipeline of graph.nodes) {
+    for (const ref of pipeline.pipelineLibraries ?? []) {
+      if (!ref.checked || ref.exists) continue;
+      issues.push({
+        id: `missing-pipeline-source:${pipeline.id}:${ref.yamlPath}`,
+        severity: "error",
+        kind: "missing_file",
+        title:
+          ref.kind === "glob"
+            ? "Pipeline source folder has no files"
+            : "Missing pipeline source file",
+        detail: ref.path,
+        resourceId: pipeline.id,
+        yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+        fixHint:
+          ref.kind === "glob"
+            ? "Add the pipeline source files, or update the glob include path in the pipeline's libraries."
+            : "Create the file or update the path in the pipeline's libraries.",
+        ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+      });
+    }
+  }
+
   for (const [issueIndex, issue] of validationIssues.entries()) {
     if (issue.code === "AUTH_NOT_CONFIGURED") continue;
     for (const [diagnosticIndex, diagnostic] of (
       issue.diagnostics ?? []
     ).entries()) {
       const normalized = validationDiagnosticIssue(issue, diagnostic);
+      const resourceId = resourceIdFromYamlPath(diagnostic.yamlPath);
       issues.push({
         id: `validation:${issueIndex}:${diagnosticIndex}`,
         severity: diagnostic.severity ?? "warning",
         ...normalized,
         ...(diagnostic.yamlPath ? { yamlPath: diagnostic.yamlPath } : {}),
+        ...(resourceId ? { resourceId } : {}),
         ...issueLocation(
           validationFile(bundleRoot, diagnostic),
           diagnostic.line,

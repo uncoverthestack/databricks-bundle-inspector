@@ -1,0 +1,45 @@
+resources:
+  pipelines:
+    ok_pipeline:
+      name: ok_pipeline
+      catalog: main
+      schema: bronze
+      serverless: true
+      bogus_pipeline_field: true
+      libraries:
+        - notebook:
+            path: ../src/dlt/bronze
+        - glob:
+            include: ../src/dlt/transforms/**
+    broken_pipeline:
+      name: broken_pipeline
+      catalog: main
+      schema: silver
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../src/dlt/missing_notebook.py
+        - file:
+            path: ../src/dlt/missing_file.py
+        - glob:
+            include: ../src/dlt/empty/**
+    workspace_pipeline:
+      name: workspace_pipeline
+      catalog: main
+      schema: gold
+      serverless: true
+      libraries:
+        - notebook:
+            path: /Users/someone@example.com/pipelines/gold
+  jobs:
+    refresh_job:
+      name: refresh_job
+      tasks:
+        - task_key: refresh_broken
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.broken_pipeline.id}
+        - task_key: run_script
+          depends_on:
+            - task_key: refresh_broken
+          spark_python_task:
+            python_file: ../src/run.py

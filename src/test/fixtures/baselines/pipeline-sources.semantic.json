@@ -1,0 +1,106 @@
+{
+  "bundle": "pipeline-sources",
+  "jobs": [
+    {
+      "key": "refresh_job",
+      "name": "refresh_job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "refresh_broken",
+          "type": "Pipeline",
+          "source": "${resources.pipelines.broken_pipeline.id}",
+          "dependsOn": [],
+          "dependents": [
+            "run_script"
+          ],
+          "compute": [
+            "broken_pipeline"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "run_script",
+          "type": "Python script",
+          "source": "../src/run.py",
+          "dependsOn": [
+            "refresh_broken"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/run.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "refresh_broken",
+          "run_script"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "missing_file",
+      "title": "Pipeline source folder has no files",
+      "detail": "../src/dlt/empty/**",
+      "file": "resources/pipelines.yml",
+      "line": 25,
+      "column": 22,
+      "yamlPath": "resources.pipelines.broken_pipeline.libraries[2].glob.include"
+    },
+    {
+      "severity": "error",
+      "kind": "missing_file",
+      "title": "Missing pipeline source file",
+      "detail": "../src/dlt/missing_file.py",
+      "file": "resources/pipelines.yml",
+      "line": 23,
+      "column": 19,
+      "yamlPath": "resources.pipelines.broken_pipeline.libraries[1].file.path"
+    },
+    {
+      "severity": "error",
+      "kind": "missing_file",
+      "title": "Missing pipeline source file",
+      "detail": "../src/dlt/missing_notebook.py",
+      "file": "resources/pipelines.yml",
+      "line": 21,
+      "column": 19,
+      "yamlPath": "resources.pipelines.broken_pipeline.libraries[0].notebook.path"
+    },
+    {
+      "severity": "warning",
+      "kind": "unknown_or_deprecated_field",
+      "title": "Unknown or deprecated field",
+      "detail": "bogus_pipeline_field",
+      "file": "resources/pipelines.yml",
+      "line": 8,
+      "column": 7,
+      "yamlPath": "resources.pipelines.ok_pipeline"
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}
