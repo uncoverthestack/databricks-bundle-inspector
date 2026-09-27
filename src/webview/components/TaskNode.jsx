@@ -34,7 +34,7 @@ export default function TaskNode({ data, selected }) {
         style={{ color: meta.color, backgroundColor: meta.bg }}
         className="shrink-0 text-[10px] font-bold rounded-md px-1.5 py-0.5 font-mono leading-none"
       >
-        {meta.code}
+        {data.badge ?? meta.code}
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-stone-100 truncate leading-none mb-0.5">

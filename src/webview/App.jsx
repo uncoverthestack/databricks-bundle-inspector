@@ -797,6 +797,7 @@ function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
           name: compactTaskName(task.displayName),
           fullName: task.displayName,
           kind: task.kind,
+          badge: task.taskTypeBadge,
           subtitle: task.subtitle,
           branchOutcomes: [...new Set(branchOutcomesByTask.get(task.id) ?? [])],
           hasMissingFile: task.hasMissingFile,
