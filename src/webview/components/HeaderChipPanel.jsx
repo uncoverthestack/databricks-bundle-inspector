@@ -30,7 +30,9 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
       <div className="max-h-[420px] overflow-auto py-1">
         {items.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-stone-500">
-            No {title.toLowerCase()} found for this job.
+            {title === "Bundle Issues"
+              ? "No issues found in this bundle."
+              : `No ${title.toLowerCase()} found for this job.`}
           </div>
         ) : (
           [...groups.entries()].map(([group, groupItems]) => (

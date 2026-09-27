@@ -1,0 +1,27 @@
+bundle:
+  name: pre_release_job_parameters_current
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: main
+  schema:
+    default: qa_params_dev
+  source_table:
+    default: samples.nyctaxi.trips
+  warehouse_id:
+    default: abc123
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      schema: qa_params_dev
+
+  prod:
+    mode: production
+    variables:
+      schema: qa_params_prod

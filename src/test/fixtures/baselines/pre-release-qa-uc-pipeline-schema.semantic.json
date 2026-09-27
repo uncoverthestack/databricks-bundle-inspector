@@ -1,0 +1,38 @@
+{
+  "bundle": "pre_release_uc_pipeline_schema",
+  "jobs": [
+    {
+      "key": "qa_pipeline_runner",
+      "name": "qa_pipeline_runner_${bundle.target}",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "refresh_pipeline",
+          "type": "Pipeline",
+          "source": "${resources.pipelines.qa_pipeline.id}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "qa_pipeline"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

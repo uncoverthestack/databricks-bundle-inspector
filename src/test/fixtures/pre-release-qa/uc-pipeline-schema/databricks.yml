@@ -1,0 +1,23 @@
+bundle:
+  name: pre_release_uc_pipeline_schema
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: main
+  schema:
+    default: qa_pipeline_dev
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      schema: qa_pipeline_dev
+
+  prod:
+    mode: production
+    variables:
+      schema: qa_pipeline_prod

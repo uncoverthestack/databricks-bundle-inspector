@@ -779,7 +779,8 @@ export function buildTaskNodeData(
         nestedRaw as Record<string, unknown>,
         rawJob,
         jobId,
-        `${taskKey}.__nested__`,
+        // Matches the YAML, so the inner task's paths resolve to real source lines.
+        `${taskKey}.for_each_task.task`,
         bundleRoot,
         sourceFile,
         sourceFileDir,

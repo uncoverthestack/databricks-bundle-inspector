@@ -1,0 +1,77 @@
+{
+  "bundle": "pre_release_job_parameters_current",
+  "jobs": [
+    {
+      "key": "runtime_parameter_job",
+      "name": "runtime_parameter_job_${bundle.target}",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "prepare_inputs",
+          "type": "Notebook",
+          "source": "../src/jobs/prepare_inputs.py",
+          "dependsOn": [],
+          "dependents": [
+            "validate_counts"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/jobs/prepare_inputs.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "validate_counts",
+          "type": "SQL",
+          "source": "../src/sql/validate_counts.sql",
+          "dependsOn": [
+            "prepare_inputs"
+          ],
+          "dependents": [],
+          "compute": [
+            "warehouse_id"
+          ],
+          "files": [
+            {
+              "path": "../src/sql/validate_counts.sql",
+              "status": "found"
+            }
+          ],
+          "variables": [
+            "warehouse_id"
+          ],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "prepare_inputs",
+          "validate_counts"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": [
+      "catalog",
+      "processing_date",
+      "schema",
+      "source_table"
+    ]
+  }
+}

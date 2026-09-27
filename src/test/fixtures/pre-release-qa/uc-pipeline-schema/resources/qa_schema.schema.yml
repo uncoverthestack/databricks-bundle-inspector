@@ -1,0 +1,5 @@
+resources:
+  schemas:
+    qa_schema:
+      name: ${var.schema}
+      catalog_name: ${var.catalog}

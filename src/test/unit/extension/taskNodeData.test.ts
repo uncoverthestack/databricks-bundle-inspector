@@ -767,7 +767,7 @@ describe("buildTaskNodeData — for_each nested task", () => {
     );
     expect(result.nestedTask).toBeDefined();
     expect(result.nestedTask?.taskType).toBe("notebook");
-    expect(result.nestedTask?.taskKey).toBe("outer.__nested__");
+    expect(result.nestedTask?.taskKey).toBe("outer.for_each_task.task");
     expect(result.nestedTask?.parentJobId).toBe("job-1");
   });
 

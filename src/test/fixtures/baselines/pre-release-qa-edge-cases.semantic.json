@@ -1,0 +1,116 @@
+{
+  "bundle": "pre_release_qa_edge_cases",
+  "jobs": [
+    {
+      "key": "yaml_edge_job",
+      "name": "yaml_edge_job_${bundle.target}_${var.schema}",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "generate_items",
+          "type": "Python script",
+          "source": "../../src/tasks/generate_items.py",
+          "dependsOn": [],
+          "dependents": [
+            "process_each_item"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../../src/tasks/generate_items.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "pipeline_refresh",
+          "type": "Pipeline",
+          "source": "${resources.pipelines.pipeline_from_nested_yaml.id}",
+          "dependsOn": [
+            "process_each_item"
+          ],
+          "dependents": [],
+          "compute": [
+            "pipeline_from_nested_yaml"
+          ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "process_each_item",
+          "type": "For each",
+          "source": "{{tasks.generate_items.values.items}}",
+          "dependsOn": [
+            "generate_items"
+          ],
+          "dependents": [
+            "pipeline_refresh"
+          ],
+          "compute": [],
+          "files": [],
+          "variables": [
+            "schema"
+          ],
+          "libraries": []
+        },
+        {
+          "key": "workspace_notebook",
+          "type": "Notebook",
+          "source": "/Workspace/Users/qa@example.com/shared_notebook",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "/Workspace/Users/qa@example.com/shared_notebook",
+              "status": "remote"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "generate_items",
+          "process_each_item"
+        ],
+        [
+          "process_each_item",
+          "pipeline_refresh"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "missing_file",
+      "title": "Missing local file reference",
+      "detail": "../../src/tasks/missing_process_item.py",
+      "taskKey": "process_each_item",
+      "file": "resources/jobs/yaml_edge_job.job.yml",
+      "line": 25,
+      "column": 30,
+      "yamlPath": "tasks.process_each_item.for_each_task.task.spark_python_task.python_file"
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

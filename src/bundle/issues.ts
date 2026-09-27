@@ -151,7 +151,10 @@ export function buildInspectorIssues(
       });
     }
 
-    for (const ref of taskData.fileReferences) {
+    // A for_each task's inner task is checked too; its issues belong to the outer task.
+    const checkedTaskData = taskData.nestedTask ? [taskData, taskData.nestedTask] : [taskData];
+
+    for (const ref of checkedTaskData.flatMap((data) => data.fileReferences)) {
       if (ref.source === "GIT" && !parentJobHasGitSource(graph, task)) {
         issues.push({
           id: `git-source:${task.id}:${ref.yamlPath}:${ref.path}`,
@@ -192,7 +195,7 @@ export function buildInspectorIssues(
       });
     }
 
-    for (const ref of taskData.libraryReferences) {
+    for (const ref of checkedTaskData.flatMap((data) => data.libraryReferences)) {
       if (!ref.isLocal || ref.exists !== false) continue;
       issues.push({
         id: `missing-library:${task.id}:${ref.yamlPath}:${ref.identifier}`,
@@ -213,7 +216,7 @@ export function buildInspectorIssues(
       });
     }
 
-    for (const ref of taskData.variableReferences) {
+    for (const ref of checkedTaskData.flatMap((data) => data.variableReferences)) {
       if (isVariableResolvedForTarget(parsedBundle, ref.variableName, targetName)) {
         continue;
       }

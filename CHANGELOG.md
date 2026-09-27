@@ -15,6 +15,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 - **Power BI, Clean room and dbt platform tasks now show their details** (connection, notebook name and job ID). They read fields that don't exist in the bundle schema, so the detail line was always empty.
 - **dbt platform tasks are no longer shown as using a SQL warehouse.** They run on dbt's platform and have no warehouse setting.
 - **Warnings about a pipeline no longer appear under unrelated jobs.** A job's issue list now shows only issues on its own tasks, on the job itself, or on the whole bundle.
+- **Files used by the task inside a `for_each` task are checked.** A missing file, library or undefined variable there was never reported. It now appears against the `for_each` task, at the right line.
+- **A bundle with no jobs now lists its issues in the inspector.** The issues panel was always empty when there was no job to select, even when the Problems panel had errors, for example in a bundle with only pipelines.
 - **Notebooks at workspace paths such as `/Users/...` or `/Shared/...` are no longer reported as missing local files.**
 - **Each task on the graph shows its own badge.** dbt, JAR, Spark Submit, Python wheel and the new AI task types all showed "PY", and alert tasks showed "T". They now show DBT, JAR, SUB, WHL, AIR, GAI, PYOP, ALRT and so on. A task type the inspector doesn't recognise shows "?".
 

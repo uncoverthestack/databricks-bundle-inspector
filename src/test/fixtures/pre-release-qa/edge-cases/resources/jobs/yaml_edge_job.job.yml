@@ -1,0 +1,41 @@
+resources:
+  jobs:
+    yaml_edge_job:
+      name: yaml_edge_job_${bundle.target}_${var.schema}
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: required_value
+          default: ${var.required_without_default}
+
+      tasks:
+        - task_key: generate_items
+          spark_python_task:
+            python_file: ../../src/tasks/generate_items.py
+
+        - task_key: process_each_item
+          depends_on:
+            - task_key: generate_items
+          for_each_task:
+            inputs: "{{tasks.generate_items.values.items}}"
+            task:
+              task_key: process_one_item
+              spark_python_task:
+                python_file: ../../src/tasks/missing_process_item.py
+                parameters:
+                  - "--item"
+                  - "{{input}}"
+                  - "--schema"
+                  - ${var.schema}
+
+        - task_key: workspace_notebook
+          notebook_task:
+            source: WORKSPACE
+            notebook_path: /Workspace/Users/qa@example.com/shared_notebook
+
+        - task_key: pipeline_refresh
+          depends_on:
+            - task_key: process_each_item
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.pipeline_from_nested_yaml.id}
