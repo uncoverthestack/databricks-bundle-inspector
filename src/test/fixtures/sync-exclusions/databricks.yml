@@ -1,0 +1,11 @@
+bundle:
+  name: sync_exclusions
+
+include:
+  - resources/*.yml
+
+sync:
+  exclude:
+    - src/excluded/**
+  include:
+    - src/readded.py

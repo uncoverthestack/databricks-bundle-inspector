@@ -42,7 +42,25 @@ function toPosix(path: string): string {
   return sep === "/" ? path : path.split(sep).join("/");
 }
 
+/** Why `bundle deploy` would skip a file. */
+export type SyncExclusion =
+  | { rule: "gitignore"; gitignoreFile: string }
+  | { rule: "sync_exclude" }
+  | { rule: "always" };
+
 export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
+  const exclusionOf = createSyncExclusion(bundleRoot, sync);
+  return (absolutePath) => exclusionOf(absolutePath) === undefined;
+}
+
+/**
+ * Like {@link createSyncFilter}, but says which rule skips a file, so an issue can
+ * point at the `.gitignore` or `sync.exclude` to change.
+ */
+export function createSyncExclusion(
+  bundleRoot: string,
+  sync?: Sync,
+): (absolutePath: string) => SyncExclusion | undefined {
   const gitRoot = findGitRoot(bundleRoot);
   const topDir = gitRoot && isInside(bundleRoot, gitRoot) ? gitRoot : bundleRoot;
   const gitignoreByDir = new Map<string, Ignore | undefined>();
@@ -61,10 +79,12 @@ export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
 
   // Unlike git, a deeper `.gitignore` cannot re-include (`!name`) a file that a
   // parent `.gitignore` skipped: the CLI skips a file if any level matches it.
-  function isGitignored(path: string): boolean {
+  function gitignoreMatching(path: string): string | undefined {
     for (let dir = dirname(path); ; dir = dirname(dir)) {
-      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)))) return true;
-      if (dir === topDir || dirname(dir) === dir) return false;
+      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)))) {
+        return join(dir, ".gitignore");
+      }
+      if (dir === topDir || dirname(dir) === dir) return undefined;
     }
   }
 
@@ -73,9 +93,12 @@ export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
   const excluded = ignore().add(sync?.exclude ?? []);
 
   return (absolutePath) => {
-    if (!isInside(absolutePath, bundleRoot)) return true;
+    if (!isInside(absolutePath, bundleRoot)) return undefined;
     const rel = toPosix(relative(bundleRoot, absolutePath));
-    if (alwaysSkipped.ignores(rel) || excluded.ignores(rel)) return false;
-    return included.ignores(rel) || !isGitignored(absolutePath);
+    if (alwaysSkipped.ignores(rel)) return { rule: "always" };
+    if (excluded.ignores(rel)) return { rule: "sync_exclude" };
+    if (included.ignores(rel)) return undefined;
+    const gitignoreFile = gitignoreMatching(absolutePath);
+    return gitignoreFile ? { rule: "gitignore", gitignoreFile } : undefined;
   };
 }

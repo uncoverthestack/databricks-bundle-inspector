@@ -124,6 +124,7 @@ function issueKindLabel(kind) {
       secret_scope_name_mismatch: "Secret scope name",
       notebook_type_mismatch: "Notebook or file",
       widget_parameter_mismatch: "Widget parameter",
+      excluded_from_sync: "Not deployed",
     }[kind] ?? "Issue"
   );
 }
@@ -334,6 +335,7 @@ function buildIssueItems(
             secret_scope_name_mismatch: "Secret Scope Names",
             notebook_type_mismatch: "Notebook or File Mismatches",
             widget_parameter_mismatch: "Widget Parameters",
+            excluded_from_sync: "Files Not Deployed",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,
