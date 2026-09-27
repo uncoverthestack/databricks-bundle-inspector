@@ -1,5 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { notebookViews, type NotebookViews } from "./code/notebookViews.js";
+import {
+  literalValue,
+  matchesDottedName,
+  readArguments,
+  tokenizePython,
+  type PythonArgument,
+  type PythonToken,
+} from "./code/pythonTokenizer.js";
+import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sqlTokenizer.js";
 
 /**
  * A single detected use of a Databricks secret-access call within a file.
@@ -45,336 +55,125 @@ function getLineText(content: string, charIndex: number): string {
   return raw.replace(/\r$/, "");
 }
 
-/**
- * Extracts the `scope` and `key` from the argument fragment of a
- * `dbutils.secrets.get(scope, key)` call.
- *
- * Resolution order for each parameter:
- * 1. Keyword form: `scope="value"` / `key="value"` (single or double quotes).
- * 2. Positional form: first and second quoted string literals respectively.
- * 3. `null` — the argument is a variable resolved at runtime.
- *
- * Backslash-continuations and excess whitespace are normalised before
- * matching so that multi-line calls are treated identically to single-line ones.
- *
- * @param argFragment Everything between the opening and closing parenthesis.
- * @returns `scope` and `key` as string literals, or `null` when either is a runtime variable.
- */
-function extractPythonArgs(argFragment: string): {
-  scope: string | null;
-  key: string | null;
-} {
-  const normalised = argFragment
-    .replace(/\\\n/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // keyword forms — matched independently so either can be absent
-  const scope = normalised.match(/scope\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
-  const key = normalised.match(/key\s*=\s*(["'])([^"']+)\1/)?.[2] ?? null;
-
-  if (scope !== null || key !== null) {
-    // At least one keyword arg was found; fill the other from positional if needed
-    const positionalScope =
-      scope ?? normalised.match(/^(["'])([^"']+)\1/)?.[2] ?? null;
-    const positionalKey =
-      key ?? normalised.match(/^[^,]+,\s*(["'])([^"']+)\1/)?.[2] ?? null;
-    return { scope: positionalScope, key: positionalKey };
-  }
-
-  // fully positional: "scope", "key"
-  const positional = normalised.match(
-    /^(["'])([^"']+)\1\s*,\s*(["'])([^"']+)\3/,
+/** The argument called `keyword`, or else the positional argument at `position`. */
+function argument(
+  args: PythonArgument[],
+  keyword: string,
+  position: number,
+): PythonArgument | undefined {
+  return (
+    args.find((arg) => arg.keyword === keyword) ??
+    args.filter((arg) => arg.keyword === undefined)[position]
   );
-  if (positional) {
-    return { scope: positional[2] ?? null, key: positional[4] ?? null };
-  }
-
-  // only first arg present (or both are variables)
-  const first = normalised.match(/^(["'])([^"']+)\1/);
-  return { scope: first?.[2] ?? null, key: null };
 }
 
 /**
- * Returns `true` when `charIndex` falls inside executable Python code — i.e.
- * not after a `#` comment marker and not inside a plain string literal.
+ * Finds calls to `dbutils.<module>.<method>(...)` in Python code.
  *
- * F-string expressions (`f"...{<expr>}..."`) are treated as executable code
- * because the `{...}` block is evaluated at runtime. A plain string that
- * contains the same text (e.g. for documentation) is correctly excluded.
- *
- * Triple-quoted strings that open on a prior line are not tracked; that is an
- * acceptable limitation for a sniffer.
- *
- * @param content The full source text of the file.
- * @param charIndex The character offset of the match to check.
- * @returns `true` if the position is in executable Python code; `false` if it
- *   is inside a comment or a non-f-string literal.
+ * @returns Each call's method, its arguments and the offset of `dbutils`.
  */
-function isInPythonCodeContext(content: string, charIndex: number): boolean {
-  const lineStart = content.lastIndexOf("\n", charIndex - 1) + 1;
-  const prefix = content.slice(lineStart, charIndex);
-
-  // inFStr / fQuote track whether we're inside an f-string.
-  // fExprDepth > 0 means we're inside a { } expression within that f-string.
-  let inDouble = false;
-  let inSingle = false;
-  let inFStr = false;
-  let fQuote = "";
-  let fExprDepth = 0;
-
-  for (let i = 0; i < prefix.length; i++) {
-    const ch = prefix[i];
-
-    if (inFStr) {
-      if (ch === "{") {
-        // {{ is an escaped brace, not an expression opener
-        if ((prefix[i + 1] ?? "") === "{") {
-          i++;
-          continue;
-        }
-        fExprDepth++;
-        continue;
-      }
-      if (ch === "}") {
-        if (fExprDepth > 0) fExprDepth--;
-        continue;
-      }
-      // Closing quote only ends the f-string when outside any expression
-      if (ch === fQuote && fExprDepth === 0) {
-        inFStr = false;
-        fQuote = "";
-      }
-      // Backslash escapes are not allowed inside f-string expressions (Python
-      // rule), so we only skip them in the literal parts (fExprDepth === 0).
-      if (ch === "\\" && fExprDepth === 0) {
-        i++;
-      }
-      continue;
-    }
-
-    if (inDouble) {
-      if (ch === "\\") {
-        i++;
-        continue;
-      }
-      if (ch === '"') inDouble = false;
-      continue;
-    }
-
-    if (inSingle) {
-      if (ch === "\\") {
-        i++;
-        continue;
-      }
-      if (ch === "'") inSingle = false;
-      continue;
-    }
-
-    if (ch === "#") return false;
-
-    // Detect f-string prefix: f" f' F" F'
-    if ((ch === "f" || ch === "F") && !inFStr) {
-      const next = prefix[i + 1] ?? "";
-      if (next === '"' || next === "'") {
-        inFStr = true;
-        fQuote = next;
-        fExprDepth = 0;
-        i++;
-        continue;
-      }
-    }
-
-    if (ch === '"') {
-      inDouble = true;
-      continue;
-    }
-    if (ch === "'") {
-      inSingle = true;
-      continue;
-    }
+function dbutilsCalls(
+  tokens: PythonToken[],
+  module: string,
+  methods: readonly string[],
+): Array<{ method: string; args: PythonArgument[]; offset: number }> {
+  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (!matchesDottedName(tokens, i, ["dbutils", module])) continue;
+    const dot = tokens[i + 3];
+    const method = tokens[i + 4];
+    const open = tokens[i + 5];
+    if (dot?.value !== "." || method?.kind !== "name" || !methods.includes(method.value)) continue;
+    if (open?.kind !== "op" || open.value !== "(") continue;
+    const call = readArguments(tokens, i + 5);
+    if (!call) continue;
+    calls.push({ method: method.value, args: call.args, offset: tokens[i]!.start });
   }
+  return calls;
+}
 
-  // Code context when: bare code, OR inside an f-string expression
-  return (!inDouble && !inSingle && !inFStr) || (inFStr && fExprDepth > 0);
+/** The files' code, one view per language; see {@link notebookViews}. */
+function viewsFor(
+  filePath: string,
+  content: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): NotebookViews {
+  const ext = path.extname(filePath).toLowerCase();
+  return notebookViews(content, {
+    jupyter: fileTypeHint === "notebook" || ext === ".ipynb",
+    fileLanguage: fileTypeHint === "sql" || ext === ".sql" ? "sql" : "python",
+  });
 }
 
 /**
- * Scans `content` for all `dbutils.secrets.get(...)` and
- * `dbutils.secrets.getBytes(...)` calls that appear in executable Python code
- * (not comments or string literals) and returns one {@link SecretDetection}
- * per call.
- *
- * @param content The full source text of a `.py` file or a flattened notebook.
- * @returns One {@link SecretDetection} per matched call in executable code.
+ * `dbutils.secrets.get(...)` and `dbutils.secrets.getBytes(...)` calls in Python code
+ * (not comments or strings, including multi-line and triple-quoted ones). Scope and
+ * key come from `scope=` / `key=` or the first and second positional arguments, and
+ * are `null` when not a string literal.
  */
-function scanPythonContent(content: string): SecretDetection[] {
-  const detections: SecretDetection[] = [];
-  // Lazy [\s\S]*? lets the match span multiple lines while stopping at the
-  // first closing paren. getBytes is listed to match both variants.
-  const re = /dbutils\.secrets\.get(?:Bytes)?\s*\(([\s\S]*?)\)/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(content)) !== null) {
-    if (!isInPythonCodeContext(content, match.index)) {
-      continue;
-    }
-    const { scope, key } = extractPythonArgs(match[1] ?? "");
-    detections.push({
-      line: getStartLine(content, match.index),
-      raw: getLineText(content, match.index),
-      scope,
-      key,
-    });
-  }
-
-  return detections;
-}
-
-/**
- * Flattens a Jupyter notebook's cell sources into a single string so that
- * {@link scanPythonContent} can apply a single regex pass across all cells.
- * Each cell is separated by a newline to preserve line numbering.
- *
- * @param raw Raw JSON string of the `.ipynb` file.
- * @returns A single string with all code cell sources joined by newlines.
- */
-function jupyterNotebookToContent(raw: string): string {
-  const notebook = JSON.parse(raw) as {
-    cells?: Array<{ source?: string | string[] }>;
-  };
-
-  return (notebook.cells ?? [])
-    .map((cell) => {
-      const src = cell.source ?? "";
-      return Array.isArray(src) ? src.join("") : src;
-    })
-    .join("\n");
+function scanPythonSecrets(view: string, document: string): SecretDetection[] {
+  return dbutilsCalls(tokenizePython(view), "secrets", ["get", "getBytes"]).map((call) => ({
+    line: getStartLine(document, call.offset),
+    raw: getLineText(document, call.offset),
+    scope: literalValue(argument(call.args, "scope", 0)),
+    key: literalValue(argument(call.args, "key", 1)),
+  }));
 }
 
 const SQL_PREVIEW_NOTE =
   "secret() and try_secret() are Databricks SQL preview features";
 
-/**
- * Extracts the `scope` and `key` from the argument fragment of a SQL
- * `secret(scope, key)` or `try_secret(scope, key)` call.
- *
- * Per the Databricks SQL spec both arguments must be constant string literals,
- * so both fields are expected to be non-null for well-formed calls.
- *
- * @param argFragment Everything between the opening and closing parenthesis.
- * @returns `scope` and `key` as string literals, or `null` when either is absent or malformed.
- */
-function extractSqlArgs(argFragment: string): {
-  scope: string | null;
-  key: string | null;
-} {
-  const normalised = argFragment.replace(/\s+/g, " ").trim();
-
-  // Both positional string literals: 'scope', 'key' or "scope", "key"
-  const both = normalised.match(/^(["'])([^"']+)\1\s*,\s*(["'])([^"']+)\3/);
-  if (both) {
-    return { scope: both[2] ?? null, key: both[4] ?? null };
+/** The arguments of a SQL call whose `(` is at `tokens[open]`, split on top-level commas. */
+function sqlArguments(tokens: SqlToken[], open: number): SqlToken[][] {
+  const args: SqlToken[][] = [];
+  let current: SqlToken[] = [];
+  let depth = 0;
+  for (let i = open; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token.kind === "op" && token.value === "(") {
+      depth += 1;
+      if (depth === 1) continue;
+    } else if (token.kind === "op" && token.value === ")") {
+      depth -= 1;
+      if (depth === 0) break;
+    } else if (depth === 1 && token.kind === "op" && token.value === ",") {
+      args.push(current);
+      current = [];
+      continue;
+    }
+    current.push(token);
   }
+  if (current.length) args.push(current);
+  return args;
+}
 
-  // Only the first arg is a literal (malformed per spec, but be resilient)
-  const first = normalised.match(/^(["'])([^"']+)\1/);
-  return { scope: first?.[2] ?? null, key: null };
+function sqlLiteral(arg: SqlToken[] | undefined): string | null {
+  return arg?.length === 1 && arg[0]!.kind === "string" && arg[0]!.value !== ""
+    ? arg[0]!.value
+    : null;
 }
 
 /**
- * Returns `true` when `charIndex` falls inside executable SQL — i.e. not
- * after a `--` line comment and not inside a quoted string literal on the
- * same line. Inline `/* ... *\/` block comments that open and close on the
- * same line before the match are also detected. Block comments that open on
- * a prior line are not tracked; acceptable for a sniffer.
- *
- * @param content The full source text of the file.
- * @param charIndex The character offset of the match to check.
- * @returns `true` if the position is in executable SQL; `false` if it is
- *   inside a comment or a string literal.
+ * `secret(scope, key)` and `try_secret(scope, key)` calls in SQL code. Both
+ * arguments must be string literals per the Databricks SQL spec. Every detection
+ * carries {@link SQL_PREVIEW_NOTE}.
  */
-function isInSqlCodeContext(content: string, charIndex: number): boolean {
-  const lineStart = content.lastIndexOf("\n", charIndex - 1) + 1;
-  const prefix = content.slice(lineStart, charIndex);
-
-  let inSingle = false;
-  let inDouble = false;
-  let inBlock = false;
-
-  for (let i = 0; i < prefix.length; i++) {
-    const ch = prefix[i];
-    const next = prefix[i + 1] ?? "";
-
-    if (inBlock) {
-      if (ch === "*" && next === "/") {
-        inBlock = false;
-        i++;
-      }
-      continue;
-    }
-
-    if (inSingle) {
-      if (ch === "'") inSingle = false;
-      continue;
-    }
-
-    if (inDouble) {
-      if (ch === '"') inDouble = false;
-      continue;
-    }
-
-    if (ch === "-" && next === "-") return false;
-    if (ch === "/" && next === "*") {
-      inBlock = true;
-      i++;
-      continue;
-    }
-    if (ch === "'") {
-      inSingle = true;
-      continue;
-    }
-    if (ch === '"') {
-      inDouble = true;
-      continue;
-    }
-  }
-
-  return !inSingle && !inDouble && !inBlock;
-}
-
-/**
- * Scans `content` for all `secret(...)` and `try_secret(...)` calls that
- * appear in executable SQL (not comments or string literals) and returns one
- * {@link SecretDetection} per call.
- *
- * Every detection carries {@link SQL_PREVIEW_NOTE} in its `note` field
- * because both functions are currently a Databricks SQL preview feature.
- *
- * @param content The full source text of a `.sql` file.
- * @returns One {@link SecretDetection} per matched call in executable SQL.
- */
-function scanSqlContent(content: string): SecretDetection[] {
+function scanSqlSecrets(view: string, document: string): SecretDetection[] {
+  const tokens = tokenizeSql(view);
   const detections: SecretDetection[] = [];
-  // try_secret is listed first so the alternation matches it before secret.
-  // \b prevents matching longer names such as get_secret().
-  const re = /\b(?:try_secret|secret)\s*\(([\s\S]*?)\)/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(content)) !== null) {
-    if (!isInSqlCodeContext(content, match.index)) {
-      continue;
-    }
-    const { scope, key } = extractSqlArgs(match[1] ?? "");
+  tokens.forEach((token, i) => {
+    const name = token.kind === "word" ? token.value.toLowerCase() : "";
+    if (name !== "secret" && name !== "try_secret") return;
+    if (tokens[i + 1]?.value !== "(") return;
+    const [scope, key] = sqlArguments(tokens, i + 1);
     detections.push({
-      line: getStartLine(content, match.index),
-      raw: getLineText(content, match.index),
-      scope,
-      key,
+      line: getStartLine(document, token.start),
+      raw: getLineText(document, token.start),
+      scope: sqlLiteral(scope),
+      key: sqlLiteral(key),
       note: SQL_PREVIEW_NOTE,
     });
-  }
-
+  });
   return detections;
 }
 
@@ -419,130 +218,174 @@ export interface WidgetDetection {
 }
 
 /**
- * Extracts the widget name from the argument fragment of a
- * `dbutils.widgets.get(name)` or `dbutils.widgets.getArgument(name, ...)` call.
- *
- * Returns the first positional string literal, or `null` when the name is a
- * variable whose value is only known at runtime.
- *
- * @param argFragment Everything between the opening and closing parenthesis.
- * @returns The widget name as a string literal, or `null` if it is a runtime variable.
+ * `dbutils.widgets.get(...)`, `getArgument(...)` and `getAll()` calls in Python code.
+ * The name is the `name=` or first positional argument when it is a string literal.
  */
-function extractWidgetName(argFragment: string): string | null {
-  const normalised = argFragment
-    .replace(/\\\n/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const first = normalised.match(/^(["'])([^"']+)\1/);
-  return first?.[2] ?? null;
+function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
+  return dbutilsCalls(tokenizePython(view), "widgets", ["get", "getArgument", "getAll"]).map(
+    (call) => {
+      const method = call.method as WidgetMethod;
+      const detection: WidgetDetection = {
+        line: getStartLine(document, call.offset),
+        raw: getLineText(document, call.offset),
+        name: method === "getAll" ? null : literalValue(argument(call.args, "name", 0)),
+        method,
+      };
+      if (method === "getArgument") detection.note = WIDGET_DEPRECATED_NOTE;
+      return detection;
+    },
+  );
+}
+
+/** Widgets created with a default in Python: `text`, `dropdown`, `combobox`, `multiselect`. */
+function scanPythonWidgetDefaults(view: string): string[] {
+  return dbutilsCalls(tokenizePython(view), "widgets", [
+    "text",
+    "dropdown",
+    "combobox",
+    "multiselect",
+  ]).flatMap((call) => {
+    const name = literalValue(argument(call.args, "name", 0));
+    return name ? [name] : [];
+  });
+}
+
+/** `dbutils.widgets` used as a value, not followed by a method call. */
+function passesWidgetsObject(view: string): boolean {
+  const tokens = tokenizePython(view);
+  return tokens.some(
+    (_, i) => matchesDottedName(tokens, i, ["dbutils", "widgets"]) && tokens[i + 3]?.value !== ".",
+  );
+}
+
+const WIDGET_NAME = /^[A-Za-z_]\w*$/;
+const LEGACY_NOTE = "${param} is deprecated in Databricks Runtime 15.2 and above; use :param";
+// Keywords after which an expression starts, so a `:name` there is a parameter.
+// After any other word (a column, a function's result) a colon is a JSON path.
+const EXPRESSION_START_KEYWORDS = new Set([
+  "ALL", "AND", "ANY", "AS", "BETWEEN", "BY", "CASE", "COMMENT", "DATE", "DECLARE",
+  "DEFAULT", "DISTINCT", "ELSE", "ESCAPE", "EXCEPT", "EXECUTE", "EXISTS", "FROM",
+  "GROUP", "HAVING", "IF", "ILIKE", "IMMEDIATE", "IN", "INTERSECT", "INTERVAL", "INTO",
+  "IS", "JOIN", "LIKE", "LIMIT", "LOCATION", "MINUS", "NOT", "OFFSET", "ON", "OPTIONS",
+  "OR", "ORDER", "PARTITION", "QUALIFY", "REGEXP", "RETURN", "RLIKE", "SELECT", "SET",
+  "SOME", "TABLE", "TBLPROPERTIES", "THEN", "TIMESTAMP", "TIMESTAMP_NTZ", "TO", "UNION",
+  "USING", "VALUES", "VAR", "VARIABLE", "WHEN", "WHERE", "WITH",
+]);
+
+/** Whether a token ends an expression, so a `:` after it is a JSON path (`details :a.b`). */
+function endsExpression(token: SqlToken): boolean {
+  if (token.kind === "word") return !EXPRESSION_START_KEYWORDS.has(token.value.toUpperCase());
+  if (token.kind === "op") return token.value === ")" || token.value === "]";
+  return true;
 }
 
 /**
- * Scans `content` for all `dbutils.widgets.get(...)`, `getArgument(...)`, and
- * `getAll()` calls that appear in executable Python code and returns one
- * {@link WidgetDetection} per call.
+ * Widget reads and defaults in SQL code
+ * (https://docs.databricks.com/aws/en/notebooks/widgets):
  *
- * @param content The full source text of a `.py` file or a flattened notebook.
- * @returns One {@link WidgetDetection} per matched call in executable code.
+ * - `:name` parameter markers, where an expression starts: after `=`, `(`, `,` or a
+ *   keyword such as `WHERE` or `LIMIT`, and in `IDENTIFIER(:name)`. Not `::` casts, and
+ *   not JSON paths, where the colon follows an expression (`raw:owner`, `details :a.b`)
+ *   or the name continues with `.` or `[`.
+ * - Legacy `${name}` references, in code, strings or backtick identifiers.
+ * - `CREATE WIDGET TEXT|DROPDOWN|COMBOBOX|MULTISELECT name DEFAULT ...` sets a default.
  */
-function scanPythonWidgets(content: string): WidgetDetection[] {
-  const detections: WidgetDetection[] = [];
-  // getArgument and getAll are listed before get to prevent the shorter prefix
-  // from shadowing them in the alternation.
-  const re = /dbutils\.widgets\.(getArgument|getAll|get)\s*\(([\s\S]*?)\)/g;
+function scanSqlWidgets(view: string, document: string): { reads: WidgetDetection[]; defaults: string[] } {
+  const tokens = tokenizeSql(view);
+  const reads: WidgetDetection[] = [];
+  const legacy: WidgetDetection[] = [];
+  const defaults: string[] = [];
+  const at = (offset: number) => ({
+    line: getStartLine(document, offset),
+    raw: getLineText(document, offset),
+  });
 
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(content)) !== null) {
-    if (!isInPythonCodeContext(content, match.index)) {
-      continue;
+  tokens.forEach((token, i) => {
+    const previous = tokens[i - 1];
+    const next = tokens[i + 1];
+    if (token.kind === "op" && token.value === ":") {
+      const afterName = tokens[i + 2];
+      const isJsonPath =
+        (previous !== undefined && endsExpression(previous)) ||
+        (afterName?.kind === "op" && (afterName.value === "." || afterName.value === "[") && afterName.start === next?.end);
+      if (!isJsonPath && next?.kind === "word" && next.start === token.end && WIDGET_NAME.test(next.value)) {
+        reads.push({ ...at(token.start), name: next.value, method: "sqlParameterMarker" });
+      }
     }
-    const method = match[1] as WidgetMethod;
-    const name = method === "getAll" ? null : extractWidgetName(match[2] ?? "");
-    const detection: WidgetDetection = {
-      line: getStartLine(content, match.index),
-      raw: getLineText(content, match.index),
-      name,
-      method,
-    };
-    if (method === "getArgument") {
-      detection.note = WIDGET_DEPRECATED_NOTE;
+    if (token.kind === "legacy_reference" && WIDGET_NAME.test(token.value)) {
+      legacy.push({ ...at(token.start), name: token.value, method: "sqlLegacyReference", note: LEGACY_NOTE });
     }
-    detections.push(detection);
-  }
+    if (token.kind === "string" || token.kind === "quoted_identifier") {
+      for (const reference of legacyReferencesInString(token)) {
+        if (!WIDGET_NAME.test(reference.name)) continue;
+        legacy.push({ ...at(reference.offset), name: reference.name, method: "sqlLegacyReference", note: LEGACY_NOTE });
+      }
+    }
+    if (
+      token.kind === "word" &&
+      token.value.toUpperCase() === "CREATE" &&
+      next?.kind === "word" &&
+      next.value.toUpperCase() === "WIDGET" &&
+      /^(TEXT|DROPDOWN|COMBOBOX|MULTISELECT)$/i.test(tokens[i + 2]?.value ?? "")
+    ) {
+      const name = tokens[i + 3];
+      if ((name?.kind === "word" || name?.kind === "quoted_identifier") && WIDGET_NAME.test(name.value)) {
+        defaults.push(name.value);
+      }
+    }
+  });
 
-  return detections;
+  legacy.sort((a, b) => a.line - b.line);
+  return { reads: [...reads, ...legacy].sort((a, b) => a.line - b.line), defaults };
+}
+
+function byLine<T extends { line: number }>(a: T, b: T): number {
+  return a.line - b.line;
 }
 
 /**
  * Scans a local file for secret-access calls and returns one
  * {@link SecretDetection} per call found in executable code.
  *
- * | Extension | Detected call                              |
- * |-----------|--------------------------------------------|
- * | `.py`     | `dbutils.secrets.get()`, `.getBytes()`     |
- * | `.ipynb`  | `dbutils.secrets.get()`, `.getBytes()`     |
- * | `.sql`    | `secret()`, `try_secret()`                 |
+ * | Code                  | Detected call                          |
+ * |-----------------------|----------------------------------------|
+ * | Python (`.py`, `.ipynb`, `%python` cells) | `dbutils.secrets.get()`, `.getBytes()` |
+ * | SQL (`.sql`, `%sql` cells)                | `secret()`, `try_secret()`             |
  *
- * For notebooks, all code cells are scanned and line numbers are counted
- * sequentially across cells in document order.
+ * Notebooks are read cell by cell in each cell's language, so a `%sql` cell in a
+ * Python notebook is read as SQL. Line numbers count every cell in document order.
  *
- * `null` on `scope` or `key` means that argument is a variable resolved at
- * runtime (Python only — SQL requires constant string literals per spec).
+ * `null` on `scope` or `key` means that argument is not a string literal.
  * SQL detections always carry a `note` marking the preview status.
- *
- * @param filePath Absolute path to a `.py`, `.ipynb`, or `.sql` file.
- * @returns Array of detections, one per secret call found.
  */
 export async function detectSecretInNotebook(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<SecretDetection[]> {
-  const content = await fs.readFile(filePath, "utf8");
-  const ext = path.extname(filePath).toLowerCase();
-
-  if (fileTypeHint === "sql" || ext === ".sql") {
-    return scanSqlContent(content);
-  }
-
-  const searchContent =
-    fileTypeHint === "notebook" || ext === ".ipynb"
-      ? jupyterNotebookToContent(content)
-      : content;
-  return scanPythonContent(searchContent);
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  return [
+    ...scanPythonSecrets(views.python, views.document),
+    ...scanSqlSecrets(views.sql, views.document),
+  ].sort(byLine);
 }
 
 /**
- * Scans a local file for widget-retrieval calls and returns one
- * {@link WidgetDetection} per call found in executable code.
+ * Scans a local file for widget reads and returns one {@link WidgetDetection} per
+ * read found in executable code: `dbutils.widgets.get()`, `.getArgument()` and
+ * `.getAll()` in Python, `:name` and legacy `${name}` in SQL.
  *
- * | Extension | Detected call                                          |
- * |-----------|--------------------------------------------------------|
- * | `.py`     | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
- * | `.ipynb`  | `dbutils.widgets.get()`, `.getArgument()`, `.getAll()` |
- *
- * SQL widget access uses the `:name` parameter syntax, which is
- * indistinguishable from general SQL parameters and is not scanned.
- *
- * `null` on `name` means the argument is a variable resolved at runtime, or
- * the method is `getAll` (which retrieves every widget, not a named one).
- * `getArgument` detections always carry a `note` marking the deprecation.
- *
- * @param filePath Absolute path to a `.py` or `.ipynb` file.
- * @returns Array of detections, one per widget-retrieval call found.
+ * `null` on `name` means the argument is not a string literal, or the method is
+ * `getAll` (which retrieves every widget, not a named one).
  */
 export async function detectWidgetsInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<WidgetDetection[]> {
-  const ext = path.extname(filePath).toLowerCase();
-  const content = await fs.readFile(filePath, "utf8");
-  if (fileTypeHint === "sql" || ext === ".sql") return scanSqlWidgets(content).reads;
-
-  const searchContent =
-    fileTypeHint === "notebook" || ext === ".ipynb"
-      ? jupyterNotebookToContent(content)
-      : content;
-  return scanPythonWidgets(searchContent);
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  return [
+    ...scanPythonWidgets(views.python, views.document),
+    ...scanSqlWidgets(views.sql, views.document).reads,
+  ].sort(byLine);
 }
 
 /**
@@ -562,97 +405,6 @@ export interface WidgetUsage {
   runsOtherNotebooks: boolean;
 }
 
-function extractWidgetDefinitionName(argFragment: string): string | null {
-  const normalised = argFragment.replace(/\s+/g, " ").trim();
-  const keyword = normalised.match(/(?:^|[,(\s])name\s*=\s*(["'])([^"']+)\1/);
-  return keyword?.[2] ?? extractWidgetName(argFragment);
-}
-
-/** `dbutils.widgets` used as a value, not followed by a method call. */
-function passesWidgetsObject(content: string): boolean {
-  const re = /dbutils\.widgets\b(?!\s*\.)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(content)) !== null) {
-    if (isInPythonCodeContext(content, match.index)) return true;
-  }
-  return false;
-}
-
-function scanPythonWidgetDefaults(content: string): string[] {
-  const names: string[] = [];
-  const re = /dbutils\.widgets\.(?:text|dropdown|combobox|multiselect)\s*\(([\s\S]*?)\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(content)) !== null) {
-    if (!isInPythonCodeContext(content, match.index)) continue;
-    const name = extractWidgetDefinitionName(match[1] ?? "");
-    if (name) names.push(name);
-  }
-  return names;
-}
-
-// `%run` as a notebook magic: `# MAGIC %run` (Python) or `-- MAGIC %run` (SQL) in a
-// source notebook, or a cell line in `.ipynb`.
-const RUN_MAGIC = /^\s*(?:(?:#|--)\s*MAGIC\s+)?%run\b/m;
-
-/**
- * Blanks out SQL comments and string literals, keeping every other character and all
- * line breaks, so matches keep their offsets and `'12:30'` is not read as a parameter.
- */
-function blankSqlCommentsAndStrings(content: string): string {
-  return content.replace(
-    /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"/g,
-    (match) => match.replace(/[^\n]/g, " "),
-  );
-}
-
-/**
- * Widget reads and defaults in a SQL notebook or file
- * (https://docs.databricks.com/aws/en/notebooks/widgets):
- *
- * - `:name` parameter markers, also inside `IDENTIFIER(:name)`. Not `::` casts or
- *   JSON paths such as `raw:owner`, which follow a name.
- * - Legacy `${name}` references, which also work inside string literals.
- * - `CREATE WIDGET TEXT|DROPDOWN|COMBOBOX|MULTISELECT name DEFAULT ...` sets a default.
- */
-function scanSqlWidgets(content: string): { reads: WidgetDetection[]; defaults: string[] } {
-  const reads: WidgetDetection[] = [];
-  const code = blankSqlCommentsAndStrings(content);
-
-  const marker = /(^|[^\w:.$`])(:)([A-Za-z_]\w*)/g;
-  let match: RegExpExecArray | null;
-  while ((match = marker.exec(code)) !== null) {
-    const index = match.index + match[1]!.length;
-    reads.push({
-      line: getStartLine(content, index),
-      raw: getLineText(content, index),
-      name: match[3]!,
-      method: "sqlParameterMarker",
-    });
-  }
-
-  // Legacy references are read from the original text: they are often quoted, e.g. '${date}'.
-  const withoutComments = content.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, (m) =>
-    m.replace(/[^\n]/g, " "),
-  );
-  const legacy = /\$\{([A-Za-z_]\w*)\}/g;
-  while ((match = legacy.exec(withoutComments)) !== null) {
-    reads.push({
-      line: getStartLine(content, match.index),
-      raw: getLineText(content, match.index),
-      name: match[1]!,
-      method: "sqlLegacyReference",
-      note: "${param} is deprecated in Databricks Runtime 15.2 and above; use :param",
-    });
-  }
-
-  const defaults: string[] = [];
-  const create =
-    /\bCREATE\s+WIDGET\s+(?:TEXT|DROPDOWN|COMBOBOX|MULTISELECT)\s+`?([A-Za-z_]\w*)`?/gi;
-  while ((match = create.exec(code)) !== null) defaults.push(match[1]!);
-
-  return { reads: reads.sort((a, b) => a.line - b.line), defaults };
-}
-
 /**
  * Reads how a Python or SQL notebook takes widget parameters.
  */
@@ -660,24 +412,16 @@ export async function detectWidgetUsageInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<WidgetUsage> {
-  const ext = path.extname(filePath).toLowerCase();
-  const content = await fs.readFile(filePath, "utf8");
-  const isSql = fileTypeHint === "sql" || ext === ".sql";
-  const searchContent =
-    !isSql && (fileTypeHint === "notebook" || ext === ".ipynb")
-      ? jupyterNotebookToContent(content)
-      : content;
-  const sql = isSql ? scanSqlWidgets(searchContent) : undefined;
-  const detections = sql ? sql.reads : scanPythonWidgets(searchContent);
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const python = scanPythonWidgets(views.python, views.document);
+  const sql = scanSqlWidgets(views.sql, views.document);
   return {
-    reads: detections.flatMap((d) =>
+    reads: [...python, ...sql.reads].sort(byLine).flatMap((d) =>
       d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line }] : [],
     ),
-    defaults: sql ? sql.defaults : scanPythonWidgetDefaults(searchContent),
-    hasDynamicReads:
-      detections.some((d) => d.name === null) ||
-      (!sql && passesWidgetsObject(searchContent)),
-    runsOtherNotebooks: RUN_MAGIC.test(searchContent),
+    defaults: [...scanPythonWidgetDefaults(views.python), ...sql.defaults],
+    hasDynamicReads: python.some((d) => d.name === null) || passesWidgetsObject(views.python),
+    runsOtherNotebooks: views.runsOtherNotebooks,
   };
 }
 

@@ -21,6 +21,12 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Code is read with real Python and SQL tokenizers instead of patterns.** Widget and secret detection now tells code from strings and comments exactly, and reads each notebook cell in its own language. Checked against every Python, SQL and notebook file in Databricks' bundle-examples and delta-live-tables-notebooks repositories (246 files) and this repository's sample bundles (247 more). Fixes:
+  - Calls inside multi-line `"""` strings and Jupyter markdown cells are no longer read as code.
+  - `%sql` cells in Python notebooks and `%python` cells in SQL notebooks are now read.
+  - A JSON path with a space before the colon, such as `details :cluster_utilization.num_executors`, is no longer taken for a widget.
+  - Legacy `${name}` references inside backtick identifiers are found.
+  - f-strings that reuse their quote inside an expression (Python 3.12) are read correctly.
 - **Notebook and file paths follow the Databricks CLI's rules.** The inspector now reports the same path errors `bundle deploy` would, checked against CLI v1.17.0:
   - A local notebook path without its extension is not found, even when `name.py` exists: "Notebook "../src/ingest" may not be found. Did you mean "../src/ingest.py"?". Pipeline notebooks without an extension were wrongly accepted.
   - A notebook task or pipeline notebook pointing at a file whose first line isn't the Databricks notebook header (for example `-- Databricks notebook source`) "may not be a notebook".
