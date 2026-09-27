@@ -123,6 +123,7 @@ function issueKindLabel(kind) {
       git_source_not_recommended: "Git source warning",
       secret_scope_name_mismatch: "Secret scope name",
       notebook_type_mismatch: "Notebook or file",
+      excluded_from_sync: "Not deployed",
     }[kind] ?? "Issue"
   );
 }
@@ -332,6 +333,7 @@ function buildIssueItems(
             git_source_not_recommended: "Git Source Warnings",
             secret_scope_name_mismatch: "Secret Scope Names",
             notebook_type_mismatch: "Notebook or File Mismatches",
+            excluded_from_sync: "Files Not Deployed",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,

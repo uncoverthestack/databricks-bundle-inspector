@@ -5,6 +5,7 @@ import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
+import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -17,7 +18,8 @@ export type InspectorIssueKind =
   | "unknown_task_type"
   | "git_source_not_recommended"
   | "secret_scope_name_mismatch"
-  | "notebook_type_mismatch";
+  | "notebook_type_mismatch"
+  | "excluded_from_sync";
 
 export interface InspectorIssue {
   id: string;
@@ -126,6 +128,40 @@ function notebookProblemIssue(
   };
 }
 
+/**
+ * A referenced file that exists locally but that `bundle deploy` would not upload.
+ * `bundle validate` passes, so the job or pipeline only fails when it runs.
+ */
+function syncExclusionIssue(
+  filePath: string,
+  exclusion: SyncExclusion,
+  bundleRoot: string,
+): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  if (exclusion.rule === "gitignore") {
+    const gitignore = path
+      .relative(bundleRoot, exclusion.gitignoreFile)
+      .split(path.sep)
+      .join("/");
+    return {
+      kind: "excluded_from_sync",
+      title: `"${filePath}" may not be deployed: it matches ${gitignore}.`,
+      fixHint: `bundle deploy skips gitignored files. Add the file to sync.include in databricks.yml, or remove it from ${gitignore}.`,
+    };
+  }
+  if (exclusion.rule === "sync_exclude") {
+    return {
+      kind: "excluded_from_sync",
+      title: `"${filePath}" may not be deployed: it matches sync.exclude.`,
+      fixHint: "Remove or narrow the sync.exclude pattern in databricks.yml that matches this file.",
+    };
+  }
+  return {
+    kind: "excluded_from_sync",
+    title: `"${filePath}" may not be deployed: .databricks and .git are never synced.`,
+    fixHint: "Move the file out of .databricks or .git.",
+  };
+}
+
 function issueLocation(file?: string, line?: number, column?: number) {
   return {
     ...(file ? { file } : {}),
@@ -167,6 +203,10 @@ export function buildInspectorIssues(
 ): InspectorIssue[] {
   const issues: InspectorIssue[] = [];
   const tasks = graph.nodes.filter((node) => node.nodeType === "task");
+  // With sync.paths the CLI syncs from a different root, which is not modelled.
+  const syncExclusionOf = parsedBundle.sync?.paths?.length
+    ? () => undefined
+    : createSyncExclusion(bundleRoot, parsedBundle.sync);
 
   for (const task of tasks) {
     const taskData = task.taskData;
@@ -220,6 +260,32 @@ export function buildInspectorIssues(
           id: `notebook-path:${task.id}:${ref.yamlPath}:${ref.path}`,
           severity: "error",
           ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          ...issueLocation(
+            ref.sourceFile || sourceFileForTask(task),
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
+        });
+        continue;
+      }
+
+      const exclusion =
+        ref.exists &&
+        ref.resolvedPath &&
+        ref.source !== "GIT" &&
+        ref.referenceType !== "directory" &&
+        ref.referenceType !== "dbt_project" &&
+        !parentJobHasGitSource(graph, task)
+          ? syncExclusionOf(ref.resolvedPath)
+          : undefined;
+      if (exclusion) {
+        issues.push({
+          id: `excluded-from-sync:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "warning",
+          ...syncExclusionIssue(ref.path, exclusion, bundleRoot),
           taskId: task.id,
           taskName: task.displayName,
           yamlPath: ref.yamlPath,
@@ -303,6 +369,21 @@ export function buildInspectorIssues(
           id: `notebook-path:${pipeline.id}:${ref.yamlPath}`,
           severity: "error",
           ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
+      const exclusion =
+        ref.checked && ref.exists && ref.kind !== "glob" && ref.resolvedPath
+          ? syncExclusionOf(ref.resolvedPath)
+          : undefined;
+      if (exclusion) {
+        issues.push({
+          id: `excluded-from-sync:${pipeline.id}:${ref.yamlPath}`,
+          severity: "warning",
+          ...syncExclusionIssue(ref.path, exclusion, bundleRoot),
           resourceId: pipeline.id,
           yamlPath: `${pipeline.id}.${ref.yamlPath}`,
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),

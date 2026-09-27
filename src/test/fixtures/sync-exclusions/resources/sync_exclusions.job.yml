@@ -1,0 +1,29 @@
+resources:
+  jobs:
+    sync_exclusions:
+      name: sync_exclusions
+      tasks:
+        - task_key: gitignored
+          spark_python_task:
+            python_file: ../src/ignored.py
+          environment_key: default
+        - task_key: nested_gitignored
+          spark_python_task:
+            python_file: ../src/nested/nested_ignored.py
+          environment_key: default
+        - task_key: sync_excluded
+          spark_python_task:
+            python_file: ../src/excluded/e.py
+          environment_key: default
+        - task_key: readded_by_include
+          spark_python_task:
+            python_file: ../src/readded.py
+          environment_key: default
+        - task_key: kept
+          spark_python_task:
+            python_file: ../src/kept.py
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
