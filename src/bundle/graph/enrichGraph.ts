@@ -1,5 +1,8 @@
+import { readdirSync } from "node:fs";
+import { extname, join } from "node:path";
 import { detectSecretInNotebook, detectWidgetsInFile } from "../taskFileDetections.js";
-import type { BundleGraph, BundleGraphNode } from "./bundleGraph.js";
+import { matchSecretScope } from "../resources/secretScope.js";
+import { bundleSecretScopes, type BundleGraph, type BundleGraphNode } from "./bundleGraph.js";
 import type { BundleEdge } from "./edges.js";
 
 /**
@@ -32,14 +35,22 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     }
   }
 
-  function secretScopeNodeId(scope: string): string {
-    const resourceNode = [...nodeMap.values()].find(
-      (node) =>
-        node.nodeType === "secret_scope" &&
-        node.resourceGroup === "secret_scopes" &&
-        node.resourceKey === scope,
-    );
-    return resourceNode?.id ?? `secret:${scope}`;
+  const bundleScopes = bundleSecretScopes(graph.nodes);
+
+  /** Adds (or reuses) the node for the scope a secret call names, matched on the scope's real name. */
+  function secretScopeNode(scope: string): string {
+    const match = matchSecretScope(scope, bundleScopes);
+    addNode({
+      id: match.nodeId,
+      kind: "secret_scope",
+      nodeType: "secret_scope",
+      displayName: scope,
+      data: {
+        scope,
+        ...(match.resourceKeyMisuse ? { resourceKeyMisuse: match.resourceKeyMisuse } : {}),
+      },
+    });
+    return match.nodeId;
   }
 
   const localFileNodes = graph.nodes.filter(
@@ -62,20 +73,13 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
 
       for (const detection of secrets) {
         if (!detection.scope) continue;
-        const nodeId = secretScopeNodeId(detection.scope);
-        addNode({
-          id: nodeId,
-          kind: "secret_scope",
-          nodeType: "secret_scope",
-          displayName: detection.scope,
-          data: { scope: detection.scope, key: detection.key ?? undefined },
-        });
+        const nodeId = secretScopeNode(detection.scope);
         addEdge({
           id: `${fileNode.id}->references->${nodeId}`,
           source: fileNode.id,
           target: nodeId,
           kind: "references",
-          data: { line: detection.line, key: detection.key ?? undefined },
+          data: { line: detection.line, key: detection.key ?? undefined, file: resolvedPath },
         });
       }
 
@@ -100,8 +104,66 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     }),
   );
 
+  // Pipeline sources are not file nodes, so scan them here and link secrets to the pipeline.
+  await Promise.all(
+    graph.nodes
+      .filter((node) => node.pipelineLibraries?.length)
+      .flatMap((pipeline) =>
+        pipelineSourceFiles(pipeline).map(async (filePath) => {
+          const secrets = await detectSecretInNotebook(filePath).catch(() => []);
+          for (const detection of secrets) {
+            if (!detection.scope) continue;
+            const nodeId = secretScopeNode(detection.scope);
+            addEdge({
+              id: `${pipeline.id}->secret->${nodeId}@${filePath}:${detection.line}`,
+              source: pipeline.id,
+              target: nodeId,
+              kind: "references",
+              data: { line: detection.line, key: detection.key ?? undefined, file: filePath },
+            });
+          }
+        }),
+      ),
+  );
+
   return {
     nodes: [...nodeMap.values()],
     edges: [...graph.edges, ...newEdges],
   };
+}
+
+const SCANNED_SOURCE_EXTENSIONS = new Set([".py", ".sql", ".ipynb"]);
+/** Upper bound on files read from one pipeline's glob folders, so a huge folder can't stall inspection. */
+const MAX_GLOB_FILES = 200;
+
+/** Local source files of a pipeline: its notebook/file sources and the files its globs cover. */
+function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
+  const files: string[] = [];
+  let globFiles = 0;
+
+  function walk(dir: string, recursive: boolean): void {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (globFiles >= MAX_GLOB_FILES || entry.name.startsWith(".")) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (recursive) walk(full, true);
+      } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+        files.push(full);
+        globFiles += 1;
+      }
+    }
+  }
+
+  for (const ref of pipeline.pipelineLibraries ?? []) {
+    if (!ref.checked || !ref.exists || !ref.resolvedPath) continue;
+    if (ref.kind === "glob" && /\/\*\*?$/.test(ref.path)) walk(ref.resolvedPath, ref.path.endsWith("**"));
+    else files.push(ref.resolvedPath);
+  }
+  return [...new Set(files)];
 }

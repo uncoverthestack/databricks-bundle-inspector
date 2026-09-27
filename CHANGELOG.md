@@ -2,6 +2,20 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Secrets in cluster config are detected.** `{{secrets/<scope>/<key>}}` in `spark_conf` and `spark_env_vars` of job clusters, task clusters, `clusters` resources and pipeline clusters is linked to the scope and to every task using that cluster, at the YAML line.
+- **Secrets used inside `for_each` tasks and in pipeline sources are detected.**
+- **A hint when code names a secret scope by its bundle resource key.** For example `app_scope` where the bundle's scope is named `app-secrets`: "Secret scope "app_scope" may not exist. Did you mean "app-secrets"?"
+
+### Fixed
+
+- **Secret scopes are matched by their real name.** Code using a bundle scope's `name` was shown as an external scope, and code using the resource key, which fails at runtime, was linked to the bundle scope. Bundle scopes are now also shown by their name.
+- **Issues found in code now reach the Problems panel.** The Problems panel was built without reading file contents, so issues found in notebooks and files only showed in the inspector.
+- **Long issue titles wrap to two lines** in the issues panel and a task's issue summary, instead of being cut off. Hover for the full text.
+
 ## [0.1.5] - 2026-09-27
 
 ### Added

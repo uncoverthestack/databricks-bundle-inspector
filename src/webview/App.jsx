@@ -121,6 +121,7 @@ function issueKindLabel(kind) {
       unknown_or_deprecated_field: "Unknown field",
       unknown_task_type: "Unrecognised task type",
       git_source_not_recommended: "Git source warning",
+      secret_scope_name_mismatch: "Secret scope name",
     }[kind] ?? "Issue"
   );
 }
@@ -328,6 +329,7 @@ function buildIssueItems(
             unknown_or_deprecated_field: "Unknown or Deprecated Fields",
             unknown_task_type: "Unrecognised Task Types",
             git_source_not_recommended: "Git Source Warnings",
+            secret_scope_name_mismatch: "Secret Scope Names",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,
@@ -526,6 +528,16 @@ function buildStatPanelItems(
           kind: target.kind,
           computeType: target.nodeType,
         },
+        task.id,
+      );
+    }
+
+    // {{secrets/scope/key}} in the task's cluster config links the task to the scope directly.
+    if (target.nodeType === "secret_scope") {
+      addTaskToMap(
+        secrets,
+        target.id,
+        { title: target.displayName, kind: "secret_scope", detail: "Cluster config" },
         task.id,
       );
     }
@@ -1573,11 +1585,11 @@ function IssueSummarySection({ items, onOpenFile }) {
                 className="mt-0.5 shrink-0 text-red-300"
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-medium text-red-200">
+                <div title={item.title} className="line-clamp-2 text-xs font-medium text-red-200">
                   {item.title}
                 </div>
                 {item.detail && (
-                  <div className="mt-0.5 truncate text-[11px] text-red-200/60">
+                  <div title={item.detail} className="mt-0.5 line-clamp-2 text-[11px] text-red-200/60">
                     {item.detail}
                   </div>
                 )}
@@ -2108,7 +2120,7 @@ function DetailPanel({
   ];
 
   // Secrets discovered in the task's referenced file — clickable, jumps to detected line
-  const secretItems = primaryFileNode
+  const fileSecretItems = primaryFileNode
     ? graph.edges
         .filter(
           (e) => e.source === primaryFileNode.id && e.kind === "references",
@@ -2125,6 +2137,21 @@ function DetailPanel({
         })
         .filter(Boolean)
     : [];
+  // Secrets in the task's cluster config ({{secrets/scope/key}}): jumps to the YAML line
+  const configSecretItems = graph.edges
+    .filter((e) => e.source === nodeId && e.kind === "references")
+    .map((e) => {
+      const n = nodeById.get(e.target);
+      if (!n || n.nodeType !== "secret_scope") return null;
+      return {
+        name: n.displayName,
+        kind: "secret_scope",
+        resolvedPath: e.data?.file ?? null,
+        line: e.data?.line ?? null,
+      };
+    })
+    .filter(Boolean);
+  const secretItems = [...fileSecretItems, ...configSecretItems];
 
   // Parameters/widgets discovered in the task's referenced file — clickable, jumps to detected line
   const widgetItems = primaryFileNode

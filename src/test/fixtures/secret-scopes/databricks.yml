@@ -1,0 +1,9 @@
+bundle:
+  name: secret-scopes
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://example.cloud.databricks.com

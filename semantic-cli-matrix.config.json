@@ -51,6 +51,11 @@
       "name": "pre-release-qa-uc-pipeline-schema",
       "fixture": "src/test/fixtures/pre-release-qa/uc-pipeline-schema",
       "baseline": "src/test/fixtures/baselines/pre-release-qa-uc-pipeline-schema.semantic.json"
+    },
+    {
+      "name": "secret-scopes",
+      "fixture": "src/test/fixtures/secret-scopes",
+      "baseline": "src/test/fixtures/baselines/secret-scopes.semantic.json"
     }
   ]
 }
