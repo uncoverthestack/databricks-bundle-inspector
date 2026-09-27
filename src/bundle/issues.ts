@@ -177,12 +177,32 @@ function widgetParameterIssues(
     const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
     const usage = fileNode?.data.widgetUsage as WidgetUsage | undefined;
     // A notebook that uses %run can get widgets from the notebook it runs.
-    if (!usage || usage.runsOtherNotebooks) continue;
+    if (!usage) continue;
+
+    // Notebooks run with %run use their own widget defaults and the $name="value"
+    // values on the %run line, not the task's parameters.
+    for (const unset of usage.unsetRunReads) {
+      const id = `run-widget-not-set:${task.id}:${unset.file}:${unset.name}`;
+      if (issues.some((issue) => issue.id === id)) continue;
+      issues.push({
+        id,
+        severity: "warning",
+        kind: "widget_parameter_mismatch",
+        title: `Notebook "${unset.target}", run with %run, reads widget "${unset.name}", which may not be set.`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        fixHint: `%run runs a notebook with its own widget defaults and the values on the %run line. Pass it with %run ${unset.target} $${unset.name}="<value>", or give the widget a default in that notebook.`,
+        ...issueLocation(unset.file, unset.line),
+      });
+    }
+    // A %run the inspector can't follow can define widgets it doesn't see.
+    if (usage.hasUnresolvedRuns) continue;
 
     const taskParameters = taskData.taskParameterReferences;
     const passed = new Set([...taskParameters.map((p) => p.name), ...jobParameterNames]);
     const defaults = new Set(usage.defaults);
-    const readNames = new Set(usage.reads.map((read) => read.name));
+    const readNames = new Set([...usage.reads.map((read) => read.name), ...usage.runReadNames]);
     const unreadParameters = [...passed].filter((name) => !readNames.has(name));
     const suggested = new Set<string>();
     const reported = new Set<string>();

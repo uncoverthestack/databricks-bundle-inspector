@@ -14,6 +14,7 @@ Notebook tasks pass `base_parameters`, and the job's `parameters`, to the notebo
 | `sql_notebook` | legacy `'${region}'` | nothing | Warning: may not pass `region` |
 | `sql_notebook` | `ts::string`, `raw:owner`, `'12:30'` | | Not widgets: a cast, a JSON path, a string |
 | `runs_shared` | `from_shared_notebook` | nothing | No issue: `%run` may define it |
+| `runs_child` | `catalog`; its `%run ./child_setup $env="prod"` reads `env`, `region`, `batch_id` | job parameter `catalog`, `region` | `%run` runs `child_setup` with its own defaults and the `$env` value, not the task's parameters ([docs](https://docs.databricks.com/aws/en/notebooks/widgets)). `env` is passed, `region` has a default. Warning: `batch_id` may not be set. `region` is read by the child, so no "may not be used" note |
 | `dynamic_reads` | a name held in a variable | `a`, `c` | Info: not checked whether the notebook uses `a`, `c`, because the names are only known at runtime |
 | `widgets_object` | `dashboard_id` via `dbutils.widgets.text`, the rest through `load_config(widgets=dbutils.widgets)` | `dashboard_id`, `warehouse_id` | Info: not checked whether the notebook uses `warehouse_id` (`dashboard_id` is defined), because the widgets object is passed to other code, as in Databricks' own bundle-examples |
 | `for_each_item` inner task | `missing_inner` | only `item` | Warning: may not pass `missing_inner` |

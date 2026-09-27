@@ -694,7 +694,9 @@ describe("detectWidgetUsageInFile — SQL", () => {
       ],
       defaults: ["catalog", "state"],
       hasDynamicReads: false,
-      runsOtherNotebooks: true,
+      hasUnresolvedRuns: true,
+      runReadNames: [],
+      unsetRunReads: [],
     });
   });
 });
@@ -732,7 +734,9 @@ describe("detectWidgetUsageInFile — Python", () => {
       reads: [{ name: "catalog", line: 4 }],
       defaults: ["catalog", "env"],
       hasDynamicReads: true,
-      runsOtherNotebooks: false,
+      hasUnresolvedRuns: false,
+      runReadNames: [],
+      unsetRunReads: [],
     });
   });
 });

@@ -200,7 +200,9 @@ describe("dbutils under other names", () => {
       defaults: ["run_date"],
       // `w = dbutils.widgets` is followed, not treated as passing the widgets on.
       hasDynamicReads: false,
-      runsOtherNotebooks: false,
+      hasUnresolvedRuns: false,
+      runReadNames: [],
+      unsetRunReads: [],
     });
   });
 

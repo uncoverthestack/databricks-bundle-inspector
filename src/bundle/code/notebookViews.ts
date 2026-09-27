@@ -25,6 +25,30 @@ export interface NotebookViews {
   sql: string;
   /** A `%run` cell, which can define widgets and variables in another notebook. */
   runsOtherNotebooks: boolean;
+  /** Each `%run`: the notebook path as written, the `$name="value"` widget values it passes, and its line. */
+  runs: NotebookRun[];
+}
+
+export interface NotebookRun {
+  target: string;
+  args: Record<string, string>;
+  line: number;
+}
+
+/**
+ * Reads a `%run` line: `%run ./shared $env="dev" $limit=10`
+ * (https://docs.databricks.com/aws/en/notebooks/widgets).
+ */
+function parseRun(text: string, line: number): NotebookRun | undefined {
+  const match = /%run\s+(\S+)(.*)$/.exec(text);
+  if (!match) return undefined;
+  const args: Record<string, string> = {};
+  const argument = /\$(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  let arg: RegExpExecArray | null;
+  while ((arg = argument.exec(match[2] ?? "")) !== null) {
+    args[arg[1]!] = arg[2] ?? arg[3] ?? arg[4] ?? "";
+  }
+  return { target: match[1]!, args, line };
 }
 
 type CellLanguage = CodeLanguage | "other";
@@ -46,7 +70,7 @@ function magicLanguage(magic: string): CellLanguage {
   return MAGIC_LANGUAGE[magic.toLowerCase()] ?? "other";
 }
 
-function buildViews(lines: Line[], runsOtherNotebooks: boolean): NotebookViews {
+function buildViews(lines: Line[], runs: NotebookRun[]): NotebookViews {
   const view = (language: CodeLanguage) =>
     lines
       .map((line) =>
@@ -59,7 +83,8 @@ function buildViews(lines: Line[], runsOtherNotebooks: boolean): NotebookViews {
     document: lines.map((line) => line.text).join("\n"),
     python: view("python"),
     sql: view("sql"),
-    runsOtherNotebooks,
+    runsOtherNotebooks: runs.length > 0,
+    runs,
   };
 }
 
@@ -70,7 +95,7 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
   const magicLine = new RegExp(`^${comment} MAGIC\\s*%(\\w+)`);
 
   const lines: Line[] = [];
-  let runsOtherNotebooks = false;
+  const runs: NotebookRun[] = [];
   let cellLanguage: CellLanguage = language;
   let atCellStart = true;
 
@@ -87,7 +112,10 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
       continue;
     }
     const magic = magicLine.exec(text);
-    if (magic?.[1]?.toLowerCase() === "run") runsOtherNotebooks = true;
+    if (magic?.[1]?.toLowerCase() === "run") {
+      const run = parseRun(text, lines.length + 1);
+      if (run) runs.push(run);
+    }
     if (atCellStart && text.trim() !== "") {
       atCellStart = false;
       if (magic) {
@@ -100,7 +128,7 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
     const prefix = cellLanguage !== language ? magicPrefix.exec(text) : null;
     lines.push({ text, language: cellLanguage, markupLength: prefix ? prefix[0].length : 0 });
   }
-  return buildViews(lines, runsOtherNotebooks);
+  return buildViews(lines, runs);
 }
 
 interface JupyterNotebook {
@@ -122,19 +150,22 @@ function jupyterLines(raw: string): NotebookViews {
   const notebookLanguage = magicLanguage(declared);
 
   const lines: Line[] = [];
-  let runsOtherNotebooks = false;
+  const runs: NotebookRun[] = [];
   for (const cell of notebook.cells ?? []) {
     const source = Array.isArray(cell.source) ? cell.source.join("") : (cell.source ?? "");
     const cellLines = source.split("\n");
     const isCode = (cell.cell_type ?? "code") === "code";
     const magic = isCode ? /^\s*%(\w+)/.exec(cellLines[0] ?? "") : null;
-    if (magic?.[1]?.toLowerCase() === "run") runsOtherNotebooks = true;
+    if (magic?.[1]?.toLowerCase() === "run") {
+      const run = parseRun(cellLines[0] ?? "", lines.length + 1);
+      if (run) runs.push(run);
+    }
     const language: CellLanguage = !isCode ? "other" : magic ? magicLanguage(magic[1]!) : notebookLanguage;
     cellLines.forEach((text, index) => {
       lines.push({ text, language: magic && index === 0 ? "other" : language, markupLength: 0 });
     });
   }
-  return buildViews(lines, runsOtherNotebooks);
+  return buildViews(lines, runs);
 }
 
 /**
@@ -150,5 +181,5 @@ export function notebookViews(
   const lines = content
     .split("\n")
     .map((text): Line => ({ text, language: options.fileLanguage, markupLength: 0 }));
-  return buildViews(lines, false);
+  return buildViews(lines, []);
 }

@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { notebookViews, type NotebookViews } from "./code/notebookViews.js";
@@ -77,13 +78,17 @@ interface DbutilsNames {
   dbutils: Set<string>;
   /** Variables holding a Databricks SDK `WorkspaceClient`. */
   workspaceClients: Set<string>;
+  /** Names the `WorkspaceClient` class is imported as. */
+  clientClasses: Set<string>;
   /** Variable name to the dbutils module it holds (`widgets`, `secrets`, ...). */
   modules: Map<string, string>;
   /** Offsets of `dbutils.<module>` that only feed such an assignment. */
   assignedModuleOffsets: Set<number>;
 }
 
-const DBUTILS_FACTORIES = new Set(["DBUtils", "get_dbutils"]);
+// `DBUtils` is the class in `pyspark.dbutils`; `get_dbutils` is not an API but the
+// helper name Databricks examples use to build one, so it is matched by convention.
+const DBUTILS_FACTORIES = ["DBUtils", "get_dbutils"];
 
 function isOp(token: PythonToken | undefined, value: string): boolean {
   return token?.kind === "op" && token.value === value;
@@ -113,15 +118,19 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
   const names: DbutilsNames = {
     dbutils: new Set(["dbutils"]),
     workspaceClients: new Set(),
+    clientClasses: new Set(["WorkspaceClient"]),
     modules: new Map(),
     assignedModuleOffsets: new Set(),
   };
-  // `import ... dbutils as dbu`
+  const factories = new Set(DBUTILS_FACTORIES);
+  const clientClasses = names.clientClasses;
+  // Imports under another name: `import ... dbutils as dbu`, `DBUtils as DBU`, `WorkspaceClient as WC`.
   tokens.forEach((token, i) => {
-    if (token.kind === "name" && token.value === "dbutils" && tokens[i + 1]?.value === "as") {
-      const alias = tokens[i + 2];
-      if (alias?.kind === "name") names.dbutils.add(alias.value);
-    }
+    const alias = tokens[i + 2];
+    if (token.kind !== "name" || tokens[i + 1]?.value !== "as" || alias?.kind !== "name") return;
+    if (token.value === "dbutils") names.dbutils.add(alias.value);
+    if (token.value === "DBUtils") factories.add(alias.value);
+    if (token.value === "WorkspaceClient") clientClasses.add(alias.value);
   });
   // Twice, so an alias of an alias (`a = dbutils`, `b = a`) is found too.
   for (let pass = 0; pass < 2; pass++) {
@@ -137,14 +146,14 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
       const chainEnd = primaryExpressionEnd(tokens, i + 2);
       const last = tokens[chainEnd - 1];
       const clientCall = isOp(after, "(") ? readArguments(tokens, i + 3) : undefined;
-      if (value.value === "WorkspaceClient" && clientCall && chainEnd === clientCall.close + 1) {
+      if (clientClasses.has(value.value) && clientCall && chainEnd === clientCall.close + 1) {
         names.workspaceClients.add(target.value);
       } else if (chainEnd > i + 3 && last?.kind === "name" && last.value === "dbutils") {
         // `dbutils = w.dbutils` or `dbu = WorkspaceClient().dbutils`
         names.dbutils.add(target.value);
       } else if (names.dbutils.has(value.value) && !isOp(after, ".") && !isOp(after, "(")) {
         names.dbutils.add(target.value);
-      } else if (DBUTILS_FACTORIES.has(value.value) && isOp(after, "(")) {
+      } else if (factories.has(value.value) && isOp(after, "(")) {
         names.dbutils.add(target.value);
       } else if (names.dbutils.has(value.value) && isOp(after, ".")) {
         const module = tokens[i + 4];
@@ -247,7 +256,7 @@ function sdkSecretCalls(
     if (names.workspaceClients.has(token.value) && !isOp(tokens[i - 1], ".")) {
       secretsIndex = i + 2;
       if (!isOp(tokens[i + 1], ".")) return;
-    } else if (token.value === "WorkspaceClient" && isOp(tokens[i + 1], "(")) {
+    } else if (names.clientClasses.has(token.value) && isOp(tokens[i + 1], "(")) {
       const client = readArguments(tokens, i + 1);
       if (!client || !isOp(tokens[client.close + 1], ".")) return;
       secretsIndex = client.close + 2;
@@ -561,27 +570,97 @@ export interface WidgetUsage {
    * or `dbutils.widgets` passed to other code, e.g. `helper(widgets=dbutils.widgets)`.
    */
   hasDynamicReads: boolean;
-  runsOtherNotebooks: boolean;
+  /**
+   * A `%run` the inspector could not follow: a workspace path, a missing file, or
+   * one nested too deep. That notebook can define widgets the inspector does not see.
+   */
+  hasUnresolvedRuns: boolean;
+  /** Widget names read by notebooks this one runs with `%run`. */
+  runReadNames: string[];
+  /**
+   * Widgets read by a notebook run with `%run` that neither the `%run` line passes
+   * (`$name="value"`) nor that notebook gives a default. `%run` runs a notebook with
+   * its own widget defaults (https://docs.databricks.com/aws/en/notebooks/widgets).
+   */
+  unsetRunReads: Array<{ name: string; line: number; file: string; target: string }>;
+}
+
+const NOTEBOOK_FILE_EXTENSIONS = [".py", ".sql", ".ipynb"];
+const MAX_RUN_DEPTH = 5;
+
+/**
+ * The local file a `%run` path points at. Only relative paths (`./x`, `../x`) are
+ * local; `%run` paths name notebooks without their extension.
+ */
+function resolveRunTarget(fromFile: string, target: string): string | undefined {
+  if (!target.startsWith("./") && !target.startsWith("../")) return undefined;
+  const base = path.resolve(path.dirname(fromFile), target);
+  for (const candidate of [base, ...NOTEBOOK_FILE_EXTENSIONS.map((ext) => base + ext)]) {
+    try {
+      if (statSync(candidate).isFile() && NOTEBOOK_FILE_EXTENSIONS.includes(path.extname(candidate).toLowerCase())) {
+        return candidate;
+      }
+    } catch {
+      // Try the next extension.
+    }
+  }
+  return undefined;
 }
 
 /**
- * Reads how a Python or SQL notebook takes widget parameters.
+ * Reads how a Python or SQL notebook takes widget parameters, following `%run` into
+ * the notebooks it runs.
  */
 export async function detectWidgetUsageInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
+  visited: ReadonlySet<string> = new Set([path.resolve(filePath)]),
 ): Promise<WidgetUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const python = scanPythonWidgets(views.python, views.document);
   const sql = scanSqlWidgets(views.sql, views.document);
-  return {
+  const usage: WidgetUsage = {
     reads: [...python, ...sql.reads].sort(byLine).flatMap((d) =>
       d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line }] : [],
     ),
     defaults: [...scanPythonWidgetDefaults(views.python), ...sql.defaults],
     hasDynamicReads: python.some((d) => d.name === null) || passesWidgetsObject(views.python),
-    runsOtherNotebooks: views.runsOtherNotebooks,
+    hasUnresolvedRuns: false,
+    runReadNames: [],
+    unsetRunReads: [],
   };
+
+  for (const run of views.runs) {
+    const target = resolveRunTarget(filePath, run.target);
+    if (!target || visited.size > MAX_RUN_DEPTH) {
+      usage.hasUnresolvedRuns = true;
+      continue;
+    }
+    if (visited.has(target)) continue;
+    let child: WidgetUsage;
+    try {
+      child = await detectWidgetUsageInFile(target, undefined, new Set([...visited, target]));
+    } catch {
+      usage.hasUnresolvedRuns = true;
+      continue;
+    }
+    // Widgets the run notebook defines exist for this notebook too.
+    usage.defaults.push(...child.defaults);
+    usage.hasDynamicReads ||= child.hasDynamicReads;
+    usage.hasUnresolvedRuns ||= child.hasUnresolvedRuns;
+    usage.runReadNames.push(...child.reads.map((read) => read.name), ...child.runReadNames);
+    usage.unsetRunReads.push(...child.unsetRunReads);
+    // A notebook that itself runs one we can't see may get its widgets from there.
+    if (child.hasUnresolvedRuns || child.hasDynamicReads) continue;
+    const childDefaults = new Set(child.defaults);
+    const reported = new Set<string>();
+    for (const read of child.reads) {
+      if (read.name in run.args || childDefaults.has(read.name) || reported.has(read.name)) continue;
+      reported.add(read.name);
+      usage.unsetRunReads.push({ name: read.name, line: read.line, file: target, target: run.target });
+    }
+  }
+  return usage;
 }
 
 export type SourceFormatNotebook = "SQLSourceNotebook" | "PythonSourceNotebook";
