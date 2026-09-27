@@ -242,29 +242,34 @@ describe("dbutils under other names", () => {
 });
 
 describe("dbutils in any form", () => {
-  test("finds widget reads whatever the receiver is called", async () => {
+  // In Databricks' own examples every widget and secret call is on `dbutils` itself
+  // (589 widget and 38 secret calls), so only receivers traceable to dbutils count.
+  test("finds reads on receivers traceable to dbutils", async () => {
     const f = await file(
-      "any-receiver.py",
+      "traced-receivers.py",
       [
         "from databricks.sdk.runtime import (dbutils, spark)",
-        "def main(dbu):",
-        '    return dbu.widgets.get("from_param")',
         "class Job:",
         "    def run(self):",
         '        self.dbutils.widgets.get("from_attribute")',
         '        get_dbutils(spark).widgets.get("from_helper")',
-        '        ctx["dbu"].widgets.get("from_index")',
+        '        dbutils.widgets.get("direct")',
       ].join("\n"),
     );
     const usage = await detectWidgetUsageInFile(f);
-    expect(usage.reads.map((r) => r.name)).toEqual([
-      "from_param",
-      "from_attribute",
-      "from_helper",
-      "from_index",
-    ]);
+    expect(usage.reads.map((r) => r.name)).toEqual(["from_attribute", "from_helper", "direct"]);
     // A name in an import list is not dbutils being handed to other code.
     expect(usage.hasDynamicReads).toBe(false);
+  });
+
+  test("doesn't claim reads on receivers it can't trace, and says so", async () => {
+    const f = await file(
+      "untraced-receivers.py",
+      ["def load(d):", '    return d.widgets.get("region")', 'x = ctx["dbu"].widgets.get("other")'].join("\n"),
+    );
+    const usage = await detectWidgetUsageInFile(f);
+    expect(usage.reads).toEqual([]);
+    expect(usage.hasDynamicReads).toBe(true);
   });
 
   test("treats dbutils handed to other code as reads it can't see", async () => {
@@ -272,12 +277,20 @@ describe("dbutils in any form", () => {
     expect((await detectWidgetUsageInFile(f)).hasDynamicReads).toBe(true);
   });
 
-  test("needs a scope and a key before an unknown receiver's secrets.get counts", async () => {
+  test("counts secrets only on receivers traceable to dbutils", async () => {
     const f = await file(
-      "secrets-shape.py",
-      ['cfg.secrets.get("password")', 'self.dbutils.secrets.get(scope="s", key="k")'].join("\n"),
+      "secrets-receivers.py",
+      [
+        'a = d.secrets.get("my-scope", "my-key")',
+        'b = settings.secrets.get("db", "pw")',
+        'c = self.dbutils.secrets.get(scope="s", key="k")',
+        'e = get_dbutils(spark).secrets.get("s-helper", "k")',
+      ].join("\n"),
     );
-    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([[2, "s", "k"]]);
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([
+      [3, "s", "k"],
+      [4, "s-helper", "k"],
+    ]);
   });
 
   test("follows classes imported under another name", async () => {

@@ -24,7 +24,7 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
 
 - `.py` and `.sql` files, Jupyter notebooks (`.ipynb`), and Databricks source-format notebooks.
 - `%python` and `%sql` cells inside a notebook of the other language, each read in its own language.
-- `dbutils` in any form: `dbutils`, a variable or parameter holding it, `DBUtils(spark)`, or the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`).
+- `dbutils` wherever it can be traced: `dbutils` itself (also as `self.dbutils`), a variable assigned from it, `DBUtils(spark)` or `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`). A call on something that can't be traced, such as a function parameter named `d`, isn't counted; a widget read there makes the inspector say it couldn't check that notebook.
 
 **Scala and R are not read.** `.scala` and `.r` notebooks, and `%scala` and `%r` cells, are skipped, so secrets, widgets and task values in them are not found. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
 

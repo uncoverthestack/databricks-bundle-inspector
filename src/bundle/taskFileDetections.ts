@@ -80,6 +80,8 @@ interface DbutilsNames {
   workspaceClients: Set<string>;
   /** Names the `WorkspaceClient` class is imported as. */
   clientClasses: Set<string>;
+  /** Calls that return dbutils: `DBUtils(spark)`, `get_dbutils(spark)`, and import aliases of them. */
+  factories: Set<string>;
   /** Variable name to the dbutils module it holds (`widgets`, `secrets`, ...). */
   modules: Map<string, string>;
   /** Offsets of `dbutils.<module>` that only feed such an assignment. */
@@ -119,10 +121,11 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
     dbutils: new Set(["dbutils"]),
     workspaceClients: new Set(),
     clientClasses: new Set(["WorkspaceClient"]),
+    factories: new Set(DBUTILS_FACTORIES),
     modules: new Map(),
     assignedModuleOffsets: new Set(),
   };
-  const factories = new Set(DBUTILS_FACTORIES);
+  const factories = names.factories;
   const clientClasses = names.clientClasses;
   // Imports under another name: `import ... dbutils as dbu`, `DBUtils as DBU`, `WorkspaceClient as WC`.
   tokens.forEach((token, i) => {
@@ -168,11 +171,34 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
   return names;
 }
 
+/**
+ * Whether the receiver ending at `tokens[end]` can be traced to dbutils: a name
+ * dbutils goes by (`dbutils`, `self.dbutils`, `w.dbutils`, `dbu = dbutils`), or a
+ * call that returns it (`DBUtils(spark)`, `get_dbutils(spark)`).
+ */
+function isDbutilsReceiver(tokens: PythonToken[], end: number, names: DbutilsNames): boolean {
+  const receiver = tokens[end];
+  if (receiver?.kind === "name") return names.dbutils.has(receiver.value);
+  if (!isOp(receiver, ")")) return false;
+  let depth = 0;
+  for (let i = end; i >= 0; i--) {
+    if (isOp(tokens[i], ")")) depth += 1;
+    else if (isOp(tokens[i], "(")) {
+      depth -= 1;
+      if (depth === 0) {
+        const callee = tokens[i - 1];
+        return callee?.kind === "name" && names.factories.has(callee.value);
+      }
+    }
+  }
+  return false;
+}
+
 interface DbutilsCall {
   method: string;
   args: PythonArgument[];
   offset: number;
-  /** Whether the receiver is known to be dbutils (see {@link dbutilsNames}). */
+  /** Whether the receiver can be traced to dbutils (see {@link isDbutilsReceiver}). */
   knownReceiver: boolean;
 }
 
@@ -208,7 +234,7 @@ function dbutilsCalls(
       const receiver = tokens[i - 1];
       if (!receiver || !(receiver.kind === "name" || isOp(receiver, ")") || isOp(receiver, "]"))) continue;
       methodIndex = i + 3;
-      knownReceiver = receiver.kind === "name" && names.dbutils.has(receiver.value);
+      knownReceiver = isDbutilsReceiver(tokens, i - 1, names);
       offset = receiver.start;
     } else if (token.kind === "name" && names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
       // `<module variable>.<method>(`
@@ -256,13 +282,11 @@ function scanPythonSecrets(view: string, document: string): SecretDetection[] {
     scope: literalValue(argument(call.args, "scope", 0)),
     key: literalValue(argument(call.args, "key", 1)),
   });
-  // Through an unknown receiver, only the full shape counts as a secret read:
-  // `config.secrets.get("password")` on a plain dict has no scope and key.
+  // Only calls on something traceable to dbutils: `settings.secrets.get("db", "pw")`
+  // on a plain object has the same shape. In Databricks' own examples every
+  // `.secrets.get` is called on `dbutils` itself.
   const secretCalls = dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names).filter(
-    (call) =>
-      call.knownReceiver ||
-      (literalValue(argument(call.args, "scope", 0)) !== null &&
-        literalValue(argument(call.args, "key", 1)) !== null),
+    (call) => call.knownReceiver,
   );
   return [...secretCalls, ...sdkSecretCalls(tokens, names)]
     .sort((a, b) => a.offset - b.offset)
@@ -408,7 +432,12 @@ function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
       const detection: WidgetDetection = {
         line: getStartLine(document, call.offset),
         raw: getLineText(document, call.offset),
-        name: method === "getAll" ? null : literalValue(argument(call.args, "name", 0)),
+        // A read on something not traceable to dbutils isn't claimed as a named read,
+        // but still marks the notebook as reading widgets the inspector can't check.
+        name:
+          method === "getAll" || !call.knownReceiver
+            ? null
+            : literalValue(argument(call.args, "name", 0)),
         method,
       };
       if (method === "getArgument") detection.note = WIDGET_DEPRECATED_NOTE;
@@ -417,7 +446,10 @@ function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
   );
 }
 
-/** Widgets created with a default in Python: `text`, `dropdown`, `combobox`, `multiselect`. */
+/**
+ * Widgets created with a default in Python: `text`, `dropdown`, `combobox`, `multiselect`.
+ * Counted whatever the receiver is: a default can only suppress a warning.
+ */
 function scanPythonWidgetDefaults(view: string): string[] {
   return dbutilsCalls(tokenizePython(view), "widgets", [
     "text",
@@ -752,9 +784,15 @@ export interface TaskValueUsage {
   runsOtherNotebooks: boolean;
 }
 
-/** `<receiver>.jobs.taskValues.<set|get>(...)`, whatever the receiver is called. */
-function taskValueCalls(tokens: PythonToken[]): Array<{ method: string; args: PythonArgument[]; offset: number }> {
-  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+/**
+ * `<receiver>.jobs.taskValues.<set|get>(...)`, and whether the receiver can be traced
+ * to dbutils (see {@link isDbutilsReceiver}).
+ */
+function taskValueCalls(
+  tokens: PythonToken[],
+): Array<{ method: string; args: PythonArgument[]; offset: number; knownReceiver: boolean }> {
+  const names = dbutilsNames(tokens);
+  const calls: Array<{ method: string; args: PythonArgument[]; offset: number; knownReceiver: boolean }> = [];
   tokens.forEach((token, i) => {
     if (!isOp(token, ".") || tokens[i + 1]?.value !== "jobs" || !isOp(tokens[i + 2], ".")) return;
     if (tokens[i + 3]?.value !== "taskValues" || !isOp(tokens[i + 4], ".")) return;
@@ -764,7 +802,14 @@ function taskValueCalls(tokens: PythonToken[]): Array<{ method: string; args: Py
     if (method?.kind !== "name" || (method.value !== "set" && method.value !== "get")) return;
     if (!isOp(tokens[i + 6], "(")) return;
     const call = readArguments(tokens, i + 6);
-    if (call) calls.push({ method: method.value, args: call.args, offset: receiver.start });
+    if (call) {
+      calls.push({
+        method: method.value,
+        args: call.args,
+        offset: receiver.start,
+        knownReceiver: isDbutilsReceiver(tokens, i - 1, names),
+      });
+    }
   });
   return calls;
 }
@@ -778,8 +823,10 @@ export async function detectTaskValuesInFile(
   for (const call of taskValueCalls(tokenizePython(views.python))) {
     const line = getStartLine(views.document, call.offset);
     if (call.method === "set") {
-      usage.sets.push({ key: literalValue(argument(call.args, "key", 0)), line });
-    } else {
+      // A set on an unknown receiver makes the task's keys unknown, which only
+      // suppresses warnings.
+      usage.sets.push({ key: call.knownReceiver ? literalValue(argument(call.args, "key", 0)) : null, line });
+    } else if (call.knownReceiver) {
       usage.gets.push({
         taskKey: literalValue(argument(call.args, "taskKey", 0)),
         key: literalValue(argument(call.args, "key", 1)),
