@@ -36,3 +36,4 @@ semantic-cli-matrix.local.json
 .env
 .claude/*.local.json
 repo-audit
+.release-private

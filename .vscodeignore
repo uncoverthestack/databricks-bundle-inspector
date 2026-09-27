@@ -3,6 +3,8 @@
 .github/**
 .devcontainer/**
 .claude/**
+.release-private/**
+.mypy_cache/**
 .test-artifacts/**
 .tools/**
 node_modules/**
@@ -27,6 +29,7 @@ vsc-extension-quickstart.md
 **/.vscode-test.*
 package-lock.json
 .env
+.telemetry-state.json
 *sample-data
 Steps.md
 checks.md
