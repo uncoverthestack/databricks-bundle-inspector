@@ -899,3 +899,23 @@ describe("buildTaskNodeData: taskType covers every schema task type", () => {
     expect(result.taskType).toBe("unknown");
   });
 });
+
+describe("buildTaskNodeData: workspace paths are not checked locally", () => {
+  test.each([
+    "/Users/someone@example.com/notebooks/ingest",
+    "/Shared/notebooks/ingest",
+    "/Repos/someone/project/ingest",
+    "/Workspace/Users/someone/ingest",
+  ])("%s is not reported as a missing local file", (notebookPath) => {
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: notebookPath } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(result.fileReferences).toMatchObject([
+      { path: notebookPath, resolvedPath: undefined, exists: false },
+    ]);
+  });
+});

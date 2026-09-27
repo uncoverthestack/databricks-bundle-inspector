@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import path from "node:path";
-import { buildInspectorIssues } from "../../../bundle/issues.js";
+import { buildInspectorIssues, issueBelongsToJob } from "../../../bundle/issues.js";
 import type {
   BundleGraph,
   BundleGraphNode,
@@ -398,6 +398,7 @@ describe("buildInspectorIssues", () => {
         title: "invalid bundle",
         fixHint: "Review the Databricks CLI validation diagnostic.",
         yamlPath: "resources.pipelines.p1",
+        resourceId: "resources.pipelines.p1",
         file: path.resolve("/workspace/demo", "resources/pipelines.yml"),
         line: 6,
         column: 7,
@@ -431,5 +432,126 @@ describe("buildInspectorIssues", () => {
         "/workspace/demo",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("pipeline issues and job scoping", () => {
+  const pipelineNode: BundleGraphNode = {
+    id: "resources.pipelines.bronze",
+    kind: "pipeline",
+    nodeType: "resource",
+    displayName: "bronze",
+    data: {},
+    pipelineLibraries: [
+      {
+        kind: "notebook",
+        path: "../src/dlt/missing.py",
+        resolvedPath: "/workspace/demo/src/dlt/missing.py",
+        exists: false,
+        checked: true,
+        sourceFile: "/workspace/demo/resources/pipelines.yml",
+        sourceLine: 9,
+        sourceColumn: 19,
+        yamlPath: "libraries[0].notebook.path",
+      },
+      {
+        kind: "glob",
+        path: "../src/dlt/empty/**",
+        resolvedPath: "/workspace/demo/src/dlt/empty",
+        exists: false,
+        checked: true,
+        sourceFile: "/workspace/demo/resources/pipelines.yml",
+        sourceLine: 11,
+        sourceColumn: 22,
+        yamlPath: "libraries[1].glob.include",
+      },
+      {
+        kind: "notebook",
+        path: "/Users/someone/bronze",
+        resolvedPath: undefined,
+        exists: false,
+        checked: false,
+        sourceFile: "/workspace/demo/resources/pipelines.yml",
+        sourceLine: 13,
+        yamlPath: "libraries[2].notebook.path",
+      },
+    ],
+  };
+
+  test("reports missing pipeline sources against the pipeline, not a task", () => {
+    const issues = buildInspectorIssues(
+      { nodes: [pipelineNode], edges: [] },
+      { bundle: { name: "demo" } },
+      [],
+      "/workspace/demo",
+    );
+
+    expect(issues).toEqual([
+      {
+        id: "missing-pipeline-source:resources.pipelines.bronze:libraries[0].notebook.path",
+        severity: "error",
+        kind: "missing_file",
+        title: "Missing pipeline source file",
+        detail: "../src/dlt/missing.py",
+        resourceId: "resources.pipelines.bronze",
+        yamlPath: "resources.pipelines.bronze.libraries[0].notebook.path",
+        fixHint: "Create the file or update the path in the pipeline's libraries.",
+        file: "/workspace/demo/resources/pipelines.yml",
+        line: 9,
+        column: 19,
+      },
+      {
+        id: "missing-pipeline-source:resources.pipelines.bronze:libraries[1].glob.include",
+        severity: "error",
+        kind: "missing_file",
+        title: "Pipeline source folder has no files",
+        detail: "../src/dlt/empty/**",
+        resourceId: "resources.pipelines.bronze",
+        yamlPath: "resources.pipelines.bronze.libraries[1].glob.include",
+        fixHint:
+          "Add the pipeline source files, or update the glob include path in the pipeline's libraries.",
+        file: "/workspace/demo/resources/pipelines.yml",
+        line: 11,
+        column: 22,
+      },
+    ]);
+  });
+
+  test("ties CLI diagnostics to the resource their yaml path points into", () => {
+    const issues = buildInspectorIssues(
+      { nodes: [], edges: [] },
+      { bundle: { name: "demo" } },
+      [
+        {
+          code: "BUNDLE_DIAGNOSTICS",
+          message: "Databricks CLI reported bundle diagnostics.",
+          diagnostics: [
+            { severity: "warning", message: "unknown field: a", yamlPath: "resources.pipelines.gold.trigger.cron" },
+            { severity: "warning", message: "unknown field: b", yamlPath: "resources.jobs.ingest.tasks[0]" },
+            { severity: "warning", message: "unknown field: c" },
+          ],
+        },
+      ],
+      "/workspace/demo",
+    );
+
+    expect(issues.map((issue) => [issue.detail, issue.resourceId])).toEqual([
+      ["a", "resources.pipelines.gold"],
+      ["b", "resources.jobs.ingest"],
+      ["c", undefined],
+    ]);
+  });
+
+  test("a job lists its own task and job issues and bundle-wide ones, not another resource's", () => {
+    const taskIds = new Set(["resources.jobs.ingest.tasks.extract"]);
+    const belongs = (issue: { taskId?: string; resourceId?: string }) =>
+      issueBelongsToJob(issue, "resources.jobs.ingest", taskIds);
+
+    expect(belongs({ taskId: "resources.jobs.ingest.tasks.extract" })).toBe(true);
+    expect(belongs({ taskId: "resources.jobs.other.tasks.load" })).toBe(false);
+    expect(belongs({ resourceId: "resources.jobs.ingest" })).toBe(true);
+    expect(belongs({ resourceId: "resources.jobs.other" })).toBe(false);
+    expect(belongs({ resourceId: "resources.pipelines.bronze" })).toBe(false);
+    expect(belongs({})).toBe(true);
   });
 });

@@ -305,7 +305,13 @@ function buildIssueItems(
   );
   if (inspectorIssues.length > 0) {
     return inspectorIssues
-      .filter((issue) => !issue.taskId || jobTaskIds.has(issue.taskId))
+      // Same rule as issueBelongsToJob in src/bundle/issues.ts: the job's own tasks,
+      // the job itself, or bundle-wide. Issues on another resource (e.g. a pipeline) are left out.
+      .filter((issue) =>
+        issue.taskId
+          ? jobTaskIds.has(issue.taskId)
+          : !issue.resourceId || issue.resourceId === jobNode?.id,
+      )
       .map((issue) => ({
         id: issue.id,
         group:
