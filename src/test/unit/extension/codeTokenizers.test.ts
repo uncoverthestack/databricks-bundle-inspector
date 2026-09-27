@@ -239,3 +239,62 @@ describe("dbutils under other names", () => {
     ]);
   });
 });
+
+describe("dbutils in any form", () => {
+  test("finds widget reads whatever the receiver is called", async () => {
+    const f = await file(
+      "any-receiver.py",
+      [
+        "from databricks.sdk.runtime import (dbutils, spark)",
+        "def main(dbu):",
+        '    return dbu.widgets.get("from_param")',
+        "class Job:",
+        "    def run(self):",
+        '        self.dbutils.widgets.get("from_attribute")',
+        '        get_dbutils(spark).widgets.get("from_helper")',
+        '        ctx["dbu"].widgets.get("from_index")',
+      ].join("\n"),
+    );
+    const usage = await detectWidgetUsageInFile(f);
+    expect(usage.reads.map((r) => r.name)).toEqual([
+      "from_param",
+      "from_attribute",
+      "from_helper",
+      "from_index",
+    ]);
+    // A name in an import list is not dbutils being handed to other code.
+    expect(usage.hasDynamicReads).toBe(false);
+  });
+
+  test("treats dbutils handed to other code as reads it can't see", async () => {
+    const f = await file("handed-on.py", "run_pipeline(spark, dbutils)");
+    expect((await detectWidgetUsageInFile(f)).hasDynamicReads).toBe(true);
+  });
+
+  test("needs a scope and a key before an unknown receiver's secrets.get counts", async () => {
+    const f = await file(
+      "secrets-shape.py",
+      ['cfg.secrets.get("password")', 'self.dbutils.secrets.get(scope="s", key="k")'].join("\n"),
+    );
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([[2, "s", "k"]]);
+  });
+
+  test("follows classes imported under another name", async () => {
+    const f = await file(
+      "import-as.py",
+      [
+        "from pyspark.dbutils import DBUtils as DBU",
+        "from databricks.sdk import WorkspaceClient as WC",
+        "x = DBU(spark)",
+        'a = x.secrets.get("s1", "k1")',
+        "c = WC()",
+        'b = c.secrets.get_secret("s2", "k2")',
+      ].join("\n"),
+    );
+    expect((await detectSecretInNotebook(f)).map((s) => [s.line, s.scope, s.key])).toEqual([
+      [4, "s1", "k1"],
+      [6, "s2", "k2"],
+    ]);
+  });
+});
+

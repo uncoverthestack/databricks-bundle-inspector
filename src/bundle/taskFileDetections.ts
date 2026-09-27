@@ -168,30 +168,53 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
   return names;
 }
 
+interface DbutilsCall {
+  method: string;
+  args: PythonArgument[];
+  offset: number;
+  /** Whether the receiver is known to be dbutils (see {@link dbutilsNames}). */
+  knownReceiver: boolean;
+}
+
 /**
- * Finds calls to `dbutils.<module>.<method>(...)` in Python code, through any name
- * `dbutils` or the module goes by (see {@link dbutilsNames}).
+ * Finds calls to `<receiver>.<module>.<method>(...)` in Python code. dbutils can
+ * reach code under any name (a function parameter, an attribute, a helper's return
+ * value), so the receiver can be anything: `dbutils`, `dbu`, `self.dbutils`,
+ * `get_dbutils(spark)`. Variables holding the module itself (`w = dbutils.widgets`)
+ * are followed through {@link dbutilsNames}.
  *
- * @returns Each call's method, its arguments and the offset where the call starts.
+ * @returns Each call's method, its arguments, where it starts, and whether its
+ *   receiver is known to be dbutils.
  */
 function dbutilsCalls(
   tokens: PythonToken[],
   module: string,
   methods: readonly string[],
   names: DbutilsNames = dbutilsNames(tokens),
-): Array<{ method: string; args: PythonArgument[]; offset: number }> {
-  const calls: Array<{ method: string; args: PythonArgument[]; offset: number }> = [];
+): DbutilsCall[] {
+  const calls: DbutilsCall[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
-    if (token.kind !== "name") continue;
-    // `dbutils.<module>.<method>(` or `<module variable>.<method>(`
     let methodIndex: number;
-    if (names.dbutils.has(token.value) && isOp(tokens[i + 1], ".") && tokens[i + 2]?.value === module) {
-      methodIndex = i + 4;
-      if (!isOp(tokens[i + 3], ".")) continue;
-    } else if (names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
-      methodIndex = i + 2;
+    let knownReceiver: boolean;
+    let offset = token.start;
+    // `<receiver>.<module>.<method>(`: the receiver ends in a name, `)` or `]`.
+    if (
+      isOp(token, ".") &&
+      tokens[i + 1]?.kind === "name" &&
+      tokens[i + 1]!.value === module &&
+      isOp(tokens[i + 2], ".")
+    ) {
+      const receiver = tokens[i - 1];
+      if (!receiver || !(receiver.kind === "name" || isOp(receiver, ")") || isOp(receiver, "]"))) continue;
+      methodIndex = i + 3;
+      knownReceiver = receiver.kind === "name" && names.dbutils.has(receiver.value);
+      offset = receiver.start;
+    } else if (token.kind === "name" && names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
+      // `<module variable>.<method>(`
       if (!isOp(tokens[i + 1], ".")) continue;
+      methodIndex = i + 2;
+      knownReceiver = true;
     } else {
       continue;
     }
@@ -200,7 +223,7 @@ function dbutilsCalls(
     if (!isOp(tokens[methodIndex + 1], "(")) continue;
     const call = readArguments(tokens, methodIndex + 1);
     if (!call) continue;
-    calls.push({ method: method.value, args: call.args, offset: token.start });
+    calls.push({ method: method.value, args: call.args, offset, knownReceiver });
   }
   return calls;
 }
@@ -233,10 +256,15 @@ function scanPythonSecrets(view: string, document: string): SecretDetection[] {
     scope: literalValue(argument(call.args, "scope", 0)),
     key: literalValue(argument(call.args, "key", 1)),
   });
-  return [
-    ...dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names),
-    ...sdkSecretCalls(tokens, names),
-  ]
+  // Through an unknown receiver, only the full shape counts as a secret read:
+  // `config.secrets.get("password")` on a plain dict has no scope and key.
+  const secretCalls = dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names).filter(
+    (call) =>
+      call.knownReceiver ||
+      (literalValue(argument(call.args, "scope", 0)) !== null &&
+        literalValue(argument(call.args, "key", 1)) !== null),
+  );
+  return [...secretCalls, ...sdkSecretCalls(tokens, names)]
     .sort((a, b) => a.offset - b.offset)
     .map(detection);
 }
@@ -402,11 +430,32 @@ function scanPythonWidgetDefaults(view: string): string[] {
 }
 
 /** `dbutils.widgets` used as a value, not followed by a method call. */
+/** Whether `tokens[index]` is a name in `from x import (a, b)`. */
+function inImportList(tokens: PythonToken[], index: number): boolean {
+  for (let j = index - 1; j >= 0; j--) {
+    const token = tokens[j]!;
+    if (token.kind === "name" && token.value === "import") return true;
+    if (!(token.kind === "name" || isOp(token, ",") || isOp(token, "("))) return false;
+  }
+  return false;
+}
+
 function passesWidgetsObject(view: string): boolean {
   const tokens = tokenizePython(view);
   const names = dbutilsNames(tokens);
   return tokens.some((token, i) => {
     if (token.kind !== "name") return false;
+    // dbutils itself handed to other code, `run(dbutils)` or `run(dbu=dbutils)`,
+    // which can read widgets where the inspector can't see.
+    if (
+      names.dbutils.has(token.value) &&
+      !inImportList(tokens, i) &&
+      !isOp(tokens[i - 1], ".") &&
+      (isOp(tokens[i - 1], "(") || isOp(tokens[i - 1], ",") || (isOp(tokens[i - 1], "=") && tokens[i - 2]?.kind === "name" && (isOp(tokens[i - 3], "(") || isOp(tokens[i - 3], ",")))) &&
+      (isOp(tokens[i + 1], ")") || isOp(tokens[i + 1], ","))
+    ) {
+      return true;
+    }
     // `dbutils.widgets` passed on, but not `w = dbutils.widgets`, which is followed instead.
     if (
       names.dbutils.has(token.value) &&
