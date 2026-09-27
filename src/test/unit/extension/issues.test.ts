@@ -177,6 +177,49 @@ describe("buildInspectorIssues", () => {
     ).toEqual([]);
   });
 
+  test("reports a missing file in a for_each task's inner task against the outer task", () => {
+    const graph: BundleGraph = {
+      nodes: [
+        taskNode({
+          taskType: "for_each",
+          nestedTask: taskData({
+            taskKey: "extract.for_each_task.task",
+            taskType: "spark_python",
+            fileReferences: [
+              {
+                path: "../src/missing_item.py",
+                resolvedPath: "/workspace/demo/src/missing_item.py",
+                exists: false,
+                source: undefined,
+                isInGitignore: false,
+                referenceType: "python_script",
+                sourceFile: "/workspace/demo/resources/job.yml",
+                sourceLine: 25,
+                sourceColumn: 17,
+                yamlPath: "tasks.extract.for_each_task.task.spark_python_task.python_file",
+              },
+            ],
+          }),
+        }),
+      ],
+      edges: [],
+    };
+
+    expect(
+      buildInspectorIssues(graph, { bundle: { name: "demo" } }, [], "/workspace/demo"),
+    ).toMatchObject([
+      {
+        severity: "error",
+        kind: "missing_file",
+        detail: "../src/missing_item.py",
+        taskId: "resources.jobs.ingest.tasks.extract",
+        file: "/workspace/demo/resources/job.yml",
+        line: 25,
+        column: 17,
+      },
+    ]);
+  });
+
   test("reports missing local libraries", () => {
     const graph: BundleGraph = {
       nodes: [

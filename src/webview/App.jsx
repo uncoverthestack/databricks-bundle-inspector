@@ -77,9 +77,11 @@ function getDefinedVariableNames(parsedBundle) {
 }
 
 function getTaskIssueCounts(taskNode, parsedBundle, targetName) {
-  const fileReferences = taskNode.taskData?.fileReferences ?? [];
-  const variableReferences = taskNode.taskData?.variableReferences ?? [];
-  const libraryReferences = taskNode.taskData?.libraryReferences ?? [];
+  // Include a for_each task's inner task, as buildInspectorIssues does.
+  const checked = [taskNode.taskData, taskNode.taskData?.nestedTask].filter(Boolean);
+  const fileReferences = checked.flatMap((data) => data.fileReferences ?? []);
+  const variableReferences = checked.flatMap((data) => data.variableReferences ?? []);
+  const libraryReferences = checked.flatMap((data) => data.libraryReferences ?? []);
 
   const missingFiles = fileReferences.filter(
     (ref) => getFileStatus(ref).key === "missing",
