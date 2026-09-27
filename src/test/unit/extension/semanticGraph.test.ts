@@ -93,7 +93,7 @@ describe("semantic graph baselines", () => {
     const graph = await extractBundleGraph(parsedBundle, fixtureRoot);
     const enrichedGraph = await enrichGraphWithFileContent(graph);
     const issues = buildInspectorIssues(enrichedGraph, parsedBundle, [], fixtureRoot);
-    const actual = exportSemanticGraph(parsedBundle, enrichedGraph, issues);
+    const actual = exportSemanticGraph(parsedBundle, enrichedGraph, issues, fixtureRoot);
 
     const expected = JSON.parse(
       await readFile(path.resolve(testCase.baseline), "utf-8"),

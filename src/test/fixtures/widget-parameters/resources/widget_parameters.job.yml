@@ -1,0 +1,43 @@
+resources:
+  jobs:
+    widget_parameters:
+      name: widget_parameters
+      parameters:
+        - name: catalog
+          default: main
+      tasks:
+        - task_key: python_notebook
+          notebook_task:
+            notebook_path: ../src/py_notebook.py
+            base_parameters:
+              schema_name: bronze
+              unused_flag: "1"
+        - task_key: sql_notebook
+          notebook_task:
+            notebook_path: ../src/sql_notebook.sql
+            base_parameters:
+              schema: silver
+        - task_key: runs_shared
+          notebook_task:
+            notebook_path: ../src/runs_shared.py
+        - task_key: dynamic_reads
+          notebook_task:
+            notebook_path: ../src/dynamic_reads.py
+            base_parameters:
+              a: "1"
+              c: "3"
+        - task_key: widgets_object
+          notebook_task:
+            notebook_path: ../src/widgets_object.py
+            base_parameters:
+              dashboard_id: abc
+              warehouse_id: xyz
+        - task_key: for_each_item
+          for_each_task:
+            inputs: '["x", "y"]'
+            task:
+              task_key: for_each_item_inner
+              notebook_task:
+                notebook_path: ../src/item_notebook.py
+                base_parameters:
+                  item: "{{input}}"

@@ -1,6 +1,10 @@
 import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
-import { detectSecretInNotebook, detectWidgetsInFile } from "../taskFileDetections.js";
+import {
+  detectSecretInNotebook,
+  detectWidgetUsageInFile,
+  detectWidgetsInFile,
+} from "../taskFileDetections.js";
 import { matchSecretScope } from "../resources/secretScope.js";
 import { bundleSecretScopes, type BundleGraph, type BundleGraphNode } from "./bundleGraph.js";
 import type { BundleEdge } from "./edges.js";
@@ -66,10 +70,20 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           ? "sql"
           : undefined;
 
-      const [secrets, widgets] = await Promise.all([
+      const [secrets, widgets, widgetUsage] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
+        // Notebook tasks pass their parameters as widgets, so compare them later.
+        fileNode.data.referenceType === "notebook"
+          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          : undefined,
       ]);
+      if (widgetUsage) {
+        nodeMap.set(fileNode.id, {
+          ...fileNode,
+          data: { ...fileNode.data, widgetUsage },
+        });
+      }
 
       for (const detection of secrets) {
         if (!detection.scope) continue;
