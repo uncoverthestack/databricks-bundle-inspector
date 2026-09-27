@@ -63,21 +63,33 @@
       "kind": "missing_file",
       "title": "Missing local file reference",
       "detail": "./src/missing.py",
-      "taskKey": "missing_notebook"
+      "taskKey": "missing_notebook",
+      "file": "databricks.yml",
+      "line": 15,
+      "column": 28,
+      "yamlPath": "tasks.missing_notebook.notebook_task.notebook_path"
     },
     {
       "severity": "error",
       "kind": "missing_library",
       "title": "Missing local library",
       "detail": "./dist/missing.whl",
-      "taskKey": "unresolved_sql"
+      "taskKey": "unresolved_sql",
+      "file": "databricks.yml",
+      "line": 22,
+      "column": 15,
+      "yamlPath": "tasks.unresolved_sql.libraries[0]"
     },
     {
       "severity": "error",
       "kind": "unresolved_variable",
       "title": "Unresolved variable",
       "detail": "missing_warehouse",
-      "taskKey": "unresolved_sql"
+      "taskKey": "unresolved_sql",
+      "file": "databricks.yml",
+      "line": 20,
+      "column": 27,
+      "yamlPath": "tasks.unresolved_sql.sql_task.warehouse_id"
     }
   ],
   "detectedReferences": {

@@ -382,7 +382,16 @@ const WIDGET_DEPRECATED_NOTE =
   "dbutils.widgets.getArgument() is deprecated; use dbutils.widgets.get() instead";
 
 /** The retrieval method that produced a {@link WidgetDetection}. */
-export type WidgetMethod = "get" | "getArgument" | "getAll";
+/**
+ * Python: `get`, `getArgument` (deprecated) and `getAll`. SQL: a `:name` parameter
+ * marker, or the legacy `${name}` reference (deprecated in DBR 15.2+).
+ */
+export type WidgetMethod =
+  | "get"
+  | "getArgument"
+  | "getAll"
+  | "sqlParameterMarker"
+  | "sqlLegacyReference";
 
 /**
  * A single detected use of a Databricks widget-retrieval call within a file.
@@ -526,14 +535,150 @@ export async function detectWidgetsInFile(
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<WidgetDetection[]> {
   const ext = path.extname(filePath).toLowerCase();
-  if (fileTypeHint === "sql" || ext === ".sql") return [];
-
   const content = await fs.readFile(filePath, "utf8");
+  if (fileTypeHint === "sql" || ext === ".sql") return scanSqlWidgets(content).reads;
+
   const searchContent =
     fileTypeHint === "notebook" || ext === ".ipynb"
       ? jupyterNotebookToContent(content)
       : content;
   return scanPythonWidgets(searchContent);
+}
+
+/**
+ * How a notebook reads its parameters: the widgets it reads by name, the widgets it
+ * gives a default, and whether it pulls in other notebooks with `%run`, which can
+ * define widgets the inspector does not see.
+ */
+export interface WidgetUsage {
+  reads: Array<{ name: string; line: number }>;
+  /** Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect`. */
+  defaults: string[];
+  /**
+   * Reads whose names the inspector can't know: a name held in a variable, `getAll()`,
+   * or `dbutils.widgets` passed to other code, e.g. `helper(widgets=dbutils.widgets)`.
+   */
+  hasDynamicReads: boolean;
+  runsOtherNotebooks: boolean;
+}
+
+function extractWidgetDefinitionName(argFragment: string): string | null {
+  const normalised = argFragment.replace(/\s+/g, " ").trim();
+  const keyword = normalised.match(/(?:^|[,(\s])name\s*=\s*(["'])([^"']+)\1/);
+  return keyword?.[2] ?? extractWidgetName(argFragment);
+}
+
+/** `dbutils.widgets` used as a value, not followed by a method call. */
+function passesWidgetsObject(content: string): boolean {
+  const re = /dbutils\.widgets\b(?!\s*\.)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (isInPythonCodeContext(content, match.index)) return true;
+  }
+  return false;
+}
+
+function scanPythonWidgetDefaults(content: string): string[] {
+  const names: string[] = [];
+  const re = /dbutils\.widgets\.(?:text|dropdown|combobox|multiselect)\s*\(([\s\S]*?)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (!isInPythonCodeContext(content, match.index)) continue;
+    const name = extractWidgetDefinitionName(match[1] ?? "");
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+// `%run` as a notebook magic: `# MAGIC %run` (Python) or `-- MAGIC %run` (SQL) in a
+// source notebook, or a cell line in `.ipynb`.
+const RUN_MAGIC = /^\s*(?:(?:#|--)\s*MAGIC\s+)?%run\b/m;
+
+/**
+ * Blanks out SQL comments and string literals, keeping every other character and all
+ * line breaks, so matches keep their offsets and `'12:30'` is not read as a parameter.
+ */
+function blankSqlCommentsAndStrings(content: string): string {
+  return content.replace(
+    /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"/g,
+    (match) => match.replace(/[^\n]/g, " "),
+  );
+}
+
+/**
+ * Widget reads and defaults in a SQL notebook or file
+ * (https://docs.databricks.com/aws/en/notebooks/widgets):
+ *
+ * - `:name` parameter markers, also inside `IDENTIFIER(:name)`. Not `::` casts or
+ *   JSON paths such as `raw:owner`, which follow a name.
+ * - Legacy `${name}` references, which also work inside string literals.
+ * - `CREATE WIDGET TEXT|DROPDOWN|COMBOBOX|MULTISELECT name DEFAULT ...` sets a default.
+ */
+function scanSqlWidgets(content: string): { reads: WidgetDetection[]; defaults: string[] } {
+  const reads: WidgetDetection[] = [];
+  const code = blankSqlCommentsAndStrings(content);
+
+  const marker = /(^|[^\w:.$`])(:)([A-Za-z_]\w*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = marker.exec(code)) !== null) {
+    const index = match.index + match[1]!.length;
+    reads.push({
+      line: getStartLine(content, index),
+      raw: getLineText(content, index),
+      name: match[3]!,
+      method: "sqlParameterMarker",
+    });
+  }
+
+  // Legacy references are read from the original text: they are often quoted, e.g. '${date}'.
+  const withoutComments = content.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, (m) =>
+    m.replace(/[^\n]/g, " "),
+  );
+  const legacy = /\$\{([A-Za-z_]\w*)\}/g;
+  while ((match = legacy.exec(withoutComments)) !== null) {
+    reads.push({
+      line: getStartLine(content, match.index),
+      raw: getLineText(content, match.index),
+      name: match[1]!,
+      method: "sqlLegacyReference",
+      note: "${param} is deprecated in Databricks Runtime 15.2 and above; use :param",
+    });
+  }
+
+  const defaults: string[] = [];
+  const create =
+    /\bCREATE\s+WIDGET\s+(?:TEXT|DROPDOWN|COMBOBOX|MULTISELECT)\s+`?([A-Za-z_]\w*)`?/gi;
+  while ((match = create.exec(code)) !== null) defaults.push(match[1]!);
+
+  return { reads: reads.sort((a, b) => a.line - b.line), defaults };
+}
+
+/**
+ * Reads how a Python or SQL notebook takes widget parameters.
+ */
+export async function detectWidgetUsageInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<WidgetUsage> {
+  const ext = path.extname(filePath).toLowerCase();
+  const content = await fs.readFile(filePath, "utf8");
+  const isSql = fileTypeHint === "sql" || ext === ".sql";
+  const searchContent =
+    !isSql && (fileTypeHint === "notebook" || ext === ".ipynb")
+      ? jupyterNotebookToContent(content)
+      : content;
+  const sql = isSql ? scanSqlWidgets(searchContent) : undefined;
+  const detections = sql ? sql.reads : scanPythonWidgets(searchContent);
+  return {
+    reads: detections.flatMap((d) =>
+      d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line }] : [],
+    ),
+    defaults: sql ? sql.defaults : scanPythonWidgetDefaults(searchContent),
+    hasDynamicReads:
+      detections.some((d) => d.name === null) ||
+      (!sql && passesWidgetsObject(searchContent)),
+    runsOtherNotebooks: RUN_MAGIC.test(searchContent),
+  };
 }
 
 export type SourceFormatNotebook = "SQLSourceNotebook" | "PythonSourceNotebook";

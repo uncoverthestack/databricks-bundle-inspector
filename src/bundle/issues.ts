@@ -3,6 +3,8 @@ import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
+import type { TaskNodeData } from "./resources/task.js";
+import type { WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
 
@@ -17,7 +19,8 @@ export type InspectorIssueKind =
   | "unknown_task_type"
   | "git_source_not_recommended"
   | "secret_scope_name_mismatch"
-  | "notebook_type_mismatch";
+  | "notebook_type_mismatch"
+  | "widget_parameter_mismatch";
 
 export interface InspectorIssue {
   id: string;
@@ -126,6 +129,128 @@ function notebookProblemIssue(
   };
 }
 
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length]!;
+}
+
+/** The passed parameter a widget name was most likely meant to be, if one is close. */
+function closestName(name: string, candidates: string[]): string | undefined {
+  const normalise = (value: string) => value.toLowerCase().replace(/[-_\s]/g, "");
+  let best: { candidate: string; distance: number } | undefined;
+  for (const candidate of candidates) {
+    const [n, c] = [normalise(name), normalise(candidate)];
+    // Same name up to case and separators, or one extends the other (schema, schema_name).
+    const distance = n === c ? 0 : n.includes(c) || c.includes(n) ? 1 : editDistance(name, candidate);
+    if (distance <= Math.max(2, Math.floor(name.length / 3)) && (!best || distance < best.distance)) {
+      best = { candidate, distance };
+    }
+  }
+  return best?.candidate;
+}
+
+/**
+ * Compares the widgets a notebook task's notebook reads with the parameters the task
+ * receives: its `base_parameters` and the job's parameters, which Databricks pushes
+ * down to notebook tasks. A widget read with no parameter and no default fails the run.
+ */
+function widgetParameterIssues(
+  graph: BundleGraph,
+  task: BundleGraphNode,
+  taskData: TaskNodeData,
+  jobParameterNames: ReadonlySet<string>,
+): InspectorIssue[] {
+  const issues: InspectorIssue[] = [];
+  for (const ref of taskData.fileReferences) {
+    if (ref.referenceType !== "notebook" || ref.source === "GIT" || !ref.exists) continue;
+    const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
+    const usage = fileNode?.data.widgetUsage as WidgetUsage | undefined;
+    // A notebook that uses %run can get widgets from the notebook it runs.
+    if (!usage || usage.runsOtherNotebooks) continue;
+
+    const taskParameters = taskData.taskParameterReferences;
+    const passed = new Set([...taskParameters.map((p) => p.name), ...jobParameterNames]);
+    const defaults = new Set(usage.defaults);
+    const readNames = new Set(usage.reads.map((read) => read.name));
+    const unreadParameters = [...passed].filter((name) => !readNames.has(name));
+    const suggested = new Set<string>();
+    const reported = new Set<string>();
+
+    for (const read of usage.reads) {
+      if (passed.has(read.name) || defaults.has(read.name) || reported.has(read.name)) continue;
+      reported.add(read.name);
+      const suggestion = closestName(read.name, unreadParameters);
+      if (suggestion) suggested.add(suggestion);
+      issues.push({
+        id: `widget-not-passed:${task.id}:${ref.resolvedPath}:${read.name}`,
+        severity: "warning",
+        kind: "widget_parameter_mismatch",
+        title: suggestion
+          ? `Notebook reads widget "${read.name}", which this task may not pass. Did you mean "${suggestion}"?`
+          : `Notebook reads widget "${read.name}", which this task may not pass.`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        fixHint: `Pass "${read.name}" in the task's base_parameters or the job's parameters, or give the widget a default in the notebook.`,
+        ...issueLocation(ref.resolvedPath, read.line),
+      });
+    }
+
+    // Only the task's own parameters: job parameters reach every task, used or not.
+    // A widget the notebook defines is meant to be set, even if it's read elsewhere.
+    const unread = taskParameters.filter(
+      (parameter) =>
+        !readNames.has(parameter.name) &&
+        !defaults.has(parameter.name) &&
+        !suggested.has(parameter.name),
+    );
+    if (unread.length === 0) continue;
+
+    // Names read at runtime can't be matched, so say what wasn't checked instead of
+    // guessing that these parameters are unused.
+    if (usage.hasDynamicReads) {
+      const names = unread.map((parameter) => `"${parameter.name}"`).join(", ");
+      issues.push({
+        id: `parameters-not-checked:${task.id}:${ref.yamlPath}`,
+        severity: "info",
+        kind: "widget_parameter_mismatch",
+        title: `Not checked whether the notebook uses ${names}: it reads widgets by names only known at runtime.`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        fixHint:
+          "The notebook reads a widget name from a variable, calls dbutils.widgets.getAll(), or passes dbutils.widgets to other code, so the inspector can't match these parameters to reads.",
+        ...issueLocation(ref.resolvedPath),
+      });
+      continue;
+    }
+
+    for (const parameter of unread) {
+      issues.push({
+        id: `parameter-not-read:${task.id}:${parameter.yamlPath}`,
+        severity: "info",
+        kind: "widget_parameter_mismatch",
+        title: `Parameter "${parameter.name}" may not be used: the notebook doesn't read a widget with that name.`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: parameter.yamlPath,
+        fixHint: `Read it in the notebook, or remove it from base_parameters.`,
+        ...issueLocation(sourceFileForTask(task), parameter.sourceLine || undefined, parameter.sourceColumn),
+      });
+    }
+  }
+  return issues;
+}
+
 function issueLocation(file?: string, line?: number, column?: number) {
   return {
     ...(file ? { file } : {}),
@@ -192,6 +317,13 @@ export function buildInspectorIssues(
 
     // A for_each task's inner task is checked too; its issues belong to the outer task.
     const checkedTaskData = taskData.nestedTask ? [taskData, taskData.nestedTask] : [taskData];
+
+    if (!parentJobHasGitSource(graph, task)) {
+      const jobParameterNames = new Set(taskData.jobParameterReferences.map((p) => p.name));
+      for (const data of checkedTaskData) {
+        issues.push(...widgetParameterIssues(graph, task, data, jobParameterNames));
+      }
+    }
 
     for (const ref of checkedTaskData.flatMap((data) => data.fileReferences)) {
       if (ref.source === "GIT" && !parentJobHasGitSource(graph, task)) {

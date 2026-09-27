@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   detectSecretInNotebook,
   detectWidgetsInFile,
+  detectWidgetUsageInFile,
   getNotebookType,
 } from "../../../bundle/taskFileDetections.js";
 
@@ -635,10 +636,104 @@ describe("widgets — false positive suppression", () => {
     expect(results).toHaveLength(0);
   });
 
-  test("SQL files return empty array", async () => {
-    const file = await sql("wgt-sql", `SELECT :my_widget`);
+});
+
+// SQL widget syntax: https://docs.databricks.com/aws/en/notebooks/widgets
+describe("widgets — SQL", () => {
+  test("finds :name parameter markers, including inside IDENTIFIER()", async () => {
+    const file = await sql(
+      "wgt-sql-markers",
+      "-- Databricks notebook source\nSELECT :my_widget;\nSHOW TABLES IN IDENTIFIER(:database);",
+    );
     const results = await detectWidgetsInFile(file);
-    expect(results).toHaveLength(0);
+    expect(results.map((r) => [r.name, r.line, r.method])).toEqual([
+      ["my_widget", 2, "sqlParameterMarker"],
+      ["database", 3, "sqlParameterMarker"],
+    ]);
+  });
+
+  test("ignores casts, JSON paths, strings and comments", async () => {
+    const file = await sql(
+      "wgt-sql-false-positives",
+      [
+        "SELECT amount::int, raw:owner, raw:store.bicycle",
+        "FROM t WHERE ts = '12:30' AND note = \"a:b\"",
+        "-- SELECT :commented",
+        "/* :block_commented */",
+      ].join("\n"),
+    );
+    expect(await detectWidgetsInFile(file)).toEqual([]);
+  });
+
+  test("finds legacy ${name} references, also inside strings", async () => {
+    const file = await sql("wgt-sql-legacy", "SELECT * FROM ${db}.t WHERE d = '${run_date}'");
+    const results = await detectWidgetsInFile(file);
+    expect(results.map((r) => [r.name, r.method])).toEqual([
+      ["db", "sqlLegacyReference"],
+      ["run_date", "sqlLegacyReference"],
+    ]);
+  });
+});
+
+describe("detectWidgetUsageInFile — SQL", () => {
+  test("reads CREATE WIDGET defaults and -- MAGIC %run", async () => {
+    const file = await sql(
+      "wgt-sql-usage",
+      [
+        "-- Databricks notebook source",
+        "CREATE WIDGET TEXT catalog DEFAULT 'main';",
+        "create widget dropdown `state` default 'CA' choices select * from (values ('CA'))",
+        "-- MAGIC %run ./shared_widgets",
+        "SELECT * FROM IDENTIFIER(:catalog || '.' || :schema)",
+      ].join("\n"),
+    );
+    expect(await detectWidgetUsageInFile(file)).toEqual({
+      reads: [
+        { name: "catalog", line: 5 },
+        { name: "schema", line: 5 },
+      ],
+      defaults: ["catalog", "state"],
+      hasDynamicReads: false,
+      runsOtherNotebooks: true,
+    });
+  });
+});
+
+describe("detectWidgetUsageInFile — multi-line CREATE WIDGET", () => {
+  test("allows line breaks, tabs, extra spaces and comments inside the statement", async () => {
+    const file = await sql(
+      "wgt-sql-multiline",
+      [
+        "CREATE WIDGET ",
+        'DROPDOWN state DEFAULT "CA" CHOICES SELECT * FROM (VALUES ("CA"), ("IL"), ("MI"), ("NY"), ("OR"), ("VA"))',
+        "",
+        "create\twidget   -- a comment",
+        "  text",
+        '    `region`   default "eu"',
+      ].join("\n"),
+    );
+    expect((await detectWidgetUsageInFile(file)).defaults).toEqual(["state", "region"]);
+  });
+});
+
+describe("detectWidgetUsageInFile — Python", () => {
+  test("reads widget defaults, including the name= keyword", async () => {
+    const file = await py(
+      "wgt-py-usage",
+      [
+        "# Databricks notebook source",
+        'dbutils.widgets.text("catalog", "main")',
+        'dbutils.widgets.dropdown(name="env", defaultValue="dev", choices=["dev", "prod"])',
+        'catalog = dbutils.widgets.get("catalog")',
+        "value = dbutils.widgets.get(name_var)",
+      ].join("\n"),
+    );
+    expect(await detectWidgetUsageInFile(file)).toEqual({
+      reads: [{ name: "catalog", line: 4 }],
+      defaults: ["catalog", "env"],
+      hasDynamicReads: true,
+      runsOtherNotebooks: false,
+    });
   });
 });
 

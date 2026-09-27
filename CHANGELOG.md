@@ -8,6 +8,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **Notebook widgets are checked against the task's parameters.** A notebook task whose notebook reads a widget that neither the task's `base_parameters` nor the job's parameters pass, and that has no default, gets a warning at the line that reads it: "Notebook reads widget "schema", which this task may not pass. Did you mean "schema_name"?". A task parameter the notebook never reads gets an info note. Python and SQL notebooks are both read: `dbutils.widgets.get`, SQL `:name` markers (including inside `IDENTIFIER()`), legacy `${name}`, and defaults from `dbutils.widgets.text` or `CREATE WIDGET ... DEFAULT`. When a notebook reads widgets by names only known at runtime, the inspector says it couldn't check its parameters instead of guessing. Notebooks that use `%run` are not checked.
+- **SQL files are scanned for widgets.** Widget reads in SQL notebooks and files now show in the graph, like Python ones.
 - **Secrets in cluster config are detected.** `{{secrets/<scope>/<key>}}` in `spark_conf` and `spark_env_vars` of job clusters, task clusters, `clusters` resources and pipeline clusters is linked to the scope and to every task using that cluster, at the YAML line.
 - **Secrets used inside `for_each` tasks and in pipeline sources are detected.**
 - **A hint when code names a secret scope by its bundle resource key.** For example `app_scope` where the bundle's scope is named `app-secrets`: "Secret scope "app_scope" may not exist. Did you mean "app-secrets"?"
