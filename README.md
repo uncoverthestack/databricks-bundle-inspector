@@ -9,10 +9,24 @@ Open a `databricks.yml` file and run **Inspect Databricks Bundle**. Every issue 
 - **Missing local files**: notebooks and files referenced by tasks that don't exist, including the inner task of a `for_each` task.
 - **Missing libraries**: local wheels and JARs a task installs that aren't there.
 - **Pipeline sources**: Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) whose `libraries` point at a missing notebook or file, or at a `folder/**` glob with no files. The CLI doesn't check these during validation, so they otherwise surface only on `bundle deploy`.
+- **Notebook and file mix-ups**: a notebook path without its extension, a notebook task pointing at a file without the notebook header, or a Python or SQL file task pointing at a notebook, following the Databricks CLI's rules.
+- **Files that won't be deployed**: a task or pipeline pointing at a file that `.gitignore` or `sync.exclude` keeps out of `bundle deploy`.
+- **Widget parameters**: a notebook reading a widget that neither the task nor the job passes and that has no default, including through `%run` and across Python and SQL cells.
+- **Task values**: `dbutils.jobs.taskValues.get(...)` or `{{tasks.<task>.values.<key>}}` reading from a task that doesn't exist, isn't upstream, or doesn't set that key.
 - **Secret scope mix-ups**: code that reads a secret using the scope's resource key instead of its name, which fails at runtime.
 - **Unresolved variables**: `${var.*}` values with no default and no value for the selected target.
 - **Databricks CLI diagnostics**: validation errors and warnings, including unknown or deprecated fields, sent to the Problems panel.
 - **Risky patterns**: task types the inspector doesn't recognise, and tasks that load code from Git when the job has no `git_source`.
+
+### Code it reads
+
+Checks on code (secrets, widgets, task values) read **Python and SQL**:
+
+- `.py` and `.sql` files, Jupyter notebooks (`.ipynb`), and Databricks source-format notebooks.
+- `%python` and `%sql` cells inside a notebook of the other language, each read in its own language.
+- `dbutils` in any form: `dbutils`, a variable or parameter holding it, `DBUtils(spark)`, or the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`).
+
+**Scala and R are not read.** `.scala` and `.r` notebooks, and `%scala` and `%r` cells, are skipped, so secrets, widgets and task values in them are not found. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
 
 ## What it shows
 
