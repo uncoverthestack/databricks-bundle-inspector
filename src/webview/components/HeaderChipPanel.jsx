@@ -61,7 +61,9 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                         className={
                           item.severity === "error"
                             ? "mt-0.5 shrink-0 text-red-400"
-                            : "mt-0.5 shrink-0 text-yellow-400"
+                            : item.severity === "info"
+                              ? "mt-0.5 shrink-0 text-sky-400"
+                              : "mt-0.5 shrink-0 text-yellow-400"
                         }
                       />
                     ) : (

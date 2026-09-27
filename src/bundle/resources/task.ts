@@ -29,13 +29,76 @@ export type TaskType =
   | "python_wheel"
   | "spark_jar"
   | "spark_python"
+  | "spark_submit"
   | "pipeline"
   | "run_job"
   | "dbt"
+  | "dbt_cloud"
   | "condition"
   | "for_each"
   | "dashboard"
+  | "power_bi"
+  | "alert"
+  | "ai_runtime"
+  | "gen_ai_compute"
+  | "python_operator"
   | "unknown";
+
+/**
+ * Every job task payload key in the bundle schema (`databricks bundle schema`, CLI 1.17.0),
+ * mapped to the inspector's task type. This is the single list of supported task types:
+ * labels, parameters and classification all derive from it.
+ */
+const TASK_TYPE_BY_PAYLOAD_KEY = {
+  notebook_task: "notebook",
+  clean_rooms_notebook_task: "notebook",
+  sql_task: "sql",
+  python_wheel_task: "python_wheel",
+  spark_jar_task: "spark_jar",
+  spark_python_task: "spark_python",
+  spark_submit_task: "spark_submit",
+  pipeline_task: "pipeline",
+  run_job_task: "run_job",
+  dbt_task: "dbt",
+  dbt_platform_task: "dbt",
+  dbt_cloud_task: "dbt_cloud",
+  condition_task: "condition",
+  for_each_task: "for_each",
+  dashboard_task: "dashboard",
+  power_bi_task: "power_bi",
+  alert_task: "alert",
+  ai_runtime_task: "ai_runtime",
+  gen_ai_compute_task: "gen_ai_compute",
+  python_operator_task: "python_operator",
+} as const satisfies Record<string, Exclude<TaskType, "unknown">>;
+
+export type TaskPayloadKey = keyof typeof TASK_TYPE_BY_PAYLOAD_KEY;
+
+export const TASK_PAYLOAD_KEYS = Object.keys(
+  TASK_TYPE_BY_PAYLOAD_KEY,
+) as TaskPayloadKey[];
+
+/** Returns the recognised payload key on a task (e.g. `notebook_task`), if any. */
+export function getTaskPayloadKey(
+  task: Record<string, unknown>,
+): TaskPayloadKey | undefined {
+  return TASK_PAYLOAD_KEYS.find((key) => {
+    const payload = task[key];
+    return typeof payload === "object" && payload !== null;
+  });
+}
+
+/**
+ * Returns the `*_task` key of a task type the inspector does not recognise,
+ * so it can be shown by name instead of as an anonymous task.
+ */
+export function getUnrecognisedTaskKey(
+  task: Record<string, unknown>,
+): string | undefined {
+  return Object.keys(task).find(
+    (key) => key.endsWith("_task") && !(key in TASK_TYPE_BY_PAYLOAD_KEY),
+  );
+}
 
 export interface FileReference {
   path: string;
@@ -302,19 +365,8 @@ function scanForRefs(
 }
 
 function getTaskType(task: Record<string, unknown>): TaskType {
-  if ("notebook_task" in task || "clean_rooms_notebook_task" in task)
-    return "notebook";
-  if ("sql_task" in task) return "sql";
-  if ("python_wheel_task" in task) return "python_wheel";
-  if ("spark_jar_task" in task) return "spark_jar";
-  if ("spark_python_task" in task) return "spark_python";
-  if ("pipeline_task" in task) return "pipeline";
-  if ("run_job_task" in task) return "run_job";
-  if ("dbt_task" in task || "dbt_platform_task" in task) return "dbt";
-  if ("condition_task" in task) return "condition";
-  if ("for_each_task" in task) return "for_each";
-  if ("dashboard_task" in task) return "dashboard";
-  return "unknown";
+  const payloadKey = getTaskPayloadKey(task);
+  return payloadKey ? TASK_TYPE_BY_PAYLOAD_KEY[payloadKey] : "unknown";
 }
 
 function getFileReferences(

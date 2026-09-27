@@ -1,7 +1,13 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { buildTaskNodeData, type TaskNodeData } from "../resources/task.js";
+import {
+  buildTaskNodeData,
+  getTaskPayloadKey,
+  getUnrecognisedTaskKey,
+  type TaskNodeData,
+  type TaskPayloadKey,
+} from "../resources/task.js";
 import {
   parseYamlLocations,
   type YamlLocationMap,
@@ -42,7 +48,8 @@ export interface JobTask {
   task_key?: string;
   depends_on?: JobTaskDependency[];
   clean_rooms_notebook_task?: {
-    notebook_path?: string;
+    clean_room_name?: string;
+    notebook_name?: string;
   };
   condition_task?: {
     op?: string;
@@ -53,17 +60,18 @@ export interface JobTask {
     dashboard_id?: string;
     warehouse_id?: string;
   };
-  sql_alert_task?: {
+  alert_task?: {
     alert_id?: string;
-    pause_subscriptions?: boolean;
+    workspace_path?: string;
+    warehouse_id?: string;
   };
   dbt_task?: {
     commands?: string[];
     warehouse_id?: string;
   };
   dbt_platform_task?: {
-    commands?: string[];
-    warehouse_id?: string;
+    connection_resource_name?: string;
+    dbt_platform_job_id?: string;
   };
   for_each_task?: {
     inputs?: string;
@@ -78,7 +86,22 @@ export interface JobTask {
     pipeline_id?: string;
   };
   power_bi_task?: {
-    dashboard_id?: string;
+    connection_resource_name?: string;
+    warehouse_id?: string;
+  };
+  dbt_cloud_task?: {
+    connection_resource_name?: string;
+    dbt_cloud_job_id?: number | string;
+  };
+  ai_runtime_task?: {
+    code_source_path?: string;
+  };
+  gen_ai_compute_task?: {
+    training_script_path?: string;
+    command?: string;
+  };
+  python_operator_task?: {
+    main?: string;
   };
   sql_task?: {
     file?: {
@@ -388,64 +411,63 @@ function withOptionalSubtitle(
   return { kind, label, ...(subtitle ? { subtitle } : {}) };
 }
 
-function detectTaskType(task: JobTask): {
-  kind: string;
-  label: string;
-  subtitle?: string;
-} {
-  if (task.clean_rooms_notebook_task) {
-    return withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task.notebook_path);
-  }
-  if (task.condition_task) {
-    return withOptionalSubtitle("job", "If/else", conditionExpression(task.condition_task));
-  }
-  if (task.dashboard_task) {
-    return withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task.dashboard_id);
-  }
-  if (task.sql_alert_task) {
-    return withOptionalSubtitle("alert", "SQL Alert (Beta)", task.sql_alert_task.alert_id);
-  }
-  if (task.dbt_task) {
-    return withOptionalSubtitle("script", "dbt", task.dbt_task.commands?.join(" "));
-  }
-  if (task.dbt_platform_task) {
-    return withOptionalSubtitle("script", "dbt platform (Beta)", task.dbt_platform_task.commands?.join(" "));
-  }
-  if (task.for_each_task) {
-    return withOptionalSubtitle("job", "For each", task.for_each_task.inputs);
-  }
-  if (task.spark_jar_task) {
-    return withOptionalSubtitle("script", "JAR", task.spark_jar_task.main_class_name);
-  }
-  if (task.notebook_task) {
-    return withOptionalSubtitle("notebook", "Notebook", task.notebook_task.notebook_path);
-  }
-  if (task.pipeline_task) {
-    return withOptionalSubtitle(
+type TaskPresentation = { kind: string; label: string; subtitle?: string };
+
+// Keyed by every recognised payload key, so adding a task type in task.ts fails
+// to compile until it has a label here.
+const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentation> = {
+  clean_rooms_notebook_task: (task) =>
+    withOptionalSubtitle("notebook", "Clean room", task.clean_rooms_notebook_task?.notebook_name),
+  condition_task: (task) =>
+    withOptionalSubtitle("job", "If/else", task.condition_task ? conditionExpression(task.condition_task) : undefined),
+  dashboard_task: (task) => withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task?.dashboard_id),
+  alert_task: (task) =>
+    withOptionalSubtitle("alert", "Alert", task.alert_task?.workspace_path ?? task.alert_task?.alert_id),
+  dbt_task: (task) => withOptionalSubtitle("script", "dbt", task.dbt_task?.commands?.join(" ")),
+  dbt_platform_task: (task) =>
+    withOptionalSubtitle("script", "dbt platform (Beta)", task.dbt_platform_task?.dbt_platform_job_id),
+  dbt_cloud_task: (task) =>
+    withOptionalSubtitle(
+      "script",
+      "dbt Cloud",
+      task.dbt_cloud_task?.dbt_cloud_job_id !== undefined ? String(task.dbt_cloud_task.dbt_cloud_job_id) : undefined,
+    ),
+  for_each_task: (task) => withOptionalSubtitle("job", "For each", task.for_each_task?.inputs),
+  spark_jar_task: (task) => withOptionalSubtitle("script", "JAR", task.spark_jar_task?.main_class_name),
+  notebook_task: (task) => withOptionalSubtitle("notebook", "Notebook", task.notebook_task?.notebook_path),
+  pipeline_task: (task) =>
+    withOptionalSubtitle(
       "pipeline",
       "Pipeline",
-      task.pipeline_task.pipeline_id ? normalizeReference(task.pipeline_task.pipeline_id) : undefined,
-    );
-  }
-  if (task.power_bi_task) {
-    return withOptionalSubtitle("dashboard", "Power BI", task.power_bi_task.dashboard_id);
-  }
-  if (task.spark_python_task) {
-    return withOptionalSubtitle("script", "Python script", task.spark_python_task.python_file);
-  }
-  if (task.python_wheel_task) {
-    return withOptionalSubtitle("script", "Python wheel", task.python_wheel_task.package_name);
-  }
-  if (task.run_job_task) {
-    return withOptionalSubtitle("job", "Run Job", task.run_job_task.job_id);
-  }
-  if (task.sql_task) {
-    return withOptionalSubtitle("sql", "SQL", task.sql_task.file?.path);
-  }
-  if (task.spark_submit_task) {
-    return withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task.parameters?.join(" "));
-  }
-  return { kind: "job", label: "Task", subtitle: "Other task settings" };
+      task.pipeline_task?.pipeline_id ? normalizeReference(task.pipeline_task.pipeline_id) : undefined,
+    ),
+  power_bi_task: (task) =>
+    withOptionalSubtitle("dashboard", "Power BI", task.power_bi_task?.connection_resource_name),
+  spark_python_task: (task) =>
+    withOptionalSubtitle("script", "Python script", task.spark_python_task?.python_file),
+  python_wheel_task: (task) =>
+    withOptionalSubtitle("script", "Python wheel", task.python_wheel_task?.package_name),
+  run_job_task: (task) => withOptionalSubtitle("job", "Run Job", task.run_job_task?.job_id),
+  sql_task: (task) => withOptionalSubtitle("sql", "SQL", task.sql_task?.file?.path),
+  spark_submit_task: (task) =>
+    withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task?.parameters?.join(" ")),
+  ai_runtime_task: (task) =>
+    withOptionalSubtitle("script", "AI Runtime", task.ai_runtime_task?.code_source_path),
+  gen_ai_compute_task: (task) =>
+    withOptionalSubtitle(
+      "script",
+      "Gen AI compute",
+      task.gen_ai_compute_task?.training_script_path ?? task.gen_ai_compute_task?.command,
+    ),
+  python_operator_task: (task) =>
+    withOptionalSubtitle("script", "Python operator", task.python_operator_task?.main),
+};
+
+function detectTaskType(task: JobTask): TaskPresentation {
+  const payloadKey = getTaskPayloadKey(task);
+  if (payloadKey) return TASK_PRESENTATION[payloadKey](task);
+  // Show an unrecognised task type by its key rather than as an anonymous task.
+  return { kind: "job", label: "Task", subtitle: getUnrecognisedTaskKey(task) ?? "Other task settings" };
 }
 
 function formatTrigger(job: Job): string {
@@ -588,32 +610,8 @@ function pipelineDetails(
 }
 
 function getTaskPayload(task: JobTask): Record<string, unknown> | null {
-  const taskPayloadKeys = [
-    "clean_rooms_notebook_task",
-    "condition_task",
-    "dashboard_task",
-    "sql_alert_task",
-    "dbt_task",
-    "dbt_platform_task",
-    "for_each_task",
-    "spark_jar_task",
-    "notebook_task",
-    "pipeline_task",
-    "power_bi_task",
-    "sql_task",
-    "spark_python_task",
-    "python_wheel_task",
-    "run_job_task",
-    "spark_submit_task",
-  ] as const;
-
-  for (const taskPayloadKey of taskPayloadKeys) {
-    const taskPayload = task[taskPayloadKey];
-    if (typeof taskPayload === "object" && taskPayload !== null) {
-      return taskPayload as Record<string, unknown>;
-    }
-  }
-  return null;
+  const payloadKey = getTaskPayloadKey(task);
+  return payloadKey ? (task[payloadKey] as Record<string, unknown>) : null;
 }
 
 function getEffectiveTaskParameters(job: Job, task: JobTask): GraphParameter[] | undefined {
@@ -664,7 +662,6 @@ function requiresSqlWarehouseCompute(task: JobTask): boolean {
   return !!(
     task.sql_task ||
     task.dbt_task ||
-    task.dbt_platform_task ||
     task.dashboard_task
   );
 }
@@ -688,13 +685,6 @@ function getTaskCompute(
       kind: "sqlWarehouse",
       label: normalizeReference(task.dbt_task.warehouse_id),
       ...computeReference(task.dbt_task.warehouse_id),
-    });
-  }
-  if (task.dbt_platform_task?.warehouse_id) {
-    compute.push({
-      kind: "sqlWarehouse",
-      label: normalizeReference(task.dbt_platform_task.warehouse_id),
-      ...computeReference(task.dbt_platform_task.warehouse_id),
     });
   }
   if (task.dashboard_task?.warehouse_id) {

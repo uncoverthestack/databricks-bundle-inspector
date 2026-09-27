@@ -145,7 +145,11 @@ export function TaskNode({ data, selected }) {
     "JAR": "JAR",
     "dbt": "DBT",
     "dbt platform (Beta)": "DBTP",
-    "SQL Alert (Beta)": "ALRT",
+    "Alert": "ALRT",
+    "dbt Cloud": "DBTC",
+    "AI Runtime": "AIR",
+    "Gen AI compute": "GAI",
+    "Python operator": "PYOP",
     "SQL": "SQL",
   };
   const shortTaskTypeLabel = TASK_TYPE_ABBREVIATIONS[taskTypeLabel] ?? "TSK";

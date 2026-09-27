@@ -117,7 +117,7 @@ function issueKindLabel(kind) {
       unresolved_variable: "Unresolved variable",
       validation_diagnostic: "Validation diagnostic",
       unknown_or_deprecated_field: "Unknown field",
-      unknown_task_type: "Unknown task type",
+      unknown_task_type: "Unrecognised task type",
       git_source_not_recommended: "Git source warning",
     }[kind] ?? "Issue"
   );
@@ -315,7 +315,7 @@ function buildIssueItems(
             unresolved_variable: "Unresolved Variables",
             validation_diagnostic: "Validation Diagnostics",
             unknown_or_deprecated_field: "Unknown or Deprecated Fields",
-            unknown_task_type: "Unknown or Deprecated Task Types",
+            unknown_task_type: "Unrecognised Task Types",
             git_source_not_recommended: "Git Source Warnings",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
@@ -1095,11 +1095,14 @@ function getTaskSubtitleLabel(node) {
   if (taskType === "for_each") return "Inputs";
   if (taskType === "dashboard") return "Dashboard";
   if (taskType === "dbt") return "Commands";
-
-  const taskTypeLabel = node.taskTypeLabel ?? "";
-  if (taskTypeLabel.includes("Spark Submit")) return "Parameters";
-  if (taskTypeLabel.includes("SQL Alert")) return "Alert";
-  if (taskTypeLabel.includes("Power BI")) return "Dashboard";
+  if (taskType === "dbt_cloud") return "dbt Cloud job";
+  if (taskType === "spark_submit") return "Parameters";
+  if (taskType === "alert") return "Alert";
+  if (taskType === "power_bi") return "Connection";
+  if (taskType === "ai_runtime") return "Code source";
+  if (taskType === "gen_ai_compute") return "Training script";
+  if (taskType === "python_operator") return "Main";
+  if (taskType === "unknown") return "Task type";
   return "Target";
 }
 

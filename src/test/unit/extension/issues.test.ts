@@ -264,7 +264,7 @@ describe("buildInspectorIssues", () => {
     ]);
   });
 
-  test("reports unknown task types", () => {
+  test("reports unrecognised task types as info, not a bundle problem", () => {
     const graph: BundleGraph = {
       nodes: [
         taskNode({
@@ -278,9 +278,9 @@ describe("buildInspectorIssues", () => {
       buildInspectorIssues(graph, { bundle: { name: "demo" } }, [], "/workspace/demo"),
     ).toMatchObject([
       {
-        severity: "warning",
+        severity: "info",
         kind: "unknown_task_type",
-        title: "Unknown or deprecated task type",
+        title: "Task type not recognised by the inspector",
         detail: "extract",
         taskName: "extract",
         yamlPath: "tasks.extract",
