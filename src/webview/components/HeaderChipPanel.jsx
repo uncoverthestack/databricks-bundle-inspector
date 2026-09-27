@@ -75,7 +75,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                       />
                     )}
                     <span className="min-w-0">
-                      <span className="block truncate text-xs text-stone-200">
+                      <span title={item.title} className="block line-clamp-2 text-xs text-stone-200">
                         {item.title}
                       </span>
                       {item.subtitle && (

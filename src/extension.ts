@@ -162,7 +162,11 @@ async function updateBundleDiagnostics(
   const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
   if (result.ok) {
     try {
-      const graph = await extractBundleGraph(result.data, bundleRoot);
+      // Read file contents as the inspector panel does, so issues found in code
+      // (e.g. a secret scope named by its resource key) also reach the Problems panel.
+      const graph = await enrichGraphWithFileContent(
+        await extractBundleGraph(result.data, bundleRoot),
+      );
       const inspectorIssues = buildInspectorIssues(
         graph,
         result.data,

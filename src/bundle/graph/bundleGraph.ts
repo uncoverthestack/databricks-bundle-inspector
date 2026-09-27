@@ -18,6 +18,11 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
+import {
+  findClusterSecretReferences,
+  matchSecretScope,
+  type BundleSecretScope,
+} from "../resources/secretScope.js";
 
 export type { BundleEdge, EdgeKind };
 
@@ -346,7 +351,8 @@ function getResourceDisplayName(
   resourceKey: string,
   resourceData: Record<string, unknown>,
 ): string {
-  if (resourceGroup === "secret_scopes") return resourceKey;
+  // Every resource shows its `name` when it has one. For a secret scope that is the
+  // name Databricks knows, which is what code and config refer to.
   return typeof resourceData.name === "string" ? resourceData.name : resourceKey;
 }
 
@@ -846,7 +852,9 @@ function addTaskReferenceGraph(
   addNode: (node: BundleGraphNode) => void,
   addEdge: (edge: BundleEdge) => void,
 ): void {
-  for (const ref of taskData.fileReferences) {
+  // A for_each task runs its inner task's files, so they are the outer task's files too.
+  const fileReferences = [...taskData.fileReferences, ...(taskData.nestedTask?.fileReferences ?? [])];
+  for (const ref of fileReferences) {
     const nodeId = `file:${ref.resolvedPath ?? ref.path}`;
     addNode({
       id: nodeId,
@@ -1240,5 +1248,114 @@ export async function extractBundleGraph(
     });
   });
 
+  addConfigSecretReferences(parsedBundle, resourceSourceMap, yamlLocationMaps, nodeMap, addNode, addEdge);
+
   return { nodes: [...nodeMap.values()], edges };
+}
+
+/** The bundle's `secret_scopes` resources, with the scope name Databricks uses. */
+export function bundleSecretScopes(nodes: Iterable<BundleGraphNode>): BundleSecretScope[] {
+  const scopes: BundleSecretScope[] = [];
+  for (const node of nodes) {
+    if (node.resourceGroup !== "secret_scopes" || !node.resourceKey) continue;
+    const name = typeof node.data.name === "string" ? node.data.name : node.resourceKey;
+    scopes.push({ id: node.id, resourceKey: node.resourceKey, name });
+  }
+  return scopes;
+}
+
+/**
+ * Links `{{secrets/<scope>/<key>}}` in cluster `spark_conf` / `spark_env_vars` to the
+ * scope, from whatever uses that cluster: the job's tasks on a job cluster, a task's
+ * own new_cluster, a `clusters` resource (and tasks pointing at it), or a pipeline.
+ */
+function addConfigSecretReferences(
+  parsedBundle: ParsedBundleConfig,
+  resourceSourceMap: Map<string, string>,
+  yamlLocationMaps: Map<string, YamlLocationMap>,
+  nodeMap: Map<string, BundleGraphNode>,
+  addNode: (node: BundleGraphNode) => void,
+  addEdge: (edge: BundleEdge) => void,
+): void {
+  const resources = parsedBundle.resources ?? {};
+  const scopes = bundleSecretScopes(nodeMap.values());
+
+  function link(
+    group: string,
+    key: string,
+    clusterPath: string,
+    cluster: unknown,
+    sourceIds: string[],
+  ): void {
+    const file = resourceSourceMap.get(`${group}.${key}`) ?? "";
+    for (const ref of findClusterSecretReferences(cluster)) {
+      const base = clusterPath ? `resources.${group}.${key}.${clusterPath}` : `resources.${group}.${key}`;
+      const yamlPath = `${base}.${ref.path}`;
+      const location = yamlLocationMaps.get(file)?.get(yamlPath);
+      const match = matchSecretScope(ref.scope, scopes);
+      addNode({
+        id: match.nodeId,
+        kind: "secret_scope",
+        nodeType: "secret_scope",
+        displayName: ref.scope,
+        data: {
+          scope: ref.scope,
+          ...(match.resourceKeyMisuse ? { resourceKeyMisuse: match.resourceKeyMisuse } : {}),
+        },
+      });
+      for (const source of sourceIds) {
+        if (!nodeMap.has(source)) continue;
+        addEdge({
+          id: `${source}->secret->${match.nodeId}@${yamlPath}`,
+          source,
+          target: match.nodeId,
+          kind: "references",
+          data: {
+            key: ref.key,
+            yamlPath,
+            ...(file ? { file } : {}),
+            ...(location ? { line: location.line, column: location.column } : {}),
+          },
+        });
+      }
+    }
+  }
+
+  for (const [jobKey, rawJob] of Object.entries(resources.jobs ?? {})) {
+    const job = rawJob as Job;
+    const jobId = `resources.jobs.${jobKey}`;
+    const tasks = Array.isArray(job.tasks) ? job.tasks : [];
+    const taskId = (task: JobTask, index: number) =>
+      `${jobId}.tasks.${task.task_key ?? `task-${index + 1}`}`;
+    (job.job_clusters ?? []).forEach((jobCluster, index) => {
+      const users = tasks
+        .map((task, taskIndex) => ({ task, taskIndex }))
+        .filter(({ task }) => task.job_cluster_key && task.job_cluster_key === jobCluster.job_cluster_key)
+        .map(({ task, taskIndex }) => taskId(task, taskIndex));
+      link("jobs", jobKey, `job_clusters[${index}].new_cluster`, jobCluster.new_cluster, users);
+    });
+    tasks.forEach((task, index) => {
+      link("jobs", jobKey, `tasks[${index}].new_cluster`, task.new_cluster, [taskId(task, index)]);
+    });
+  }
+
+  for (const [clusterKey, cluster] of Object.entries(resources.clusters ?? {})) {
+    const clusterId = `resources.clusters.${clusterKey}`;
+    const users = [...nodeMap.values()]
+      .filter(
+        (node) =>
+          node.nodeType === "task" &&
+          typeof node.data.existing_cluster_id === "string" &&
+          node.data.existing_cluster_id.includes(`resources.clusters.${clusterKey}.`),
+      )
+      .map((node) => node.id);
+    link("clusters", clusterKey, "", cluster, [clusterId, ...users]);
+  }
+
+  for (const [pipelineKey, pipeline] of Object.entries(resources.pipelines ?? {})) {
+    const clusters = Array.isArray(toRecord(pipeline).clusters) ? (toRecord(pipeline).clusters as unknown[]) : [];
+    clusters.forEach((cluster, index) => {
+      link("pipelines", pipelineKey, `clusters[${index}]`, cluster, [`resources.pipelines.${pipelineKey}`]);
+    });
+  }
 }
