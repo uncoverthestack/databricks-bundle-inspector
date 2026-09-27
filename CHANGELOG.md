@@ -4,12 +4,18 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [0.1.5] - 2026-09-27
 
+### Added
+
+- **Pipeline sources are checked.** A pipeline whose `libraries` point at a notebook or file that doesn't exist, or at a `folder/**` glob with no files, is now reported as an error in the Problems panel at the exact line. The Databricks CLI doesn't catch these during validation, so they used to surface only on `bundle deploy`. Workspace paths, variables and complex glob patterns are not checked.
+
 ### Fixed
 
 - **Warnings about a job, task, pipeline or other resource now reach the Problems panel.** The Databricks CLI prints an extra `at <yaml.path>` line for these, and the inspector dropped their file and line, so they never showed up and couldn't be clicked. This affected every CLI version since 0.1.0. Issues now also carry the YAML path they apply to. This fixes this [issue](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/75).
 - **All 20 job task types are recognised, and valid tasks are no longer flagged.** Tasks such as Power BI and Spark Submit showed an "Unknown task type" warning on perfectly valid bundles. Newly recognised: `alert_task` (which replaces `sql_alert_task`, no longer in the bundle schema), `dbt_cloud_task`, `ai_runtime_task`, `gen_ai_compute_task` and `python_operator_task`. This fixes this [issue](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/76).
 - **Power BI, Clean room and dbt platform tasks now show their details** (connection, notebook name and job ID). They read fields that don't exist in the bundle schema, so the detail line was always empty.
 - **dbt platform tasks are no longer shown as using a SQL warehouse.** They run on dbt's platform and have no warehouse setting.
+- **Warnings about a pipeline no longer appear under unrelated jobs.** A job's issue list now shows only issues on its own tasks, on the job itself, or on the whole bundle.
+- **Notebooks at workspace paths such as `/Users/...` or `/Shared/...` are no longer reported as missing local files.**
 - **Each task on the graph shows its own badge.** dbt, JAR, Spark Submit, Python wheel and the new AI task types all showed "PY", and alert tasks showed "T". They now show DBT, JAR, SUB, WHL, AIR, GAI, PYOP, ALRT and so on. A task type the inspector doesn't recognise shows "?".
 
 ### Changed
