@@ -1,0 +1,7 @@
+resources:
+  pipelines:
+    sync_exclusions_pipeline:
+      name: sync_exclusions_pipeline
+      libraries:
+        - notebook:
+            path: ../src/excluded/pipeline_nb.py

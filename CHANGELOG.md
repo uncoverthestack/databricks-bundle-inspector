@@ -8,6 +8,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **Files that won't be deployed are flagged.** A task or pipeline that points at a file skipped by `.gitignore` (at any level) or `sync.exclude` gets a warning naming the rule, for example ""../src/helper.py" may not be deployed: it matches .gitignore." `bundle validate` passes for these, so they used to fail only when the job ran. Files added back by `sync.include`, and jobs with a `git_source`, are not flagged.
 - **Secrets in cluster config are detected.** `{{secrets/<scope>/<key>}}` in `spark_conf` and `spark_env_vars` of job clusters, task clusters, `clusters` resources and pipeline clusters is linked to the scope and to every task using that cluster, at the YAML line.
 - **Secrets used inside `for_each` tasks and in pipeline sources are detected.**
 - **A hint when code names a secret scope by its bundle resource key.** For example `app_scope` where the bundle's scope is named `app-secrets`: "Secret scope "app_scope" may not exist. Did you mean "app-secrets"?"
