@@ -4,11 +4,17 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-27
+
 ### Added
 
 - **Secrets in cluster config are detected.** `{{secrets/<scope>/<key>}}` in `spark_conf` and `spark_env_vars` of job clusters, task clusters, `clusters` resources and pipeline clusters is linked to the scope and to every task using that cluster, at the YAML line.
 - **Secrets used inside `for_each` tasks and in pipeline sources are detected.**
 - **A hint when code names a secret scope by its bundle resource key.** For example `app_scope` where the bundle's scope is named `app-secrets`: "Secret scope "app_scope" may not exist. Did you mean "app-secrets"?"
+
+### Changed
+
+- **The Marketplace listing and README lead with what the inspector catches** before deploy, and name Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) so pipeline users can find it.
 
 ### Fixed
 
@@ -157,6 +163,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.1.6]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.1...v0.1.3
