@@ -9,6 +9,10 @@ import {
   type TaskPayloadKey,
 } from "../resources/task.js";
 import {
+  getPipelineLibraryReferences,
+  type PipelineLibraryReference,
+} from "../resources/pipeline.js";
+import {
   parseYamlLocations,
   type YamlLocationMap,
 } from "../sourceLocations.js";
@@ -299,6 +303,8 @@ export interface BundleGraphNode {
   displayName: string;
   location?: "local" | "workspace" | "dbfs";
   taskTypeLabel?: string;
+  /** Local sources in a pipeline's `libraries` (pipeline nodes only, when bundleRoot is known). */
+  pipelineLibraries?: PipelineLibraryReference[];
   subtitle?: string;
   status?: string;
   trigger?: string;
@@ -1036,6 +1042,22 @@ export async function extractBundleGraph(
   resourceNodes.forEach((resourceNode) => {
     const isJobGroup = resourceNode.resourceGroup === "jobs" || resourceNode.resourceGroup === "job";
     if (!isJobGroup) {
+      const sourceFilePath = resourceSourceMap.get(
+        `${resourceNode.resourceGroup}.${resourceNode.resourceKey}`,
+      ) ?? "";
+      const pipelineLibraries =
+        resourceNode.resourceGroup === "pipelines" && bundleRoot
+          ? getPipelineLibraryReferences(
+              resourceNode.data,
+              sourceFilePath,
+              sourceFilePath ? dirname(sourceFilePath) : bundleRoot,
+              bundleRoot,
+              (yamlPath) =>
+                yamlLocationMaps
+                  .get(sourceFilePath)
+                  ?.get(`resources.pipelines.${resourceNode.resourceKey}.${yamlPath}`),
+            )
+          : undefined;
       addNode({
         id: resourceNode.id,
         kind: resourceKind(resourceNode.resourceGroup),
@@ -1044,6 +1066,7 @@ export async function extractBundleGraph(
         resourceGroup: resourceNode.resourceGroup,
         resourceKey: resourceNode.resourceKey,
         data: resourceNode.data,
+        ...(pipelineLibraries?.length ? { pipelineLibraries } : {}),
       });
       return;
     }

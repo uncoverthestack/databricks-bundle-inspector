@@ -8,7 +8,7 @@ import type {
 } from "./graph/bundleGraph.js";
 import type { BundleEdge } from "./graph/edges.js";
 import type { DocumentationSignal } from "./documentationSignals.js";
-import type { InspectorIssue } from "./issues.js";
+import { issueBelongsToJob, type InspectorIssue } from "./issues.js";
 
 const MERMAID_TASK_LIMIT = 25;
 
@@ -182,9 +182,10 @@ function taskIssues(
 
 function jobIssues(
   issues: InspectorIssue[],
+  jobId: string,
   taskIds: Set<string>,
 ): InspectorIssue[] {
-  return issues.filter((issue) => !issue.taskId || taskIds.has(issue.taskId));
+  return issues.filter((issue) => issueBelongsToJob(issue, jobId, taskIds));
 }
 
 function sourceLabel(task: BundleGraphNode): string | undefined {
@@ -295,7 +296,7 @@ export function buildJobDocumentation(
     parameters: jobNode.parameters ?? [],
     compute: jobNode.compute ?? [],
     tasks,
-    issues: jobIssues(issues, taskIds),
+    issues: jobIssues(issues, jobNode.id, taskIds),
     sourceFiles: [],
   };
 

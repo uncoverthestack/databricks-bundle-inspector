@@ -31,6 +31,11 @@
       "fixture": "src/test/fixtures/newer-task-types",
       "baseline": "src/test/fixtures/baselines/newer-task-types.semantic.json",
       "minCliVersion": "1.6.0"
+    },
+    {
+      "name": "pipeline-sources",
+      "fixture": "src/test/fixtures/pipeline-sources",
+      "baseline": "src/test/fixtures/baselines/pipeline-sources.semantic.json"
     }
   ]
 }

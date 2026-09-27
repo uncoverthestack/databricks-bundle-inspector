@@ -1,7 +1,7 @@
 import path from "node:path";
 import { decideDocumentationGeneration } from "./documentationPolicy.js";
 import type { BundleGraph, BundleGraphNode, ParsedBundleConfig } from "./graph/bundleGraph.js";
-import type { InspectorIssue } from "./issues.js";
+import { issueBelongsToJob, type InspectorIssue } from "./issues.js";
 
 export type SemanticFileStatus =
   | "found"
@@ -212,10 +212,11 @@ function semanticIssue(issue: InspectorIssue, bundleRoot?: string): SemanticIssu
 
 function jobIssues(
   issues: InspectorIssue[],
+  job: BundleGraphNode,
   tasks: BundleGraphNode[],
 ): InspectorIssue[] {
   const taskIds = new Set(tasks.map((task) => task.id));
-  return issues.filter((issue) => !issue.taskId || taskIds.has(issue.taskId));
+  return issues.filter((issue) => issueBelongsToJob(issue, job.id, taskIds));
 }
 
 function semanticDocumentationState(
@@ -257,7 +258,7 @@ export function exportSemanticGraph(
   const jobs = jobNodes(graph).map((job): SemanticJob => {
     const tasks = taskNodesForJob(graph, job);
     const dependencies = dependencyMaps(graph, tasks);
-    const scopedIssues = jobIssues(issues, tasks);
+    const scopedIssues = jobIssues(issues, job, tasks);
 
     return {
       key: job.resourceKey ?? job.displayName,

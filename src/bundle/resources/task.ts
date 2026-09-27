@@ -182,18 +182,24 @@ export interface TaskParameterReference {
 
 const VAR_PATTERN = /\$\{var\.([^}]+)\}/g;
 const RESOURCE_PATTERN = /\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}/g;
-const GIT_NOTEBOOK_EXTENSIONS = [".py", ".sql", ".scala", ".r", ".ipynb"];
+export const NOTEBOOK_EXTENSIONS = [".py", ".sql", ".scala", ".r", ".ipynb"];
+const GIT_NOTEBOOK_EXTENSIONS = NOTEBOOK_EXTENSIONS;
 
-interface SourceLocation {
+export interface SourceLocation {
   line: number;
   column: number;
 }
 
-type SourceLocationResolver = (yamlPath: string) => SourceLocation | undefined;
+export type SourceLocationResolver = (yamlPath: string) => SourceLocation | undefined;
 
-function isRemotePath(p: string): boolean {
+// Absolute workspace paths (with or without the /Workspace prefix) never exist locally.
+export function isRemotePath(p: string): boolean {
   return (
     p.startsWith("/Workspace/") ||
+    p.startsWith("/Users/") ||
+    p.startsWith("/Shared/") ||
+    p.startsWith("/Repos/") ||
+    p.startsWith("/Volumes/") ||
     p.startsWith("dbfs:/") ||
     p.startsWith("s3://") ||
     p.startsWith("abfss://") ||
@@ -201,11 +207,11 @@ function isRemotePath(p: string): boolean {
   );
 }
 
-function containsTemplate(p: string): boolean {
+export function containsTemplate(p: string): boolean {
   return p.includes("${") || p.includes("{{");
 }
 
-function resolveLocalPath(
+export function resolveLocalPath(
   rawPath: string,
   primaryDir: string,
   fallbackDir?: string,
