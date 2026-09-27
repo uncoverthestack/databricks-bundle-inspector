@@ -1,0 +1,5 @@
+bundle:
+  name: notebook_paths
+
+include:
+  - resources/*.yml

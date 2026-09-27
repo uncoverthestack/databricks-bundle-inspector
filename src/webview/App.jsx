@@ -122,6 +122,7 @@ function issueKindLabel(kind) {
       unknown_task_type: "Unrecognised task type",
       git_source_not_recommended: "Git source warning",
       secret_scope_name_mismatch: "Secret scope name",
+      notebook_type_mismatch: "Notebook or file",
     }[kind] ?? "Issue"
   );
 }
@@ -330,6 +331,7 @@ function buildIssueItems(
             unknown_task_type: "Unrecognised Task Types",
             git_source_not_recommended: "Git Source Warnings",
             secret_scope_name_mismatch: "Secret Scope Names",
+            notebook_type_mismatch: "Notebook or File Mismatches",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,

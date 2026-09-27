@@ -1,9 +1,9 @@
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { checkNotebookPath, type NotebookPathProblem } from "../notebookFiles.js";
 import {
   containsTemplate,
   isRemotePath,
-  NOTEBOOK_EXTENSIONS,
   resolveLocalPath,
   type SourceLocationResolver,
 } from "./task.js";
@@ -20,6 +20,8 @@ export interface PipelineLibraryReference {
   exists: boolean;
   /** False when the path could not be checked locally (workspace path, variable, complex glob). */
   checked: boolean;
+  /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
+  notebookProblem?: NotebookPathProblem;
   sourceFile: string;
   sourceLine: number;
   sourceColumn?: number;
@@ -116,15 +118,19 @@ export function getPipelineLibraryReferences(
         : kind === "glob"
           ? checkGlob(rawPath, sourceFileDir, bundleRoot)
           : {
-              ...resolveLocalPath(rawPath, sourceFileDir, bundleRoot, {
-                extensions: kind === "notebook" ? NOTEBOOK_EXTENSIONS : [],
-              }),
+              // No extension guessing: the CLI requires a notebook path's extension.
+              ...resolveLocalPath(rawPath, sourceFileDir, bundleRoot),
               checked: true,
             };
+      const notebookProblem =
+        kind !== "glob" && result.resolvedPath
+          ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file")
+          : undefined;
       refs.push({
         kind,
         path: rawPath,
         ...result,
+        ...(notebookProblem ? { notebookProblem } : {}),
         sourceFile,
         sourceLine: location?.line ?? 0,
         ...(location ? { sourceColumn: location.column } : {}),

@@ -18,6 +18,11 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Notebook and file paths follow the Databricks CLI's rules.** The inspector now reports the same path errors `bundle deploy` would, checked against CLI v1.17.0:
+  - A local notebook path without its extension is not found, even when `name.py` exists: "Notebook "../src/ingest" may not be found. Did you mean "../src/ingest.py"?". Pipeline notebooks without an extension were wrongly accepted.
+  - A notebook task or pipeline notebook pointing at a file whose first line isn't the Databricks notebook header (for example `-- Databricks notebook source`) "may not be a notebook".
+  - A Python file, SQL file or pipeline file that has the notebook header "may be a notebook, not a file".
+  - Paths in a job with a `git_source` are not checked, as the CLI doesn't check them.
 - **Fixing a problem clears it without saving bundle YAML.** Issues were only re-checked when `databricks.yml` or an included YAML file was saved, so creating a missing notebook, or fixing code, left the error in place. The inspector now re-checks when any file the bundle points at is created, changed or deleted, including from the terminal or a branch switch. New YAML files matching `include` and new files under a pipeline glob are picked up too. Files `bundle deploy` would skip (`.gitignore`, `sync.exclude`) don't trigger a re-check.
 - **Issues found in code are cleared once fixed.** An issue on a notebook or file, such as a secret scope named by its resource key, could stay in the Problems panel after the fix.
 - **Secret scopes are matched by their real name.** Code using a bundle scope's `name` was shown as an external scope, and code using the resource key, which fails at runtime, was linked to the bundle scope. Bundle scopes are now also shown by their name.

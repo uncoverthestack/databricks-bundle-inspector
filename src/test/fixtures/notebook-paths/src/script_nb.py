@@ -1,2 +1,2 @@
 # Databricks notebook source
-print("hi")
+print(1)

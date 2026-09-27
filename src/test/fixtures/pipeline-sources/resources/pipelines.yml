@@ -8,7 +8,7 @@ resources:
       bogus_pipeline_field: true
       libraries:
         - notebook:
-            path: ../src/dlt/bronze
+            path: ../src/dlt/bronze.py
         - glob:
             include: ../src/dlt/transforms/**
     broken_pipeline:

@@ -1,0 +1,2 @@
+# Byte-exact notebook headers (CRLF, BOM) must not be normalised.
+src/test/fixtures/notebook-paths/src/** -text

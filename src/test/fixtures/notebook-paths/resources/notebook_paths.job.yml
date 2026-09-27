@@ -1,0 +1,41 @@
+resources:
+  jobs:
+    notebook_paths:
+      name: notebook_paths
+      tasks:
+        - task_key: no_extension
+          notebook_task:
+            notebook_path: ../src/nb_noext
+        - task_key: plain_sql
+          notebook_task:
+            notebook_path: ../src/nb_plain.sql
+        - task_key: ok_sql
+          notebook_task:
+            notebook_path: ../src/nb_ok.sql
+        - task_key: crlf
+          notebook_task:
+            notebook_path: ../src/nb_crlf.py
+        - task_key: bom
+          notebook_task:
+            notebook_path: ../src/nb_bom.py
+        - task_key: trailing_space
+          notebook_task:
+            notebook_path: ../src/nb_trailing_space.py
+        - task_key: ok_ipynb
+          notebook_task:
+            notebook_path: ../src/nb_ok.ipynb
+        - task_key: old_ipynb
+          notebook_task:
+            notebook_path: ../src/nb_old.ipynb
+        - task_key: python_file_is_notebook
+          spark_python_task:
+            python_file: ../src/script_nb.py
+        - task_key: sql_file_is_notebook
+          sql_task:
+            warehouse_id: abc
+            file:
+              path: ../src/query_nb.sql
+        - task_key: python_file_ok
+          spark_python_task:
+            python_file: ../src/plain.py
+

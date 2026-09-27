@@ -13,5 +13,5 @@ resources:
       name: Ingest Pipeline
       bogus_pipeline_field: true
       libraries:
-        - file:
+        - notebook:
             path: ../src/extract.py

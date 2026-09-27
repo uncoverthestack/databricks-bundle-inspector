@@ -1,3 +1,4 @@
+# Databricks notebook source
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 source_table = dbutils.widgets.get("source_table")
