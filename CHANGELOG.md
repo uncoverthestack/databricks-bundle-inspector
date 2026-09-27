@@ -2,11 +2,23 @@
 
 All notable changes to the **Databricks Bundle Inspector** extension are documented in this file.
 
-## [Unreleased]
+## [0.1.5] - 2026-09-27
+
+### Fixed
+
+- **Warnings about a job, task, pipeline or other resource now reach the Problems panel.** The Databricks CLI prints an extra `at <yaml.path>` line for these, and the inspector dropped their file and line, so they never showed up and couldn't be clicked. This affected every CLI version since 0.1.0. Issues now also carry the YAML path they apply to. This fixes this [issue](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/75).
+- **All 20 job task types are recognised, and valid tasks are no longer flagged.** Tasks such as Power BI and Spark Submit showed an "Unknown task type" warning on perfectly valid bundles. Newly recognised: `alert_task` (which replaces `sql_alert_task`, no longer in the bundle schema), `dbt_cloud_task`, `ai_runtime_task`, `gen_ai_compute_task` and `python_operator_task`. This fixes this [issue](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/76).
+- **Power BI, Clean room and dbt platform tasks now show their details** (connection, notebook name and job ID). They read fields that don't exist in the bundle schema, so the detail line was always empty.
+- **dbt platform tasks are no longer shown as using a SQL warehouse.** They run on dbt's platform and have no warehouse setting.
 
 ### Changed
 
-- **Minimum Databricks CLI raised to `v0.299.0`** (previously `v0.270.1`). The compatibility matrix now covers `v0.299.0` through the 1.x releases. `v0.299.x` is the only 0.x line Databricks still patches, and older versions are no longer tested.
+- **A task type the inspector doesn't recognise is now an information note, not a warning.** It reads "Task type not recognised by the inspector", and the task on the graph shows its type key. A mistyped task key is still flagged, because the Databricks CLI reports it as an unknown field.
+- **Minimum Databricks CLI raised to `v0.299.0`** (previously `v0.270.1`). `v0.299.x` is the only 0.x line Databricks still patches, and older versions are no longer tested.
+
+### Tests
+
+- A weekly check, also run on every pull request, tests the inspector against the latest Databricks CLI and `v0.299.2`. It covers warnings with their file and line, all 20 task types, and a check that fails when the CLI's bundle schema gains a task or resource type the inspector doesn't know about.
 
 ## [0.1.4] - 2026-09-22
 
@@ -122,6 +134,8 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
-[Unreleased]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.1...HEAD
+[0.1.5]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.4...v0.1.5
+[0.1.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.1...v0.1.3
 [0.1.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.1.0
