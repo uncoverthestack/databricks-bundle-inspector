@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    ingest_job:
+      name: Ingest Job
+      bogus_job_field: true
+      tasks:
+        - task_key: extract
+          notebook_task:
+            notebook_path: ../src/extract.py
+          bogus_task_field: true
+  pipelines:
+    ingest_pipeline:
+      name: Ingest Pipeline
+      bogus_pipeline_field: true
+      libraries:
+        - file:
+            path: ../src/extract.py

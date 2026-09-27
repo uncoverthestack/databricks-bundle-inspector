@@ -10,6 +10,8 @@ import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { exportSemanticGraph } from "../../bundle/semanticGraph.js";
 import type { SemanticBundleGraph } from "../../bundle/semanticGraph.js";
+import { validateBundle as validateBundleWithCli } from "../../bundle/validateBundle.js";
+import type { ValidationIssue } from "../../bundle/validateBundle.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_FIXTURE = "src/test/fixtures/secret-scope-example";
@@ -54,33 +56,21 @@ async function databricksVersion(cli: string): Promise<string> {
   return match?.[0] ?? output;
 }
 
+/**
+ * Runs the extension's own validation path (CLI resolution, probe target,
+ * stderr diagnostics parsing) so the matrix covers what users see, not only
+ * the JSON on stdout.
+ */
 async function validateBundle(
   cli: string,
   fixtureRoot: string,
   target: string | undefined,
-): Promise<ParsedBundleConfig> {
-  const args = ["bundle", "validate", "--output", "json"];
-  if (target) args.push("--target", target);
-
-  try {
-    const { stdout } = await execFileAsync(cli, args, {
-      cwd: fixtureRoot,
-      timeout: 30_000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return JSON.parse(stdout) as ParsedBundleConfig;
-  } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "stdout" in error &&
-      typeof error.stdout === "string" &&
-      error.stdout.trim()
-    ) {
-      return JSON.parse(error.stdout) as ParsedBundleConfig;
-    }
-    throw error;
+): Promise<{ bundle: ParsedBundleConfig; validationIssues: ValidationIssue[] }> {
+  const result = await validateBundleWithCli(fixtureRoot, target, cli);
+  if (!result.ok) {
+    throw new Error(`bundle validate failed: ${JSON.stringify(result.error)}`);
   }
+  return { bundle: result.data, validationIssues: result.issues ?? [] };
 }
 
 async function writeArtifacts(
@@ -136,19 +126,25 @@ describe("live Databricks CLI semantic compatibility", () => {
         ? undefined
         : env("SEMANTIC_CLI_TARGET", DEFAULT_TARGET);
 
-    const [cliVersion, parsedBundle] = await Promise.all([
-      databricksVersion(cli),
-      validateBundle(cli, fixtureRoot, target),
-    ]);
+    const [cliVersion, { bundle: parsedBundle, validationIssues }] =
+      await Promise.all([
+        databricksVersion(cli),
+        validateBundle(cli, fixtureRoot, target),
+      ]);
     const graph = await extractBundleGraph(parsedBundle, fixtureRoot);
     const enrichedGraph = await enrichGraphWithFileContent(graph);
     const issues = buildInspectorIssues(
       enrichedGraph,
       parsedBundle,
-      [],
+      validationIssues,
       fixtureRoot,
     );
-    const actual = exportSemanticGraph(parsedBundle, enrichedGraph, issues);
+    const actual = exportSemanticGraph(
+      parsedBundle,
+      enrichedGraph,
+      issues,
+      fixtureRoot,
+    );
     await writeArtifacts(
       artifactRoot,
       cliVersion,

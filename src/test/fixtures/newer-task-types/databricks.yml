@@ -1,0 +1,11 @@
+# Job task types added after CLI 0.299: python_operator_task (1.1.0) and
+# ai_runtime_task (1.6.0). Runs only on CLI 1.6.0+ (see minCliVersion).
+bundle:
+  name: newer-task-types
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://example.cloud.databricks.com

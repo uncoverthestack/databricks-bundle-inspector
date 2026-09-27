@@ -11,7 +11,8 @@ function usage() {
     "Usage:",
     "  node scripts/run-semantic-cli-matrix.mjs [--config <path>]",
     "",
-    "The config file contains CLI commands and fixture/baseline pairs.",
+    "The config file contains CLI commands and fixture/baseline pairs. A fixture with",
+    "\"minCliVersion\" is skipped for older CLIs.",
   ].join("\n");
 }
 
@@ -43,6 +44,21 @@ async function readConfig(configPath) {
     throw new Error(`Matrix config must define a non-empty "fixtures" array.`);
   }
   return config;
+}
+
+function cliVersion(command) {
+  const result = spawnSync(command, ["--version"], { encoding: "utf-8" });
+  const match = `${result.stdout ?? ""}${result.stderr ?? ""}`.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) throw new Error(`Could not read the version of ${command}`);
+  return match.slice(1, 4).map(Number);
+}
+
+function isOlderThan(version, minimum) {
+  const min = minimum.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    if (version[index] !== min[index]) return version[index] < min[index];
+  }
+  return false;
 }
 
 function runCase(cli, fixture) {
@@ -83,11 +99,19 @@ async function main() {
     if (!cli?.name || !cli?.command) {
       throw new Error(`Each CLI entry must include "name" and "command".`);
     }
+    const version = cliVersion(cli.command);
     for (const fixture of config.fixtures) {
       if (!fixture?.name || !fixture?.fixture || !fixture?.baseline) {
         throw new Error(
           `Each fixture entry must include "name", "fixture", and "baseline".`,
         );
+      }
+      // A fixture using bundle features newer than this CLI would only test the CLI rejecting them.
+      if (fixture.minCliVersion && isOlderThan(version, fixture.minCliVersion)) {
+        console.log(
+          `\n[semantic-cli-matrix] ${cli.name} x ${fixture.name}: skipped (needs CLI ${fixture.minCliVersion}+, found ${version.join(".")})`,
+        );
+        continue;
       }
       const result = runCase(cli, fixture);
       if (result.status !== 0) failures.push(result);

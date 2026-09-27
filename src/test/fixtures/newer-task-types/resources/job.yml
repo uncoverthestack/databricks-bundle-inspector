@@ -1,0 +1,13 @@
+resources:
+  jobs:
+    newer_tasks:
+      name: newer_tasks
+      tasks:
+        - task_key: t_ai_runtime
+          ai_runtime_task:
+            experiment: /Shared/exp
+            deployments:
+              - name: d1
+        - task_key: t_python_operator
+          python_operator_task:
+            main: ../src/op.py

@@ -8,7 +8,7 @@ Open a `databricks.yml` file and run **Inspect Databricks Bundle** to see:
 
 - **Visual DAG**: Interactive graph of jobs and `depends_on` relationships with pan, zoom, and search.
 - **Task details**: Type, source file, parameters, compute, and dependencies.
-- **Issue detection**: Missing files, unresolved variables, unknown task types, and Databricks CLI diagnostics.
+- **Issue detection**: Missing files, unresolved variables, and Databricks CLI diagnostics, linked to the file and line they come from.
 - **Layout controls**: Automatic graph layout to keep parallel branches visually separated.
 
 <div>
@@ -23,6 +23,8 @@ Open a `databricks.yml` file and run **Inspect Databricks Bundle** to see:
 ## Requirements
 
 The [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html) must be installed and available on your `PATH`, or configured via the `databricksBundleInspector.cliPath` VS Code setting.
+
+Tested with Databricks CLI `v0.299.0` and newer. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
 
 ## Usage
 

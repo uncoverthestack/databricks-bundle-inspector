@@ -214,6 +214,33 @@ export interface Resources {
   postgres_endpoints?: Record<string, unknown>;
 }
 
+/** Resource groups the inspector models. Checked against the CLI schema by the schema coverage test. */
+export const MODELLED_RESOURCE_GROUPS = [
+  "jobs",
+  "pipelines",
+  "models",
+  "experiments",
+  "model_serving_endpoints",
+  "registered_models",
+  "quality_monitors",
+  "catalogs",
+  "schemas",
+  "volumes",
+  "external_locations",
+  "clusters",
+  "dashboards",
+  "apps",
+  "secret_scopes",
+  "alerts",
+  "sql_warehouses",
+  "database_instances",
+  "database_catalogs",
+  "synced_database_tables",
+  "postgres_projects",
+  "postgres_branches",
+  "postgres_endpoints",
+] as const satisfies ReadonlyArray<keyof Resources>;
+
 export interface ParsedBundleConfig {
   bundle: Bundle;
   sync?: Sync;

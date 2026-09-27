@@ -1,0 +1,9 @@
+bundle:
+  name: all-task-types
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://example.cloud.databricks.com

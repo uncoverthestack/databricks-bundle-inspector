@@ -105,6 +105,7 @@
     "test:semantic": "jest src/test/unit/extension/semanticGraph.test.ts",
     "test:semantic:cli": "jest --config jest.semantic-cli.config.cjs",
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
+    "test:schema-coverage": "jest --config jest.schema-coverage.config.cjs",
     "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint",
     "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
     "deps:repair-native": "node scripts/repair-native-optional-deps.mjs",

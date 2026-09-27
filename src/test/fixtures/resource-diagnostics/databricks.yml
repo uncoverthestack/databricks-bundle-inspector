@@ -1,0 +1,13 @@
+# Deliberately invalid: each `bogus_*` field makes `databricks bundle validate`
+# emit an "unknown field" warning. Resource-scoped ones include an
+# `at <yaml.path>` line, which the inspector must parse to keep the location.
+bundle:
+  name: resource-diagnostics
+bogus_top_level: true
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://example.cloud.databricks.com
