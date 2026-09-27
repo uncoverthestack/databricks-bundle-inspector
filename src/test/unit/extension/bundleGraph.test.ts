@@ -765,6 +765,28 @@ describe("extractBundleGraph: task labels", () => {
     ]);
   });
 
+  test("gives each task type its own badge instead of the broad kind", async () => {
+    const nodes = await taskNodes([
+      { task_key: "dbt", dbt_task: {} },
+      { task_key: "jar", spark_jar_task: {} },
+      { task_key: "alert", alert_task: {} },
+      { task_key: "power_bi", power_bi_task: {} },
+      { task_key: "ai_runtime", ai_runtime_task: {} },
+      { task_key: "python_operator", python_operator_task: {} },
+      { task_key: "future", brand_new_task: {} },
+    ]);
+
+    expect(nodes.map((node) => [node.displayName, node.taskTypeBadge])).toEqual([
+      ["dbt", "DBT"],
+      ["jar", "JAR"],
+      ["alert", "ALRT"],
+      ["power_bi", "PBI"],
+      ["ai_runtime", "AIR"],
+      ["python_operator", "PYOP"],
+      ["future", "?"],
+    ]);
+  });
+
   test("shows an unrecognised task type by its key", async () => {
     const [node] = await taskNodes([{ task_key: "future", brand_new_task: {} }]);
     expect(node).toMatchObject({ taskTypeLabel: "Task", subtitle: "brand_new_task" });

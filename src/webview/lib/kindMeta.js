@@ -6,6 +6,7 @@ export function kindMeta(kind) {
     script: { code: "PY", color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
     job: { code: "J", color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
     dashboard: { code: "DB", color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    alert: { code: "ALRT", color: "#f87171", bg: "rgba(248,113,113,0.12)" },
     cluster: { code: "C", color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
     warehouse: { code: "WH", color: "#34d399", bg: "rgba(52,211,153,0.12)" },
     file: { code: "F", color: "#94a3b8", bg: "rgba(148,163,184,0.12)" },

@@ -303,6 +303,8 @@ export interface BundleGraphNode {
   displayName: string;
   location?: "local" | "workspace" | "dbfs";
   taskTypeLabel?: string;
+  /** Short code for the task type, shown on the graph node. */
+  taskTypeBadge?: string;
   /** Local sources in a pipeline's `libraries` (pipeline nodes only, when bundleRoot is known). */
   pipelineLibraries?: PipelineLibraryReference[];
   subtitle?: string;
@@ -444,7 +446,32 @@ function withOptionalSubtitle(
   return { kind, label, ...(subtitle ? { subtitle } : {}) };
 }
 
-type TaskPresentation = { kind: string; label: string; subtitle?: string };
+type TaskPresentation = { kind: string; label: string; subtitle?: string; badge?: string };
+
+// Short code shown on each task node. Keyed like TASK_PRESENTATION so a new task type
+// needs one here too. Codes already shown by kind (NB, SQL, PY, P, DB, J) are kept.
+const TASK_BADGE: Record<TaskPayloadKey, string> = {
+  notebook_task: "NB",
+  clean_rooms_notebook_task: "NB",
+  sql_task: "SQL",
+  spark_python_task: "PY",
+  python_wheel_task: "WHL",
+  spark_jar_task: "JAR",
+  spark_submit_task: "SUB",
+  pipeline_task: "P",
+  run_job_task: "J",
+  condition_task: "J",
+  for_each_task: "J",
+  dbt_task: "DBT",
+  dbt_platform_task: "DBTP",
+  dbt_cloud_task: "DBTC",
+  dashboard_task: "DB",
+  power_bi_task: "PBI",
+  alert_task: "ALRT",
+  ai_runtime_task: "AIR",
+  gen_ai_compute_task: "GAI",
+  python_operator_task: "PYOP",
+};
 
 // Keyed by every recognised payload key, so adding a task type in task.ts fails
 // to compile until it has a label here.
@@ -498,9 +525,14 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
 
 function detectTaskType(task: JobTask): TaskPresentation {
   const payloadKey = getTaskPayloadKey(task);
-  if (payloadKey) return TASK_PRESENTATION[payloadKey](task);
+  if (payloadKey) return { ...TASK_PRESENTATION[payloadKey](task), badge: TASK_BADGE[payloadKey] };
   // Show an unrecognised task type by its key rather than as an anonymous task.
-  return { kind: "job", label: "Task", subtitle: getUnrecognisedTaskKey(task) ?? "Other task settings" };
+  return {
+    kind: "job",
+    label: "Task",
+    subtitle: getUnrecognisedTaskKey(task) ?? "Other task settings",
+    badge: "?",
+  };
 }
 
 function formatTrigger(job: Job): string {
@@ -1162,6 +1194,7 @@ export async function extractBundleGraph(
         nodeType: "task",
         displayName: taskKey,
         taskTypeLabel: taskType.label,
+        ...(taskType.badge ? { taskTypeBadge: taskType.badge } : {}),
         status: "READY",
         compute: taskCompute,
         ...(taskParameters ? { parameters: taskParameters } : {}),
