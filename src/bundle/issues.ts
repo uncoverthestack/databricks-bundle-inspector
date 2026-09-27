@@ -21,7 +21,7 @@ export type InspectorIssueKind =
   | "git_source_not_recommended"
   | "secret_scope_name_mismatch"
   | "notebook_type_mismatch"
-  | "widget_parameter_mismatch";
+  | "widget_parameter_mismatch"
   | "excluded_from_sync";
 
 export interface InspectorIssue {
@@ -251,6 +251,8 @@ function widgetParameterIssues(
     }
   }
   return issues;
+}
+
 /**
  * A referenced file that exists locally but that `bundle deploy` would not upload.
  * `bundle validate` passes, so the job or pipeline only fails when it runs.
