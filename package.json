@@ -2,7 +2,7 @@
   "name": "databricks-bundle-inspector",
   "displayName": "Databricks Bundle Inspector",
   "description": "Catch Databricks bundle errors before you deploy. Missing files, unresolved variables, secret scope mix-ups and CLI warnings in the Problems panel, with an interactive graph of your jobs and pipelines.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "UncoverTheStack",
   "icon": "resources/icon.png",
   "license": "Apache-2.0",
