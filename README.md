@@ -47,7 +47,9 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
 
 ## Requirements
 
-The [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html) must be installed and available on your `PATH`, or configured via the `databricksBundleInspector.cliPath` VS Code setting.
+The inspector runs `databricks bundle validate`, so it needs the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install) installed and on your `PATH`, or set with the `databricksBundleInspector.cliPath` VS Code setting. The legacy `databricks-cli` pip package is a different tool and doesn't work.
+
+If the CLI can't be found, the inspector says why (not installed, a wrong `cliPath`, or the legacy package on your `PATH`) and links to the install steps for your OS.
 
 Tested with Databricks CLI `v0.299.0` and newer. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
 
@@ -81,9 +83,10 @@ The extension collects anonymous usage data to learn which features are used and
 
 Turning it off also deletes any events still waiting to be sent, and stops the uninstall event.
 
-- **Collected:** which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
+- **Collected:** which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), why the Databricks CLI couldn't be used, coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
+- **Environment:** extension and VS Code version, OS, OS version and CPU type (for example `darwin`, `25.0.0`, `arm64`), and remote type (for example WSL or SSH).
 - **Never collected:** file paths or contents, bundle, job, task or target names, workspace hosts, search text, or error messages.
-- **Identity:** a random, anonymous per-install ID. No accounts, no IP-based location.
+- **Identity:** an anonymous per-install ID, a one-way hash of VS Code's machine ID (never the ID itself). No accounts, no IP address, no location.
 - **Offline:** events wait on your machine (up to 500, for at most 14 days) and are sent when you are back online.
 - **Where it goes:** events are sent to a small proxy run by this project ([telemetry-proxy/](./telemetry-proxy)). The proxy drops anything not listed in `telemetry.json` and forwards the rest to PostHog. The extension itself contains no analytics keys.
 
