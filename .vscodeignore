@@ -49,3 +49,6 @@ semantic-cli-matrix.local.json
 vite.config.js
 repo-audit
 telemetry-proxy/**
+
+# Icon source; the Marketplace uses resources/icon.png.
+resources/icon.svg
