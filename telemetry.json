@@ -41,6 +41,7 @@
   },
   "commonProperties": {
     "common.*": "Added by VS Code's TelemetryLogger: extension name and version, VS Code version, commit and release date, product, UI kind, remote type, session ID, whether VS Code was newly installed. Only these listed keys are kept; machine and device IDs (common.vscodemachineid, common.sqmid, common.devDeviceId) are removed.",
+    "install_id": "Added by the proxy: the event's anonymous distinct_id, copied so PostHog filters can match it.",
     "common.appname": "Host editor name, e.g. Visual Studio Code or Cursor.",
     "common.os": "Operating system: darwin, win32 or linux.",
     "common.platformversion": "Operating system release, e.g. 25.0.0.",

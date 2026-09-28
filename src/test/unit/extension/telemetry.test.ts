@@ -380,6 +380,7 @@ describe("telemetry proxy", () => {
     expect(sent.batch).toHaveLength(1);
     expect(sent.batch[0].properties).toMatchObject({
       outcome: "ok",
+      install_id: ID,
       $process_person_profile: false,
       $geoip_disable: true,
       $ip: null,
