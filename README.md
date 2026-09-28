@@ -96,7 +96,7 @@ Every event and property is listed in [telemetry.json](./telemetry.json). To see
 
 ## Project status
 
-Version 0.1.6. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.1.7. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
