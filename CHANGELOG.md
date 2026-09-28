@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-28
+
 ### Changed
 
 - **New extension icon.** A brick box under a magnifying glass, redrawn to stay readable at the small sizes the Extensions view and Marketplace search use.
@@ -201,6 +203,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.1.8]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.4...v0.1.5
