@@ -5,6 +5,7 @@
       "properties": {
         "trigger": "command | issues_command | target_switch",
         "outcome": "ok | ok_with_errors | no_bundle_file | cli_not_found | cli_not_executable | validation_timeout | invalid_bundle_shape | validation_failed | exception",
+        "cli_problem": "cli_not_found only: not_installed | configured_path_invalid | not_databricks_cli",
         "duration_ms": "Time the inspection took.",
         "has_diagnostics": "Failed inspections only: whether the CLI reported file diagnostics.",
         "target_mode": "target | probe",
@@ -39,7 +40,10 @@
     }
   },
   "commonProperties": {
-    "common.*": "Added by VS Code's TelemetryLogger: extension version, VS Code version, OS, session ID, UI kind, remote type. The VS Code machine ID is removed.",
-    "common.appname": "Host editor name, e.g. Visual Studio Code or Cursor."
+    "common.*": "Added by VS Code's TelemetryLogger: extension name and version, VS Code version, commit and release date, product, UI kind, remote type, session ID, whether VS Code was newly installed. Only these listed keys are kept; machine and device IDs (common.vscodemachineid, common.sqmid, common.devDeviceId) are removed.",
+    "common.appname": "Host editor name, e.g. Visual Studio Code or Cursor.",
+    "common.os": "Operating system: darwin, win32 or linux.",
+    "common.platformversion": "Operating system release, e.g. 25.0.0.",
+    "common.arch": "CPU architecture, e.g. arm64 or x64."
   }
 }

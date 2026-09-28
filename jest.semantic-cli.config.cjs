@@ -14,6 +14,7 @@ module.exports = {
     ],
   },
   testMatch: ["<rootDir>/src/test/integration/semanticCli.integration.test.ts"],
+  modulePathIgnorePatterns: ["<rootDir>/.vscode-test/", "<rootDir>/out/"],
   verbose: true,
   clearMocks: true,
   setupFilesAfterEnv: ["<rootDir>/src/test/setup.ts"],

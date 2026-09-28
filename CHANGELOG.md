@@ -4,6 +4,15 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **The "Databricks CLI was not found" popup says what is actually wrong.** It now tells apart a CLI that isn't installed, a `databricksBundleInspector.cliPath` setting that points at a wrong path, and a `databricks` command on the PATH that isn't the Databricks CLI (usually the legacy `databricks-cli` pip package). An **Open Install Guide** button opens the install section for your OS, and **Open Settings** appears when the setting is the problem.
+- **Usage telemetry records why the CLI wasn't found** (`not_installed`, `configured_path_invalid` or `not_databricks_cli`) and the OS, OS version and CPU type. See `telemetry.json`.
+
+### Fixed
+
+- **VS Code's Windows device ID (`common.sqmid`) is no longer sent with usage telemetry.** VS Code properties are now kept only if they are on a fixed list, so device IDs VS Code adds later are dropped too.
+
 ## [0.1.6] - 2026-09-27
 
 ### Added

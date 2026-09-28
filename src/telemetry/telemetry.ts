@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import { createHash } from "node:crypto";
+import os from "node:os";
 import { TELEMETRY_ENDPOINT } from "./config.js";
 import { postBatch, type TelemetryProperties } from "./transport.js";
+import { outgoingProperties } from "./schema.js";
 import { TelemetryQueue } from "./queue.js";
 import { writeUninstallState } from "./uninstallState.js";
 
@@ -83,13 +85,7 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const sender: vscode.TelemetrySender = {
     sendEventData(eventName, data) {
-      const properties: TelemetryProperties = {};
-      for (const [key, value] of Object.entries(data ?? {})) {
-        if (key === "common.vscodemachineid") continue; // replaced by distinctId
-        if (["string", "number", "boolean"].includes(typeof value)) {
-          properties[key] = value as string | number | boolean;
-        }
-      }
+      const properties = outgoingProperties(data);
       queue.enqueue({
         // TelemetryLogger prefixes names with the extension ID.
         event: eventName.slice(eventName.lastIndexOf("/") + 1),
@@ -107,7 +103,13 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const logger = vscode.env.createTelemetryLogger(sender, {
     ignoreUnhandledErrors: true,
-    additionalCommonProperties: { "common.appname": vscode.env.appName },
+    // VS Code does not give extensions the OS or CPU type, so add them. Never the hostname.
+    additionalCommonProperties: {
+      "common.appname": vscode.env.appName,
+      "common.os": process.platform,
+      "common.platformversion": os.release(),
+      "common.arch": process.arch,
+    },
   });
 
   const isEnabled = () => logger.isUsageEnabled && extensionSettingEnabled();

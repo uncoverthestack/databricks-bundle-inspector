@@ -15,7 +15,7 @@ import {
   type QueuedEvent,
   type SendResult,
 } from "../../../telemetry/transport.js";
-import { EVENT_SCHEMA, validateWireEvent } from "../../../telemetry/schema.js";
+import { EVENT_SCHEMA, outgoingProperties, validateWireEvent } from "../../../telemetry/schema.js";
 import { handleTelemetryRequest, type ProxyEnv } from "../../../telemetry/proxy.js";
 import { TelemetryQueue, type QueueStorage } from "../../../telemetry/queue.js";
 import { UNINSTALL_STATE_FILE } from "../../../telemetry/config.js";
@@ -298,12 +298,35 @@ describe("schema", () => {
           job_name: "nightly_customers",
           "common.appname": "Visual Studio Code",
           "common.vscodemachineid": "abc",
+          "common.sqmid": "{6f2b8c1e-0000-4000-8000-000000000000}",
+          "common.devDeviceId": "abc",
+          "common.somethingnew": "x",
           "common.os": "<script>",
         },
       }),
       NOW,
     );
     expect(event?.properties).toEqual({ outcome: "ok", "common.appname": "Visual Studio Code" });
+  });
+
+  it("drops machine and device IDs before sending", () => {
+    expect(
+      outgoingProperties({
+        outcome: "cli_not_found",
+        cli_problem: "not_installed",
+        "common.os": "win32",
+        "common.vscodeversion": "1.125.1",
+        "common.vscodemachineid": "abc",
+        "common.sqmid": "{6f2b8c1e-0000-4000-8000-000000000000}",
+        "common.devDeviceId": "abc",
+        nested: { a: 1 },
+      }),
+    ).toEqual({
+      outcome: "cli_not_found",
+      cli_problem: "not_installed",
+      "common.os": "win32",
+      "common.vscodeversion": "1.125.1",
+    });
   });
 
   it.each([

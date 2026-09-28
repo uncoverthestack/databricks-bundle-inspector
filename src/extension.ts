@@ -17,7 +17,11 @@ import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
 } from "./databricksCli/config.js";
-import { invalidateDatabricksCliCache } from "./databricksCli/validateDatabricksCli.js";
+import {
+  databricksCliInstallUrl,
+  invalidateDatabricksCliCache,
+  type CliProblem,
+} from "./databricksCli/validateDatabricksCli.js";
 import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
 import { getIncludedFiles, parseBundleIncludes } from "./bundle/bundleIncludes.js";
 import type { BundleGraph, ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
@@ -672,6 +676,24 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
   }
 
+  async function showCliNotFound(message: string, problem: CliProblem | undefined) {
+    const install = "Open Install Guide";
+    const settings = "Open Settings";
+    const choice = await vscode.window.showErrorMessage(
+      message,
+      install,
+      ...(problem === "configured_path_invalid" ? [settings] : []),
+    );
+    if (choice === install) {
+      void vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform)));
+    } else if (choice === settings) {
+      void vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "databricksBundleInspector.cliPath",
+      );
+    }
+  }
+
   async function inspectBundle(
     requestedTarget?: string,
     options?: { focusIssues?: boolean; trigger?: InspectTrigger },
@@ -727,9 +749,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (!result.ok) {
         logInspect(result.error.errorCode?.toLowerCase() ?? "validation_failed", {
           has_diagnostics: Boolean(result.error.diagnostics?.length),
+          ...(result.error.cliProblem ? { cli_problem: result.error.cliProblem } : {}),
         });
         console.error("[inspectBundle] validation failed", result.error);
-        if (result.error.diagnostics?.length) {
+        if (result.error.errorCode === "CLI_NOT_FOUND") {
+          void showCliNotFound(result.error.error, result.error.cliProblem);
+        } else if (result.error.diagnostics?.length) {
           void vscode.commands.executeCommand("workbench.actions.view.problems");
           vscode.window.showWarningMessage(
             "Bundle has errors — see the Problems panel for details.",

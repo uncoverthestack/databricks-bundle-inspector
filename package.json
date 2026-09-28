@@ -120,7 +120,10 @@
     "deps:repair-native": "node scripts/repair-native-optional-deps.mjs",
     "cli:install-matrix": "node scripts/install-databricks-cli-matrix.mjs",
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build:e2e": "esbuild src/test/e2e/runTest.ts src/test/e2e/suite/index.ts --bundle --platform=node --format=cjs --outdir=out/e2e --out-extension:.js=.cjs --external:vscode --external:mocha --external:@vscode/test-electron --log-level=warning",
+    "test:e2e": "npm run build:ext && npm run build:e2e && node out/e2e/runTest.cjs",
+    "test:e2e:watch": "E2E_PAUSE_MS=15000 npm run test:e2e"
   },
   "lint-staged": {
     "*.ts": "eslint --fix"
@@ -143,11 +146,13 @@
     "@eslint/js": "^9.39.4",
     "@tailwindcss/vite": "^4.2.2",
     "@types/jest": "^30.0.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.39.4",
@@ -157,6 +162,7 @@
     "husky": "^9.1.7",
     "jest": "^30.3.0",
     "lint-staged": "^15.5.2",
+    "mocha": "^12.0.2",
     "tailwindcss": "^4.2.2",
     "ts-jest": "^29.4.9",
     "typescript": "^6.0.2",

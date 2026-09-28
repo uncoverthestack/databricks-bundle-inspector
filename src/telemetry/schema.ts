@@ -37,6 +37,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
       "validation_failed",
       "exception",
     ),
+    cli_problem: oneOf("not_installed", "configured_path_invalid", "not_databricks_cli"),
     duration_ms: { type: "integer", max: 3_600_000 },
     has_diagnostics: bool,
     target_mode: oneOf("target", "probe"),
@@ -60,8 +61,26 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   extension_uninstalled: {},
 };
 
-/** VS Code's TelemetryLogger common properties, e.g. common.extversion. */
-const COMMON_KEY = /^common\.[a-z]{1,40}$/;
+/**
+ * Common properties we keep: VS Code's TelemetryLogger ones plus those telemetry.ts adds.
+ * An allowlist, not a pattern, so device IDs such as common.sqmid (Windows) never pass.
+ */
+export const COMMON_KEYS: ReadonlySet<string> = new Set([
+  "common.appname",
+  "common.arch",
+  "common.extname",
+  "common.extversion",
+  "common.isnewappinstall",
+  "common.os",
+  "common.platformversion",
+  "common.product",
+  "common.remotename",
+  "common.uikind",
+  "common.vscodecommithash",
+  "common.vscodereleasedate",
+  "common.vscodesessionid",
+  "common.vscodeversion",
+]);
 const COMMON_VALUE = /^[\w .:+()/@-]{0,100}$/;
 const DISTINCT_ID = /^[0-9a-f]{32}$/;
 const MAX_PAST_MS = 15 * 24 * 60 * 60 * 1000;
@@ -84,6 +103,21 @@ export function isKnownEvent(event: unknown): event is string {
   return typeof event === "string" && Object.hasOwn(EVENT_SCHEMA, event);
 }
 
+/**
+ * What the extension sends: primitive values, with common.* limited to {@link COMMON_KEYS}
+ * so machine and device IDs never leave the machine (distinct_id replaces them).
+ */
+export function outgoingProperties(data: Record<string, unknown> | undefined): TelemetryProperties {
+  const properties: TelemetryProperties = {};
+  for (const [key, value] of Object.entries(data ?? {})) {
+    if (key.startsWith("common.") && !COMMON_KEYS.has(key)) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      properties[key] = value;
+    }
+  }
+  return properties;
+}
+
 /** Keeps only the event's declared properties with valid values (plus common.* when allowed). */
 export function validateProperties(
   event: string,
@@ -99,8 +133,7 @@ export function validateProperties(
       if (matchesRule(value, rule)) properties[key] = value;
     } else if (
       options.allowCommon &&
-      COMMON_KEY.test(key) &&
-      !key.includes("machineid") &&
+      COMMON_KEYS.has(key) &&
       (typeof value === "boolean" ||
         (typeof value === "number" && Number.isFinite(value)) ||
         (typeof value === "string" && COMMON_VALUE.test(value)))
