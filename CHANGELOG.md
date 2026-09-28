@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-28
+
 ### Changed
 
 - **The "Databricks CLI was not found" popup says what is actually wrong.** It now tells apart a CLI that isn't installed, a `databricksBundleInspector.cliPath` setting that points at a wrong path, and a `databricks` command on the PATH that isn't the Databricks CLI (usually the legacy `databricks-cli` pip package). An **Open Install Guide** button opens the install section for your OS, and **Open Settings** appears when the setting is the problem.
@@ -195,6 +197,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.1.7]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.3...v0.1.4
