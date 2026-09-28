@@ -7,7 +7,9 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 ### Changed
 
 - **The "Databricks CLI was not found" popup says what is actually wrong.** It now tells apart a CLI that isn't installed, a `databricksBundleInspector.cliPath` setting that points at a wrong path, and a `databricks` command on the PATH that isn't the Databricks CLI (usually the legacy `databricks-cli` pip package). An **Open Install Guide** button opens the install section for your OS, and **Open Settings** appears when the setting is the problem.
-- **Usage telemetry records why the CLI wasn't found** (`not_installed`, `configured_path_invalid` or `not_databricks_cli`) and the OS, OS version and CPU type. See `telemetry.json`.
+- **A warning when the Databricks CLI is older than v0.299.0**, the oldest version the inspector is tested with. The inspection still runs. The warning shows once per session, and **Open Update Guide** opens the update section for your OS.
+- **The "not found" message suggests restarting VS Code** if the CLI was just installed, since VS Code reads `PATH` only at startup.
+- **Usage telemetry records why the CLI wasn't found** (`not_installed`, `configured_path_invalid` or `not_databricks_cli`), whether it is older than v0.299.0, and the OS, OS version and CPU type. See `telemetry.json`.
 
 ### Fixed
 

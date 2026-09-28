@@ -56,6 +56,14 @@ export function databricksCliInstallUrl(platform: NodeJS.Platform): string {
   return INSTALL_DOCS;
 }
 
+/** The update docs, opened at the section for this OS. */
+export function databricksCliUpdateUrl(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return `${INSTALL_DOCS}#homebrew-update-for-linux-or-macos`;
+  if (platform === "win32") return `${INSTALL_DOCS}#winget-update-for-windows`;
+  if (platform === "linux") return `${INSTALL_DOCS}#curl-update-for-linux-macos-and-windows`;
+  return INSTALL_DOCS;
+}
+
 const AUTO_DETECT_CACHE_KEY = "__auto_detect__";
 const resolveCliPromises = new Map<
   string,

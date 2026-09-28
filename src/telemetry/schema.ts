@@ -38,6 +38,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
       "exception",
     ),
     cli_problem: oneOf("not_installed", "configured_path_invalid", "not_databricks_cli"),
+    cli_outdated: bool,
     duration_ms: { type: "integer", max: 3_600_000 },
     has_diagnostics: bool,
     target_mode: oneOf("target", "probe"),

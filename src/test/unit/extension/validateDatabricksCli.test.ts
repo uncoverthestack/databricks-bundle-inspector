@@ -15,6 +15,7 @@ jest.mock("../../../databricksCli/processRunner.js", () => ({
 
 import {
   databricksCliInstallUrl,
+  databricksCliUpdateUrl,
   invalidateDatabricksCliCache,
   resolveDatabricksCli,
 } from "../../../databricksCli/validateDatabricksCli.js";
@@ -115,6 +116,19 @@ describe("databricksCliInstallUrl", () => {
   test("falls back to the top of the page", () => {
     expect(databricksCliInstallUrl("freebsd")).toBe(
       "https://docs.databricks.com/aws/en/dev-tools/cli/install",
+    );
+  });
+});
+
+describe("databricksCliUpdateUrl", () => {
+  test.each([
+    ["darwin", "#homebrew-update-for-linux-or-macos"],
+    ["win32", "#winget-update-for-windows"],
+    ["linux", "#curl-update-for-linux-macos-and-windows"],
+    ["freebsd", ""],
+  ] as const)("opens the %s section", (platform, anchor) => {
+    expect(databricksCliUpdateUrl(platform)).toBe(
+      `https://docs.databricks.com/aws/en/dev-tools/cli/install${anchor}`,
     );
   });
 });

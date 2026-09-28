@@ -6,6 +6,7 @@
         "trigger": "command | issues_command | target_switch",
         "outcome": "ok | ok_with_errors | no_bundle_file | cli_not_found | cli_not_executable | validation_timeout | invalid_bundle_shape | validation_failed | exception",
         "cli_problem": "cli_not_found only: not_installed | configured_path_invalid | not_databricks_cli",
+        "cli_outdated": "Whether the Databricks CLI is older than the oldest tested version (v0.299.0). Not sent when no CLI was found.",
         "duration_ms": "Time the inspection took.",
         "has_diagnostics": "Failed inspections only: whether the CLI reported file diagnostics.",
         "target_mode": "target | probe",

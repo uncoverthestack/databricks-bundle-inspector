@@ -124,7 +124,7 @@ function cliNotFoundMessage(failure: CliResolutionFailure): string {
       return `The "databricks" command on your PATH is not the Databricks CLI${printed ? ` (it printed "${printed}")` : ""}. This is usually the legacy databricks-cli pip package. Install the Databricks CLI and put it first on your PATH.`;
     }
     case "not_installed":
-      return "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH.";
+      return "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH. If you just installed it, restart VS Code.";
   }
 }
 

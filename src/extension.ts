@@ -7,7 +7,7 @@ import {
   validateBundle,
   extractBundleGraph,
 } from "./bundle/validateBundle.js";
-import type { BundleDiagnostic } from "./bundle/validateBundle.js";
+import type { BundleDiagnostic, BundleResult } from "./bundle/validateBundle.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
 import {
   buildInspectorIssues,
@@ -19,9 +19,12 @@ import {
 } from "./databricksCli/config.js";
 import {
   databricksCliInstallUrl,
+  databricksCliUpdateUrl,
   invalidateDatabricksCliCache,
+  resolveDatabricksCli,
   type CliProblem,
 } from "./databricksCli/validateDatabricksCli.js";
+import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
 import { getIncludedFiles, parseBundleIncludes } from "./bundle/bundleIncludes.js";
 import type { BundleGraph, ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
@@ -694,6 +697,39 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
   }
 
+  // CLI versions already warned about this session, so re-inspecting doesn't repeat it.
+  const warnedCliVersions = new Set<string>();
+
+  /**
+   * Warns once per session when the CLI in use is older than the oldest tested version.
+   * Returns whether it is, or undefined when no CLI was found.
+   */
+  async function checkCliVersion(result: BundleResult): Promise<boolean | undefined> {
+    if (!result.ok && result.error.errorCode === "CLI_NOT_FOUND") return undefined;
+    // Cached from the validate run, so this doesn't start the CLI again.
+    const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+    if (!cli.ok) return undefined;
+    const version = cli.versionOutput;
+    if (!version || !isOlderThanSupported(version)) return false;
+    if (!warnedCliVersions.has(version)) {
+      warnedCliVersions.add(version);
+      const update = "Open Update Guide";
+      void vscode.window
+        .showWarningMessage(
+          `Databricks CLI ${version} is older than ${MIN_SUPPORTED_CLI_VERSION}, the oldest version this inspector is tested with. Results may be incomplete. Update the Databricks CLI.`,
+          update,
+        )
+        .then((choice) => {
+          if (choice === update) {
+            // The cached CLI keeps the old version; check again on the next Inspect.
+            invalidateDatabricksCliCache();
+            void vscode.env.openExternal(vscode.Uri.parse(databricksCliUpdateUrl(process.platform)));
+          }
+        });
+    }
+    return true;
+  }
+
   async function inspectBundle(
     requestedTarget?: string,
     options?: { focusIssues?: boolean; trigger?: InspectTrigger },
@@ -746,8 +782,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         await watchBundle(bundleDir, result.data, diagnosticsGraph);
       }
 
+      const cliOutdated = await checkCliVersion(result);
+      const cliVersionProperty = cliOutdated === undefined ? {} : { cli_outdated: cliOutdated };
+
       if (!result.ok) {
         logInspect(result.error.errorCode?.toLowerCase() ?? "validation_failed", {
+          ...cliVersionProperty,
           has_diagnostics: Boolean(result.error.diagnostics?.length),
           ...(result.error.cliProblem ? { cli_problem: result.error.cliProblem } : {}),
         });
@@ -789,6 +829,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
       const graphNodes = inspection.enrichedGraph?.nodes ?? [];
       logInspect(errorDiagnostics.length > 0 ? "ok_with_errors" : "ok", {
+        ...cliVersionProperty,
         target_mode: inspection.inspectedTargetMode,
         fell_back_to_probe: inspection.fallbackMessage !== undefined,
         auth_configured: !(result.issues ?? []).some(
