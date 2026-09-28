@@ -2,6 +2,7 @@ import { describe, test, expect } from "@jest/globals";
 import {
   extractDatabricksVersion,
   isDatabricksCliVersionOutput,
+  isOlderThanSupported,
 } from "../../../databricksCli/parsing.js";
 
 describe("extractDatabricksVersion", () => {
@@ -27,5 +28,25 @@ describe("isDatabricksCliVersionOutput", () => {
 
   test("rejects non-Databricks CLI output", () => {
     expect(isDatabricksCliVersionOutput("Python 3.12.0")).toBe(false);
+  });
+});
+
+describe("isOlderThanSupported", () => {
+  test.each([
+    ["v0.250.0", true],
+    ["v0.298.9", true],
+    ["v0.299.0", false],
+    ["v0.299.2", false],
+    ["v0.300.0", false],
+    ["v1.0.0", false],
+    ["v1.17.0", false],
+    ["v0.1000.0", false],
+  ])("%s -> %s", (version, older) => {
+    expect(isOlderThanSupported(version)).toBe(older);
+  });
+
+  test("claims nothing when the version is missing or unreadable", () => {
+    expect(isOlderThanSupported(undefined)).toBe(false);
+    expect(isOlderThanSupported("dev")).toBe(false);
   });
 });

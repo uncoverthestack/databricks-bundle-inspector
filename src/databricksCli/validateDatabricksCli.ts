@@ -23,12 +23,51 @@ export type DatabricksCliVerificationResult =
       candidate: string;
       /** Optional explanation for the failed verification. */
       reason?: string;
+      /** Set when the candidate ran but is some other program, e.g. the legacy pip `databricks-cli`: what it printed. */
+      otherProgramOutput?: string;
     };
+
+/** A candidate verified as the Databricks CLI. */
+export type VerifiedDatabricksCli = Extract<DatabricksCliVerificationResult, { ok: true }>;
+
+/** Why no Databricks CLI could be used. Also sent as the `cli_problem` telemetry value. */
+export type CliProblem =
+  | "not_installed"
+  | "configured_path_invalid"
+  | "not_databricks_cli";
+
+/** Returned by {@link resolveDatabricksCli} when no working Databricks CLI was found. */
+export interface CliResolutionFailure {
+  ok: false;
+  problem: CliProblem;
+  /** The configured `cliPath`, when that is what failed. */
+  configuredPath?: string;
+  /** What the non-Databricks `databricks` command printed for `--version`. */
+  versionOutput?: string;
+}
+
+const INSTALL_DOCS = "https://docs.databricks.com/aws/en/dev-tools/cli/install";
+
+/** The install docs, opened at the section for this OS. WSL and SSH remotes report `linux`, which is where the CLI must go. */
+export function databricksCliInstallUrl(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return `${INSTALL_DOCS}#homebrew-installation-for-macos`;
+  if (platform === "win32") return `${INSTALL_DOCS}#winget-installation-for-windows`;
+  if (platform === "linux") return `${INSTALL_DOCS}#curl-installation-for-linux-macos-and-windows`;
+  return INSTALL_DOCS;
+}
+
+/** The update docs, opened at the section for this OS. */
+export function databricksCliUpdateUrl(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return `${INSTALL_DOCS}#homebrew-update-for-linux-or-macos`;
+  if (platform === "win32") return `${INSTALL_DOCS}#winget-update-for-windows`;
+  if (platform === "linux") return `${INSTALL_DOCS}#curl-update-for-linux-macos-and-windows`;
+  return INSTALL_DOCS;
+}
 
 const AUTO_DETECT_CACHE_KEY = "__auto_detect__";
 const resolveCliPromises = new Map<
   string,
-  Promise<DatabricksCliVerificationResult | undefined>
+  Promise<VerifiedDatabricksCli | CliResolutionFailure>
 >();
 
 function cliCacheKey(configuredPath?: string): string {
@@ -69,6 +108,7 @@ export async function verifyCliPath(
         ok: false,
         candidate,
         reason: `Candidate responded to --version but did not identify itself as Databricks CLI: ${output}`,
+        otherProgramOutput: output,
       };
     }
 
@@ -99,11 +139,9 @@ export async function verifyCliPath(
 /**
  * Automatically detects the Databricks CLI on the current host machine.
  * Requires `databricks` to be on the system PATH.
- * @returns A verified Databricks CLI executable name or path, or `undefined` if none could be found.
+ * @returns The verification result for `databricks` on the PATH.
  */
-export async function autoDetectDatabricksCli(): Promise<
-  DatabricksCliVerificationResult | undefined
-> {
+export async function autoDetectDatabricksCli(): Promise<DatabricksCliVerificationResult> {
   const result = await verifyCliPath("databricks");
   if (result.ok) {
     console.log(
@@ -115,7 +153,7 @@ export async function autoDetectDatabricksCli(): Promise<
   console.warn(
     "[DatabricksBundleInspector] could not auto-detect Databricks CLI — ensure 'databricks' is on your PATH",
   );
-  return undefined;
+  return result;
 }
 
 /**
@@ -127,18 +165,18 @@ export async function autoDetectDatabricksCli(): Promise<
  * 3. If the configured path is missing or invalid, fall back to auto-detection.
  *
  * @param config The VS Code workspace configuration for the extension.
- * @returns A verification result for a working Databricks CLI candidate, or `undefined` if none could be found.
+ * @returns A verified Databricks CLI, or a {@link CliResolutionFailure} saying why none could be used.
  */
 export async function resolveDatabricksCli(
   configuredPath?: string,
-): Promise<DatabricksCliVerificationResult | undefined> {
+): Promise<VerifiedDatabricksCli | CliResolutionFailure> {
   const cacheKey = cliCacheKey(configuredPath);
   let resolveCliPromise = resolveCliPromises.get(cacheKey);
 
   if (!resolveCliPromise) {
     resolveCliPromise = resolveCliInternal(configuredPath).then(
       (result) => {
-        if (!result) {
+        if (!result.ok) {
           resolveCliPromises.delete(cacheKey);
         }
         return result;
@@ -156,15 +194,28 @@ export async function resolveDatabricksCli(
 
 async function resolveCliInternal(
   configuredPath?: string,
-): Promise<DatabricksCliVerificationResult | undefined> {
+): Promise<VerifiedDatabricksCli | CliResolutionFailure> {
+  let configuredPathFailed = false;
   if (configuredPath) {
     const result = await verifyCliPath(configuredPath);
     if (result.ok) {
       return result;
     }
+    configuredPathFailed = true;
     console.warn(
       `[DatabricksBundleInspector] configured cliPath is invalid: ${configuredPath}. Reason: ${result.reason ?? "unknown"}`,
     );
   }
-  return autoDetectDatabricksCli();
+  const detected = await autoDetectDatabricksCli();
+  if (detected.ok) {
+    return detected;
+  }
+  // A wrong setting is the likelier fix than whatever sits on the PATH, so report it first.
+  if (configuredPath && configuredPathFailed) {
+    return { ok: false, problem: "configured_path_invalid", configuredPath };
+  }
+  if (detected.otherProgramOutput !== undefined) {
+    return { ok: false, problem: "not_databricks_cli", versionOutput: detected.otherProgramOutput };
+  }
+  return { ok: false, problem: "not_installed" };
 }

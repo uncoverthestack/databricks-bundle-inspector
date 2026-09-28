@@ -8,6 +8,7 @@
 .test-artifacts/**
 .tools/**
 node_modules/**
+out/**
 src/**
 public/**
 .yarnrc

@@ -27,7 +27,7 @@ describe("validateBundleWithDependencies", () => {
       undefined,
       {
         execFileAsync: async () => ({ stdout: "", stderr: "" }),
-        resolveDatabricksCli: async () => undefined,
+        resolveDatabricksCli: async () => ({ ok: false, problem: "not_installed" }),
       },
     );
 
@@ -36,7 +36,38 @@ describe("validateBundleWithDependencies", () => {
     if (result.ok) return;
 
     expect(result.error.errorCode).toBe("CLI_NOT_FOUND");
+    expect(result.error.cliProblem).toBe("not_installed");
     expect(result.error.bundleName).toBe("demo");
+  });
+
+  test("names the cliPath setting when it is what failed", async () => {
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => ({ stdout: "", stderr: "" }),
+      resolveDatabricksCli: async () => ({
+        ok: false,
+        problem: "configured_path_invalid",
+        configuredPath: "/opt/wrong/databricks",
+      }),
+    });
+
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.cliProblem).toBe("configured_path_invalid");
+    expect(result.error.error).toContain('cliPath setting ("/opt/wrong/databricks")');
+  });
+
+  test("says when the databricks on the PATH is another program", async () => {
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => ({ stdout: "", stderr: "" }),
+      resolveDatabricksCli: async () => ({
+        ok: false,
+        problem: "not_databricks_cli",
+        versionOutput: "Version: 0.18.0",
+      }),
+    });
+
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.cliProblem).toBe("not_databricks_cli");
+    expect(result.error.error).toContain('not the Databricks CLI (it printed "Version: 0.18.0")');
   });
 
   test("returns parsed bundle on successful validation", async () => {

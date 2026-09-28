@@ -24,6 +24,9 @@ export function toPostHogBatch(apiKey: string, events: WireEvent[]) {
       ...e,
       properties: {
         ...e.properties,
+        // distinct_id again, as a plain property PostHog filters (such as
+        // "Filter out internal and test users") can match on personless events.
+        install_id: e.distinct_id,
         // Anonymous events only: no person profiles, no IP-based geolocation.
         $process_person_profile: false,
         $geoip_disable: true,

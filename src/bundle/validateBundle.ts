@@ -4,7 +4,11 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
-import type { DatabricksCliVerificationResult } from "../databricksCli/validateDatabricksCli.js";
+import type {
+  CliProblem,
+  CliResolutionFailure,
+  VerifiedDatabricksCli,
+} from "../databricksCli/validateDatabricksCli.js";
 import {
   parseAvailableTargets,
   parseBundleDiagnostics,
@@ -36,7 +40,7 @@ type ExecFileLike = (
 interface ValidateBundleDependencies {
   execFileAsync: ExecFileLike;
   resolveDatabricksCli: () => Promise<
-    DatabricksCliVerificationResult | undefined
+    VerifiedDatabricksCli | CliResolutionFailure
   >;
 }
 
@@ -45,6 +49,8 @@ export interface BundleError {
   bundleName: string;
   error: string;
   errorCode?: string;
+  /** Set with `CLI_NOT_FOUND`: why no Databricks CLI could be used. */
+  cliProblem?: CliProblem;
   details?: string;
   diagnostics?: import("./parseBundleDiagnostics.js").BundleDiagnostic[];
 }
@@ -109,6 +115,19 @@ function parseBundleConfig(
   return { ok: true, data: result.data as ParsedBundleConfig };
 }
 
+function cliNotFoundMessage(failure: CliResolutionFailure): string {
+  switch (failure.problem) {
+    case "configured_path_invalid":
+      return `The databricksBundleInspector.cliPath setting ("${failure.configuredPath}") is not a working Databricks CLI, and none was found on your PATH. Fix the setting or install the Databricks CLI.`;
+    case "not_databricks_cli": {
+      const printed = failure.versionOutput?.trim().slice(0, 60);
+      return `The "databricks" command on your PATH is not the Databricks CLI${printed ? ` (it printed "${printed}")` : ""}. This is usually the legacy databricks-cli pip package. Install the Databricks CLI and put it first on your PATH.`;
+    }
+    case "not_installed":
+      return "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH. If you just installed it, restart VS Code.";
+  }
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -165,18 +184,6 @@ function isExpectedProbeTargetFailure(
 }
 
 /**
- * Returns whether a working Databricks CLI can be resolved on this machine.
- *
- * @param configuredCliPath Optional user-configured CLI path from extension settings.
- * @returns `true` if a Databricks CLI executable could be located and verified.
- */
-export async function isDatabricksInstalled(
-  configuredCliPath?: string,
-): Promise<boolean> {
-  return (await resolveDatabricksCli(configuredCliPath)) !== null;
-}
-
-/**
  * Validates a Databricks bundle by running `databricks bundle validate --output json`.
  *
  * Uses a synthetic probe target by default so the CLI produces bundle JSON without
@@ -219,20 +226,20 @@ export async function validateBundleWithDependencies(
   console.log("[validateBundle] running preflight check");
 
   const cliResult = await dependencies.resolveDatabricksCli();
-  const cliPath = cliResult?.candidate;
 
-  if (!cliPath) {
+  if (!cliResult.ok) {
     return {
       ok: false,
       error: {
         bundleDir: resolvedBundleDir,
         bundleName,
-        error:
-          "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH.",
+        error: cliNotFoundMessage(cliResult),
         errorCode: "CLI_NOT_FOUND",
+        cliProblem: cliResult.problem,
       },
     };
   }
+  const cliPath = cliResult.candidate;
   const args = ["bundle", "validate", "--output", "json"];
   // // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
