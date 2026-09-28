@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **New extension icon.** A brick box under a magnifying glass, redrawn to stay readable at the small sizes the Extensions view and Marketplace search use.
+
 ## [0.1.7] - 2026-09-28
 
 ### Changed
