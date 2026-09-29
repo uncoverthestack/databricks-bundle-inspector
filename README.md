@@ -45,6 +45,13 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
     </a>
   </div>
 
+## Install
+
+- **VS Code:** install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector), or search for "Databricks Bundle Inspector" in the Extensions view.
+- **Cursor, Windsurf and other editors that use Open VSX:** install from [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector), or search for "Databricks Bundle Inspector" in the editor's Extensions view.
+
+Both registries get the same package with each release.
+
 ## Requirements
 
 The inspector runs `databricks bundle validate`, so it needs the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install) installed and on your `PATH`, or set with the `databricksBundleInspector.cliPath` VS Code setting. The legacy `databricks-cli` pip package is a different tool and doesn't work.
