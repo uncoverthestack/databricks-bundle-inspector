@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Available on Open VSX** for Cursor, Windsurf and other editors that install extensions from Open VSX. Every release now publishes the same package to both the Visual Studio Marketplace and Open VSX, and the README links to both.
+
 ## [0.1.8] - 2026-09-28
 
 ### Changed
