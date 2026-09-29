@@ -1,0 +1,115 @@
+name: Publish existing release
+
+# Publishes the VSIX already attached to a GitHub release, without rebuilding it,
+# so every registry serves the same bytes. For backfilling a registry added after
+# a release, or retrying one after its release run's artifact has expired.
+# Versions a registry already has are skipped, so re-running is safe.
+# The publishing tools come from the branch this runs on; only the VSIX comes
+# from the release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.8"
+        required: true
+        type: string
+      registry:
+        description: "Where to publish"
+        required: true
+        type: choice
+        default: open-vsx
+        options:
+          - open-vsx
+          - vscode-marketplace
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    if: inputs.registry == 'vscode-marketplace' || inputs.registry == 'both'
+    runs-on: ubuntu-latest
+    environment:
+      name: vscode-marketplace
+      url: https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Download and verify release VSIX
+        id: vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "*.vsix" --pattern "*.vsix.sha256"
+          sha256sum --check ./*.vsix.sha256
+          echo "package_name=$(ls ./*.vsix)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish VSIX
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          PACKAGE: ${{ steps.vsix.outputs.package_name }}
+        run: npx vsce publish --packagePath "$PACKAGE" --skip-duplicate
+
+  publish-open-vsx:
+    name: Publish to Open VSX
+    if: inputs.registry == 'open-vsx' || inputs.registry == 'both'
+    runs-on: ubuntu-latest
+    environment:
+      name: open-vsx
+      url: https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Download and verify release VSIX
+        id: vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "*.vsix" --pattern "*.vsix.sha256"
+          sha256sum --check ./*.vsix.sha256
+          echo "package_name=$(ls ./*.vsix)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish VSIX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          PACKAGE: ${{ steps.vsix.outputs.package_name }}
+        run: npx ovsx publish "$PACKAGE" --skip-duplicate

@@ -173,3 +173,44 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx vsce publish --packagePath "${{ needs.package.outputs.package_name }}"
+
+  # Cursor, Windsurf and other VS Code forks install extensions from Open VSX,
+  # not the VS Code Marketplace. Runs independently of the Marketplace job so a
+  # failure on one registry doesn't block the other.
+  publish-open-vsx:
+    name: Publish to Open VSX
+    needs: package
+    runs-on: ubuntu-latest
+    environment:
+      name: open-vsx
+      url: https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ needs.package.outputs.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Download package artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: vsix-release-package
+
+      - name: Verify checksum
+        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
+
+      - name: Publish VSIX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx ovsx publish "${{ needs.package.outputs.package_name }}"
