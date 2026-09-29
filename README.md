@@ -2,6 +2,8 @@
 
 A VS Code extension that catches Databricks bundle errors before you deploy. It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for the mistakes `databricks bundle validate` lets through, puts them in the Problems panel at the exact line, and shows your jobs and pipelines as an interactive graph.
 
+Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
+
 ## What it catches
 
 Open a `databricks.yml` file and run **Inspect Databricks Bundle**. Every issue links to the file and line it comes from.
@@ -44,13 +46,6 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
       <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/634c3b8081f545b198e947ff68f99f3d-8b76e3bf25272d13-full-play.gif#t=0.1">
     </a>
   </div>
-
-## Install
-
-- **VS Code:** install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector), or search for "Databricks Bundle Inspector" in the Extensions view.
-- **Cursor, Windsurf and other editors that use Open VSX:** install from [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector), or search for "Databricks Bundle Inspector" in the editor's Extensions view.
-
-Both registries get the same package with each release.
 
 ## Requirements
 
