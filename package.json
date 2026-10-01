@@ -66,6 +66,7 @@
         "databricksBundleInspector.cliPath": {
           "type": "string",
           "default": "",
+          "scope": "machine",
           "description": "Optional path to the Databricks CLI executable. When empty, the extension uses databricks from PATH."
         },
         "databricksBundleInspector.telemetry.enabled": {
