@@ -167,7 +167,7 @@
     "ovsx": "^1.2.0",
     "tailwindcss": "^4.2.2",
     "ts-jest": "^29.4.9",
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vite": "^8.0.4"
   }
 }
