@@ -1,18 +1,13 @@
 import * as vscode from "vscode";
-import { readFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import path from "path";
 import {
   BUNDLE_PROBE_TARGET,
   validateBundle,
   extractBundleGraph,
 } from "./bundle/validateBundle.js";
-import type { BundleDiagnostic, BundleResult } from "./bundle/validateBundle.js";
+import type { BundleResult } from "./bundle/validateBundle.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
-import {
-  buildInspectorIssues,
-  type InspectorIssue,
-} from "./bundle/issues.js";
+import { buildInspectorIssues } from "./bundle/issues.js";
 import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
@@ -25,8 +20,7 @@ import {
   type CliProblem,
 } from "./databricksCli/validateDatabricksCli.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
-import { getBundleDirFromEditor, isBundleFile } from "./bundle/bundleContext.js";
-import { getIncludedFiles, parseBundleIncludes } from "./bundle/bundleIncludes.js";
+import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import type { BundleGraph, ParsedBundleConfig } from "./bundle/graph/bundleGraph.js";
 import {
   classifyChange,
@@ -42,290 +36,18 @@ import {
   parseWebviewTelemetryMessage,
   taskKinds,
 } from "./telemetry/events.js";
+import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
+import {
+  readIncludePatterns,
+  runBundleDiagnostics,
+  trackBundleFiles,
+  updateBundleDiagnostics,
+  type BundleValidationResult,
+} from "./extension/diagnostics.js";
+import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
 
-function isBundlePath(filePath: string): boolean {
-  return isBundleFile(path.basename(filePath));
-}
-
-function isPathInDirectory(filePath: string, directoryPath: string): boolean {
-  const resolvedFilePath = path.resolve(filePath);
-  const resolvedDirectoryPath = path.resolve(directoryPath);
-  const relativePath = path.relative(resolvedDirectoryPath, resolvedFilePath);
-
-  return (
-    relativePath === "" ||
-    (relativePath.length > 0 &&
-      !relativePath.startsWith("..") &&
-      !path.isAbsolute(relativePath))
-  );
-}
-
-export function isOpenFilePathAllowed(
-  filePath: string,
-  activeBundleDir: string | undefined,
-  workspaceFolders:
-    | readonly { uri: { fsPath: string } }[]
-    | undefined,
-): boolean {
-  if (!filePath || !path.isAbsolute(filePath)) return false;
-
-  if (activeBundleDir && isPathInDirectory(filePath, activeBundleDir)) {
-    return true;
-  }
-
-  return (workspaceFolders ?? []).some((folder) =>
-    isPathInDirectory(filePath, folder.uri.fsPath),
-  );
-}
-
-function toVsCodeDiagnostics(
-  bundleDiagnostics: BundleDiagnostic[],
-  bundleDir: string,
-): Map<string, vscode.Diagnostic[]> {
-  const map = new Map<string, vscode.Diagnostic[]>();
-  const bundleLabel = path.basename(bundleDir);
-  for (const d of bundleDiagnostics) {
-    if (!d.path) continue;
-    const absPath = path.resolve(bundleDir, d.path);
-    const line = Math.max(0, (d.line ?? 1) - 1);
-    const col = Math.max(0, (d.column ?? 1) - 1);
-    const range = new vscode.Range(line, col, line, Number.MAX_SAFE_INTEGER);
-    const severity =
-      d.severity === "error"
-        ? vscode.DiagnosticSeverity.Error
-        : vscode.DiagnosticSeverity.Warning;
-    const diagnostic = new vscode.Diagnostic(range, d.message, severity);
-    diagnostic.source = `Databricks Bundle (${bundleLabel})`;
-    const existing = map.get(absPath) ?? [];
-    existing.push(diagnostic);
-    map.set(absPath, existing);
-  }
-  return map;
-}
-
-function inspectorIssuesToVsCodeDiagnostics(
-  issues: InspectorIssue[],
-  bundleDir: string,
-): Map<string, vscode.Diagnostic[]> {
-  const map = new Map<string, vscode.Diagnostic[]>();
-  const bundleLabel = path.basename(bundleDir);
-  for (const issue of issues) {
-    if (!issue.file) continue;
-    const line = Math.max(0, (issue.line ?? 1) - 1);
-    const column = Math.max(0, (issue.column ?? 1) - 1);
-    const range = new vscode.Range(line, column, line, Number.MAX_SAFE_INTEGER);
-    const severity =
-      issue.severity === "error"
-        ? vscode.DiagnosticSeverity.Error
-        : issue.severity === "warning"
-          ? vscode.DiagnosticSeverity.Warning
-          : vscode.DiagnosticSeverity.Information;
-    const diagnostic = new vscode.Diagnostic(
-      range,
-      issue.detail ? `${issue.title}: ${issue.detail}` : issue.title,
-      severity,
-    );
-    diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;
-    diagnostic.code = issue.kind;
-    const existing = map.get(issue.file) ?? [];
-    existing.push(diagnostic);
-    map.set(issue.file, existing);
-  }
-  return map;
-}
-
-function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>): BundleDiagnostic[] {
-  if (result.ok) {
-    return (
-      result.issues
-        ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
-        .flatMap((i) => i.diagnostics ?? []) ?? []
-    );
-  }
-  return result.error.diagnostics ?? [];
-}
-
-type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
-
-// Files that got diagnostics on the last run, per bundle root, so they are cleared
-// once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
-const diagnosticFilesByBundle = new Map<string, Set<string>>();
-
-/**
- * Updates diagnostics for one bundle root from an existing validation result.
- *
- * Diagnostics are updated per-file so existing entries for files not in the new
- * result are cleared and stale errors do not linger after a fix.
- *
- * @returns The bundle graph read for the issues, or `undefined` when validation failed.
- */
-async function updateBundleDiagnostics(
-  result: BundleValidationResult,
-  bundleRoot: string,
-  collection: vscode.DiagnosticCollection,
-  fileToBundleRoot: Map<string, string>,
-): Promise<BundleGraph | undefined> {
-  // Update the include map with CLI-resolved paths
-  if (result.ok) {
-    for (const included of result.data.include ?? []) {
-      fileToBundleRoot.set(path.resolve(bundleRoot, included), bundleRoot);
-    }
-  }
-
-  // Collect files previously tracked for this bundle so we can clear stale ones
-  const prevFiles = new Set([
-    ...[...fileToBundleRoot.entries()]
-      .filter(([, root]) => root === bundleRoot)
-      .map(([f]) => f),
-    ...(diagnosticFilesByBundle.get(bundleRoot) ?? []),
-  ]);
-
-  const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
-  let graph: BundleGraph | undefined;
-  if (result.ok) {
-    try {
-      // Read file contents as the inspector panel does, so issues found in code
-      // (e.g. a secret scope named by its resource key) also reach the Problems panel.
-      graph = await enrichGraphWithFileContent(
-        await extractBundleGraph(result.data, bundleRoot),
-      );
-      const inspectorIssues = buildInspectorIssues(
-        graph,
-        result.data,
-        result.issues ?? [],
-        bundleRoot,
-      );
-      const inspectorDiagnostics = inspectorIssuesToVsCodeDiagnostics(
-        inspectorIssues,
-        bundleRoot,
-      );
-      for (const [absPath, diagnostics] of inspectorDiagnostics) {
-        fresh.set(absPath, [...(fresh.get(absPath) ?? []), ...diagnostics]);
-      }
-    } catch (err) {
-      console.warn(
-        `[BundleInspector] issue diagnostics failed for ${bundleRoot}:`,
-        err,
-      );
-    }
-  }
-
-  // Clear stale diagnostics for files that are clean now
-  for (const f of prevFiles) {
-    if (!fresh.has(f)) {
-      collection.delete(vscode.Uri.file(f));
-    }
-  }
-
-  // Set new diagnostics
-  for (const [absPath, diags] of fresh) {
-    collection.set(vscode.Uri.file(absPath), diags);
-  }
-  diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
-  return graph;
-}
-
-/**
- * Runs bundle validate for a single bundle root and updates diagnostics for
- * files that belong to that bundle.
- */
-async function runBundleDiagnostics(
-  bundleRoot: string,
-  configuredCliPath: string | undefined,
-  collection: vscode.DiagnosticCollection,
-  fileToBundleRoot: Map<string, string>,
-): Promise<{ result: BundleValidationResult; graph: BundleGraph | undefined }> {
-  const result = await validateBundle(bundleRoot, undefined, configuredCliPath);
-  const graph = await updateBundleDiagnostics(
-    result,
-    bundleRoot,
-    collection,
-    fileToBundleRoot,
-  );
-  return { result, graph };
-}
-
-/** The raw `include` patterns of a bundle, read from its `databricks.yml`. */
-async function readIncludePatterns(bundleRoot: string): Promise<string[]> {
-  for (const fileName of ["databricks.yml", "databricks.yaml"]) {
-    try {
-      return parseBundleIncludes(
-        await readFile(path.join(bundleRoot, fileName), "utf-8"),
-      );
-    } catch {
-      // Try the alternate bundle filename.
-    }
-  }
-  return [];
-}
-
-/**
- * Tracks the inspected bundle file and its declared includes so saves can refresh
- * diagnostics without scanning unrelated bundle YAML files in the workspace.
- */
-async function trackBundleFiles(
-  bundleRoot: string,
-  fileToBundleRoot: Map<string, string>,
-): Promise<void> {
-  for (const fileName of ["databricks.yml", "databricks.yaml"]) {
-    const bundlePath = path.join(bundleRoot, fileName);
-    try {
-      await readFile(bundlePath, "utf-8");
-      fileToBundleRoot.set(bundlePath, bundleRoot);
-      const included = await getIncludedFiles(bundlePath);
-      for (const f of included) {
-        fileToBundleRoot.set(f, bundleRoot);
-      }
-    } catch {
-      // Ignore the alternate bundle filename when it is not present.
-    }
-  }
-}
-
-function getWebviewPaths(extensionUri: vscode.Uri) {
-  const webviewRoot = vscode.Uri.joinPath(extensionUri, "dist", "webview");
-  return {
-    webviewRoot,
-    htmlPath: path.join(webviewRoot.fsPath, "index.html"),
-  };
-}
-
-function createNonce(): string {
-  return randomBytes(16).toString("hex");
-}
-
-function getCspMetaTag(webview: vscode.Webview, nonce: string): string {
-  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; connect-src 'none';">`;
-}
-
-async function getWebviewContent(
-  webview: vscode.Webview,
-  extensionUri: vscode.Uri,
-): Promise<string> {
-  const { webviewRoot, htmlPath } = getWebviewPaths(extensionUri);
-  const nonce = createNonce();
-
-  let html = await readFile(htmlPath, "utf-8");
-
-  // Replace relative paths with webview URIs
-  html = html.replace(/href="\/([^"]+)"/g, (_match, filePath) => {
-    const fileUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(webviewRoot, filePath),
-    );
-    return `href="${fileUri}"`;
-  });
-
-  html = html.replace(/src="\/([^"]+)"/g, (_match, filePath) => {
-    const fileUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(webviewRoot, filePath),
-    );
-    return `src="${fileUri}" nonce="${nonce}"`;
-  });
-
-  html = html.replace("</head>", `${getCspMetaTag(webview, nonce)}</head>`);
-
-  return html;
-}
+// Re-exported so existing imports of it from this module keep working.
+export { isOpenFilePathAllowed };
 
 type InspectTrigger = "command" | "issues_command" | "target_switch";
 
