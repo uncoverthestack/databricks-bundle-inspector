@@ -431,7 +431,7 @@ function getFileReferences(
   }
 
   const nb = task.notebook_task as Record<string, unknown> | undefined;
-  if (nb)
+  if (nb) {
     addRef(
       nb.notebook_path,
       "notebook",
@@ -439,20 +439,22 @@ function getFileReferences(
       normalizedNotebookSource(nb.source),
       normalizedNotebookSource(nb.source) === "GIT" ? undefined : "notebook",
     );
+  }
 
   const cleanNb = task.clean_rooms_notebook_task as
     | Record<string, unknown>
     | undefined;
-  if (cleanNb)
+  if (cleanNb) {
     addRef(
       cleanNb.notebook_path,
       "notebook",
       "clean_rooms_notebook_task.notebook_path",
       normalizedNotebookSource(cleanNb.source),
     );
+  }
 
   const py = task.spark_python_task as Record<string, unknown> | undefined;
-  if (py)
+  if (py) {
     addRef(
       py.python_file,
       "python_script",
@@ -460,6 +462,7 @@ function getFileReferences(
       undefined,
       normalizedNotebookSource(py.source) === "GIT" ? undefined : "file",
     );
+  }
 
   const sql = task.sql_task as Record<string, unknown> | undefined;
   if (sql) {
@@ -476,8 +479,9 @@ function getFileReferences(
   const dbt = (task.dbt_task ?? task.dbt_platform_task) as
     | Record<string, unknown>
     | undefined;
-  if (dbt)
+  if (dbt) {
     addRef(dbt.project_directory, "dbt_project", "dbt_task.project_directory");
+  }
 
   return refs;
 }
