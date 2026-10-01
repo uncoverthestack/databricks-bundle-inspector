@@ -12,3 +12,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # The release workflow uploads in one job and downloads in another, so the
+      # two must always move to new versions together, including major ones.
+      artifact-actions:
+        patterns:
+          - actions/upload-artifact
+          - actions/download-artifact
+      actions-minor-and-patch:
+        update-types: [minor, patch]
