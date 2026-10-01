@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # @eslint/js must match the major version of eslint, so they move together.
+      eslint:
+        patterns:
+          - eslint
+          - "@eslint/js"
       minor-and-patch:
         update-types: [minor, patch]
     ignore:

@@ -144,7 +144,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.10",
@@ -156,7 +156,7 @@
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
-    "eslint": "^9.39.4",
+    "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.12.0",
