@@ -7,6 +7,15 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Must stay at or below engines.vscode, or `vsce package` refuses to build.
+      - dependency-name: "@types/vscode"
+      # ts-jest does not support TypeScript 7 yet (its peer range is below 7).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Type definitions should match the Node version the code runs on, not the newest.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
