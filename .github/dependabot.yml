@@ -21,6 +21,10 @@ updates:
       # Type definitions should match the Node version the code runs on, not the newest.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # lint-staged 17 needs Node 22.22.1 or newer, but the workflows pin 22.13.0. It only
+      # runs in the local commit hook, so CI cannot catch a problem with it.
+      - dependency-name: "lint-staged"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
