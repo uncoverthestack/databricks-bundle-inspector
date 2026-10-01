@@ -8,6 +8,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 - **Available on Open VSX** for Cursor, Windsurf and other editors that install extensions from Open VSX. Every release now publishes the same package to both the Visual Studio Marketplace and Open VSX, and the README links to both.
 
+### Changed
+
+- **`databricksBundleInspector.cliPath` can only be set in your own settings.** A project's `.vscode/settings.json` can no longer point the extension at a program inside the project. If you shared this path through a project settings file or a dev container, move it to your user settings (or the dev container's machine settings).
+
 ## [0.1.8] - 2026-09-28
 
 ### Changed
