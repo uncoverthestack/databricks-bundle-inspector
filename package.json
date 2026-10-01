@@ -162,7 +162,7 @@
     "globals": "^17.12.0",
     "husky": "^9.1.7",
     "jest": "^30.5.2",
-    "lint-staged": "^15.5.2",
+    "lint-staged": "^17.6.0",
     "mocha": "^12.0.2",
     "ovsx": "^1.2.0",
     "tailwindcss": "^4.2.2",
