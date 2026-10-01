@@ -107,7 +107,7 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch",
     "watch-tests": "tsc -p . --outDir out --watch",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "compile": "npm run build:ext",
     "test": "npm run test:unit && npm run test:semantic",
@@ -168,6 +168,7 @@
     "tailwindcss": "^4.2.2",
     "ts-jest": "^29.4.14",
     "typescript": "^6.0.2",
+    "typescript-eslint": "^8.71.0",
     "vite": "^8.3.1"
   }
 }
