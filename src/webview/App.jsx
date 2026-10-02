@@ -126,6 +126,8 @@ function issueKindLabel(kind) {
       widget_parameter_mismatch: "Widget parameter",
       task_value_mismatch: "Task value",
       excluded_from_sync: "Not deployed",
+      include_matches_nothing: "Include pattern",
+      resource_not_included: "Not included",
     }[kind] ?? "Issue"
   );
 }
@@ -338,6 +340,8 @@ function buildIssueItems(
             widget_parameter_mismatch: "Widget Parameters",
             task_value_mismatch: "Task Values",
             excluded_from_sync: "Files Not Deployed",
+            include_matches_nothing: "Include Patterns",
+            resource_not_included: "Resource Files Not Included",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,

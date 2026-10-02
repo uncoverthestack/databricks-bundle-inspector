@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
@@ -8,6 +9,8 @@ import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
+import { globSync, hasGlobCharacters } from "./goGlob.js";
+import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -23,7 +26,9 @@ export type InspectorIssueKind =
   | "notebook_type_mismatch"
   | "widget_parameter_mismatch"
   | "task_value_mismatch"
-  | "excluded_from_sync";
+  | "excluded_from_sync"
+  | "include_matches_nothing"
+  | "resource_not_included";
 
 export interface InspectorIssue {
   id: string;
@@ -609,6 +614,108 @@ export function buildInspectorIssues(
 
   issues.push(...secretScopeNameIssues(graph));
   issues.push(...taskValueIssues(graph));
+  issues.push(...includeIssues(parsedBundle, bundleRoot));
+
+  return issues;
+}
+
+/** What the CLI does with `**` and `{a,b}` in `include`, which its documentation does not say. */
+function includeCaveat(entry: string): string | undefined {
+  if (entry.includes("**")) {
+    return 'The CLI treats "**" like "*": it matches exactly one folder level, not every level.';
+  }
+  if (entry.includes("{")) {
+    return 'The CLI does not support "{a,b}" in include. Use one entry per pattern.';
+  }
+  return undefined;
+}
+
+/** The include entry an entry matching nothing was most likely meant to be, if one matches files. */
+function suggestInclude(bundleRoot: string, entry: string): string | undefined {
+  const swapped = entry.replace(/\.(yml|yaml)$/, (_, extension: string) => (extension === "yml" ? ".yaml" : ".yml"));
+  if (swapped !== entry && (globSync(bundleRoot, swapped)?.length ?? 0) > 0) return swapped;
+
+  // A misspelled folder name, e.g. `resource/*.yml` for `resources/*.yml`.
+  const segments = entry.split("/");
+  let folder = "";
+  for (const [index, segment] of segments.entries()) {
+    if (hasGlobCharacters(segment)) return undefined;
+    if (existsSync(path.join(bundleRoot, folder, segment))) {
+      folder = path.posix.join(folder, segment);
+      continue;
+    }
+    let folders: string[];
+    try {
+      folders = readdirSync(path.join(bundleRoot, folder), { withFileTypes: true })
+        .filter((child) => child.isDirectory() && !child.name.startsWith("."))
+        .map((child) => child.name);
+    } catch {
+      return undefined;
+    }
+    const closest = closestName(segment, folders);
+    if (!closest) return undefined;
+    const fixed = [...segments.slice(0, index), closest, ...segments.slice(index + 1)].join("/");
+    return (globSync(bundleRoot, fixed)?.length ?? 0) > 0 ? fixed : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Warns about two silent `include` mistakes. The CLI loads only `databricks.yml` and the
+ * files `include` selects, and says nothing when a pattern selects nothing or when a
+ * file that defines resources is left out, so the bundle just has fewer resources.
+ *
+ * "Left out" is judged from the CLI's own expanded `include` list, not by matching
+ * patterns again. That list is the CLI's answer, so when it still holds patterns (not
+ * the CLI's output) nothing is said.
+ */
+export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: string): InspectorIssue[] {
+  const issues: InspectorIssue[] = [];
+  const { file: bundleFile, text: bundleText, entries } = readIncludeEntries(bundleRoot);
+  const bundleFilePath = path.join(bundleRoot, bundleFile ?? "databricks.yml");
+
+  for (const { entry, line } of entries) {
+    // An entry without wildcards that matches nothing is already an error from the CLI.
+    if (!hasGlobCharacters(entry) || path.isAbsolute(entry)) continue;
+    const matches = globSync(bundleRoot, entry);
+    if (matches === undefined || matches.length > 0) continue;
+
+    // Without a likely fix this is usually a template default that matches nothing yet,
+    // such as `resources/*.yml` in a bundle whose resources are written in Python.
+    const suggestion = suggestInclude(bundleRoot, entry);
+    if (!suggestion) continue;
+
+    issues.push({
+      id: `include:matches-nothing:${entry}`,
+      severity: "warning",
+      kind: "include_matches_nothing",
+      title: `No files match the include pattern "${entry}", so nothing from it is loaded. Did you mean "${suggestion}"?`,
+      fixHint:
+        includeCaveat(entry) ??
+        "Check the folder name and the file extension (.yml or .yaml) in the include entry in databricks.yml.",
+      file: bundleFilePath,
+      ...(line ? { line } : {}),
+    });
+  }
+
+  // Without an include entry the CLI output has no include list at all.
+  const loaded = parsedBundle.include ?? (entries.length === 0 ? [] : undefined);
+  if (loaded && !loaded.some(hasGlobCharacters)) {
+    const caveat = entries.map(({ entry }) => includeCaveat(entry)).find(Boolean);
+    for (const { file, line } of findUnloadedResourceFiles(bundleRoot, loaded, bundleText)) {
+      issues.push({
+        id: `include:not-included:${file}`,
+        severity: "warning",
+        kind: "resource_not_included",
+        title: `"${file}" defines resources, but no include entry loads it, so they are not part of the bundle.`,
+        fixHint:
+          "Add a pattern that covers this file to include in databricks.yml, or remove the file if it is unused." +
+          (caveat ? ` ${caveat}` : ""),
+        file: path.join(bundleRoot, file),
+        line,
+      });
+    }
+  }
 
   return issues;
 }

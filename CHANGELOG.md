@@ -6,6 +6,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **Warnings for two silent `include` mistakes.** The Databricks CLI loads only the files that `include` selects and stays quiet about the rest. The inspector now warns when a pattern matches nothing and looks like a typo (for example `resource/*.yml` for `resources/*.yml`, or `*.yml` where the files end in `.yaml`), with a "Did you mean" suggestion. It also warns when a YAML file that defines resources isn't covered by any entry (for example one in a sub-folder, since `*` stays within one folder). A file that `databricks.yml` mentions, even in a commented-out include, is left alone. The inspector follows the CLI's real matching rules, which differ from what its documentation says: `**` matches one folder level, and `{a,b}` is not supported.
 - **Available on Open VSX** for Cursor, Windsurf and other editors that install extensions from Open VSX. Every release now publishes the same package to both the Visual Studio Marketplace and Open VSX, and the README links to both.
 
 ### Changed

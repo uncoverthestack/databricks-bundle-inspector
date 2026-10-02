@@ -13,6 +13,7 @@ Open a `databricks.yml` file and run **Inspect Databricks Bundle**. Every issue 
 - **Pipeline sources**: Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) whose `libraries` point at a missing notebook or file, or at a `folder/**` glob with no files. The CLI doesn't check these during validation, so they otherwise surface only on `bundle deploy`.
 - **Notebook and file mix-ups**: a notebook path without its extension, a notebook task pointing at a file without the notebook header, or a Python or SQL file task pointing at a notebook, following the Databricks CLI's rules.
 - **Files that won't be deployed**: a task or pipeline pointing at a file that `.gitignore` or `sync.exclude` keeps out of `bundle deploy`.
+- **`include` mistakes**: an `include` pattern that matches no files because of a likely typo (a misspelled folder, or `.yml` where the files end in `.yaml`), and a YAML file that defines resources but isn't in the include list. The CLI loads only what `include` selects and says nothing about the rest, so the bundle just has fewer jobs than you expect.
 - **Widget parameters**: a notebook reading a widget that neither the task nor the job passes and that has no default, including through `%run` and across Python and SQL cells.
 - **Task values**: `dbutils.jobs.taskValues.get(...)` or `{{tasks.<task>.values.<key>}}` reading from a task that doesn't exist, isn't upstream, or doesn't set that key.
 - **Secret scope mix-ups**: code that reads a secret using the scope's resource key instead of its name, which fails at runtime.
