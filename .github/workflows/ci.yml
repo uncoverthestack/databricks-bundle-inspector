@@ -63,5 +63,8 @@ jobs:
       - name: Run tests (jest)
         run: npm run test:unit
 
+      - name: Run semantic tests (jest)
+        run: npm run test:semantic
+
       - name: Lint
         run: npm run lint
