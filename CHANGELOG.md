@@ -11,6 +11,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Changed
 
+- **The extension now declares that it needs a trusted folder.** It was already disabled in VS Code's Restricted Mode. The manifest now says so, with a reason shown in the Extensions view. The README also notes that the Databricks CLI uses your active profile and may contact your workspace.
 - **`databricksBundleInspector.cliPath` can only be set in your own settings.** A project's `.vscode/settings.json` can no longer point the extension at a program inside the project. If you shared this path through a project settings file or a dev container, move it to your user settings (or the dev container's machine settings).
 
 ## [0.1.8] - 2026-09-28

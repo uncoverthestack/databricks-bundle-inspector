@@ -75,7 +75,7 @@ The graph opens in a new editor panel. It refreshes automatically when you save 
 
 ## How it works
 
-The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
+The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. The Databricks CLI uses your active profile and may contact your workspace to resolve the bundle, so `validate` can make network calls. Because the extension runs the CLI on the files you open, it is disabled in VS Code's Restricted Mode until you trust the folder. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
 
 ## Telemetry
 
