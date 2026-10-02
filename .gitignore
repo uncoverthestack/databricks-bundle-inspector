@@ -37,3 +37,6 @@ semantic-cli-matrix.local.json
 .claude/*.local.json
 repo-audit
 .release-private
+
+# Local state the Databricks CLI writes next to a bundle when it validates
+.databricks/

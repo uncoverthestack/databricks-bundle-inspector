@@ -1,0 +1,8 @@
+resources:
+  jobs:
+    legacy_job:
+      name: legacy_job
+      tasks:
+        - task_key: run
+          notebook_task:
+            notebook_path: ../src/notebook.py

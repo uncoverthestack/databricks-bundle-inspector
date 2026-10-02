@@ -18,9 +18,13 @@ async function main() {
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(root, "out/e2e/suite/index.cjs"),
     // `npm run test:e2e:watch` sets this so each popup stays on screen long enough to read.
-    extensionTestsEnv: { E2E_PAUSE_MS: process.env.E2E_PAUSE_MS ?? "0" },
+    // `E2E_SUITE` and `E2E_FIXTURE` pick another suite and the folder it opens; see `npm run test:e2e:include`.
+    extensionTestsEnv: {
+      E2E_PAUSE_MS: process.env.E2E_PAUSE_MS ?? "0",
+      E2E_SUITE: process.env.E2E_SUITE ?? "cliNotFound",
+    },
     launchArgs: [
-      path.join(root, "src/test/e2e/fixtures/bundle"),
+      path.join(root, process.env.E2E_FIXTURE ?? "src/test/e2e/fixtures/bundle"),
       `--user-data-dir=${userData}`,
       "--disable-extensions",
       // Keeps test runs out of PostHog.
