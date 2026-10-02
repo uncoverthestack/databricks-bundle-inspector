@@ -138,6 +138,15 @@ describe("resource file that include does not load", () => {
     expect(includeIssues(config(["resources\\a.yml"]), root)).toEqual([]);
   });
 
+  test("treats a different folder casing in the CLI's list as the same file", () => {
+    // `include: Resources/*.yml` on a case-insensitive file system lists `Resources/a.yml`.
+    const root = makeBundle({
+      "databricks.yml": "include:\n  - Resources/*.yml\n",
+      "resources/a.yml": JOB_FILE,
+    });
+    expect(includeIssues(config(["Resources/a.yml"]), root)).toEqual([]);
+  });
+
   test("says nothing when the include list is not the CLI's expanded answer", () => {
     const root = makeBundle({
       "databricks.yml": "include:\n  - resources/*.yml\n",

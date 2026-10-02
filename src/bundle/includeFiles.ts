@@ -99,8 +99,10 @@ export function findUnloadedResourceFiles(
   loadedFiles: string[],
   bundleText = "",
 ): UnloadedResourceFile[] {
-  // The CLI lists the files with the operating system's separator, which is `\` on Windows.
-  const loaded = new Set(loadedFiles.map((file) => posix.normalize(file.replace(/\\/g, "/"))));
+  // The CLI lists the files with the operating system's separator, which is `\` on Windows,
+  // and keeps the folder casing of the pattern. Windows and macOS file systems ignore case,
+  // so `Resources/a.yml` and `resources/a.yml` are the same file there.
+  const loaded = new Set(loadedFiles.map((file) => posix.normalize(file.replace(/\\/g, "/")).toLowerCase()));
   const candidates: string[] = [];
   const pending = [""];
   let foldersSeen = 0;
@@ -133,7 +135,7 @@ export function findUnloadedResourceFiles(
 
   const found: UnloadedResourceFile[] = [];
   for (const file of candidates.sort()) {
-    if (loaded.has(file) || isMentioned(bundleText, file)) continue;
+    if (loaded.has(file.toLowerCase()) || isMentioned(bundleText, file)) continue;
     const absolute = join(bundleRoot, file);
     try {
       if (!existsSync(absolute) || statSync(absolute).size > MAX_FILE_BYTES) continue;
