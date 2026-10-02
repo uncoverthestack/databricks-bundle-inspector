@@ -139,12 +139,22 @@ describe("resource file that include does not load", () => {
   });
 
   test("treats a different folder casing in the CLI's list as the same file", () => {
-    // `include: Resources/*.yml` on a case-insensitive file system lists `Resources/a.yml`.
+    // On Windows and macOS the CLI keeps the casing of the pattern in its list, so a pattern
+    // written `Resources/*.yml` lists `Resources/a.yml` for the folder `resources`. The
+    // pattern here is spelled to match on every file system; only the CLI's list differs.
     const root = makeBundle({
-      "databricks.yml": "include:\n  - Resources/*.yml\n",
+      "databricks.yml": "include:\n  - resources/*.yml\n",
       "resources/a.yml": JOB_FILE,
     });
     expect(includeIssues(config(["Resources/a.yml"]), root)).toEqual([]);
+  });
+
+  test("treats capitals on disk as the same file as the CLI's list", () => {
+    const root = makeBundle({
+      "databricks.yml": "include:\n  - Resources/*.yml\n",
+      "Resources/B.yml": JOB_FILE,
+    });
+    expect(includeIssues(config(["resources/b.yml"]), root)).toEqual([]);
   });
 
   test("says nothing when the include list is not the CLI's expanded answer", () => {
