@@ -1,0 +1,11 @@
+bundle:
+  name: include-mistakes
+
+# Each mistake below passes `databricks bundle validate` without a warning.
+include:
+  # `*` stays inside one folder, so this loads only the job file directly in resources.
+  - resources/*.yml
+  # Misspelled folder: matches nothing.
+  - resource/*.yml
+  # Left out on purpose, so the inspector does not report it.
+  # - paused/job.yml

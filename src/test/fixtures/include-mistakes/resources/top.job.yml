@@ -1,0 +1,8 @@
+resources:
+  jobs:
+    top_job:
+      name: top_job
+      tasks:
+        - task_key: run
+          notebook_task:
+            notebook_path: ../src/notebook.py

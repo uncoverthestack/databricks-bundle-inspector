@@ -56,6 +56,11 @@
       "name": "secret-scopes",
       "fixture": "src/test/fixtures/secret-scopes",
       "baseline": "src/test/fixtures/baselines/secret-scopes.semantic.json"
+    },
+    {
+      "name": "include-mistakes",
+      "fixture": "src/test/fixtures/include-mistakes",
+      "baseline": "src/test/fixtures/baselines/include-mistakes.semantic.json"
     }
   ]
 }

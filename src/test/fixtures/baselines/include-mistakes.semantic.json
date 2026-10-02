@@ -1,0 +1,65 @@
+{
+  "bundle": "include-mistakes",
+  "jobs": [
+    {
+      "key": "top_job",
+      "name": "top_job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "run",
+          "type": "Notebook",
+          "source": "../src/notebook.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/notebook.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 3
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "warning",
+      "kind": "include_matches_nothing",
+      "title": "No files match the include pattern \"resource/*.yml\", so nothing from it is loaded. Did you mean \"resources/*.yml\"?",
+      "file": "databricks.yml",
+      "line": 9
+    },
+    {
+      "severity": "warning",
+      "kind": "resource_not_included",
+      "title": "\"resources/jobs/nested.job.yml\" defines resources, but no include entry loads it, so they are not part of the bundle.",
+      "file": "resources/jobs/nested.job.yml",
+      "line": 1
+    },
+    {
+      "severity": "warning",
+      "kind": "resource_not_included",
+      "title": "\"resources/legacy.job.yaml\" defines resources, but no include entry loads it, so they are not part of the bundle.",
+      "file": "resources/legacy.job.yaml",
+      "line": 1
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}
