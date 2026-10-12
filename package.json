@@ -181,6 +181,12 @@
   "overrides": {
     "ovsx": {
       "@vscode/vsce": "$@vscode/vsce"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.3.2"
+    },
+    "babel-plugin-istanbul": {
+      "test-exclude": "^8.0.0"
     }
   }
 }
