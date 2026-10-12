@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
 ### Added
 
 - **Checks without running Inspect.** The extension now starts by itself when the open folder contains a `databricks.yml` or `databricks.yaml`, including in a subfolder. It checks the bundles it finds and lists the results in the Problems panel, then checks again on every save. Before, nothing happened until you ran **Inspect Databricks Bundle**, in every new window. These checks are quiet: no panel opens and no message is shown, even when the Databricks CLI is missing. They use the same made-up target as the first Inspect, which needs no login. A folder with many bundles gets its first 10 checked on open, and the rest on save.
@@ -215,6 +217,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.2.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.5...v0.1.6
