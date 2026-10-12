@@ -6,11 +6,13 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **Checks without running Inspect.** The extension now starts by itself when the open folder contains a `databricks.yml` or `databricks.yaml`, including in a subfolder. It checks the bundles it finds and lists the results in the Problems panel, then checks again on every save. Before, nothing happened until you ran **Inspect Databricks Bundle**, in every new window. These checks are quiet: no panel opens and no message is shown, even when the Databricks CLI is missing. They use the same made-up target as the first Inspect, which needs no login. A folder with many bundles gets its first 10 checked on open, and the rest on save.
 - **Warnings for two silent `include` mistakes.** The Databricks CLI loads only the files that `include` selects and stays quiet about the rest. The inspector now warns when a pattern matches nothing and looks like a typo (for example `resource/*.yml` for `resources/*.yml`, or `*.yml` where the files end in `.yaml`), with a "Did you mean" suggestion. It also warns when a YAML file that defines resources isn't covered by any entry (for example one in a sub-folder, since `*` stays within one folder). A file that `databricks.yml` mentions, even in a commented-out include, is left alone. The inspector follows the CLI's real matching rules, which differ from what its documentation says: `**` matches one folder level, and `{a,b}` is not supported.
 - **Available on Open VSX** for Cursor, Windsurf and other editors that install extensions from Open VSX. Every release now publishes the same package to both the Visual Studio Marketplace and Open VSX, and the README links to both.
 
 ### Changed
 
+- **The telemetry notice appears on your first Inspect**, not when the extension starts, because it now starts by itself. The background checks send no usage data, and the uninstall event stays off until you have seen the notice.
 - **The extension now declares that it needs a trusted folder.** It was already disabled in VS Code's Restricted Mode. The manifest now says so, with a reason shown in the Extensions view. The README also notes that the Databricks CLI uses your active profile and may contact your workspace.
 - **`databricksBundleInspector.cliPath` can only be set in your own settings.** A project's `.vscode/settings.json` can no longer point the extension at a program inside the project. If you shared this path through a project settings file or a dev container, move it to your user settings (or the dev container's machine settings).
 

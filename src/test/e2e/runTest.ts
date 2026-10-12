@@ -14,6 +14,7 @@ async function main() {
   // A fresh, short user data dir: macOS caps VS Code's socket path at 103 characters,
   // and a clean profile means no leftover cliPath setting.
   const userData = await mkdtemp(path.join(os.tmpdir(), "dbi-e2e-"));
+  const suite = process.env.E2E_SUITE ?? "cliNotFound";
   await runTests({
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(root, "out/e2e/suite/index.cjs"),
@@ -21,7 +22,12 @@ async function main() {
     // `E2E_SUITE` and `E2E_FIXTURE` pick another suite and the folder it opens; see `npm run test:e2e:include`.
     extensionTestsEnv: {
       E2E_PAUSE_MS: process.env.E2E_PAUSE_MS ?? "0",
-      E2E_SUITE: process.env.E2E_SUITE ?? "cliNotFound",
+      E2E_SUITE: suite,
+      // The extension checks the open bundle as soon as VS Code starts. A real CLI found
+      // then stays cached for the session, so this suite starts with none on the PATH.
+      ...(suite === "cliNotFound"
+        ? { PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin" }
+        : {}),
     },
     launchArgs: [
       path.join(root, process.env.E2E_FIXTURE ?? "src/test/e2e/fixtures/bundle"),
@@ -29,6 +35,8 @@ async function main() {
       "--disable-extensions",
       // Keeps test runs out of PostHog.
       "--disable-telemetry",
+      // Otherwise VS Code reads the PATH back from the login shell.
+      ...(suite === "cliNotFound" ? ["--force-disable-user-env"] : []),
     ],
   });
 }
