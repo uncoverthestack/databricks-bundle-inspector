@@ -45,10 +45,18 @@ function extensionSettingEnabled(): boolean {
     .get<boolean>(SETTING_KEY, true);
 }
 
+function noticeShown(context: vscode.ExtensionContext): boolean {
+  return context.globalState.get<boolean>(NOTICE_SHOWN_KEY) === true;
+}
+
 /** Tells the user once that telemetry is on, with a one-click opt-out. */
-async function showNoticeOnce(context: vscode.ExtensionContext): Promise<void> {
-  if (context.globalState.get<boolean>(NOTICE_SHOWN_KEY)) return;
+async function showNoticeOnce(
+  context: vscode.ExtensionContext,
+  onShown: () => void,
+): Promise<void> {
+  if (noticeShown(context)) return;
   await context.globalState.update(NOTICE_SHOWN_KEY, true);
+  onShown();
   const choice = await vscode.window.showInformationMessage(
     "Databricks Bundle Inspector collects anonymous usage data (features used, never paths, names or file contents) to guide development. It follows your VS Code telemetry setting.",
     "Learn More",
@@ -114,9 +122,10 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const isEnabled = () => logger.isUsageEnabled && extensionSettingEnabled();
 
+  // The uninstall event stays off until the user has been shown the notice.
   const recordConsent = () =>
     writeUninstallState(context.extensionPath, {
-      enabled: isEnabled(),
+      enabled: isEnabled() && noticeShown(context),
       distinctId,
       extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
       appName: vscode.env.appName,
@@ -135,11 +144,9 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
     }),
   ];
 
-  if (isEnabled()) {
-    void showNoticeOnce(context);
-    // Deliver anything left over from an earlier offline session.
-    void queue.flush();
-  }
+  // Deliver anything left over from an earlier offline session.
+  if (isEnabled()) void queue.flush();
+  let noticeRequested = false;
   const timer = setInterval(() => {
     if (queue.size > 0 && isEnabled()) void queue.flush();
   }, FLUSH_INTERVAL_MS);
@@ -147,7 +154,13 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   return {
     logUsage(event, properties) {
-      if (extensionSettingEnabled()) logger.logUsage(event, properties);
+      if (!extensionSettingEnabled()) return;
+      // Shown with the first event, so nothing is ever collected before the user is told.
+      if (logger.isUsageEnabled && !noticeRequested) {
+        noticeRequested = true;
+        void showNoticeOnce(context, () => void recordConsent());
+      }
+      logger.logUsage(event, properties);
     },
     async shutdown() {
       clearInterval(timer);

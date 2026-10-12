@@ -1,0 +1,6 @@
+bundle:
+  name: always_on
+
+include:
+  # Misspelled folder: matches nothing.
+  - resource/*.yml

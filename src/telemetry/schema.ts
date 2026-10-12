@@ -24,6 +24,11 @@ const bool: Rule = { type: "boolean" };
 const bucket = oneOf("0", "1", "2-5", "6-20", "21-50", "51+");
 
 export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
+  extension_activated: {
+    bundle_count: bucket,
+    bundle_at_root: bool,
+    cli_found: bool,
+  },
   inspect_bundle: {
     trigger: oneOf("command", "issues_command", "target_switch"),
     outcome: oneOf(

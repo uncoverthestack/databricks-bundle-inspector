@@ -60,9 +60,14 @@ After installing the CLI, restart VS Code if the install added a new folder to y
 
 ## Usage
 
-1. Open a folder containing a `databricks.yml` or `databricks.yaml` file.
-2. Open the bundle file in the editor.
-3. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
+Open a folder containing a `databricks.yml` or `databricks.yaml` file. That is all it takes to get the checks: the extension starts by itself, checks the bundles in the folder, and lists what it finds in the **Problems** panel. It checks again each time you save. It opens no panel and shows no messages while doing so.
+
+A folder with many bundles gets its first 10 checked on open (the ones closest to the top of the folder first). The others are checked when you save one of their files. Bundles inside `node_modules`, `.git`, `.databricks`, `.venv` and `venv` are skipped.
+
+To see the graph:
+
+1. Open the bundle file in the editor.
+2. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
 
 The graph opens in a new editor panel. It refreshes automatically when you save the bundle file or related configurations.
 
@@ -75,11 +80,11 @@ The graph opens in a new editor panel. It refreshes automatically when you save 
 
 ## How it works
 
-The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. The Databricks CLI uses your active profile and may contact your workspace to resolve the bundle, so `validate` can make network calls. Because the extension runs the CLI on the files you open, it is disabled in VS Code's Restricted Mode until you trust the folder. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
+The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. The Databricks CLI uses your active profile and may contact your workspace to resolve the bundle, so `validate` can make network calls. Because the extension runs the CLI on the files you open, it is disabled in VS Code's Restricted Mode until you trust the folder. The checks that run by themselves, on open and on save, use a made-up target, which needs no login. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
 
 ## Telemetry
 
-The extension collects anonymous usage data to learn which features are used and where people get stuck. You are told once, the first time it runs with telemetry on.
+The extension collects anonymous usage data to learn which features are used and where people get stuck. You are told once, the first time the extension starts with telemetry on. Nothing is collected before that notice is shown.
 
 **To turn it off**, use either setting:
 
@@ -88,7 +93,7 @@ The extension collects anonymous usage data to learn which features are used and
 
 Turning it off also deletes any events still waiting to be sent, and stops the uninstall event.
 
-- **Collected:** which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), why the Databricks CLI couldn't be used, whether it is older than the oldest tested version, coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
+- **Collected:** that the extension started in a VS Code window, with how many bundles the open folders hold as a range (for example "2-5"), whether one sits at the top of the folder, and whether the Databricks CLI could be run. Also which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), why the Databricks CLI couldn't be used, whether it is older than the oldest tested version, coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
 - **Environment:** extension and VS Code version, OS, OS version and CPU type (for example `darwin`, `25.0.0`, `arm64`), and remote type (for example WSL or SSH).
 - **Never collected:** file paths or contents, bundle, job, task or target names, workspace hosts, search text, or error messages.
 - **Identity:** an anonymous per-install ID, a one-way hash of VS Code's machine ID (never the ID itself). No accounts, no IP address, no location.

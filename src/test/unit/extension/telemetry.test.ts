@@ -15,7 +15,12 @@ import {
   type QueuedEvent,
   type SendResult,
 } from "../../../telemetry/transport.js";
-import { EVENT_SCHEMA, outgoingProperties, validateWireEvent } from "../../../telemetry/schema.js";
+import {
+  EVENT_SCHEMA,
+  outgoingProperties,
+  validateProperties,
+  validateWireEvent,
+} from "../../../telemetry/schema.js";
 import { handleTelemetryRequest, type ProxyEnv } from "../../../telemetry/proxy.js";
 import { TelemetryQueue, type QueueStorage } from "../../../telemetry/queue.js";
 import { UNINSTALL_STATE_FILE } from "../../../telemetry/config.js";
@@ -307,6 +312,23 @@ describe("schema", () => {
       NOW,
     );
     expect(event?.properties).toEqual({ outcome: "ok", "common.appname": "Visual Studio Code" });
+  });
+
+  it("keeps the start event's coarse facts and nothing that could name a project", () => {
+    const event = validateWireEvent(
+      wireEvent({
+        event: "extension_activated",
+        properties: {
+          bundle_count: "2-5",
+          bundle_at_root: true,
+          cli_found: false,
+          bundle_root: "/Users/someone/work/sales_etl",
+        },
+      }),
+      NOW,
+    );
+    expect(event?.properties).toEqual({ bundle_count: "2-5", bundle_at_root: true, cli_found: false });
+    expect(validateProperties("extension_activated", { bundle_count: "7" })).toEqual({});
   });
 
   it("drops machine and device IDs before sending", () => {

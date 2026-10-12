@@ -19,6 +19,14 @@
         "issue_count": "Number of inspector issues, as a range."
       }
     },
+    "extension_activated": {
+      "description": "The extension started, once per VS Code window. It starts by itself when the open folder contains a bundle file, or when one of its commands is run.",
+      "properties": {
+        "bundle_count": "Number of bundles found in the open folders, as a range.",
+        "bundle_at_root": "Whether a bundle file sits at the top of an open folder.",
+        "cli_found": "Whether the Databricks CLI could be run. Not sent when no bundle was found, because nothing was checked."
+      }
+    },
     "bundle_refreshed_on_save": {
       "description": "The open inspector refreshed after a bundle-related file was saved.",
       "properties": { "bundle_file": "Whether the saved file was databricks.yml itself." }
