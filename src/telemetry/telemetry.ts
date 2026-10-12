@@ -122,8 +122,7 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const isEnabled = () => logger.isUsageEnabled && extensionSettingEnabled();
 
-  // The extension starts by itself in bundle folders, so someone may never have used
-  // it or seen the notice. Until they have, the uninstall event stays off too.
+  // The uninstall event stays off until the user has been shown the notice.
   const recordConsent = () =>
     writeUninstallState(context.extensionPath, {
       enabled: isEnabled() && noticeShown(context),
@@ -156,7 +155,7 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
   return {
     logUsage(event, properties) {
       if (!extensionSettingEnabled()) return;
-      // The notice waits for the first use: starting up in a bundle folder sends nothing.
+      // Shown with the first event, so nothing is ever collected before the user is told.
       if (logger.isUsageEnabled && !noticeRequested) {
         noticeRequested = true;
         void showNoticeOnce(context, () => void recordConsent());

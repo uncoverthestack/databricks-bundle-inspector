@@ -12,7 +12,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Changed
 
-- **The telemetry notice appears on your first Inspect**, not when the extension starts, because it now starts by itself. The background checks send no usage data, and the uninstall event stays off until you have seen the notice.
+- **Usage telemetry records that the extension started**, once per VS Code window: how many bundles the open folders hold as a range, whether one sits at the top of the folder, and whether the Databricks CLI could be run. Never paths or names. See `telemetry.json`. Because the extension now starts by itself, the one-time telemetry notice can appear when you open a bundle folder, before you have run Inspect. Nothing is collected before it is shown, and the uninstall event stays off until then.
 - **The extension now declares that it needs a trusted folder.** It was already disabled in VS Code's Restricted Mode. The manifest now says so, with a reason shown in the Extensions view. The README also notes that the Databricks CLI uses your active profile and may contact your workspace.
 - **`databricksBundleInspector.cliPath` can only be set in your own settings.** A project's `.vscode/settings.json` can no longer point the extension at a program inside the project. If you shared this path through a project settings file or a dev container, move it to your user settings (or the dev container's machine settings).
 

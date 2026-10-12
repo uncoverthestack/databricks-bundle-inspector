@@ -23,6 +23,7 @@ import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import {
   BUNDLE_FILE_GLOB,
+  MAX_BUNDLES_CHECKED_ON_OPEN,
   SKIPPED_FOLDERS_GLOB,
   selectBundleRoots,
 } from "./bundle/bundleDiscovery.js";
@@ -115,10 +116,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     pendingRefreshes.set(bundleRoot, next);
   }
 
+  /** Returns the check's result, or undefined when it was put off behind one already running. */
   async function refreshBundle(
     bundleRoot: string,
     flags: Omit<PendingRefresh, "timer">,
-  ): Promise<void> {
+  ): Promise<BundleValidationResult | undefined> {
     // One check per bundle at a time, so an older result never overwrites a newer one.
     if (runningRefreshes.has(bundleRoot)) {
       scheduleRefresh(
@@ -126,7 +128,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         flags.config ? "config" : "source",
         flags.saved ? { bundleFile: flags.bundleFileSaved } : undefined,
       );
-      return;
+      return undefined;
     }
     runningRefreshes.add(bundleRoot);
     try {
@@ -149,6 +151,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           refreshTargets: flags.config,
         });
       }
+      return result;
     } finally {
       runningRefreshes.delete(bundleRoot);
     }
@@ -245,33 +248,48 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   // When a folder opens: check the bundles in it, so the Problems panel is filled
   // before the first save. Runs unasked, so it shows no messages and opens no panel.
   const BUNDLE_SEARCH_MAX_FILES = 200;
+  interface OpenFoldersCheck {
+    bundleCount: number;
+    bundleAtRoot: boolean;
+    /** Undefined when no bundle was checked. */
+    cliFound: boolean | undefined;
+  }
   async function checkBundlesIn(
     folders: readonly vscode.WorkspaceFolder[],
-  ): Promise<void> {
+  ): Promise<OpenFoldersCheck> {
+    const check: OpenFoldersCheck = { bundleCount: 0, bundleAtRoot: false, cliFound: undefined };
     try {
+      const localFolders = folders.filter((folder) => folder.uri.scheme === "file");
       const found = await Promise.all(
-        folders
-          .filter((folder) => folder.uri.scheme === "file")
-          .map((folder) =>
-            vscode.workspace.findFiles(
-              new vscode.RelativePattern(folder, BUNDLE_FILE_GLOB),
-              SKIPPED_FOLDERS_GLOB,
-              BUNDLE_SEARCH_MAX_FILES,
-            ),
+        localFolders.map((folder) =>
+          vscode.workspace.findFiles(
+            new vscode.RelativePattern(folder, BUNDLE_FILE_GLOB),
+            SKIPPED_FOLDERS_GLOB,
+            BUNDLE_SEARCH_MAX_FILES,
           ),
+        ),
       );
-      const bundleRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath));
+      const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
+      check.bundleCount = allRoots.length;
+      check.bundleAtRoot = localFolders.some((folder) => allRoots.includes(folder.uri.fsPath));
       // One at a time, so a folder with several bundles does not start several CLI runs at once.
-      for (const bundleRoot of bundleRoots) {
-        await refreshBundle(bundleRoot, {
+      for (const bundleRoot of allRoots.slice(0, MAX_BUNDLES_CHECKED_ON_OPEN)) {
+        const result = await refreshBundle(bundleRoot, {
           config: true,
           saved: false,
           bundleFileSaved: false,
         });
+        if (result && check.cliFound === undefined) {
+          check.cliFound =
+            result.ok ||
+            (result.error.errorCode !== "CLI_NOT_FOUND" &&
+              result.error.errorCode !== "CLI_NOT_EXECUTABLE");
+        }
       }
     } catch (error) {
       console.warn("[BundleInspector] checking bundles on open failed:", error);
     }
+    return check;
   }
   extensionContext.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders((event) => {
@@ -740,7 +758,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     openIssuesDisposable,
   );
 
-  void checkBundlesIn(vscode.workspace.workspaceFolders ?? []);
+  void checkBundlesIn(vscode.workspace.workspaceFolders ?? []).then((check) =>
+    telemetry?.logUsage("extension_activated", {
+      bundle_count: countBucket(check.bundleCount),
+      bundle_at_root: check.bundleAtRoot,
+      ...(check.cliFound === undefined ? {} : { cli_found: check.cliFound }),
+    }),
+  );
 }
 
 export function deactivate(): Promise<void> | undefined {
