@@ -21,6 +21,20 @@ function createBundle(): ParsedBundleConfig {
   };
 }
 describe("validateBundleWithDependencies", () => {
+  test("tells the CLI not to run code the bundle defines", async () => {
+    let env: NodeJS.ProcessEnv | undefined;
+    await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async (_file, _args, options) => {
+        env = options?.env;
+        return { stdout: JSON.stringify(createBundle()), stderr: "" };
+      },
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+    });
+
+    expect(env?.DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION).toBe("1");
+    expect(env?.PATH).toBe(process.env.PATH);
+  });
+
   test("returns CLI_NOT_FOUND when no CLI is resolved", async () => {
     const result = await validateBundleWithDependencies(
       "/workspace/demo",
