@@ -322,13 +322,19 @@ describe("schema", () => {
           bundle_count: "2-5",
           bundle_at_root: true,
           cli_found: false,
+          issue_count: "6-20",
           bundle_root: "/Users/someone/work/sales_etl",
         },
       }),
       NOW,
     );
-    expect(event?.properties).toEqual({ bundle_count: "2-5", bundle_at_root: true, cli_found: false });
-    expect(validateProperties("extension_activated", { bundle_count: "7" })).toEqual({});
+    expect(event?.properties).toEqual({
+      bundle_count: "2-5",
+      bundle_at_root: true,
+      cli_found: false,
+      issue_count: "6-20",
+    });
+    expect(validateProperties("extension_activated", { bundle_count: "7", issue_count: 7 })).toEqual({});
   });
 
   it("drops machine and device IDs before sending", () => {

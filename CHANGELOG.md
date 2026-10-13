@@ -10,6 +10,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 - **You are told when the Databricks CLI is missing, without clicking Inspect.** The status bar item then says `Databricks CLI not found`, highlighted, and clicking it shows the install steps. Before, the checks silently did nothing and an empty Problems panel looked like a clean bundle. No pop-up is shown unless you click.
 - **Usage telemetry tells a click on the status bar item apart** from the title-bar button (`trigger: status_bar` on the existing inspect event). See `telemetry.json`.
 
+### Changed
+
+- **The start event in usage telemetry also records how many problems were found**, as a range (for example "2-5"). Never which problems, and no names or paths. It shows whether the checks that now run by themselves find anything. See `telemetry.json`.
+
 ## [0.2.0] - 2026-10-12
 
 ### Added

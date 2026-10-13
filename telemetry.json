@@ -24,7 +24,8 @@
       "properties": {
         "bundle_count": "Number of bundles found in the open folders, as a range.",
         "bundle_at_root": "Whether a bundle file sits at the top of an open folder.",
-        "cli_found": "Whether the Databricks CLI could be run. Not sent when no bundle was found, because nothing was checked."
+        "cli_found": "Whether the Databricks CLI could be run. Not sent when no bundle was found, because nothing was checked.",
+        "issue_count": "Number of errors and warnings the first check put in the Problems panel, as a range. Not sent when nothing was checked."
       }
     },
     "bundle_refreshed_on_save": {
