@@ -81,15 +81,25 @@ export type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 // once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
 const diagnosticFilesByBundle = new Map<string, Set<string>>();
 
+// Issues with no file to point at (an unresolved variable, a CLI error about the bundle
+// as a whole). They cannot go in the Problems panel and show only in the graph.
+const graphOnlyByBundle = new Map<string, { problems: number; notes: number }>();
+
 /**
- * What the last check of one bundle put in the Problems panel: errors and warnings
- * (`problems`), and information-level entries (`notes`).
+ * What the last check of one bundle found: errors and warnings (`problems`), and
+ * information-level entries (`notes`). `graphOnly` says how many of them have no file
+ * to point at, so they are in the graph but not in the Problems panel.
  */
 export function bundleProblemCount(
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
-): { problems: number; notes: number } {
-  const count = { problems: 0, notes: 0 };
+): { problems: number; notes: number; graphOnly: number } {
+  const graphOnly = graphOnlyByBundle.get(bundleRoot) ?? { problems: 0, notes: 0 };
+  const count = {
+    problems: graphOnly.problems,
+    notes: graphOnly.notes,
+    graphOnly: graphOnly.problems + graphOnly.notes,
+  };
   for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
     for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
       if (
@@ -136,6 +146,11 @@ export async function updateBundleDiagnostics(
 
   const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
   let graph: BundleGraph | undefined;
+  // When validation failed, what the CLI reported without a file is all there is.
+  const graphOnly = {
+    problems: result.ok ? 0 : extractDiagnostics(result).filter((d) => !d.path).length,
+    notes: 0,
+  };
   if (result.ok) {
     try {
       // Read file contents as the inspector panel does, so issues found in code
@@ -155,6 +170,11 @@ export async function updateBundleDiagnostics(
       );
       for (const [absPath, diagnostics] of inspectorDiagnostics) {
         fresh.set(absPath, [...(fresh.get(absPath) ?? []), ...diagnostics]);
+      }
+      for (const issue of inspectorIssues) {
+        if (issue.file) continue;
+        if (issue.severity === "error" || issue.severity === "warning") graphOnly.problems++;
+        else graphOnly.notes++;
       }
     } catch (err) {
       console.warn(
@@ -176,6 +196,7 @@ export async function updateBundleDiagnostics(
     collection.set(vscode.Uri.file(absPath), diags);
   }
   diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
+  graphOnlyByBundle.set(bundleRoot, graphOnly);
   return graph;
 }
 

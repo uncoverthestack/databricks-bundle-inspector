@@ -54,7 +54,9 @@ import {
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
 import {
   bundleForFile,
+  bundleSummary,
   checkStateOf,
+  orderForPicking,
   statusBarView,
   type BundleCheckState,
 } from "./extension/statusBar.js";
@@ -84,6 +86,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   statusBarItem.command = STATUS_BAR_COMMAND;
   extensionContext.subscriptions.push(statusBarItem);
   const checkStates = new Map<string, BundleCheckState>();
+  /** Every bundle found in the open folders, checked or not, in the order found. */
+  const foundBundles = new Set<string>();
 
   let lastStatusBarBundle: string | undefined;
 
@@ -93,14 +97,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * not jump to another bundle while the user looks at this one's graph.
    */
   function statusBarBundle(): string | undefined {
-    const roots = [...checkStates.keys()];
+    const roots = [...foundBundles];
     const ofOpenFile = bundleForFile(
       roots,
       vscode.window.activeTextEditor?.document.uri.fsPath,
       path.sep,
     );
     const remembered =
-      lastStatusBarBundle && checkStates.has(lastStatusBarBundle) ? lastStatusBarBundle : undefined;
+      lastStatusBarBundle && foundBundles.has(lastStatusBarBundle) ? lastStatusBarBundle : undefined;
     lastStatusBarBundle = ofOpenFile ?? remembered ?? roots[0];
     return lastStatusBarBundle;
   }
@@ -110,10 +114,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     const view =
       bundleRoot &&
       statusBarView(
-        checkStates.get(bundleRoot),
+        checkStates.get(bundleRoot) ?? "pending",
         bundleProblemCount(bundleRoot, diagnosticCollection),
         path.basename(bundleRoot),
-        checkStates.size - 1,
+        foundBundles.size - 1,
       );
     if (!view) {
       statusBarItem.hide();
@@ -133,6 +137,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    foundBundles.add(bundleRoot);
     // The bundle whose graph was just opened is the one the user is looking at.
     if (options.inspected) lastStatusBarBundle = bundleRoot;
     renderStatusBar();
@@ -346,6 +351,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       );
       const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
       check.bundleCount = allRoots.length;
+      for (const bundleRoot of allRoots) foundBundles.add(bundleRoot);
+      renderStatusBar();
       check.bundleAtRoot = localFolders.some((folder) => allRoots.includes(folder.uri.fsPath));
       // One at a time, so a folder with several bundles does not start several CLI runs at once.
       for (const bundleRoot of allRoots.slice(0, MAX_BUNDLES_CHECKED_ON_OPEN)) {
@@ -831,9 +838,31 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
   // A click on the status bar item. Inspect does the rest: it opens the graph with the
   // issues, or says what is wrong (for a missing CLI, with the install guide button).
-  const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, () =>
-    inspectBundle(undefined, { focusIssues: true, trigger: "status_bar" }, statusBarBundle()),
-  );
+  // With several bundles in the folder it first asks which one, the one in view on top.
+  const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, async () => {
+    let bundleRoot = statusBarBundle();
+    if (foundBundles.size > 1) {
+      const picked = await vscode.window.showQuickPick(
+        orderForPicking([...foundBundles], bundleRoot).map((root) => ({
+          label: path.basename(root),
+          description: vscode.workspace.asRelativePath(root, true),
+          detail: bundleSummary(
+            checkStates.get(root),
+            bundleProblemCount(root, diagnosticCollection),
+          ),
+          root,
+        })),
+        {
+          title: "Databricks Bundle Inspector",
+          placeHolder: "Which bundle do you want to open in the graph?",
+          matchOnDescription: true,
+        },
+      );
+      if (!picked) return;
+      bundleRoot = picked.root;
+    }
+    await inspectBundle(undefined, { focusIssues: true, trigger: "status_bar" }, bundleRoot);
+  });
   extensionContext.subscriptions.push(
     disposable,
     openIssuesDisposable,
