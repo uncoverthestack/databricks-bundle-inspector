@@ -45,6 +45,7 @@ import {
 } from "./telemetry/events.js";
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
 import {
+  bundleProblemCount,
   readIncludePatterns,
   runBundleDiagnostics,
   trackBundleFiles,
@@ -52,11 +53,19 @@ import {
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
+import {
+  bundleForFile,
+  bundleSummary,
+  checkStateOf,
+  orderForPicking,
+  statusBarView,
+  type BundleCheckState,
+} from "./extension/statusBar.js";
 
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
 
-type InspectTrigger = "command" | "issues_command" | "target_switch";
+type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar";
 
 let telemetry: Telemetry | undefined;
 
@@ -68,6 +77,76 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     "databricks-bundle-inspector",
   );
   extensionContext.subscriptions.push(diagnosticCollection);
+
+  // One quiet item in the status bar: whether the checks ran, how many problems they
+  // found, and a way into the graph from any file. It is the only place that says the
+  // Databricks CLI is missing without the user having clicked Inspect first.
+  const STATUS_BAR_COMMAND = "databricksBundleInspector.statusBarAction";
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.name = "Databricks Bundle Inspector";
+  statusBarItem.command = STATUS_BAR_COMMAND;
+  extensionContext.subscriptions.push(statusBarItem);
+  const checkStates = new Map<string, BundleCheckState>();
+  /** Every bundle found in the open folders, checked or not, in the order found. */
+  const foundBundles = new Set<string>();
+
+  let lastStatusBarBundle: string | undefined;
+
+  /**
+   * The bundle the item is about, and a click opens: the open file's. With no file in
+   * front (the graph, Settings), it stays on the bundle it was last about, so it does
+   * not jump to another bundle while the user looks at this one's graph.
+   */
+  function statusBarBundle(): string | undefined {
+    const roots = [...foundBundles];
+    const ofOpenFile = bundleForFile(
+      roots,
+      vscode.window.activeTextEditor?.document.uri.fsPath,
+      path.sep,
+    );
+    const remembered =
+      lastStatusBarBundle && foundBundles.has(lastStatusBarBundle) ? lastStatusBarBundle : undefined;
+    lastStatusBarBundle = ofOpenFile ?? remembered ?? roots[0];
+    return lastStatusBarBundle;
+  }
+
+  function renderStatusBar(): void {
+    const bundleRoot = statusBarBundle();
+    const view =
+      bundleRoot &&
+      statusBarView(
+        checkStates.get(bundleRoot) ?? "pending",
+        bundleProblemCount(bundleRoot, diagnosticCollection),
+        path.basename(bundleRoot),
+        foundBundles.size - 1,
+      );
+    if (!view) {
+      statusBarItem.hide();
+      return;
+    }
+    statusBarItem.text = view.text;
+    statusBarItem.tooltip = view.tooltip;
+    statusBarItem.backgroundColor = view.warning
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
+    statusBarItem.show();
+  }
+
+  function recordCheck(
+    bundleRoot: string,
+    result: BundleValidationResult,
+    options: { inspected?: boolean } = {},
+  ): void {
+    checkStates.set(bundleRoot, checkStateOf(result));
+    foundBundles.add(bundleRoot);
+    // The bundle whose graph was just opened is the one the user is looking at.
+    if (options.inspected) lastStatusBarBundle = bundleRoot;
+    renderStatusBar();
+  }
+  // With several bundles in the folder, the item follows the file in front.
+  extensionContext.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => renderStatusBar()),
+  );
 
   function currentConfiguredCliPath(): string | undefined {
     return getConfiguredDatabricksCliPath(getConfiguration());
@@ -139,6 +218,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         diagnosticCollection,
         fileToBundleRoot,
       );
+      recordCheck(bundleRoot, result);
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
@@ -296,6 +376,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       );
       const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
       check.bundleCount = allRoots.length;
+      for (const bundleRoot of allRoots) foundBundles.add(bundleRoot);
+      renderStatusBar();
       check.bundleAtRoot = localFolders.some((folder) => allRoots.includes(folder.uri.fsPath));
       // One at a time, so a folder with several bundles does not start several CLI runs at once.
       for (const bundleRoot of allRoots.slice(0, MAX_BUNDLES_CHECKED_ON_OPEN)) {
@@ -596,6 +678,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         diagnosticCollection,
         fileToBundleRoot,
       );
+      recordCheck(bundleDir, result, { inspected: true });
       if (result.ok && diagnosticsGraph) {
         await watchBundle(bundleDir, result.data, diagnosticsGraph);
       }
@@ -789,9 +872,37 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     "databricksBundleInspector.openBundleIssues",
     () => inspectBundle(undefined, { focusIssues: true, trigger: "issues_command" }),
   );
+  // A click on the status bar item. Inspect does the rest: it opens the graph with the
+  // issues, or says what is wrong (for a missing CLI, with the install guide button).
+  // With several bundles in the folder it first asks which one, the one in view on top.
+  const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, async () => {
+    let bundleRoot = statusBarBundle();
+    if (foundBundles.size > 1) {
+      const picked = await vscode.window.showQuickPick(
+        orderForPicking([...foundBundles], bundleRoot).map((root) => ({
+          label: path.basename(root),
+          description: vscode.workspace.asRelativePath(root, true),
+          detail: bundleSummary(
+            checkStates.get(root),
+            bundleProblemCount(root, diagnosticCollection),
+          ),
+          root,
+        })),
+        {
+          title: "Databricks Bundle Inspector",
+          placeHolder: "Which bundle do you want to open in the graph?",
+          matchOnDescription: true,
+        },
+      );
+      if (!picked) return;
+      bundleRoot = picked.root;
+    }
+    await inspectBundle(undefined, { focusIssues: true, trigger: "status_bar" }, bundleRoot);
+  });
   extensionContext.subscriptions.push(
     disposable,
     openIssuesDisposable,
+    statusBarDisposable,
   );
 
   void checkBundlesIn(vscode.workspace.workspaceFolders ?? []).then((check) =>

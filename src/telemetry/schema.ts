@@ -31,7 +31,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
     issue_count: bucket,
   },
   inspect_bundle: {
-    trigger: oneOf("command", "issues_command", "target_switch"),
+    trigger: oneOf("command", "issues_command", "target_switch", "status_bar"),
     outcome: oneOf(
       "ok",
       "ok_with_errors",

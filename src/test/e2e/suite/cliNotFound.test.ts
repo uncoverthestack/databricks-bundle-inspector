@@ -26,7 +26,11 @@ const PAUSE_MS = Number(process.env.E2E_PAUSE_MS ?? 0);
  * Runs Inspect in the real extension host with the given PATH, answers the error
  * or warning popup with `click`, and records the popups plus what the click opened.
  */
-async function inspectWithPath(pathValue: string, click: string | undefined) {
+async function inspectWithPath(
+  pathValue: string,
+  click: string | undefined,
+  command = "databricksBundleInspector.inspectBundle",
+) {
   const popups: Popup[] = [];
   const warnings: Popup[] = [];
   const opened: string[] = [];
@@ -77,7 +81,7 @@ async function inspectWithPath(pathValue: string, click: string | undefined) {
 
   try {
     process.env.PATH = pathValue;
-    await realExecute("databricksBundleInspector.inspectBundle");
+    await realExecute(command);
     // The extension does not await the popup, so wait for it to be answered
     // (or give up if none appeared), then let the button handler run.
     await Promise.race([answered, new Promise((resolve) => setTimeout(resolve, PAUSE_MS + 2_000))]);
@@ -166,6 +170,31 @@ export function cliNotFoundSuite() {
         /^The "databricks" command on your PATH is not the Databricks CLI \(it printed "Version: 0\.18\.0"\)/,
       );
       assert.deepEqual(popups[0]!.buttons, ["Open Install Guide"]);
+    });
+
+    it("clicking the status bar item says the same, with no file open", async () => {
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      try {
+        const { popups, opened } = await inspectWithPath(
+          SYSTEM_PATH,
+          "Open Install Guide",
+          "databricksBundleInspector.statusBarAction",
+        );
+
+        assert.deepEqual(popups, [
+          {
+            message:
+              "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH. If you just installed it, restart VS Code.",
+            buttons: ["Open Install Guide"],
+          },
+        ]);
+        assert.deepEqual(opened, [INSTALL_DOCS + (INSTALL_SECTION[process.platform] ?? "")]);
+      } finally {
+        const folder = vscode.workspace.workspaceFolders![0]!;
+        await vscode.window.showTextDocument(
+          await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, "databricks.yml")),
+        );
+      }
     });
 
     it("dismissing the popup opens nothing", async () => {
