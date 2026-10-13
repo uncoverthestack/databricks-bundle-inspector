@@ -6,6 +6,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runTests } from "@vscode/test-electron";
+import { folderIgnoresCase, swapLetterCase } from "../../bundle/pathCase.js";
 
 async function main() {
   const root = path.resolve(__dirname, "../..");
@@ -15,6 +16,16 @@ async function main() {
   // and a clean profile means no leftover cliPath setting.
   const userData = await mkdtemp(path.join(os.tmpdir(), "dbi-e2e-"));
   const suite = process.env.E2E_SUITE ?? "cliNotFound";
+  let folder = path.join(root, process.env.E2E_FIXTURE ?? "src/test/e2e/fixtures/bundle");
+  // `E2E_FOLDER_CASE=other` opens the folder under another letter case, as happens when
+  // someone types a path by hand. That path only exists where the file system ignores case.
+  if (process.env.E2E_FOLDER_CASE === "other") {
+    if (!(await folderIgnoresCase(folder))) {
+      console.log("Skipped: this file system tells letter case apart, so the folder has one spelling.");
+      return;
+    }
+    folder = path.join(path.dirname(folder), swapLetterCase(path.basename(folder)));
+  }
   await runTests({
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(root, "out/e2e/suite/index.cjs"),
@@ -30,7 +41,7 @@ async function main() {
         : {}),
     },
     launchArgs: [
-      path.join(root, process.env.E2E_FIXTURE ?? "src/test/e2e/fixtures/bundle"),
+      folder,
       `--user-data-dir=${userData}`,
       "--disable-extensions",
       // Keeps test runs out of PostHog.
