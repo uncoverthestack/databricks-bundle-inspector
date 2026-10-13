@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Security
+
+- **The extension no longer lets the Databricks CLI run scripts or Python that a bundle defines.** The README and security policy said bundle code is never run. That was not true for one case: the CLI runs a bundle's `experimental.scripts.preinit` command during `bundle validate`, which is what the extension calls, and since 0.2.0 it calls it as soon as a trusted folder with a bundle is opened. The CLI can also run Python from a bundle's `python` section when a real target is inspected. The extension now starts the CLI in its restricted mode, where it refuses both. A bundle that uses them still loads, with a warning that its scripts or Python were not run. Resources that only Python defines are not shown. VS Code's folder trust was, and still is, required before the extension runs at all.
+
 ### Changed
 
 - **The start event in usage telemetry also records how many problems were found**, as a range (for example "2-5"). Never which problems, and no names or paths. It shows whether the checks that now run by themselves find anything. See `telemetry.json`.

@@ -19,6 +19,10 @@ Only the latest release on the VS Code Marketplace and Open VSX receives fixes.
 
 - It reads the files in the folder you open and runs one external program, the Databricks CLI
   you installed (`databricks bundle validate`), with fixed arguments.
-- It does not run code from your bundle, such as notebooks or build commands.
+- It does not run code from your bundle, such as notebooks or build commands. The Databricks
+  CLI itself can run code while it loads a bundle (shell commands under `experimental.scripts`,
+  Python under the `python` section), so the extension starts it with
+  `DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION` set, which makes the CLI refuse. A test runs
+  this against every supported CLI version. Versions 0.2.0 and older did not set it.
 - Usage telemetry never includes paths, names or file contents, and can be turned off.
   See the [README](README.md#telemetry).
