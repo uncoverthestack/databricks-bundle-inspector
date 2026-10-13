@@ -85,13 +85,24 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   extensionContext.subscriptions.push(statusBarItem);
   const checkStates = new Map<string, BundleCheckState>();
 
-  /** The bundle the item is about, and a click opens: the open file's, else the first found. */
+  let lastStatusBarBundle: string | undefined;
+
+  /**
+   * The bundle the item is about, and a click opens: the open file's. With no file in
+   * front (the graph, Settings), it stays on the bundle it was last about, so it does
+   * not jump to another bundle while the user looks at this one's graph.
+   */
   function statusBarBundle(): string | undefined {
-    return bundleForFile(
-      [...checkStates.keys()],
+    const roots = [...checkStates.keys()];
+    const ofOpenFile = bundleForFile(
+      roots,
       vscode.window.activeTextEditor?.document.uri.fsPath,
       path.sep,
     );
+    const remembered =
+      lastStatusBarBundle && checkStates.has(lastStatusBarBundle) ? lastStatusBarBundle : undefined;
+    lastStatusBarBundle = ofOpenFile ?? remembered ?? roots[0];
+    return lastStatusBarBundle;
   }
 
   function renderStatusBar(): void {
@@ -116,8 +127,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     statusBarItem.show();
   }
 
-  function recordCheck(bundleRoot: string, result: BundleValidationResult): void {
+  function recordCheck(
+    bundleRoot: string,
+    result: BundleValidationResult,
+    options: { inspected?: boolean } = {},
+  ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    // The bundle whose graph was just opened is the one the user is looking at.
+    if (options.inspected) lastStatusBarBundle = bundleRoot;
     renderStatusBar();
   }
   // With several bundles in the folder, the item follows the file in front.
@@ -618,7 +635,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         diagnosticCollection,
         fileToBundleRoot,
       );
-      recordCheck(bundleDir, result);
+      recordCheck(bundleDir, result, { inspected: true });
       if (result.ok && diagnosticsGraph) {
         await watchBundle(bundleDir, result.data, diagnosticsGraph);
       }

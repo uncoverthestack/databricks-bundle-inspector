@@ -12,38 +12,59 @@ describe("checkStateOf", () => {
 });
 
 describe("statusBarView", () => {
+  const none = { problems: 0, notes: 0 };
+
   test("is hidden when the folder has no bundle", () => {
-    expect(statusBarView(undefined, 0, "", 0)).toBeUndefined();
+    expect(statusBarView(undefined, none, "", 0)).toBeUndefined();
   });
 
   test("says so when the checks ran and found nothing", () => {
-    expect(statusBarView("checked", 0, "orders_etl", 0)).toMatchObject({
+    expect(statusBarView("checked", none, "orders_etl", 0)).toMatchObject({
       text: "$(pass) Bundle: no problems",
       warning: false,
     });
   });
 
   test("counts the problems, with the right singular, and names the bundle", () => {
-    expect(statusBarView("checked", 1, "orders_etl", 0)?.text).toBe("$(warning) Bundle: 1 problem");
-    const view = statusBarView("checked", 3, "orders_etl", 0);
+    expect(statusBarView("checked", { problems: 1, notes: 0 }, "orders_etl", 0)?.text).toBe(
+      "$(warning) Bundle: 1 problem",
+    );
+    const view = statusBarView("checked", { problems: 3, notes: 0 }, "orders_etl", 0);
     expect(view?.text).toBe("$(warning) Bundle: 3 problems");
-    expect(view?.tooltip).toContain('found 3 problems in "orders_etl"');
+    expect(view?.tooltip).toContain('found 3 problems in "orders_etl".');
     expect(view?.tooltip).not.toContain("more bundle");
   });
 
+  test("does not say 'no problems' when there are only notes", () => {
+    const view = statusBarView("checked", { problems: 0, notes: 67 }, "orders_etl", 0);
+    expect(view?.text).toBe("$(info) Bundle: 67 notes");
+    expect(view?.tooltip).toContain("no errors or warnings");
+    expect(statusBarView("checked", { problems: 0, notes: 1 }, "orders_etl", 0)?.text).toBe(
+      "$(info) Bundle: 1 note",
+    );
+  });
+
+  test("leads with the problems and mentions the notes in the tooltip", () => {
+    const view = statusBarView("checked", { problems: 2, notes: 5 }, "orders_etl", 0);
+    expect(view?.text).toBe("$(warning) Bundle: 2 problems");
+    expect(view?.tooltip).toContain("and has 5 notes on it");
+  });
+
   test("says when the folder holds more bundles than the one it counts", () => {
-    expect(statusBarView("checked", 3, "orders_etl", 1)?.tooltip).toContain("has 1 more bundle.");
-    expect(statusBarView("checked", 0, "orders_etl", 4)?.tooltip).toContain("has 4 more bundles.");
+    expect(statusBarView("checked", { problems: 3, notes: 0 }, "orders_etl", 1)?.tooltip).toContain(
+      "has 1 more bundle.",
+    );
+    expect(statusBarView("checked", none, "orders_etl", 4)?.tooltip).toContain("has 4 more bundles.");
   });
 
   test("is highlighted and says the CLI was not found when nothing could be checked", () => {
-    const view = statusBarView("cli_missing", 0, "orders_etl", 0);
+    const view = statusBarView("cli_missing", none, "orders_etl", 0);
     expect(view).toMatchObject({ text: "$(warning) Databricks CLI not found", warning: true });
     expect(view?.tooltip).toContain("Nothing is being checked");
   });
 
   test("says the bundle was not checked for any other failure", () => {
-    expect(statusBarView("failed", 0, "orders_etl", 0)).toMatchObject({
+    expect(statusBarView("failed", none, "orders_etl", 0)).toMatchObject({
       text: "$(warning) Bundle: not checked",
       warning: false,
     });
@@ -62,9 +83,9 @@ describe("bundleForFile", () => {
     expect(bundleForFile(["/work/etl", "/work/etl-old"], "/work/etl-old/a.py", "/")).toBe("/work/etl-old");
   });
 
-  test("falls back to the first bundle found with no file, or a file outside every bundle", () => {
-    expect(bundleForFile(roots, undefined, "/")).toBe("/repo/teams/sales");
-    expect(bundleForFile(["/a", "/b"], "/elsewhere/x.py", "/")).toBe("/a");
+  test("is undefined with no file, or a file outside every bundle", () => {
+    expect(bundleForFile(roots, undefined, "/")).toBeUndefined();
+    expect(bundleForFile(["/a", "/b"], "/elsewhere/x.py", "/")).toBeUndefined();
   });
 
   test("works with Windows paths", () => {

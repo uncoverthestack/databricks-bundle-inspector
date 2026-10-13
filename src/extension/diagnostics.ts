@@ -81,18 +81,26 @@ export type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 // once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
 const diagnosticFilesByBundle = new Map<string, Set<string>>();
 
-/** How many errors and warnings the last check of one bundle put in the Problems panel. */
+/**
+ * What the last check of one bundle put in the Problems panel: errors and warnings
+ * (`problems`), and information-level entries (`notes`).
+ */
 export function bundleProblemCount(
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
-): number {
-  let count = 0;
+): { problems: number; notes: number } {
+  const count = { problems: 0, notes: 0 };
   for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
-    count += (collection.get(vscode.Uri.file(file)) ?? []).filter(
-      (diagnostic) =>
+    for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
+      if (
         diagnostic.severity === vscode.DiagnosticSeverity.Error ||
-        diagnostic.severity === vscode.DiagnosticSeverity.Warning,
-    ).length;
+        diagnostic.severity === vscode.DiagnosticSeverity.Warning
+      ) {
+        count.problems++;
+      } else {
+        count.notes++;
+      }
+    }
   }
   return count;
 }

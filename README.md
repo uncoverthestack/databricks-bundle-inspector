@@ -64,7 +64,7 @@ Open a folder containing a `databricks.yml` or `databricks.yaml` file. That is a
 
 A folder with many bundles gets its first 10 checked on open (the ones closest to the top of the folder first). The others are checked when you save one of their files. Bundles inside `node_modules`, `.git`, `.databricks`, `.venv` and `venv` are skipped.
 
-The status bar at the bottom of the window shows the result: `Bundle: no problems`, or the number of problems found. Click it from any file to open the graph. In a folder with several bundles, it is about the bundle the open file belongs to. If it says `Databricks CLI not found`, nothing is being checked, and clicking it shows the install steps.
+The status bar at the bottom of the window shows the result: `Bundle: no problems`, the number of problems found (errors and warnings), or the number of notes when there is nothing worse. Click it from any file to open the graph. In a folder with several bundles, it is about the bundle the open file belongs to. If it says `Databricks CLI not found`, nothing is being checked, and clicking it shows the install steps.
 
 To see the graph from the bundle file:
 

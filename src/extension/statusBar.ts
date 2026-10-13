@@ -23,13 +23,14 @@ export function checkStateOf(
  * so the count on the item and the issues in the graph are the same.
  *
  * @param state The last check of that bundle.
- * @param problemCount Errors and warnings that check put in the Problems panel.
+ * @param count Errors and warnings (`problems`) and information-level entries (`notes`)
+ *   that check put in the Problems panel.
  * @param bundleName The bundle's folder name.
  * @param otherBundles How many more bundles the open folders hold.
  */
 export function statusBarView(
   state: BundleCheckState | undefined,
-  problemCount: number,
+  count: { problems: number; notes: number },
   bundleName: string,
   otherBundles: number,
 ): StatusBarView | undefined {
@@ -56,32 +57,38 @@ export function statusBarView(
     };
   }
 
-  if (problemCount === 0) {
+  const notes = count.notes === 1 ? "1 note" : `${count.notes} notes`;
+  if (count.problems === 0 && count.notes === 0) {
     return {
       text: "$(pass) Bundle: no problems",
       tooltip: `Databricks Bundle Inspector checked "${bundleName}" and found no problems. Click to open the graph.${others}`,
       warning: false,
     };
   }
-  const problems = problemCount === 1 ? "1 problem" : `${problemCount} problems`;
+  // Notes are suggestions, not faults, but "no problems" would hide that there is something to read.
+  if (count.problems === 0) {
+    return {
+      text: `$(info) Bundle: ${notes}`,
+      tooltip: `Databricks Bundle Inspector found no errors or warnings in "${bundleName}", and has ${notes} on it. They are listed in the Problems panel. Click to open the graph with the issues.${others}`,
+      warning: false,
+    };
+  }
+  const problems = count.problems === 1 ? "1 problem" : `${count.problems} problems`;
+  const andNotes = count.notes === 0 ? "" : ` and has ${notes} on it`;
   return {
     text: `$(warning) Bundle: ${problems}`,
-    tooltip: `Databricks Bundle Inspector found ${problems} in "${bundleName}". They are listed in the Problems panel. Click to open the graph with the issues.${others}`,
+    tooltip: `Databricks Bundle Inspector found ${problems} in "${bundleName}"${andNotes}. They are listed in the Problems panel. Click to open the graph with the issues.${others}`,
     warning: false,
   };
 }
 
-/**
- * The bundle a click on the item is about: the one holding the open file, the deepest
- * when bundles are nested, otherwise the first one found.
- */
+/** The bundle that holds a file, the deepest when bundles are nested. */
 export function bundleForFile(
   bundleRoots: readonly string[],
   filePath: string | undefined,
   separator: string,
 ): string | undefined {
-  const holding = bundleRoots
+  return bundleRoots
     .filter((root) => filePath === root || filePath?.startsWith(root + separator))
-    .sort((a, b) => b.length - a.length);
-  return holding[0] ?? bundleRoots[0];
+    .sort((a, b) => b.length - a.length)[0];
 }
