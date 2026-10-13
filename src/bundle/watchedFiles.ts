@@ -16,6 +16,12 @@ export interface BundleWatchSpec {
   /** The bundle's `include` patterns, matched against YAML files under the root. */
   includes: Ignore;
   isSynced: SyncFilter;
+  /**
+   * Whether the file system ignores letter case here. The file watcher can then report
+   * a file under another spelling than the one the bundle was opened with (`C:\Proj`
+   * for `c:\proj`), and both mean the same file.
+   */
+  ignoresCase: boolean;
 }
 
 export type BundleChange = "config" | "source";
@@ -46,6 +52,7 @@ export function collectWatchSpec(
   config: ParsedBundleConfig,
   bundleRoot: string,
   includePatterns: readonly string[],
+  options: { ignoresCase?: boolean } = {},
 ): BundleWatchSpec {
   const files = new Set<string>([
     join(bundleRoot, "databricks.yml"),
@@ -90,7 +97,31 @@ export function collectWatchSpec(
     folders,
     includes: ignore().add([...includePatterns]),
     isSynced: createSyncFilter(bundleRoot, config.sync),
+    ignoresCase: options.ignoresCase ?? false,
   };
+}
+
+interface ComparableSpec {
+  root: string;
+  files: ReadonlySet<string>;
+  folders: readonly string[];
+}
+
+const comparableSpecs = new WeakMap<BundleWatchSpec, ComparableSpec>();
+
+/** The spec's paths in the form they are compared in: lower case where case is ignored. */
+function comparable(spec: BundleWatchSpec): ComparableSpec {
+  let cached = comparableSpecs.get(spec);
+  if (!cached) {
+    const key = (path: string) => (spec.ignoresCase ? path.toLowerCase() : path);
+    cached = {
+      root: key(spec.bundleRoot),
+      files: new Set([...spec.files].map(key)),
+      folders: spec.folders.map(key),
+    };
+    comparableSpecs.set(spec, cached);
+  }
+  return cached;
 }
 
 /**
@@ -101,50 +132,52 @@ export function classifyChange(
   spec: BundleWatchSpec,
   changedPath: string,
 ): BundleChange | undefined {
-  const { bundleRoot } = spec;
+  const { root, files, folders } = comparable(spec);
+  const changed = spec.ignoresCase ? changedPath.toLowerCase() : changedPath;
   const isYaml = /\.ya?ml$/i.test(changedPath);
+  const insideRoot = isInside(changed, root);
+  // The sync rules read `.gitignore` files below the root, so they get the root as the
+  // bundle spells it. A spelling that differs only in case has the same length.
+  const forSyncRules =
+    insideRoot && changedPath.length >= spec.bundleRoot.length
+      ? spec.bundleRoot + changedPath.slice(spec.bundleRoot.length)
+      : changedPath;
 
-  if (spec.files.has(changedPath)) return isYaml ? "config" : "source";
+  if (files.has(changed)) return isYaml ? "config" : "source";
 
-  if (isYaml && isInside(changedPath, bundleRoot)) {
-    const rel = toPosix(relative(bundleRoot, changedPath));
+  if (isYaml && insideRoot) {
+    const rel = toPosix(relative(root, changed));
     if (spec.includes.ignores(rel)) return "config";
   }
 
   // A notebook referenced without its extension, created as `name.py` or `name.ipynb`.
-  if (spec.files.has(withoutExtension(changedPath))) return "source";
+  if (files.has(withoutExtension(changed))) return "source";
 
   // A `.gitignore` edit changes which files are deployed.
-  if (
-    basename(changedPath) === ".gitignore" &&
-    isInside(changedPath, bundleRoot) &&
-    spec.isSynced(changedPath)
-  ) {
+  if (basename(changedPath) === ".gitignore" && insideRoot && spec.isSynced(forSyncRules)) {
     return "source";
   }
 
   if (
-    spec.folders.some(
-      (folder) => changedPath === folder || isInside(changedPath, folder),
-    ) &&
-    spec.isSynced(changedPath)
+    folders.some((folder) => changed === folder || isInside(changed, folder)) &&
+    spec.isSynced(forSyncRules)
   ) {
     return "source";
   }
 
   // A deleted or renamed folder that holds referenced files.
-  if (changedPath === bundleRoot || !isInside(changedPath, bundleRoot)) {
+  if (changed === root || !insideRoot) {
     return undefined;
   }
   let holdsSource = false;
-  for (const file of spec.files) {
-    if (!isInside(file, changedPath)) continue;
+  for (const file of files) {
+    if (!isInside(file, changed)) continue;
     if (/\.ya?ml$/i.test(file)) return "config";
     holdsSource = true;
   }
   if (holdsSource) return "source";
-  for (const folder of spec.folders) {
-    if (isInside(folder, changedPath)) return "source";
+  for (const folder of folders) {
+    if (isInside(folder, changed)) return "source";
   }
 
   return undefined;

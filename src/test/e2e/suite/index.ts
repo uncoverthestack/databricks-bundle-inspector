@@ -2,6 +2,7 @@ import Mocha from "mocha";
 import { cliNotFoundSuite } from "./cliNotFound.test.js";
 import { includeMistakesSuite } from "./includeMistakes.test.js";
 import { alwaysOnSuite } from "./alwaysOn.test.js";
+import { savedFileSuite } from "./savedFile.test.js";
 
 /** Entry point VS Code calls from the extension host. */
 export function run(): Promise<void> {
@@ -10,6 +11,7 @@ export function run(): Promise<void> {
   mocha.suite.emit("pre-require", globalThis, suite, mocha);
   if (suite === "includeMistakes") includeMistakesSuite();
   else if (suite === "alwaysOn") alwaysOnSuite();
+  else if (suite === "savedFile") savedFileSuite();
   else cliNotFoundSuite();
   return new Promise((resolve, reject) => {
     mocha.run((failures) =>

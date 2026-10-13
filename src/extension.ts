@@ -21,6 +21,7 @@ import {
 } from "./databricksCli/validateDatabricksCli.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
+import { folderIgnoresCase } from "./bundle/pathCase.js";
 import {
   BUNDLE_FILE_GLOB,
   MAX_BUNDLES_CHECKED_ON_OPEN,
@@ -164,6 +165,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     outsideFiles: string;
   }
   const bundleWatches = new Map<string, BundleWatch>();
+  const ignoresCaseByRoot = new Map<string, boolean>();
 
   function createWatcher(
     bundleRoot: string,
@@ -191,11 +193,17 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     config: ParsedBundleConfig,
     graph: BundleGraph,
   ): Promise<void> {
+    let ignoresCase = ignoresCaseByRoot.get(bundleRoot);
+    if (ignoresCase === undefined) {
+      ignoresCase = await folderIgnoresCase(bundleRoot);
+      ignoresCaseByRoot.set(bundleRoot, ignoresCase);
+    }
     const spec = collectWatchSpec(
       graph,
       config,
       bundleRoot,
       await readIncludePatterns(bundleRoot),
+      { ignoresCase },
     );
     const outside = filesOutsideRoot(spec).sort();
     const existing = bundleWatches.get(bundleRoot);
@@ -228,11 +236,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         watch.outsideWatchers.forEach((watcher) => watcher.dispose());
       }
       bundleWatches.clear();
+      ignoresCaseByRoot.clear();
     },
   });
 
-  // On save: re-check the bundle that owns the saved file. Also covers bundles
-  // not inspected yet, which have no watcher.
+  // On save: re-check the bundle that owns the saved file. Bundle YAML also covers
+  // bundles not checked yet, which have no watcher.
   extensionContext.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
       const filePath = document.uri.fsPath;
@@ -240,8 +249,17 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const bundleRoot = isSavedBundleFile
         ? path.dirname(filePath)
         : fileToBundleRoot.get(filePath);
-      if (!bundleRoot) return;
-      scheduleRefresh(bundleRoot, "config", { bundleFile: isSavedBundleFile });
+      if (bundleRoot) {
+        scheduleRefresh(bundleRoot, "config", { bundleFile: isSavedBundleFile });
+        return;
+      }
+      // Any other file a checked bundle points at: a notebook, a Python or SQL file,
+      // a .gitignore. The watcher reports these too, but a save in the editor should
+      // not depend on it. A duplicate from the watcher joins the same debounce.
+      for (const [watchedRoot, watch] of bundleWatches) {
+        const change = classifyChange(watch.spec, filePath);
+        if (change) scheduleRefresh(watchedRoot, change);
+      }
     }),
   );
 
