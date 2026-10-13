@@ -51,11 +51,17 @@ import {
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
+import {
+  bundleForFile,
+  checkStateOf,
+  statusBarView,
+  type BundleCheckState,
+} from "./extension/statusBar.js";
 
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
 
-type InspectTrigger = "command" | "issues_command" | "target_switch";
+type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar";
 
 let telemetry: Telemetry | undefined;
 
@@ -67,6 +73,39 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     "databricks-bundle-inspector",
   );
   extensionContext.subscriptions.push(diagnosticCollection);
+
+  // One quiet item in the status bar: whether the checks ran, how many problems they
+  // found, and a way into the graph from any file. It is the only place that says the
+  // Databricks CLI is missing without the user having clicked Inspect first.
+  const STATUS_BAR_COMMAND = "databricksBundleInspector.statusBarAction";
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.name = "Databricks Bundle Inspector";
+  statusBarItem.command = STATUS_BAR_COMMAND;
+  extensionContext.subscriptions.push(statusBarItem);
+  const checkStates = new Map<string, BundleCheckState>();
+
+  function recordCheck(bundleRoot: string, result: BundleValidationResult): void {
+    checkStates.set(bundleRoot, checkStateOf(result));
+    let problemCount = 0;
+    diagnosticCollection.forEach((_uri, diagnostics) => {
+      problemCount += diagnostics.filter(
+        (diagnostic) =>
+          diagnostic.severity === vscode.DiagnosticSeverity.Error ||
+          diagnostic.severity === vscode.DiagnosticSeverity.Warning,
+      ).length;
+    });
+    const view = statusBarView([...checkStates.values()], problemCount);
+    if (!view) {
+      statusBarItem.hide();
+      return;
+    }
+    statusBarItem.text = view.text;
+    statusBarItem.tooltip = view.tooltip;
+    statusBarItem.backgroundColor = view.warning
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
+    statusBarItem.show();
+  }
 
   function currentConfiguredCliPath(): string | undefined {
     return getConfiguredDatabricksCliPath(getConfiguration());
@@ -138,6 +177,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         diagnosticCollection,
         fileToBundleRoot,
       );
+      recordCheck(bundleRoot, result);
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
@@ -560,6 +600,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         diagnosticCollection,
         fileToBundleRoot,
       );
+      recordCheck(bundleDir, result);
       if (result.ok && diagnosticsGraph) {
         await watchBundle(bundleDir, result.data, diagnosticsGraph);
       }
@@ -753,9 +794,23 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     "databricksBundleInspector.openBundleIssues",
     () => inspectBundle(undefined, { focusIssues: true, trigger: "issues_command" }),
   );
+  // A click on the status bar item. Inspect does the rest: it opens the graph with the
+  // issues, or says what is wrong (for a missing CLI, with the install guide button).
+  const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, () =>
+    inspectBundle(
+      undefined,
+      { focusIssues: true, trigger: "status_bar" },
+      bundleForFile(
+        [...checkStates.keys()],
+        vscode.window.activeTextEditor?.document.uri.fsPath,
+        path.sep,
+      ),
+    ),
+  );
   extensionContext.subscriptions.push(
     disposable,
     openIssuesDisposable,
+    statusBarDisposable,
   );
 
   void checkBundlesIn(vscode.workspace.workspaceFolders ?? []).then((check) =>

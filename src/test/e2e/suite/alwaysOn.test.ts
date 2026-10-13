@@ -88,5 +88,20 @@ export function alwaysOnSuite() {
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       }
     });
+
+    it("the status bar item opens the graph with no file open", async function () {
+      const openTabs = () => vscode.window.tabGroups.all.flatMap((group) => group.tabs);
+      assert.deepEqual(openTabs(), [], "this test starts with every editor closed");
+
+      await vscode.commands.executeCommand("databricksBundleInspector.statusBarAction");
+      for (let waited = 0; openTabs().length === 0 && waited < 15_000; waited += 250) await sleep(250);
+      if (PAUSE_MS > 0) await sleep(PAUSE_MS);
+
+      assert.ok(
+        openTabs().some((tab) => tab.input instanceof vscode.TabInputWebview),
+        "clicking the item should open the inspector panel for the bundle that was found",
+      );
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
   });
 }
