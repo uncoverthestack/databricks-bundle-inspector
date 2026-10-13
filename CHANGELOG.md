@@ -6,7 +6,16 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Security
 
+### Added
+
+- **A status bar item in bundle projects.** It shows `Bundle: no problems`, the number of problems the checks found (errors and warnings), or the number of notes when there is nothing worse. It updates on every check. In a folder with several bundles it counts the bundle of the file in front, and a click first asks which bundle to open, with each one's result beside its name. Click it from any file to open the graph with the issues. Before, the way into the graph was only on screen while `databricks.yml` was the open file.
+- **You are told when the Databricks CLI is missing, without clicking Inspect.** The status bar item then says `Databricks CLI not found`, highlighted, and clicking it shows the install steps. Before, the checks silently did nothing and an empty Problems panel looked like a clean bundle. No pop-up is shown unless you click.
+- **Usage telemetry tells a click on the status bar item apart** from the title-bar button (`trigger: status_bar` on the existing inspect event). See `telemetry.json`.
 - **The extension no longer lets the Databricks CLI run scripts or Python that a bundle defines.** The README and security policy said bundle code is never run. That was not true for one case: the CLI runs a bundle's `experimental.scripts.preinit` command during `bundle validate`, which is what the extension calls, and since 0.2.0 it calls it as soon as a trusted folder with a bundle is opened. The CLI can also run Python from a bundle's `python` section when a real target is inspected. The extension now starts the CLI in its restricted mode, where it refuses both. A bundle that uses them still loads, with a warning that its scripts or Python were not run. Resources that only Python defines are not shown. VS Code's folder trust was, and still is, required before the extension runs at all.
+
+### Fixed
+
+- **A fixed warning on a notebook, Python or SQL file no longer waits for `databricks.yml` to be saved.** Saving such a file in the editor now re-checks the bundle directly. Before, only bundle YAML did, and other files relied on the file watcher, which on macOS and Windows can report a file under another letter case than the folder was opened with (`C:\Projects` for `c:\projects`). Those reports were ignored, so the warning stayed. The extension now also treats both spellings as the same file wherever the file system does.
 
 ### Changed
 

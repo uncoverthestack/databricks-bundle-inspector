@@ -1,0 +1,13 @@
+resources:
+  jobs:
+    saved_file:
+      name: saved_file
+      tasks:
+        - task_key: producer
+          notebook_task:
+            notebook_path: ../src/producer.py
+        - task_key: consumer
+          depends_on:
+            - task_key: producer
+          notebook_task:
+            notebook_path: ../src/consumer.py
