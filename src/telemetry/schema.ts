@@ -28,6 +28,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
     bundle_count: bucket,
     bundle_at_root: bool,
     cli_found: bool,
+    issue_count: bucket,
   },
   inspect_bundle: {
     trigger: oneOf("command", "issues_command", "target_switch"),

@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **The start event in usage telemetry also records how many problems were found**, as a range (for example "2-5"). Never which problems, and no names or paths. It shows whether the checks that now run by themselves find anything. See `telemetry.json`.
+
 ## [0.2.0] - 2026-10-12
 
 ### Added

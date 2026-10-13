@@ -253,11 +253,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundleAtRoot: boolean;
     /** Undefined when no bundle was checked. */
     cliFound: boolean | undefined;
+    /** Errors and warnings the checks put in the Problems panel. Undefined when nothing was checked. */
+    issueCount: number | undefined;
   }
   async function checkBundlesIn(
     folders: readonly vscode.WorkspaceFolder[],
   ): Promise<OpenFoldersCheck> {
-    const check: OpenFoldersCheck = { bundleCount: 0, bundleAtRoot: false, cliFound: undefined };
+    const check: OpenFoldersCheck = {
+      bundleCount: 0,
+      bundleAtRoot: false,
+      cliFound: undefined,
+      issueCount: undefined,
+    };
     try {
       const localFolders = folders.filter((folder) => folder.uri.scheme === "file");
       const found = await Promise.all(
@@ -285,6 +292,17 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             (result.error.errorCode !== "CLI_NOT_FOUND" &&
               result.error.errorCode !== "CLI_NOT_EXECUTABLE");
         }
+      }
+      if (check.cliFound) {
+        let issueCount = 0;
+        diagnosticCollection.forEach((_uri, diagnostics) => {
+          issueCount += diagnostics.filter(
+            (diagnostic) =>
+              diagnostic.severity === vscode.DiagnosticSeverity.Error ||
+              diagnostic.severity === vscode.DiagnosticSeverity.Warning,
+          ).length;
+        });
+        check.issueCount = issueCount;
       }
     } catch (error) {
       console.warn("[BundleInspector] checking bundles on open failed:", error);
@@ -763,6 +781,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundle_count: countBucket(check.bundleCount),
       bundle_at_root: check.bundleAtRoot,
       ...(check.cliFound === undefined ? {} : { cli_found: check.cliFound }),
+      ...(check.issueCount === undefined ? {} : { issue_count: countBucket(check.issueCount) }),
     }),
   );
 }
