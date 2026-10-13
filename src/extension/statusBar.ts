@@ -18,36 +18,28 @@ export function checkStateOf(
 }
 
 /**
- * What the status bar item says for the bundles in the open folders, or `undefined`
- * to hide it when none was found.
+ * What the status bar item says about one bundle, or `undefined` to hide it when the
+ * open folders hold none. With several bundles it is about the one a click would open,
+ * so the count on the item and the issues in the graph are the same.
  *
- * @param states The last check of each bundle.
- * @param problemCount Errors and warnings the checks put in the Problems panel.
+ * @param state The last check of that bundle.
+ * @param problemCount Errors and warnings that check put in the Problems panel.
+ * @param bundleName The bundle's folder name.
+ * @param otherBundles How many more bundles the open folders hold.
  */
 export function statusBarView(
-  states: readonly BundleCheckState[],
+  state: BundleCheckState | undefined,
   problemCount: number,
+  bundleName: string,
+  otherBundles: number,
 ): StatusBarView | undefined {
-  if (states.length === 0) return undefined;
+  if (!state) return undefined;
+  const others =
+    otherBundles === 0
+      ? ""
+      : ` This folder has ${otherBundles === 1 ? "1 more bundle" : `${otherBundles} more bundles`}. Open one of its files to see its count.`;
 
-  if (states.includes("checked")) {
-    const bundles = states.length === 1 ? "this bundle" : `${states.length} bundles`;
-    if (problemCount === 0) {
-      return {
-        text: "$(pass) Bundle: no problems",
-        tooltip: `Databricks Bundle Inspector checked ${bundles} and found no problems. Click to open the graph.`,
-        warning: false,
-      };
-    }
-    const problems = problemCount === 1 ? "1 problem" : `${problemCount} problems`;
-    return {
-      text: `$(warning) Bundle: ${problems}`,
-      tooltip: `Databricks Bundle Inspector found ${problems} in ${bundles}. They are listed in the Problems panel. Click to open the graph with the issues.`,
-      warning: false,
-    };
-  }
-
-  if (states.includes("cli_missing")) {
+  if (state === "cli_missing") {
     return {
       text: "$(warning) Databricks CLI not found",
       tooltip:
@@ -56,9 +48,25 @@ export function statusBarView(
     };
   }
 
+  if (state === "failed") {
+    return {
+      text: "$(warning) Bundle: not checked",
+      tooltip: `Databricks Bundle Inspector could not check "${bundleName}". Click to see why.${others}`,
+      warning: false,
+    };
+  }
+
+  if (problemCount === 0) {
+    return {
+      text: "$(pass) Bundle: no problems",
+      tooltip: `Databricks Bundle Inspector checked "${bundleName}" and found no problems. Click to open the graph.${others}`,
+      warning: false,
+    };
+  }
+  const problems = problemCount === 1 ? "1 problem" : `${problemCount} problems`;
   return {
-    text: "$(warning) Bundle: not checked",
-    tooltip: "Databricks Bundle Inspector could not check this bundle. Click to see why.",
+    text: `$(warning) Bundle: ${problems}`,
+    tooltip: `Databricks Bundle Inspector found ${problems} in "${bundleName}". They are listed in the Problems panel. Click to open the graph with the issues.${others}`,
     warning: false,
   };
 }

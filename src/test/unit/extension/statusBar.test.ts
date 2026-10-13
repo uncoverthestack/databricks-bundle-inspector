@@ -13,34 +13,37 @@ describe("checkStateOf", () => {
 
 describe("statusBarView", () => {
   test("is hidden when the folder has no bundle", () => {
-    expect(statusBarView([], 0)).toBeUndefined();
+    expect(statusBarView(undefined, 0, "", 0)).toBeUndefined();
   });
 
   test("says so when the checks ran and found nothing", () => {
-    expect(statusBarView(["checked"], 0)).toMatchObject({
+    expect(statusBarView("checked", 0, "orders_etl", 0)).toMatchObject({
       text: "$(pass) Bundle: no problems",
       warning: false,
     });
   });
 
-  test("counts the problems, with the right singular", () => {
-    expect(statusBarView(["checked"], 1)?.text).toBe("$(warning) Bundle: 1 problem");
-    expect(statusBarView(["checked"], 3)?.text).toBe("$(warning) Bundle: 3 problems");
-    expect(statusBarView(["checked", "checked"], 3)?.tooltip).toContain("in 2 bundles");
+  test("counts the problems, with the right singular, and names the bundle", () => {
+    expect(statusBarView("checked", 1, "orders_etl", 0)?.text).toBe("$(warning) Bundle: 1 problem");
+    const view = statusBarView("checked", 3, "orders_etl", 0);
+    expect(view?.text).toBe("$(warning) Bundle: 3 problems");
+    expect(view?.tooltip).toContain('found 3 problems in "orders_etl"');
+    expect(view?.tooltip).not.toContain("more bundle");
+  });
+
+  test("says when the folder holds more bundles than the one it counts", () => {
+    expect(statusBarView("checked", 3, "orders_etl", 1)?.tooltip).toContain("has 1 more bundle.");
+    expect(statusBarView("checked", 0, "orders_etl", 4)?.tooltip).toContain("has 4 more bundles.");
   });
 
   test("is highlighted and says the CLI was not found when nothing could be checked", () => {
-    const view = statusBarView(["cli_missing"], 0);
+    const view = statusBarView("cli_missing", 0, "orders_etl", 0);
     expect(view).toMatchObject({ text: "$(warning) Databricks CLI not found", warning: true });
     expect(view?.tooltip).toContain("Nothing is being checked");
   });
 
-  test("shows the count as soon as one bundle was checked", () => {
-    expect(statusBarView(["failed", "checked"], 2)?.text).toBe("$(warning) Bundle: 2 problems");
-  });
-
   test("says the bundle was not checked for any other failure", () => {
-    expect(statusBarView(["failed"], 0)).toMatchObject({
+    expect(statusBarView("failed", 0, "orders_etl", 0)).toMatchObject({
       text: "$(warning) Bundle: not checked",
       warning: false,
     });

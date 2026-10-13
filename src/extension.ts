@@ -44,6 +44,7 @@ import {
 } from "./telemetry/events.js";
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
 import {
+  bundleProblemCount,
   readIncludePatterns,
   runBundleDiagnostics,
   trackBundleFiles,
@@ -84,17 +85,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   extensionContext.subscriptions.push(statusBarItem);
   const checkStates = new Map<string, BundleCheckState>();
 
-  function recordCheck(bundleRoot: string, result: BundleValidationResult): void {
-    checkStates.set(bundleRoot, checkStateOf(result));
-    let problemCount = 0;
-    diagnosticCollection.forEach((_uri, diagnostics) => {
-      problemCount += diagnostics.filter(
-        (diagnostic) =>
-          diagnostic.severity === vscode.DiagnosticSeverity.Error ||
-          diagnostic.severity === vscode.DiagnosticSeverity.Warning,
-      ).length;
-    });
-    const view = statusBarView([...checkStates.values()], problemCount);
+  /** The bundle the item is about, and a click opens: the open file's, else the first found. */
+  function statusBarBundle(): string | undefined {
+    return bundleForFile(
+      [...checkStates.keys()],
+      vscode.window.activeTextEditor?.document.uri.fsPath,
+      path.sep,
+    );
+  }
+
+  function renderStatusBar(): void {
+    const bundleRoot = statusBarBundle();
+    const view =
+      bundleRoot &&
+      statusBarView(
+        checkStates.get(bundleRoot),
+        bundleProblemCount(bundleRoot, diagnosticCollection),
+        path.basename(bundleRoot),
+        checkStates.size - 1,
+      );
     if (!view) {
       statusBarItem.hide();
       return;
@@ -106,6 +115,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       : undefined;
     statusBarItem.show();
   }
+
+  function recordCheck(bundleRoot: string, result: BundleValidationResult): void {
+    checkStates.set(bundleRoot, checkStateOf(result));
+    renderStatusBar();
+  }
+  // With several bundles in the folder, the item follows the file in front.
+  extensionContext.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => renderStatusBar()),
+  );
 
   function currentConfiguredCliPath(): string | undefined {
     return getConfiguredDatabricksCliPath(getConfiguration());
@@ -797,15 +815,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   // A click on the status bar item. Inspect does the rest: it opens the graph with the
   // issues, or says what is wrong (for a missing CLI, with the install guide button).
   const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, () =>
-    inspectBundle(
-      undefined,
-      { focusIssues: true, trigger: "status_bar" },
-      bundleForFile(
-        [...checkStates.keys()],
-        vscode.window.activeTextEditor?.document.uri.fsPath,
-        path.sep,
-      ),
-    ),
+    inspectBundle(undefined, { focusIssues: true, trigger: "status_bar" }, statusBarBundle()),
   );
   extensionContext.subscriptions.push(
     disposable,

@@ -181,9 +181,13 @@ export function cliNotFoundSuite() {
           "databricksBundleInspector.statusBarAction",
         );
 
-        assert.equal(popups.length, 1);
-        assert.match(popups[0]!.message, /^Databricks CLI was not found\./);
-        assert.deepEqual(popups[0]!.buttons, ["Open Install Guide"]);
+        assert.deepEqual(popups, [
+          {
+            message:
+              "Databricks CLI was not found. Install the Databricks CLI and ensure it is available on your PATH. If you just installed it, restart VS Code.",
+            buttons: ["Open Install Guide"],
+          },
+        ]);
         assert.deepEqual(opened, [INSTALL_DOCS + (INSTALL_SECTION[process.platform] ?? "")]);
       } finally {
         const folder = vscode.workspace.workspaceFolders![0]!;

@@ -6,7 +6,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
-- **A status bar item in bundle projects.** It shows `Bundle: no problems` or the number of problems the checks found, and updates on every check. Click it from any file to open the graph with the issues. Before, the way into the graph was only on screen while `databricks.yml` was the open file.
+- **A status bar item in bundle projects.** It shows `Bundle: no problems` or the number of problems the checks found, and updates on every check. In a folder with several bundles it counts the bundle of the file in front, the same one a click opens. Click it from any file to open the graph with the issues. Before, the way into the graph was only on screen while `databricks.yml` was the open file.
 - **You are told when the Databricks CLI is missing, without clicking Inspect.** The status bar item then says `Databricks CLI not found`, highlighted, and clicking it shows the install steps. Before, the checks silently did nothing and an empty Problems panel looked like a clean bundle. No pop-up is shown unless you click.
 - **Usage telemetry tells a click on the status bar item apart** from the title-bar button (`trigger: status_bar` on the existing inspect event). See `telemetry.json`.
 
