@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
+import { explainCodeNotRun, restrictedCliEnv } from "../databricksCli/restrictedExecution.js";
 import type {
   CliProblem,
   CliResolutionFailure,
@@ -34,6 +35,7 @@ type ExecFileLike = (
   options?: {
     cwd?: string;
     timeout?: number;
+    env?: NodeJS.ProcessEnv;
   },
 ) => Promise<ExecFileResult>;
 
@@ -240,6 +242,8 @@ export async function validateBundleWithDependencies(
     };
   }
   const cliPath = cliResult.candidate;
+  const readDiagnostics = (stderr: string, probeTarget: string) =>
+    explainCodeNotRun(parseBundleDiagnostics(stderr, probeTarget), resolvedBundleDir);
   const args = ["bundle", "validate", "--output", "json"];
   // // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
@@ -250,6 +254,8 @@ export async function validateBundleWithDependencies(
     const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {
       cwd: resolvedBundleDir,
       timeout: 30_000,
+      // Never let the CLI run scripts or Python that the bundle defines.
+      env: restrictedCliEnv(),
     });
 
     const parsed = parseBundleConfig(JSON.parse(stdout));
@@ -266,7 +272,7 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    const diagnostics = parseBundleDiagnostics(
+    const diagnostics = await readDiagnostics(
       stderr ?? "",
       target ?? BUNDLE_PROBE_TARGET,
     );
@@ -343,9 +349,8 @@ export async function validateBundleWithDependencies(
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
-          const diagnostics = parseBundleDiagnostics(
-            stderr ?? "",
-            target ?? BUNDLE_PROBE_TARGET,
+          const diagnostics = (
+            await readDiagnostics(stderr ?? "", target ?? BUNDLE_PROBE_TARGET)
           ).map((diagnostic) => ({
             ...diagnostic,
             severity: "warning" as const,
@@ -375,7 +380,7 @@ export async function validateBundleWithDependencies(
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
-          const diagnostics = parseBundleDiagnostics(
+          const diagnostics = await readDiagnostics(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
           );
@@ -412,7 +417,7 @@ export async function validateBundleWithDependencies(
     }
 
     const probeTarget = target ?? BUNDLE_PROBE_TARGET;
-    const diagnostics = parseBundleDiagnostics(stderr ?? "", probeTarget);
+    const diagnostics = await readDiagnostics(stderr ?? "", probeTarget);
     const targetOptions = parseAvailableTargets(stderr ?? "");
     const filteredStderr = (stderr ?? "")
       .split("\n")
