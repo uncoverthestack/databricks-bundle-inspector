@@ -41,7 +41,7 @@ Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on c
 ## Getting started
 
 1. Install the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install), `v0.299.0` or newer.
-2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, and checks again every time you save.
+2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, shows the count in the status bar, and checks again every time you save.
 3. For the graph, open the bundle file and click **Inspect Databricks Bundle** in the editor title bar.
 
 If the CLI can't be found, Inspect says why and links to the install steps for your OS. After installing it, restart VS Code so it sees the new `PATH`, or set `databricksBundleInspector.cliPath`.
@@ -50,13 +50,11 @@ If the CLI can't be found, Inspect says why and links to the install steps for y
 
 ## Safety
 
-- It runs one program, the Databricks CLI you installed, to validate the bundle. Nothing is deployed and your code is never run.
+- It runs one program, the Databricks CLI you installed, to validate the bundle. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run.
 - It stays off until you tell VS Code you trust the folder.
 - The checks that run by themselves need no login. Inspecting a real target uses your active CLI profile and may contact your workspace.
 
 See the [security policy](SECURITY.md).
-
-The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. That includes code a bundle can ask the CLI to run while it loads: shell commands under `experimental.scripts`, and Python under the `python` section. The extension tells the CLI not to run them. A bundle that uses them gets a warning saying so, and resources that only Python defines are not shown. The Databricks CLI uses your active profile and may contact your workspace to resolve the bundle, so `validate` can make network calls. Because the extension runs the CLI on the files you open, it is disabled in VS Code's Restricted Mode until you trust the folder. The checks that run by themselves, on open and on save, use a made-up target, which needs no login. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
 
 ## Telemetry
 
@@ -71,7 +69,7 @@ To turn it off, use either setting:
 
 ## Project status
 
-Version 0.2.0. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.2.1. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
