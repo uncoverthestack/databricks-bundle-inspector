@@ -129,6 +129,60 @@ describe("classifyChange", () => {
     expect(classifyChange(notebookSpec, at("src/notebooks/ingest.ipynb"))).toBe("source");
   });
 
+  describe("where the file system ignores letter case", () => {
+    const respelled = (rel: string) => at(rel).toUpperCase();
+
+    test("recognises the bundle's files under another spelling", () => {
+      const relaxed: BundleWatchSpec = { ...spec, ignoresCase: true };
+      expect(classifyChange(relaxed, respelled("src/tasks/generate_items.py"))).toBe("source");
+      expect(classifyChange(relaxed, respelled("databricks.yml"))).toBe("config");
+      expect(classifyChange(relaxed, respelled("resources/jobs/new.job.yml"))).toBe("config");
+      expect(classifyChange(relaxed, respelled("src/dlt/silver.py"))).toBe("source");
+      expect(classifyChange(relaxed, respelled("src/tasks"))).toBe("source");
+    });
+
+    test("still ignores files the bundle does not point at", () => {
+      const relaxed: BundleWatchSpec = { ...spec, ignoresCase: true };
+      expect(classifyChange(relaxed, respelled("README.md"))).toBeUndefined();
+      expect(classifyChange(relaxed, respelled("src/tasks/unrelated.py"))).toBeUndefined();
+      expect(classifyChange(relaxed, bundleRoot.toUpperCase())).toBeUndefined();
+    });
+
+    test("passes the sync rules the root as the bundle spells it", () => {
+      const asked: string[] = [];
+      const relaxed: BundleWatchSpec = {
+        ...spec,
+        ignoresCase: true,
+        isSynced: (file) => {
+          asked.push(file);
+          return true;
+        },
+      };
+      expect(classifyChange(relaxed, bundleRoot.toUpperCase() + "/src/dlt/Silver.py")).toBe("source");
+      expect(asked).toEqual([bundleRoot + "/src/dlt/Silver.py"]);
+    });
+
+    test("matches a Windows drive letter written in the other case", () => {
+      const windows: BundleWatchSpec = {
+        bundleRoot: "c:\\projects\\orders_etl",
+        files: new Set(["c:\\projects\\orders_etl\\src\\publish_metrics.py"]),
+        folders: [],
+        includes: ignore(),
+        isSynced: () => true,
+        ignoresCase: true,
+      };
+      const reported = "C:\\Projects\\orders_etl\\src\\publish_metrics.py";
+      expect(classifyChange(windows, reported)).toBe("source");
+      expect(classifyChange({ ...windows, ignoresCase: false }, reported)).toBeUndefined();
+    });
+  });
+
+  test("keeps letter case apart where the file system does (Linux)", () => {
+    expect(spec.ignoresCase).toBe(false);
+    expect(classifyChange(spec, at("src/tasks/Generate_Items.py"))).toBeUndefined();
+    expect(classifyChange(spec, at("databricks.yml").toUpperCase())).toBeUndefined();
+  });
+
   test("ignores files in a pipeline folder that sync would skip", () => {
     const syncSpec: BundleWatchSpec = {
       ...spec,

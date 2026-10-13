@@ -10,6 +10,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 - **You are told when the Databricks CLI is missing, without clicking Inspect.** The status bar item then says `Databricks CLI not found`, highlighted, and clicking it shows the install steps. Before, the checks silently did nothing and an empty Problems panel looked like a clean bundle. No pop-up is shown unless you click.
 - **Usage telemetry tells a click on the status bar item apart** from the title-bar button (`trigger: status_bar` on the existing inspect event). See `telemetry.json`.
 
+### Fixed
+
+- **A fixed warning on a notebook, Python or SQL file no longer waits for `databricks.yml` to be saved.** Saving such a file in the editor now re-checks the bundle directly. Before, only bundle YAML did, and other files relied on the file watcher, which on macOS and Windows can report a file under another letter case than the folder was opened with (`C:\Projects` for `c:\projects`). Those reports were ignored, so the warning stayed. The extension now also treats both spellings as the same file wherever the file system does.
+
 ### Changed
 
 - **The start event in usage telemetry also records how many problems were found**, as a range (for example "2-5"). Never which problems, and no names or paths. It shows whether the checks that now run by themselves find anything. See `telemetry.json`.
