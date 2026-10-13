@@ -52,3 +52,4 @@ telemetry-proxy/**
 
 # Icon source; the Marketplace uses resources/icon.png.
 resources/icon.svg
+docs/**

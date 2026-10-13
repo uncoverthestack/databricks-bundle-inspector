@@ -1,0 +1,21 @@
+# Telemetry
+
+[Back to the README](../README.md)
+
+The extension collects anonymous usage data to learn which features are used and where people get stuck. You are told once, the first time the extension starts with telemetry on. Nothing is collected before that notice is shown.
+
+**To turn it off**, use either setting:
+
+- `databricksBundleInspector.telemetry.enabled`: set to `false` to turn off telemetry for this extension only.
+- `telemetry.telemetryLevel`: anything other than `all` turns off usage data for VS Code and every extension that respects it, including this one.
+
+Turning it off also deletes any events still waiting to be sent, and stops the uninstall event.
+
+- **Collected:** that the extension started in a VS Code window, with how many bundles the open folders hold as a range (for example "2-5"), whether one sits at the top of the folder, whether the Databricks CLI could be run, and how many problems the first check found as a range (never which ones). Also which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), why the Databricks CLI couldn't be used, whether it is older than the oldest tested version, coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
+- **Environment:** extension and VS Code version, OS, OS version and CPU type (for example `darwin`, `25.0.0`, `arm64`), and remote type (for example WSL or SSH).
+- **Never collected:** file paths or contents, bundle, job, task or target names, workspace hosts, search text, or error messages.
+- **Identity:** an anonymous per-install ID, a one-way hash of VS Code's machine ID (never the ID itself). No accounts, no IP address, no location.
+- **Offline:** events wait on your machine (up to 500, for at most 14 days) and are sent when you are back online.
+- **Where it goes:** events are sent to a small proxy run by this project ([telemetry-proxy/](../telemetry-proxy)). The proxy drops anything not listed in `telemetry.json` and forwards the rest to PostHog. The extension itself contains no analytics keys.
+
+Every event and property is listed in [telemetry.json](../telemetry.json). To see events as they are sent, run **Developer: Set Log Level…** → **Trace**, then open the **Output** panel and pick the extension's telemetry channel.

@@ -4,41 +4,6 @@ A VS Code extension that catches Databricks bundle errors before you deploy. It 
 
 Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
 
-## What it catches
-
-Open a `databricks.yml` file and run **Inspect Databricks Bundle**. Every issue links to the file and line it comes from.
-
-- **Missing local files**: notebooks and files referenced by tasks that don't exist, including the inner task of a `for_each` task.
-- **Missing libraries**: local wheels and JARs a task installs that aren't there.
-- **Pipeline sources**: Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) whose `libraries` point at a missing notebook or file, or at a `folder/**` glob with no files. The CLI doesn't check these during validation, so they otherwise surface only on `bundle deploy`.
-- **Notebook and file mix-ups**: a notebook path without its extension, a notebook task pointing at a file without the notebook header, or a Python or SQL file task pointing at a notebook, following the Databricks CLI's rules.
-- **Files that won't be deployed**: a task or pipeline pointing at a file that `.gitignore` or `sync.exclude` keeps out of `bundle deploy`.
-- **`include` mistakes**: an `include` pattern that matches no files because of a likely typo (a misspelled folder, or `.yml` where the files end in `.yaml`), and a YAML file that defines resources but isn't in the include list. The CLI loads only what `include` selects and says nothing about the rest, so the bundle just has fewer jobs than you expect.
-- **Widget parameters**: a notebook reading a widget that neither the task nor the job passes and that has no default, including through `%run` and across Python and SQL cells.
-- **Task values**: `dbutils.jobs.taskValues.get(...)` or `{{tasks.<task>.values.<key>}}` reading from a task that doesn't exist, isn't upstream, or doesn't set that key.
-- **Secret scope mix-ups**: code that reads a secret using the scope's resource key instead of its name, which fails at runtime.
-- **Unresolved variables**: `${var.*}` values with no default and no value for the selected target.
-- **Databricks CLI diagnostics**: validation errors and warnings, including unknown or deprecated fields, sent to the Problems panel.
-- **Risky patterns**: task types the inspector doesn't recognise, and tasks that load code from Git when the job has no `git_source`.
-
-### Code it reads
-
-Checks on code (secrets, widgets, task values) read **Python and SQL**:
-
-- `.py` and `.sql` files, Jupyter notebooks (`.ipynb`), and Databricks source-format notebooks.
-- `%python` and `%sql` cells inside a notebook of the other language, each read in its own language.
-- `dbutils` wherever it can be traced: `dbutils` itself (also as `self.dbutils`), a variable assigned from it, `DBUtils(spark)` or `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`). A call on something that can't be traced, such as a function parameter named `d`, isn't counted; a widget read there makes the inspector say it couldn't check that notebook.
-
-**Scala and R are not read.** `.scala` and `.r` notebooks, and `%scala` and `%r` cells, are skipped, so secrets, widgets and task values in them are not found. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
-
-## What it shows
-
-- **Job graph**: tasks and their `depends_on` relationships, with pan, zoom and search. Hover a job's trigger to read its cron schedule in plain English.
-- **Task details**: type, source file, parameters, compute, and linked pipelines with their catalog, schema and channel.
-- **Secrets and widgets**: secret scopes (`dbutils.secrets`, SQL `secret()`, and `{{secrets/...}}` in cluster config) and notebook widgets found in each task's code.
-- **Targets**: switch between the bundle's targets to see variables and issues resolved for each one.
-- **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request or code review.
-
 <div>
     <a href="https://www.loom.com/share/634c3b8081f545b198e947ff68f99f3d">
       <p>Databricks Bundle Inspector Demo - Watch Video</p>
@@ -48,59 +13,61 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
     </a>
   </div>
 
-## Requirements
+## What it catches
 
-The inspector runs `databricks bundle validate`, so it needs the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install) installed and on your `PATH`, or set with the `databricksBundleInspector.cliPath` VS Code setting. The legacy `databricks-cli` pip package is a different tool and doesn't work.
+Problems that pass `databricks bundle validate` and only fail when you deploy or run the job:
 
-If the CLI can't be found, the inspector says why (not installed, a wrong `cliPath`, or the legacy package on your `PATH`) and links to the install steps for your OS.
+- **Missing files and libraries** that tasks and pipelines point at.
+- **Files that won't be deployed**, because `.gitignore` or `sync.exclude` skips them.
+- **`include` mistakes**: a pattern with a typo, or a resource file no pattern covers.
+- **Notebook and file mix-ups**: a path without its extension, or a notebook where a file is expected.
+- **Widgets** a notebook reads that the task doesn't pass.
+- **Task values** read from a task that isn't upstream, or that never sets them.
+- **Secret scopes** named by their resource key instead of their name.
+- **Unresolved variables** for the selected target.
 
-Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
+Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on code read Python and SQL. Scala and R are not read.
 
-After installing the CLI, restart VS Code if the install added a new folder to your `PATH` (for example WinGet on Windows, or a first-time Homebrew install). Setting `databricksBundleInspector.cliPath` to the CLI's full path works without a restart.
+[Every check, and what code is read](docs/checks.md)
 
-## Usage
+## What it shows
 
-Open a folder containing a `databricks.yml` or `databricks.yaml` file. That is all it takes to get the checks: the extension starts by itself, checks the bundles in the folder, and lists what it finds in the **Problems** panel. It checks again each time you save. It opens no panel and shows no messages while doing so.
+- **Job graph**: tasks and what they depend on, with pan, zoom and search.
+- **Task details**: type, source file, parameters, compute and linked pipelines.
+- **Secrets and widgets** found in each task's code.
+- **Targets**: switch target to see variables and issues resolved for it.
+- **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
 
-A folder with many bundles gets its first 10 checked on open (the ones closest to the top of the folder first). The others are checked when you save one of their files. Bundles inside `node_modules`, `.git`, `.databricks`, `.venv` and `venv` are skipped.
+## Getting started
 
-To see the graph:
+1. Install the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install), `v0.299.0` or newer.
+2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, and checks again every time you save.
+3. For the graph, open the bundle file and click **Inspect Databricks Bundle** in the editor title bar.
 
-1. Open the bundle file in the editor.
-2. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
+If the CLI can't be found, Inspect says why and links to the install steps for your OS. After installing it, restart VS Code so it sees the new `PATH`, or set `databricksBundleInspector.cliPath`.
 
-The graph opens in a new editor panel. It refreshes automatically when you save the bundle file or related configurations.
+[Setup and usage in detail](docs/usage.md)
 
-## Command
+## Safety
 
-| Command ID | Title | When available |
-| --- | --- | --- |
-| `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
-| `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
+- It runs one program, the Databricks CLI you installed, to validate the bundle. Nothing is deployed and your code is never run.
+- It stays off until you tell VS Code you trust the folder.
+- The checks that run by themselves need no login. Inspecting a real target uses your active CLI profile and may contact your workspace.
 
-## How it works
+See the [security policy](SECURITY.md).
 
 The extension runs `databricks bundle validate --output json` to resolve your bundle for the selected target. It then checks the local paths, libraries and pipeline sources the resolved config points at, and scans task notebooks and files for secrets and widgets. Nothing is deployed and your code is never run. That includes code a bundle can ask the CLI to run while it loads: shell commands under `experimental.scripts`, and Python under the `python` section. The extension tells the CLI not to run them. A bundle that uses them gets a warning saying so, and resources that only Python defines are not shown. The Databricks CLI uses your active profile and may contact your workspace to resolve the bundle, so `validate` can make network calls. Because the extension runs the CLI on the files you open, it is disabled in VS Code's Restricted Mode until you trust the folder. The checks that run by themselves, on open and on save, use a made-up target, which needs no login. The results become Problems panel entries and an interactive graph of jobs, tasks and pipelines, rendered with React Flow.
 
 ## Telemetry
 
-The extension collects anonymous usage data to learn which features are used and where people get stuck. You are told once, the first time the extension starts with telemetry on. Nothing is collected before that notice is shown.
+The extension collects anonymous usage data, such as which features are used. Never file paths, names or contents. You are told once, before anything is collected.
 
-**To turn it off**, use either setting:
+To turn it off, use either setting:
 
-- `databricksBundleInspector.telemetry.enabled`: set to `false` to turn off telemetry for this extension only.
-- `telemetry.telemetryLevel`: anything other than `all` turns off usage data for VS Code and every extension that respects it, including this one.
+- `databricksBundleInspector.telemetry.enabled`: set to `false`, for this extension only.
+- `telemetry.telemetryLevel`: anything other than `all`, for VS Code and every extension that respects it.
 
-Turning it off also deletes any events still waiting to be sent, and stops the uninstall event.
-
-- **Collected:** that the extension started in a VS Code window, with how many bundles the open folders hold as a range (for example "2-5"), whether one sits at the top of the folder, whether the Databricks CLI could be run, and how many problems the first check found as a range (never which ones). Also which features are used (inspecting a bundle, switching jobs or targets, opening files from the graph, copying the review summary), how an inspection turned out (for example "Databricks CLI not found"), why the Databricks CLI couldn't be used, whether it is older than the oldest tested version, coarse bundle size ranges (for example "6-20 tasks"), which Databricks task types appear (for example `notebook_task`), and a one-time event when the extension is uninstalled.
-- **Environment:** extension and VS Code version, OS, OS version and CPU type (for example `darwin`, `25.0.0`, `arm64`), and remote type (for example WSL or SSH).
-- **Never collected:** file paths or contents, bundle, job, task or target names, workspace hosts, search text, or error messages.
-- **Identity:** an anonymous per-install ID, a one-way hash of VS Code's machine ID (never the ID itself). No accounts, no IP address, no location.
-- **Offline:** events wait on your machine (up to 500, for at most 14 days) and are sent when you are back online.
-- **Where it goes:** events are sent to a small proxy run by this project ([telemetry-proxy/](./telemetry-proxy)). The proxy drops anything not listed in `telemetry.json` and forwards the rest to PostHog. The extension itself contains no analytics keys.
-
-Every event and property is listed in [telemetry.json](./telemetry.json). To see events as they are sent, run **Developer: Set Log Level…** → **Trace**, then open the **Output** panel and pick the extension's telemetry channel.
+[What is collected, and where it goes](docs/telemetry.md)
 
 ## Project status
 
