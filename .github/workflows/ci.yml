@@ -68,3 +68,28 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+  # Most installs are on Windows, so run the tests there too. Lint, audit and
+  # builds do not depend on the OS and stay in the job above.
+  windows-tests:
+    name: Test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Run tests (jest)
+        run: npm run test:unit
+
+      - name: Run semantic tests (jest)
+        run: npm run test:semantic

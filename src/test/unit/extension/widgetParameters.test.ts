@@ -8,6 +8,7 @@ import {
 } from "../../../bundle/graph/bundleGraph.js";
 import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
+import { notebookViews } from "../../../bundle/code/notebookViews.js";
 
 const bundleRoot = path.resolve(__dirname, "../../fixtures/widget-parameters");
 
@@ -42,7 +43,8 @@ describe("widget and parameter mismatches", () => {
   });
 
   function summary(issue: InspectorIssue): string {
-    return `${issue.severity} ${issue.taskName}: ${issue.title} @ ${path.relative(bundleRoot, issue.file ?? "")}:${issue.line}`;
+    const file = path.relative(bundleRoot, issue.file ?? "").split(path.sep).join("/");
+    return `${issue.severity} ${issue.taskName}: ${issue.title} @ ${file}:${issue.line}`;
   }
 
   // See the fixture README for why each case is or isn't reported.
@@ -62,5 +64,15 @@ describe("widget and parameter mismatches", () => {
 
   test("does not report the parameter already offered as a suggestion", () => {
     expect(issues.some((issue) => issue.title.startsWith('Parameter "schema_name"'))).toBe(false);
+  });
+});
+
+// Git on Windows checks files out with CRLF line endings by default.
+describe("%run in a notebook with CRLF line endings", () => {
+  test("is read with its target and widget values", () => {
+    const content = '# Databricks notebook source\r\n# MAGIC %run ./child_setup $region="eu"\r\n';
+    expect(notebookViews(content, { jupyter: false, fileLanguage: "python" }).runs).toEqual([
+      { target: "./child_setup", args: { region: "eu" }, line: 2 },
+    ]);
   });
 });
