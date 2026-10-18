@@ -17,6 +17,7 @@ import {
   databricksCliUpdateUrl,
   invalidateDatabricksCliCache,
   resolveDatabricksCli,
+  verifyCliPath,
   type CliProblem,
 } from "./databricksCli/validateDatabricksCli.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
@@ -579,22 +580,74 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
   }
 
-  async function showCliNotFound(message: string, problem: CliProblem | undefined) {
+  const LOCATE_CLI = "Locate CLI…";
+
+  async function showCliNotFound(
+    message: string,
+    problem: CliProblem | undefined,
+    inspectAgain: () => Promise<void>,
+  ) {
     const install = "Open Install Guide";
     const settings = "Open Settings";
     const choice = await vscode.window.showErrorMessage(
       message,
       install,
+      LOCATE_CLI,
       ...(problem === "configured_path_invalid" ? [settings] : []),
     );
     if (choice === install) {
       void vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform)));
+    } else if (choice === LOCATE_CLI) {
+      await locateCli(inspectAgain);
     } else if (choice === settings) {
       void vscode.commands.executeCommand(
         "workbench.action.openSettings",
         "databricksBundleInspector.cliPath",
       );
     }
+  }
+
+  /**
+   * Lets the user pick the CLI file when it is not on VS Code's PATH. Only a file that
+   * answers `--version` as the Databricks CLI is saved, to the cliPath user setting.
+   */
+  async function locateCli(inspectAgain: () => Promise<void>): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+      title: "Select the Databricks CLI",
+      openLabel: "Use this CLI",
+      canSelectMany: false,
+      ...(process.platform === "win32" ? { filters: { Programs: ["exe"] } } : {}),
+    });
+    const file = picked?.[0]?.fsPath;
+    if (!file) return;
+
+    const cli = await verifyCliPath(file);
+    if (!cli.ok) {
+      const name = path.basename(file);
+      const printed = cli.otherProgramOutput?.trim().slice(0, 60);
+      const expected = process.platform === "win32" ? "databricks.exe" : "databricks";
+      const choice = await vscode.window.showErrorMessage(
+        printed
+          ? `${name} is not the Databricks CLI (it printed "${printed}"). Pick ${expected}.`
+          : `${name} could not be run as the Databricks CLI. Pick ${expected}.`,
+        LOCATE_CLI,
+      );
+      if (choice === LOCATE_CLI) await locateCli(inspectAgain);
+      return;
+    }
+
+    await getConfiguration().update("cliPath", file, vscode.ConfigurationTarget.Global);
+    invalidateDatabricksCliCache();
+    void vscode.window.showInformationMessage(
+      `Using Databricks CLI${cli.versionOutput ? ` ${cli.versionOutput}` : ""} from ${file}. Saved to the databricksBundleInspector.cliPath setting.`,
+    );
+    // Other bundles that were waiting for the CLI get checked too.
+    for (const [bundleRoot, state] of checkStates) {
+      if (state === "cli_missing" && bundleRoot !== activeBundleDir) {
+        scheduleRefresh(bundleRoot, "config");
+      }
+    }
+    await inspectAgain();
   }
 
   // CLI versions already warned about this session, so re-inspecting doesn't repeat it.
@@ -694,7 +747,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         });
         console.error("[inspectBundle] validation failed", result.error);
         if (result.error.errorCode === "CLI_NOT_FOUND") {
-          void showCliNotFound(result.error.error, result.error.cliProblem);
+          void showCliNotFound(result.error.error, result.error.cliProblem, () =>
+            inspectBundle(requestedTarget, options, bundleDir),
+          );
         } else if (result.error.diagnostics?.length) {
           void vscode.commands.executeCommand("workbench.actions.view.problems");
           vscode.window.showWarningMessage(

@@ -79,7 +79,7 @@ export function statusBarView(
     return {
       text: `$(warning) ${summary}`,
       tooltip:
-        "Databricks Bundle Inspector needs the Databricks CLI to check this bundle, and could not find it. Nothing is being checked. Click for the install steps.",
+        "Databricks Bundle Inspector needs the Databricks CLI to check this bundle, and could not find it. Nothing is being checked. Click to install it or locate it.",
       warning: true,
     };
   }
