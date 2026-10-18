@@ -4,9 +4,15 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-18
+
 ### Added
 
 - **A Locate CLI… button when the Databricks CLI isn't found.** If the CLI is installed but VS Code can't see it, for example right after an install on Windows before VS Code is restarted, pick the file yourself. The extension checks that it is the Databricks CLI, saves it as your `databricksBundleInspector.cliPath` setting, and inspects again. A file that isn't the CLI is refused with what it printed. The not-found message is also shorter.
+
+### Fixed
+
+- **Notebooks with Windows line endings (CRLF) now have their `%run` lines read.** Git on Windows saves files this way by default. Before, every `%run` in such a notebook was ignored, so widgets set by the notebook it runs were reported as missing, and widgets that notebook reads were not checked.
 
 ## [0.2.1] - 2026-10-13
 
@@ -241,6 +247,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.2.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.7...v0.1.8
