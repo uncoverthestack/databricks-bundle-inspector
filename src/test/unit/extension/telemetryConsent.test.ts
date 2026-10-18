@@ -16,7 +16,7 @@ const mock = vscode as unknown as {
     getConfiguration: () => unknown;
     onDidChangeConfiguration: (listener: (event: unknown) => void) => { dispose(): void };
   };
-  env: { createTelemetryLogger: (sender: vscode.TelemetrySender) => unknown };
+  env: { sessionId: string; createTelemetryLogger: (sender: vscode.TelemetrySender) => unknown };
 };
 
 let settings: Map<string, unknown>;
@@ -72,19 +72,26 @@ afterEach(() => {
 /** One install's stored state, shared by every start of VS Code. */
 async function install(state = new Map<string, unknown>()) {
   const extensionPath = await mkdtemp(path.join(os.tmpdir(), "telemetry-consent-"));
+  let sessions = 0;
+  const activate = () =>
+    createTelemetry({
+      extensionMode: vscode.ExtensionMode.Production,
+      extensionPath,
+      extension: { packageJSON: { version: "test" } },
+      globalState: {
+        get: (key: string) => state.get(key),
+        update: async (key: string, value: unknown) => void state.set(key, value),
+      },
+    } as unknown as vscode.ExtensionContext);
   return {
     state,
-    /** A new start of VS Code (one window). */
-    start: () =>
-      createTelemetry({
-        extensionMode: vscode.ExtensionMode.Production,
-        extensionPath,
-        extension: { packageJSON: { version: "test" } },
-        globalState: {
-          get: (key: string) => state.get(key),
-          update: async (key: string, value: unknown) => void state.set(key, value),
-        },
-      } as unknown as vscode.ExtensionContext),
+    /** A new VS Code session: a new window, or VS Code opened again. */
+    start: () => {
+      mock.env.sessionId = `session-${++sessions}`;
+      return activate();
+    },
+    /** The window reloads: the extension starts again in the same session. */
+    reload: () => activate(),
   };
 }
 
@@ -127,6 +134,21 @@ describe("telemetry consent", () => {
 
     expect(notices).toHaveLength(1);
     expect(sentEvents()).toEqual(["extension_activated", "inspect_bundle"]);
+  });
+
+  it("sends nothing after a window reload in the session where the notice was closed", async () => {
+    const { start, reload } = await install();
+    const first = start();
+    first.logUsage("extension_activated");
+    await notices[0]!.answer(undefined);
+    await first.shutdown();
+
+    const reloaded = reload();
+    reloaded.logUsage("extension_activated");
+    await reloaded.shutdown();
+
+    expect(notices).toHaveLength(1);
+    expect(sentEvents()).toEqual([]);
   });
 
   it("counts Learn More as an answer", async () => {

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import { TELEMETRY_ENDPOINT } from "./config.js";
 import { postBatch, type TelemetryProperties } from "./transport.js";
@@ -100,8 +100,9 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
   }
 
   const distinctId = anonymousId();
-  // This start of VS Code (one per window). Events are only sent from a later one.
-  const thisStart = randomUUID();
+  // This VS Code session: one per window, kept when the window reloads. Events are
+  // only sent from a later one.
+  const thisStart = vscode.env.sessionId;
   const queue = new TelemetryQueue(
     {
       get: () => context.globalState.get(QUEUE_STORAGE_KEY),

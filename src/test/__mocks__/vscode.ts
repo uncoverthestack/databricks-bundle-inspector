@@ -45,6 +45,7 @@ export enum ExtensionMode {
 export const env = {
   appName: "Visual Studio Code",
   machineId: "test-machine-id",
+  sessionId: "test-session-id",
   openExternal: async () => true,
   createTelemetryLogger: () => {
     throw new Error("replace env.createTelemetryLogger in the test");
