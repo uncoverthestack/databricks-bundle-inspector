@@ -4,6 +4,14 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **Usage telemetry now waits for you.** Nothing is sent until you have closed or answered the telemetry notice, and nothing from that VS Code window: events wait on your machine and are sent from the next time VS Code is opened, so you have time to turn it off. Before, events could be sent about a minute after the notice was requested, or when VS Code closed, even if you had not seen it. A notice that never reached the screen (VS Code closed first, or Do Not Disturb) is now shown again instead of counting as seen. If you already got the notice in an earlier version, nothing changes for you.
+
+### Fixed
+
+- **Usage events logged right after VS Code starts are no longer held back until the next send.** A send that had just finished could swallow a request to send newer events.
+
 ## [0.2.2] - 2026-10-18
 
 ### Added

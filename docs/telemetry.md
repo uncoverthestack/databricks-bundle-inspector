@@ -2,7 +2,7 @@
 
 [Back to the README](../README.md)
 
-The extension collects anonymous usage data to learn which features are used and where people get stuck. You are told once, the first time the extension starts with telemetry on. Nothing is collected before that notice is shown.
+The extension collects usage data to learn which features are used and where people get stuck. A notice tells you about it the first time the extension starts with telemetry on. Nothing is sent until you have closed or answered that notice, and nothing from that VS Code window: events wait on your machine and are sent from the next time VS Code is opened, so you have time to turn it off. If the notice never reaches you (for example with Do Not Disturb on), it is shown again next time and nothing is sent.
 
 **To turn it off**, use either setting:
 

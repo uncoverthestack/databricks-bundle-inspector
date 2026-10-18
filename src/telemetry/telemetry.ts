@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import { TELEMETRY_ENDPOINT } from "./config.js";
 import { postBatch, type TelemetryProperties } from "./transport.js";
@@ -14,7 +14,10 @@ export interface Telemetry {
 }
 
 const QUEUE_STORAGE_KEY = "telemetry.queue";
-const NOTICE_SHOWN_KEY = "telemetry.noticeShown";
+// Set by releases up to 0.2.2 as the notice was requested, before it was on screen.
+const LEGACY_NOTICE_SHOWN_KEY = "telemetry.noticeShown";
+// The start of VS Code in which the user closed or answered the notice.
+const NOTICE_ACKNOWLEDGED_KEY = "telemetry.noticeAcknowledgedIn";
 const SETTING_SECTION = "databricksBundleInspector";
 const SETTING_KEY = "telemetry.enabled";
 const LEARN_MORE_URL =
@@ -28,8 +31,9 @@ const noopTelemetry: Telemetry = {
 };
 
 /**
- * Anonymous per-install ID. Re-hashing VS Code's machineId keeps it stable for
- * retention analysis while making it unlinkable to other extensions' telemetry.
+ * Pseudonymous per-install ID: it names no one, but links one install's events.
+ * Re-hashing VS Code's machineId keeps it stable for retention analysis while
+ * making it unlinkable to other extensions' telemetry.
  */
 function anonymousId(): string {
   return createHash("sha256")
@@ -45,29 +49,42 @@ function extensionSettingEnabled(): boolean {
     .get<boolean>(SETTING_KEY, true);
 }
 
-function noticeShown(context: vscode.ExtensionContext): boolean {
-  return context.globalState.get<boolean>(NOTICE_SHOWN_KEY) === true;
+/**
+ * The VS Code start in which the user closed or answered the notice, or undefined if
+ * they have not yet. A notice from a release up to 0.2.2 counts as an earlier start.
+ */
+function noticeAcknowledgedIn(context: vscode.ExtensionContext): string | undefined {
+  return (
+    context.globalState.get<string>(NOTICE_ACKNOWLEDGED_KEY) ??
+    (context.globalState.get<boolean>(LEGACY_NOTICE_SHOWN_KEY) === true ? "earlier" : undefined)
+  );
 }
 
-/** Tells the user once that telemetry is on, with a one-click opt-out. */
-async function showNoticeOnce(
+/**
+ * Tells the user about telemetry, with a one-click opt-out. It comes back on each start
+ * of VS Code until the user closes or answers it, so a notice that never reached the
+ * screen (VS Code closed, Do Not Disturb) is never taken as seen.
+ */
+async function showNotice(
   context: vscode.ExtensionContext,
-  onShown: () => void,
+  thisStart: string,
+  onAcknowledged: () => void,
 ): Promise<void> {
-  if (noticeShown(context)) return;
-  await context.globalState.update(NOTICE_SHOWN_KEY, true);
-  onShown();
   const choice = await vscode.window.showInformationMessage(
-    "Databricks Bundle Inspector collects anonymous usage data (features used, never paths, names or file contents) to guide development. It follows your VS Code telemetry setting.",
+    "Databricks Bundle Inspector collects usage data (features used, never paths, names or file contents) to guide development. Nothing is sent until VS Code is next opened, so you have time to turn it off.",
     "Learn More",
     "Disable",
   );
-  if (choice === "Learn More") {
-    void vscode.env.openExternal(vscode.Uri.parse(LEARN_MORE_URL));
-  } else if (choice === "Disable") {
+  if (choice === "Disable") {
     await vscode.workspace
       .getConfiguration(SETTING_SECTION)
       .update(SETTING_KEY, false, vscode.ConfigurationTarget.Global);
+    return;
+  }
+  await context.globalState.update(NOTICE_ACKNOWLEDGED_KEY, thisStart);
+  onAcknowledged();
+  if (choice === "Learn More") {
+    void vscode.env.openExternal(vscode.Uri.parse(LEARN_MORE_URL));
   }
 }
 
@@ -83,6 +100,8 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
   }
 
   const distinctId = anonymousId();
+  // This start of VS Code (one per window). Events are only sent from a later one.
+  const thisStart = randomUUID();
   const queue = new TelemetryQueue(
     {
       get: () => context.globalState.get(QUEUE_STORAGE_KEY),
@@ -101,12 +120,12 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
         timestamp: new Date().toISOString(),
         properties,
       });
-      if (queue.size >= FLUSH_THRESHOLD) void queue.flush();
+      if (queue.size >= FLUSH_THRESHOLD) void send();
     },
     sendErrorData() {
       // Error telemetry (stack traces) is deliberately not collected.
     },
-    flush: () => queue.flush(),
+    flush: () => send(),
   };
 
   const logger = vscode.env.createTelemetryLogger(sender, {
@@ -122,10 +141,19 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const isEnabled = () => logger.isUsageEnabled && extensionSettingEnabled();
 
-  // The uninstall event stays off until the user has been shown the notice.
+  // Until then, events wait on this machine (bounded by the queue's size and age limits).
+  function sendingAllowed(): boolean {
+    const acknowledgedIn = noticeAcknowledgedIn(context);
+    return isEnabled() && acknowledgedIn !== undefined && acknowledgedIn !== thisStart;
+  }
+  function send(): Promise<void> {
+    return sendingAllowed() ? queue.flush() : Promise.resolve();
+  }
+
+  // The uninstall event stays off until the user has closed or answered the notice.
   const recordConsent = () =>
     writeUninstallState(context.extensionPath, {
-      enabled: isEnabled() && noticeShown(context),
+      enabled: isEnabled() && noticeAcknowledgedIn(context) !== undefined,
       distinctId,
       extensionVersion: String(context.extension.packageJSON.version ?? "unknown"),
       appName: vscode.env.appName,
@@ -144,28 +172,28 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
     }),
   ];
 
-  // Deliver anything left over from an earlier offline session.
-  if (isEnabled()) void queue.flush();
+  // Deliver anything left over from an earlier start.
+  void send();
   let noticeRequested = false;
   const timer = setInterval(() => {
-    if (queue.size > 0 && isEnabled()) void queue.flush();
+    if (queue.size > 0) void send();
   }, FLUSH_INTERVAL_MS);
   timer.unref?.();
 
   return {
     logUsage(event, properties) {
       if (!extensionSettingEnabled()) return;
-      // Shown with the first event, so nothing is ever collected before the user is told.
-      if (logger.isUsageEnabled && !noticeRequested) {
+      // Shown with the first event. Nothing is sent before it is closed or answered.
+      if (logger.isUsageEnabled && !noticeRequested && noticeAcknowledgedIn(context) === undefined) {
         noticeRequested = true;
-        void showNoticeOnce(context, () => void recordConsent());
+        void showNotice(context, thisStart, () => void recordConsent());
       }
       logger.logUsage(event, properties);
     },
     async shutdown() {
       clearInterval(timer);
       for (const listener of consentListeners) listener.dispose();
-      if (isEnabled()) await queue.flush();
+      await send();
       logger.dispose();
     },
   };
