@@ -10,6 +10,11 @@ import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js
 import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
 
 const bundleRoot = path.resolve(__dirname, "../../fixtures/task-values");
+
+// Relative path with "/" on every OS, so expectations read the same on Windows.
+function posixRelative(file: string): string {
+  return path.relative(bundleRoot, file).split(path.sep).join("/");
+}
 const JOB_FILE = "resources/task_values.job.yml";
 
 // Without a target, `databricks bundle validate -o json` returns these values unchanged
@@ -40,7 +45,7 @@ describe("task values", () => {
   test("reports reads of values that are missing, misnamed or not upstream", () => {
     expect(
       issues
-        .map((issue) => `${issue.taskName}: ${issue.title} @ ${path.relative(bundleRoot, issue.file ?? "")}:${issue.line}`)
+        .map((issue) => `${issue.taskName}: ${issue.title} @ ${posixRelative(issue.file ?? "")}:${issue.line}`)
         .sort(),
     ).toEqual([
       'consumer: Task "producer" may not set value "rowcount". Did you mean "row_count"? @ src/consumer.py:3',

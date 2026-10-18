@@ -71,6 +71,11 @@ beforeAll(async () => {
   spec = collectWatchSpec(graph, config, bundleRoot, ["resources/**/*.yml"]);
 });
 
+// Relative path with "/" on every OS, so expectations read the same on Windows.
+function posixRelative(file: string): string {
+  return path.relative(bundleRoot, file).split(path.sep).join("/");
+}
+
 function at(rel: string): string {
   return path.join(bundleRoot, rel);
 }
@@ -78,7 +83,7 @@ function at(rel: string): string {
 describe("collectWatchSpec", () => {
   test("watches the bundle files, task sources and pipeline folders the bundle points at", () => {
     expect(
-      [...spec.files].map((file) => path.relative(bundleRoot, file)).sort(),
+      [...spec.files].map(posixRelative).sort(),
     ).toEqual([
       "databricks.yaml",
       "databricks.yml",
@@ -87,7 +92,7 @@ describe("collectWatchSpec", () => {
       "src/tasks/generate_items.py",
       "src/tasks/missing_process_item.py",
     ]);
-    expect(spec.folders.map((folder) => path.relative(bundleRoot, folder))).toEqual([
+    expect(spec.folders.map(posixRelative)).toEqual([
       "src/dlt",
     ]);
     expect(filesOutsideRoot(spec)).toEqual([]);

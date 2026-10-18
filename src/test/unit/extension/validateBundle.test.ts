@@ -1,4 +1,5 @@
 import { describe, test, expect, jest } from "@jest/globals";
+import path from "node:path";
 import {
   BUNDLE_PROBE_TARGET,
   validateBundleWithDependencies,
@@ -32,7 +33,8 @@ describe("validateBundleWithDependencies", () => {
     });
 
     expect(env?.DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION).toBe("1");
-    expect(env?.PATH).toBe(process.env.PATH);
+    // Every other variable is passed through. On Windows PATH is spelled "Path".
+    expect(env).toEqual({ ...process.env, DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION: "1" });
   });
 
   test("returns CLI_NOT_FOUND when no CLI is resolved", async () => {
@@ -134,7 +136,7 @@ describe("validateBundleWithDependencies", () => {
           "--target",
           probeTarget,
         ],
-        cwd: "/workspace/demo",
+        cwd: path.resolve("/workspace/demo"),
         timeout: 30_000,
       },
     ]);
@@ -258,7 +260,7 @@ describe("validateBundleWithDependencies", () => {
       "[validateBundle] probe target unavailable; parsing stdout",
       expect.objectContaining({
         cliPath: "databricks",
-        bundleDir: "/workspace/demo",
+        bundleDir: path.resolve("/workspace/demo"),
         target: BUNDLE_PROBE_TARGET,
       }),
     );

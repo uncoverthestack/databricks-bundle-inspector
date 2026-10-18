@@ -40,7 +40,8 @@ export interface NotebookRun {
  * (https://docs.databricks.com/aws/en/notebooks/widgets).
  */
 function parseRun(text: string, line: number): NotebookRun | undefined {
-  const match = /%run\s+(\S+)(.*)$/.exec(text);
+  // No `$` anchor: a CRLF file leaves "\r" at the end of the line, which `.` can't match.
+  const match = /%run\s+(\S+)(.*)/.exec(text);
   if (!match) return undefined;
   const args: Record<string, string> = {};
   const argument = /\$(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
