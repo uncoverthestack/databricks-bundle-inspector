@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **A Locate CLI… button when the Databricks CLI isn't found.** If the CLI is installed but VS Code can't see it, for example right after an install on Windows before VS Code is restarted, pick the file yourself. The extension checks that it is the Databricks CLI, saves it as your `databricksBundleInspector.cliPath` setting, and inspects again. A file that isn't the CLI is refused with what it printed. The not-found message is also shorter.
+
 ## [0.2.1] - 2026-10-13
 
 ### Security

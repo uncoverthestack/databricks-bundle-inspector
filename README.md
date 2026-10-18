@@ -44,7 +44,7 @@ Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on c
 2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, shows the count in the status bar, and checks again every time you save.
 3. For the graph, open the bundle file and click **Inspect Databricks Bundle** in the editor title bar.
 
-If the CLI can't be found, Inspect says why and links to the install steps for your OS. After installing it, restart VS Code so it sees the new `PATH`, or set `databricksBundleInspector.cliPath`.
+If the CLI can't be found, Inspect says why and links to the install steps for your OS. After installing it, restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
 
 [Setup and usage in detail](docs/usage.md)
 
