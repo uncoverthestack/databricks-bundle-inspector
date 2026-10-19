@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
 ### Added
 
 - **Pick a target in the graph again.** The dropdown at the top of the graph lists "structural preview" and each of the bundle's targets. A real target shows the bundle as the CLI resolves it for that target, with its variables and configuration. It uses your Databricks login and may contact the workspace. With a login, the CLI gives workspace paths instead of local ones (for example a notebook path becomes `/Workspace/.../files/src/load`); the inspector matches them to the paths as written in your YAML (variables included) and reads those local files, so checks that read your files (widgets, secrets, task values, notebook rules) run for the target too, including when `sync.paths` reaches outside the bundle. A path it can't match to exactly one local file stays as the CLI gave it, and its checks are skipped for that target. When the CLI reports a problem with the target, such as a login error, it is listed with the graph's issues. The Problems panel and the status bar keep showing the structural preview, which needs no login, so saving a file never switches them to another target. The picker was removed in 0.1.1 because a real target made the CLI create a `.databricks` folder in the bundle; the extension now has the CLI keep its working files in your system's temp folder, so nothing is written into the bundle folder.
@@ -261,6 +263,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.3.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.1.8...v0.2.0
