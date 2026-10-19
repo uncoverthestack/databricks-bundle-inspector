@@ -41,7 +41,11 @@ async function main() {
       // The extension checks the open bundle as soon as VS Code starts. A real CLI found
       // then stays cached for the session, so this suite starts with none on the PATH.
       ...(suite === "cliNotFound"
-        ? { PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin" }
+        ? {
+            PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",
+            // On Windows the extension also reads the `Path` stored in the registry, which holds a real CLI.
+            INSPECTOR_TEST_NO_STORED_PATH: "1",
+          }
         : {}),
     },
     launchArgs: [

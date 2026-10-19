@@ -10,7 +10,13 @@ If the CLI can't be found, the inspector says why (not installed, a wrong `cliPa
 
 Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
 
-After installing the CLI, restart VS Code if the install added a new folder to your `PATH` (for example WinGet on Windows, or a first-time Homebrew install). Setting `databricksBundleInspector.cliPath` to the CLI's full path works without a restart.
+When `databricks` on VS Code's `PATH` doesn't work, the inspector also tries, in this order:
+
+1. every other `databricks` on that `PATH`, for when the first one is the legacy pip package;
+2. on Windows, the `Path` Windows has stored for you and for the system, read with `reg.exe` (read only). An install adds its folder there, but VS Code only reads it when it starts;
+3. the CLI the [Databricks extension](https://marketplace.visualstudio.com/items?itemName=databricks.databricks) ships, if you have it.
+
+Each one is checked with `databricks --version` before it is used. So on Windows a WinGet install works without restarting VS Code. On macOS and Linux, restart VS Code if the install added a new folder to your `PATH` (for example a first-time Homebrew install). Setting `databricksBundleInspector.cliPath` to the CLI's full path always works without a restart.
 
 ## Usage
 

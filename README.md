@@ -44,13 +44,13 @@ Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on c
 2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, shows the count in the status bar, and checks again every time you save.
 3. For the graph, open the bundle file and click **Inspect Databricks Bundle** in the editor title bar.
 
-If the CLI can't be found, Inspect says why and links to the install steps for your OS. After installing it, restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
+If the CLI can't be found, Inspect says why and links to the install steps for your OS. Besides your `PATH`, the inspector looks for the CLI the Databricks extension ships and, on Windows, in the `Path` Windows has stored, so a WinGet install works without a restart. Otherwise restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
 
 [Setup and usage in detail](docs/usage.md)
 
 ## Safety
 
-- It runs one program, the Databricks CLI you installed, to validate the bundle. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run.
+- It runs one program, the Databricks CLI you installed, to validate the bundle. To find it, Windows only, it may also read (never change) your stored `Path` with `reg.exe`. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run.
 - It writes nothing into your bundle folder, not even the `.databricks` folder the CLI creates for a real target.
 - It stays off until you tell VS Code you trust the folder.
 - The checks that run by themselves need no login. Picking a real target in the graph uses your active CLI profile, or the one set in `databricksBundleInspector.profile`, and may contact your workspace.

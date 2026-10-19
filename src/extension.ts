@@ -52,6 +52,7 @@ import {
   taskKinds,
 } from "./telemetry/events.js";
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
+import { cliFileName, configureCliLookup } from "./databricksCli/cliCandidates.js";
 import {
   bundleProblemCount,
   readIncludePatterns,
@@ -80,6 +81,20 @@ let telemetry: Telemetry | undefined;
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
   telemetry = createTelemetry(extensionContext);
+  configureCliLookup({
+    // The Databricks extension ships its own CLI in `bin`, so users of it often have one
+    // without having installed it. Read on every lookup, as it may be installed later.
+    extraCandidates: () => {
+      const databricksExtension = vscode.extensions.getExtension("databricks.databricks");
+      if (!databricksExtension) return [];
+      return [path.join(databricksExtension.extensionPath, "bin", cliFileName(process.platform))];
+    },
+    // The cliNotFound e2e suite needs no CLI found, even one Windows has stored the path of.
+    readStoredPath: !(
+      extensionContext.extensionMode === vscode.ExtensionMode.Test &&
+      process.env.INSPECTOR_TEST_NO_STORED_PATH === "1"
+    ),
+  });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection(
     "databricks-bundle-inspector",

@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Databricks CLI is found in more places when it's installed but VS Code can't see it** ([#180](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/180)). When `databricks` on VS Code's `PATH` doesn't work, the inspector now also tries every other `databricks` on the `PATH` (for when the legacy pip package comes first), on Windows the `Path` Windows has stored (so a WinGet install works without restarting VS Code), and the CLI the Databricks extension ships. Each is checked with `--version` first. Nothing changes where the CLI was already found.
+
 ## [0.3.1] - 2026-10-19
 
 ### Fixed
