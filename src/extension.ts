@@ -52,6 +52,7 @@ import {
   taskKinds,
 } from "./telemetry/events.js";
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
+import { cliFileName, configureCliLookup } from "./databricksCli/cliCandidates.js";
 import {
   bundleProblemCount,
   readIncludePatterns,
@@ -68,6 +69,7 @@ import {
   orderForPicking,
   statusBarView,
   type BundleCheckState,
+  type CliIssue,
 } from "./extension/statusBar.js";
 
 // Re-exported so existing imports of it from this module keep working.
@@ -80,6 +82,20 @@ let telemetry: Telemetry | undefined;
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
   telemetry = createTelemetry(extensionContext);
+  configureCliLookup({
+    // The Databricks extension ships its own CLI in `bin`, so users of it often have one
+    // without having installed it. Read on every lookup, as it may be installed later.
+    extraCandidates: () => {
+      const databricksExtension = vscode.extensions.getExtension("databricks.databricks");
+      if (!databricksExtension) return [];
+      return [path.join(databricksExtension.extensionPath, "bin", cliFileName(process.platform))];
+    },
+    // The cliNotFound e2e suite needs no CLI found, even one Windows has stored the path of.
+    readStoredPath: !(
+      extensionContext.extensionMode === vscode.ExtensionMode.Test &&
+      process.env.INSPECTOR_TEST_NO_STORED_PATH === "1"
+    ),
+  });
 
   const diagnosticCollection = vscode.languages.createDiagnosticCollection(
     "databricks-bundle-inspector",
@@ -95,6 +111,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   statusBarItem.command = STATUS_BAR_COMMAND;
   extensionContext.subscriptions.push(statusBarItem);
   const checkStates = new Map<string, BundleCheckState>();
+  /** Why the CLI could not be used, for bundles whose last check ended that way. */
+  const cliIssues = new Map<string, CliIssue>();
   /** Every bundle found in the open folders, checked or not, in the order found. */
   const foundBundles = new Set<string>();
 
@@ -127,6 +145,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         bundleProblemCount(bundleRoot, diagnosticCollection),
         path.basename(bundleRoot),
         foundBundles.size - 1,
+        cliIssues.get(bundleRoot),
       );
     if (!view) {
       statusBarItem.hide();
@@ -146,6 +165,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    if (!result.ok && result.error.cliProblem) {
+      cliIssues.set(bundleRoot, {
+        problem: result.error.cliProblem,
+        ...(result.error.cliVersionOutput !== undefined
+          ? { versionOutput: result.error.cliVersionOutput }
+          : {}),
+      });
+    } else {
+      cliIssues.delete(bundleRoot);
+    }
     foundBundles.add(bundleRoot);
     // The bundle whose graph was just opened is the one the user is looking at.
     if (options.inspected) lastStatusBarBundle = bundleRoot;
@@ -1078,6 +1107,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           detail: bundleSummary(
             checkStates.get(root),
             bundleProblemCount(root, diagnosticCollection),
+            cliIssues.get(root),
           ),
           root,
         })),

@@ -19,6 +19,10 @@ Only the latest release on the VS Code Marketplace and Open VSX receives fixes.
 
 - It reads the files in the folder you open and runs one external program, the Databricks CLI
   you installed (`databricks bundle validate`), with fixed arguments.
+- To find that CLI, it may also run `databricks --version` on each `databricks` file on your
+  `PATH`, and on the one the Databricks extension ships. On Windows only, when the CLI isn't
+  found, it runs `%SystemRoot%\System32\reg.exe query` to read (never change) your stored
+  `Path`, so a CLI installed after VS Code started is found without a restart.
 - It does not run code from your bundle, such as notebooks or build commands. The Databricks
   CLI itself can run code while it loads a bundle (shell commands under `experimental.scripts`,
   Python under the `python` section), so the extension starts it with

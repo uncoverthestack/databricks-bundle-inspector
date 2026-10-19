@@ -202,14 +202,15 @@ export function cliNotFoundSuite() {
 
     it("legacy pip databricks-cli on PATH: says it is the wrong program", async function () {
       if (process.platform === "win32") this.skip();
-      const bin = await fakeCli('echo "Version: 0.18.0"');
+      // What the legacy package prints (databricks_cli/version.py, tag 0.18.0).
+      const bin = await fakeCli('echo "Version 0.18.0"');
 
       const { popups } = await inspectWithPath(`${bin}:${SYSTEM_PATH}`, undefined);
 
       assert.equal(popups.length, 1);
       assert.match(
         popups[0]!.message,
-        /^The "databricks" command on your PATH is not the Databricks CLI \(it printed "Version: 0\.18\.0"\)/,
+        /^The "databricks" command on your PATH is the legacy databricks-cli pip package \(0\.18\.0\)/,
       );
       assert.deepEqual(popups[0]!.buttons, ["Open Install Guide", "Locate CLI…"]);
     });

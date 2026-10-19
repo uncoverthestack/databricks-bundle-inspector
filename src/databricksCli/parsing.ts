@@ -21,6 +21,18 @@ export function isDatabricksCliVersionOutput(output: string): boolean {
   return output.includes("Databricks CLI");
 }
 
+/**
+ * The version of the legacy `databricks-cli` pip package, from what it prints for
+ * `--version`: `Version 0.18.0` (`databricks_cli/version.py`, tag 0.18.0). Its versions
+ * end at 0.18; the Databricks CLI started at 0.100 and prints "Databricks CLI".
+ */
+export function legacyCliVersion(output: string): string | undefined {
+  const match = /^Version (0\.\d+\.\d+)\s*$/.exec(output.trim());
+  if (!match) return undefined;
+  const minor = Number(match[1]!.split(".")[1]);
+  return minor <= 18 ? match[1] : undefined;
+}
+
 /** The oldest Databricks CLI the inspector is tested with (see .github/workflows/cli-compat.yml). */
 export const MIN_SUPPORTED_CLI_VERSION = "v0.299.0";
 

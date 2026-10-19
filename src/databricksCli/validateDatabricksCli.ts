@@ -3,6 +3,11 @@ import {
   isDatabricksCliVersionOutput,
   extractDatabricksVersion,
 } from "./parsing.js";
+import {
+  moreCliCandidates,
+  realLookupEnvironment,
+  type CliLookupEnvironment,
+} from "./cliCandidates.js";
 
 /**
  * Result of verifying whether a candidate executable is the Databricks CLI.
@@ -163,18 +168,20 @@ export async function autoDetectDatabricksCli(): Promise<DatabricksCliVerificati
  * 1. Use the user-configured `cliPath` from VS Code settings, if present.
  * 2. Verify that configured path by running the CLI with `--version`.
  * 3. If the configured path is missing or invalid, fall back to auto-detection.
+ * 4. If that fails too, try the other places a CLI may be (see {@link moreCliCandidates}).
  *
  * @param config The VS Code workspace configuration for the extension.
  * @returns A verified Databricks CLI, or a {@link CliResolutionFailure} saying why none could be used.
  */
 export async function resolveDatabricksCli(
   configuredPath?: string,
+  lookup: CliLookupEnvironment = realLookupEnvironment(),
 ): Promise<VerifiedDatabricksCli | CliResolutionFailure> {
   const cacheKey = cliCacheKey(configuredPath);
   let resolveCliPromise = resolveCliPromises.get(cacheKey);
 
   if (!resolveCliPromise) {
-    resolveCliPromise = resolveCliInternal(configuredPath).then(
+    resolveCliPromise = resolveCliInternal(configuredPath, lookup).then(
       (result) => {
         if (!result.ok) {
           resolveCliPromises.delete(cacheKey);
@@ -193,7 +200,8 @@ export async function resolveDatabricksCli(
 }
 
 async function resolveCliInternal(
-  configuredPath?: string,
+  configuredPath: string | undefined,
+  lookup: CliLookupEnvironment,
 ): Promise<VerifiedDatabricksCli | CliResolutionFailure> {
   let configuredPathFailed = false;
   if (configuredPath) {
@@ -209,6 +217,13 @@ async function resolveCliInternal(
   const detected = await autoDetectDatabricksCli();
   if (detected.ok) {
     return detected;
+  }
+  // Only reached when the lookup above failed, so nothing changes where it works.
+  for (const candidate of await moreCliCandidates(lookup)) {
+    const result = await verifyCliPath(candidate);
+    if (result.ok) {
+      return result;
+    }
   }
   // A wrong setting is the likelier fix than whatever sits on the PATH, so report it first.
   if (configuredPath && configuredPathFailed) {

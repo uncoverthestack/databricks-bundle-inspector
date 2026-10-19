@@ -140,7 +140,7 @@
     "cli:install-matrix": "node scripts/install-databricks-cli-matrix.mjs",
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
     "prepare": "husky",
-    "build:e2e": "esbuild src/test/e2e/runTest.ts src/test/e2e/suite/index.ts --bundle --platform=node --format=cjs --outdir=out/e2e --out-extension:.js=.cjs --external:vscode --external:mocha --external:@vscode/test-electron --log-level=warning",
+    "build:e2e": "node scripts/build-e2e.mjs",
     "test:e2e": "npm run build:ext && npm run build:e2e && node out/e2e/runTest.cjs",
     "test:e2e:watch": "E2E_PAUSE_MS=15000 npm run test:e2e",
     "test:e2e:include": "E2E_SUITE=includeMistakes E2E_FIXTURE=src/test/fixtures/include-mistakes npm run test:e2e",
