@@ -1611,11 +1611,11 @@ function IssueSummarySection({ items, onOpenFile }) {
                 <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${severity.colorClass}`}>
                   {severity.label}
                 </div>
-                <div title={item.title} className="mt-0.5 line-clamp-2 text-xs font-medium text-stone-100">
+                <div className="mt-0.5 break-words text-xs font-medium text-stone-100">
                   {item.title}
                 </div>
                 {item.detail && (
-                  <div title={item.detail} className="mt-0.5 line-clamp-2 text-[11px] text-stone-400">
+                  <div className="mt-0.5 break-words text-[11px] text-stone-400">
                     {item.detail}
                   </div>
                 )}
