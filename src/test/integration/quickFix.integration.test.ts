@@ -30,7 +30,11 @@ function fixedLine(issue: InspectorIssue): string | undefined {
  * (`src/etl`), while a resource file holds them from its own folder (`../src/etl`).
  */
 describe(`the missing-extension fix edits the path as written (${cli})`, () => {
-  test("with the inspector's probe target: in a resource file, a pipeline, and databricks.yml, but not through a variable", async () => {
+  // Windows line endings must give the same lines and the same fixes.
+  test.each([
+    ["\\n", "\n"],
+    ["\\r\\n", "\r\n"],
+  ])("with the inspector's probe target and %s line endings: in a resource file, a pipeline, and databricks.yml, but not through a variable", async (_label, eol) => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-quick-fix-"));
     created.push(dir);
     await mkdir(path.join(dir, "src"));
@@ -59,7 +63,7 @@ describe(`the missing-extension fix edits the path as written (${cli})`, () => {
         "  dev:",
         "    default: true",
         "",
-      ].join("\n"),
+      ].join(eol),
     );
     await writeFile(
       path.join(dir, "resources", "job.yml"),
@@ -80,7 +84,7 @@ describe(`the missing-extension fix edits the path as written (${cli})`, () => {
         "        - notebook:",
         "            path: ../src/etl  # the bronze notebook",
         "",
-      ].join("\n"),
+      ].join(eol),
     );
 
     const result = await validateBundle(dir, undefined, cli);
