@@ -70,7 +70,7 @@ To turn it off, use either setting:
 
 ## Project status
 
-Version 0.3.0. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Version 0.3.1. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
