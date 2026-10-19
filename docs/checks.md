@@ -4,6 +4,8 @@
 
 These are the problems the inspector reports. Each one is listed in the Problems panel at the file and line it comes from, and in the graph's issues list.
 
+Two of them come with a fix you can apply from the light bulb, or the Quick Fix menu (`Cmd+.` on macOS, `Ctrl+.` on Windows and Linux): a notebook path without its extension (`src/etl` becomes `src/etl.py`), and an `include` pattern with a likely typo (`resource/*.yml` becomes `resources/*.yml`). The fix is only offered while the file still holds the value the check read, so a path that comes from a variable or a target override gets no fix.
+
 - **Missing local files**: notebooks and files referenced by tasks that don't exist, including the inner task of a `for_each` task.
 - **Missing libraries**: local wheels and JARs a task installs that aren't there.
 - **Pipeline sources**: Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables, DLT) whose `libraries` point at a missing notebook or file, or at a `folder/**` glob with no files. The CLI doesn't check these during validation, so they otherwise surface only on `bundle deploy`.

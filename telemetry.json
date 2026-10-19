@@ -44,6 +44,10 @@
     "job_selected": { "description": "A different job was picked in the header." },
     "search_result_selected": { "description": "A task was picked from search results." },
     "issue_item_selected": { "description": "An item in the issues panel was clicked." },
+    "quick_fix_applied": {
+      "description": "A suggested fix was applied from the Quick Fix menu.",
+      "properties": { "kind": "missing_file | include_matches_nothing" }
+    },
     "extension_uninstalled": {
       "description": "Sent once by the vscode:uninstall hook, only if the extension last recorded that usage telemetry was enabled.",
       "properties": {}

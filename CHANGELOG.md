@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Quick fixes for two findings** ([#165](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/165)). A notebook path without its extension, and an `include` pattern with a likely typo, now have a light bulb in the editor: **Change to "src/etl.py"** or **Change to "resources/*.yml"** applies the suggestion (also from the Quick Fix menu, `Cmd+.` on macOS, `Ctrl+.` on Windows and Linux). The fix edits the path as written in the file, so `../src/etl` in a resource file becomes `../src/etl.py`. It is only offered while the file still holds that value at that place: a path built from a variable, or a line edited since the check, gets no fix. Saving re-checks as usual and clears the problem.
+
 ### Changed
 
 - **The status bar says what was checked, and covers the whole folder when it has several bundles** ([#181](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/181)). With one bundle, a clean check reads `Bundle: no problems · 12 tasks`, and the tooltip says what it covered (`Checked 3 jobs, 12 tasks and 8 files.`). With several, the item counts every bundle, the same as the Problems panel (`3 bundles: 5 problems`), instead of only the bundle of the open file, and its tooltip lists the first 3 bundles, those with problems first, and a **Show N more** link that opens the bundle picker. Tooltips are shorter: one line, or the list, instead of several sentences. Bundles not checked yet are never counted as clean (`3 of 12 bundles checked: no problems`). While a check runs longer than half a second the icon turns, except when `workbench.reduceMotion` is `on`. A bundle whose `databricks.yml` is deleted, or whose workspace folder is removed, is dropped instead of showing as not checked.

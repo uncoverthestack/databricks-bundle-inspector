@@ -8,6 +8,7 @@ import {
 } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
 import { checkNotebookPath, isNotebookFile } from "../../../bundle/notebookFiles.js";
+import { locateFix } from "../../../bundle/quickFix.js";
 
 const bundleRoot = path.resolve(__dirname, "../../fixtures/notebook-paths");
 const src = (name: string) => path.join(bundleRoot, "src", name);
@@ -109,6 +110,26 @@ describe("notebook path issues on the fixture bundle", () => {
     expect(titleAt("tasks.sql_file_is_notebook.sql_task.file.path")).toBe(
       '"../src/query_nb.sql" may be a notebook, not a file.',
     );
+  });
+
+  test("a path without its extension offers a fix that edits exactly that value in the resource file", () => {
+    const fixable = issues.filter((issue) => issue.fix);
+    expect(fixable.length).toBeGreaterThanOrEqual(2);
+    for (const issue of fixable) {
+      expect(issue.fix).toEqual({
+        oldText: "../src/nb_noext",
+        newText: "../src/nb_noext.sql",
+        title: 'Change to "../src/nb_noext.sql"',
+      });
+      const lines = readFileSync(issue.file!, "utf8").split("\n");
+      const line = lines[issue.line! - 1]!;
+      const span = locateFix(line, issue.fix!.oldText, issue.column);
+      expect(span).toBeDefined();
+      const fixed = line.slice(0, span!.start) + issue.fix!.newText + line.slice(span!.end);
+      expect(fixed.trim()).toMatch(/^(- )?(notebook_path|path): \.\.\/src\/nb_noext\.sql$/);
+    }
+    // Only the missing extension has one exact fix; the other notebook mix-ups do not.
+    expect(issues.filter((issue) => issue.kind === "notebook_type_mismatch" && issue.fix)).toEqual([]);
   });
 
   test("pipeline libraries follow the CLI's notebook rules", () => {
