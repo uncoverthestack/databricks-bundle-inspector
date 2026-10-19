@@ -18,6 +18,7 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
+import { localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
   matchSecretScope,
@@ -950,6 +951,8 @@ interface SourceIndex {
    * output is not its position in the file.
    */
   taskPositions: Map<string, Map<string, number>>;
+  /** Every YAML file read, as written: the anchors for mapping a real target's workspace paths back. */
+  sourceDocuments: SourceDocument[];
 }
 
 /** Positions in a `tasks:` list by key. A repeated key keeps its first position, which is where the CLI merges the copies. */
@@ -969,12 +972,15 @@ async function buildSourceIndex(
   const resourceSourceMap = new Map<string, string>();
   const yamlLocationMaps = new Map<string, YamlLocationMap>();
   const taskPositions = new Map<string, Map<string, number>>();
+  const sourceDocuments: SourceDocument[] = [];
 
   async function parseResourceFile(filePath: string): Promise<void> {
     try {
       const content = await readFile(filePath, "utf-8");
       yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content));
       const yaml = parseYaml(content) as Record<string, unknown> | null;
+      // With `<<` merge keys resolved, as the CLI does, so jobs built from YAML anchors are found.
+      sourceDocuments.push({ file: filePath, doc: parseYaml(content, { merge: true }) });
       const resources = (yaml?.resources ?? {}) as Record<string, Record<string, unknown>>;
       for (const [resourceGroup, resourceMap] of Object.entries(resources)) {
         for (const [resourceKey, resource] of Object.entries(resourceMap ?? {})) {
@@ -1013,7 +1019,7 @@ async function buildSourceIndex(
     await parseResourceFile(p);
   }
 
-  return { resourceSourceMap, yamlLocationMaps, taskPositions };
+  return { resourceSourceMap, yamlLocationMaps, taskPositions, sourceDocuments };
 }
 
 /**
@@ -1054,7 +1060,7 @@ export function extractResourceNodes(parsedBundle: ParsedBundleConfig): Resource
  * from each task's local path and expression analysis.
  */
 export async function extractBundleGraph(
-  parsedBundle: ParsedBundleConfig,
+  cliOutput: ParsedBundleConfig,
   bundleRoot?: string,
 ): Promise<BundleGraph> {
   const nodeMap = new Map<string, BundleGraphNode>();
@@ -1072,19 +1078,28 @@ export async function extractBundleGraph(
     }
   }
 
-  const resourceNodes = extractResourceNodes(parsedBundle);
-
   const sourceIndex = bundleRoot
     ? await buildSourceIndex(
         bundleRoot,
-        (parsedBundle.include ?? []).filter((p): p is string => typeof p === "string"),
+        (cliOutput.include ?? []).filter((p): p is string => typeof p === "string"),
       )
     : {
         resourceSourceMap: new Map<string, string>(),
         yamlLocationMaps: new Map<string, YamlLocationMap>(),
         taskPositions: new Map<string, Map<string, number>>(),
+        sourceDocuments: [],
       };
   const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
+
+  // A fully resolved real target has workspace paths; read the local files instead.
+  const parsedBundle = bundleRoot
+    ? localizeWorkspacePaths(cliOutput, sourceIndex.sourceDocuments, (group, key) => {
+        const file = resourceSourceMap.get(`${group}.${key}`);
+        return file ? dirname(file) : bundleRoot;
+      })
+    : cliOutput;
+
+  const resourceNodes = extractResourceNodes(parsedBundle);
 
   // Variable nodes from bundle definition (always, when bundleRoot provided)
   if (bundleRoot) {

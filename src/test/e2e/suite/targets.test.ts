@@ -20,9 +20,14 @@ interface GraphData {
   inspectedTarget: string;
   inspectorIssues: Array<{ kind: string; title: string }>;
   parsedBundle: { resources?: { jobs?: Record<string, { name?: string }> } };
+  graph: { nodes: Array<{ nodeType: string; taskData?: { fileReferences: Array<{ exists: boolean }> } }> };
 }
 
 const jobName = (data: GraphData | undefined) => data?.parsedBundle.resources?.jobs?.nightly?.name;
+
+/** Whether the graph found the task's notebook on disk. */
+const notebookFound = (data: GraphData | undefined) =>
+  data?.graph.nodes.some((node) => node.taskData?.fileReferences.some((ref) => ref.exists)) ?? false;
 
 function databricksCliAvailable(): boolean {
   try {
@@ -86,7 +91,9 @@ export function targetsSuite() {
   describe("picking a target in the graph (needs a real Databricks CLI)", function () {
     let root: string;
     let jobFile: string;
+    let notebook: string;
     let original: string;
+    let originalNotebook: string;
 
     const noDatabricksFolder = () =>
       assert.equal(
@@ -102,6 +109,8 @@ export function targetsSuite() {
       root = folder;
       jobFile = path.join(root, "resources", "job.yml");
       original = await readFile(jobFile, "utf8");
+      notebook = path.join(root, "src", "load.py");
+      originalNotebook = await readFile(notebook, "utf8");
 
       await waitFor(
         () => problemsWidgets().includes("run_date"),
@@ -115,6 +124,7 @@ export function targetsSuite() {
 
     after(async function () {
       if (original !== undefined) await writeFile(jobFile, original);
+      if (originalNotebook !== undefined) await writeFile(notebook, originalNotebook);
       await setProfile(undefined);
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
@@ -160,8 +170,38 @@ export function targetsSuite() {
       assert.equal(data?.inspectedTargetMode, "target");
       assert.equal(data?.inspectedTarget, "dev");
       assert.equal(jobName(data), "targets-e2e-nightly");
+      // The CLI gives a workspace path; the inspector reads the local notebook instead,
+      // so "no warning" below means checked, not skipped.
+      assert.ok(notebookFound(data), "the graph should find the local notebook");
+      assert.deepEqual(graphWidgets(data), [], "dev passes run_date");
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
+    });
+
+    it("a notebook saved while a target is shown is checked in the graph (needs a login)", async function () {
+      if (!profile) this.skip();
+      const document = await vscode.workspace.openTextDocument(notebook);
+      const editor = await vscode.window.showTextDocument(document);
+      // A widget nobody passes: the preview and dev both warn about it.
+      await editor.edit((edit) =>
+        edit.insert(document.positionAt(document.getText().length), 'region = dbutils.widgets.get("region")\n'),
+      );
+      await document.save();
+
+      await waitFor(
+        async () => graphWidgets(await graphData()).includes("region"),
+        "the graph to check the saved notebook",
+      );
+      const data = await graphData();
+      assert.equal(data?.inspectedTargetMode, "target", "the graph stays on dev");
+      assert.deepEqual(graphWidgets(data), ["region"], "dev still passes run_date");
+      await waitFor(() => problemsWidgets().includes("region"), "the Problems panel to check it too");
+      assert.deepEqual(problemsWidgets(), ["region", "run_date"], "the Problems panel keeps the preview");
+      noDatabricksFolder();
+
+      // Put the notebook back for the next case.
+      await writeFile(notebook, originalNotebook);
+      await waitFor(() => !problemsWidgets().includes("region"), "the region warning to clear");
     });
 
     it("after a save, the Problems panel stays on the preview and the graph on the target (needs a login)", async function () {
