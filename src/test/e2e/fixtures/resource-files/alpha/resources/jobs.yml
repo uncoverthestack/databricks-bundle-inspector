@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    alpha_first:
+      name: alpha_first
+      tasks:
+        - task_key: first
+          notebook_task:
+            notebook_path: ../src/task.py
+    alpha_second:
+      name: alpha_second
+      tasks:
+        - task_key: second
+          notebook_task:
+            notebook_path: ../src/task.py
+variables:
+  label:
+    default: alpha

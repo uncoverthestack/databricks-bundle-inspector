@@ -34,10 +34,32 @@ describe("jobKeyAtLine", () => {
     expect(jobKeyAtLine("resources:\n  pipelines:\n    bronze: {}\n", 1)).toBeUndefined();
     expect(jobKeyAtLine("variables:\n  x: 1\n", 0)).toBeUndefined();
     expect(jobKeyAtLine("resources: [\n", 0)).toBeUndefined();
+    expect(jobKeyAtLine("resources:\n  jobs:\n    ingest:\n      name: [broken\n", 3)).toBeUndefined();
   });
 
   test("reads Windows line endings the same way", () => {
     expect(jobKeyAtLine(RESOURCE_FILE.replace(/\n/g, "\r\n"), 9)).toBe("report");
+  });
+
+  test.each(["\n", "\r\n"])("falls back to the first job outside job definitions (%j)", (eol) => {
+    const text = [
+      "resources:",
+      "  jobs:",
+      "    ingest:",
+      "      name: ingest",
+      "    report:",
+      "      name: report",
+      "  pipelines:",
+      "    bronze:",
+      "      name: bronze",
+      "variables:",
+      "  environment:",
+      "    default: dev",
+      "",
+    ].join(eol);
+    expect(jobKeyAtLine(text, 5)).toBe("report");
+    expect(jobKeyAtLine(text, 8)).toBe("ingest");
+    expect(jobKeyAtLine(text, 11)).toBe("ingest");
   });
 });
 

@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   RESTRICTED_EXECUTION_VARIABLE,
+  BUNDLE_ROOT_VARIABLE,
+  bundleCliEnv,
   explainCodeNotRun,
   restrictedCliEnv,
 } from "../../../databricksCli/restrictedExecution.js";
@@ -36,6 +38,23 @@ describe("restrictedCliEnv", () => {
 
   test("cannot be switched off from outside", () => {
     expect(restrictedCliEnv({ [RESTRICTED_EXECUTION_VARIABLE]: "" })[RESTRICTED_EXECUTION_VARIABLE]).toBe("1");
+  });
+});
+
+describe("bundleCliEnv", () => {
+  test("selects the requested bundle even when the environment points at another root", () => {
+    const base = {
+      PATH: "/bin",
+      [BUNDLE_ROOT_VARIABLE]: "/another/bundle",
+      BUNDLE_ROOT: "/legacy/bundle",
+    };
+    const selected = path.resolve("nested", "bundle");
+    const env = bundleCliEnv(selected, base);
+    expect(env[BUNDLE_ROOT_VARIABLE]).toBe(selected);
+    expect(env.BUNDLE_ROOT).toBe(selected);
+    expect(env.PATH).toBe(base.PATH);
+    expect(env[RESTRICTED_EXECUTION_VARIABLE]).toBe("1");
+    expect(base[BUNDLE_ROOT_VARIABLE]).toBe("/another/bundle");
   });
 });
 

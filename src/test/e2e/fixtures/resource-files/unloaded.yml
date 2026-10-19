@@ -1,0 +1,4 @@
+resources:
+  jobs:
+    unloaded:
+      name: not_loaded_by_any_bundle
