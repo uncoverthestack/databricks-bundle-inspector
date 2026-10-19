@@ -32,6 +32,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   },
   inspect_bundle: {
     trigger: oneOf("command", "issues_command", "target_switch", "status_bar"),
+    from_resource_file: bool,
     outcome: oneOf(
       "ok",
       "ok_with_errors",

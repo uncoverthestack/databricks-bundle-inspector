@@ -6,3 +6,9 @@ resources:
         - task_key: run
           notebook_task:
             notebook_path: ../src/notebook.py
+    second_job:
+      name: second_job
+      tasks:
+        - task_key: run_again
+          notebook_task:
+            notebook_path: ../src/notebook.py

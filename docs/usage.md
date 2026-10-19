@@ -26,10 +26,10 @@ A folder with many bundles gets its first 10 checked on open (the ones closest t
 
 To see the graph:
 
-1. Open the bundle file in the editor.
+1. Open the bundle file, or a resource file it loads through `include` (for example `resources/etl_job.yml`).
 2. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
 
-The graph opens in a new editor panel. It refreshes automatically when you save the bundle file or related configurations.
+The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save the bundle file or related configurations.
 
 ## Targets
 
@@ -56,7 +56,7 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 
 | Command ID | Title | When available |
 | --- | --- | --- |
-| `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
+| `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is `databricks.yml` or `databricks.yaml`, or a file the bundle's `include` loads |
 | `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
 | `databricksBundleInspector.chooseProfile` | Choose Databricks Login Profile | Command Palette; lists the profiles in `~/.databrickscfg` and saves the one used when you pick a target |
 

@@ -2538,6 +2538,7 @@ export default function App({
   profileChoice,
   onChooseProfile,
   focusIssuesNonce,
+  initialJobKey,
   onSelectTarget,
   onOpenFile,
   onCopyReviewSummary,
@@ -2561,8 +2562,8 @@ export default function App({
   const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
 
   const selectedJobKey = useMemo(
-    () => resolveSelectedJobKey(jobKeys, userSelectedJobKey),
-    [jobKeys, userSelectedJobKey],
+    () => resolveSelectedJobKey(jobKeys, userSelectedJobKey, initialJobKey),
+    [jobKeys, userSelectedJobKey, initialJobKey],
   );
 
   const targetOptions = useMemo(

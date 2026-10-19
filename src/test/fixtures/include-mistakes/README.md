@@ -7,3 +7,5 @@ loads only `resources/top.job.yml`:
 - `resources/legacy.job.yaml`: `.yaml`, which `resources/*.yml` does not match.
 - `resource/*.yml`: a misspelled folder that matches nothing.
 - `paused/job.yml`: left out on purpose and named in a comment, so it is not reported.
+
+`resources/top.job.yml` defines two jobs, so opening the graph from it can be checked to land on the job under the cursor.

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse } from "yaml";
 
-const BUNDLE_FILE_NAMES = ["databricks.yml", "databricks.yaml"];
+export const BUNDLE_FILE_NAMES = ["databricks.yml", "databricks.yaml"];
 
 // The scan for resource files is a hint, so it gives up on large folders instead of
 // slowing down every inspection.

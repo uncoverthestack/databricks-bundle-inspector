@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { readFile } from "node:fs/promises";
 import path from "path";
+import { existsSync } from "node:fs";
+import { BUNDLE_FILE_NAMES } from "../bundle/includeFiles.js";
 import { validateBundle, extractBundleGraph } from "../bundle/validateBundle.js";
 import type { BundleDiagnostic } from "../bundle/validateBundle.js";
 import { enrichGraphWithFileContent } from "../bundle/graph/enrichGraph.js";
@@ -103,6 +105,16 @@ export type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 // once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
 const diagnosticFilesByBundle = new Map<string, Set<string>>();
 
+// The files each bundle's last successful check loaded, from the CLI's own list: the
+// bundle file and every file `include` selected. Not VS Code's file search, which follows
+// other glob rules and files.exclude.
+const loadedFilesByBundle = new Map<string, Set<string>>();
+
+/** What {@link loadedFilesByBundle} holds, for finding the bundle of an open file. */
+export function bundleLoadedFiles(): ReadonlyMap<string, ReadonlySet<string>> {
+  return loadedFilesByBundle;
+}
+
 // Issues with no file to point at (an unresolved variable, a CLI error about the bundle
 // as a whole). They cannot go in the Problems panel and show only in the graph.
 const graphOnlyByBundle = new Map<string, { problems: number; notes: number }>();
@@ -147,6 +159,7 @@ export function forgetBundleDiagnostics(
   }
   diagnosticFilesByBundle.delete(bundleRoot);
   graphOnlyByBundle.delete(bundleRoot);
+  loadedFilesByBundle.delete(bundleRoot);
   forgetBundleFixes(bundleRoot);
 }
 
@@ -199,9 +212,14 @@ export async function updateBundleDiagnostics(
 ): Promise<BundleGraph | undefined> {
   // Update the include map with CLI-resolved paths
   if (result.ok) {
+    const loaded = new Set<string>();
     for (const included of result.data.include ?? []) {
       fileToBundleRoot.set(path.resolve(bundleRoot, included), bundleRoot);
+      loaded.add(path.resolve(bundleRoot, included));
     }
+    const bundleFile = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find((file) => existsSync(file));
+    if (bundleFile) loaded.add(bundleFile);
+    loadedFilesByBundle.set(bundleRoot, loaded);
   }
 
   // Collect files previously tracked for this bundle so we can clear stale ones

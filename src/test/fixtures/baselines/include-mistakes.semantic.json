@@ -2,6 +2,39 @@
   "bundle": "include-mistakes",
   "jobs": [
     {
+      "key": "second_job",
+      "name": "second_job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "run_again",
+          "type": "Notebook",
+          "source": "../src/notebook.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/notebook.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 3
+      }
+    },
+    {
       "key": "top_job",
       "name": "top_job",
       "trigger": "Not specified",
