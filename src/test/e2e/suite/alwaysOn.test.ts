@@ -161,7 +161,7 @@ export function alwaysOnSuite() {
         assert.equal(shown.view?.text, "$(pass) Bundle: no problems · 1 task");
         assert.equal(
           shown.view?.tooltip,
-          'Databricks Bundle Inspector checked "marketing": 1 job, 1 task and 1 file. No problems found. Click to open the graph.',
+          "Checked 1 job, 1 task and 1 file.",
         );
         assert.equal(shown.view?.tooltipList, undefined);
       } finally {

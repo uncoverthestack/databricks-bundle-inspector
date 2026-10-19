@@ -198,12 +198,19 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     shownStatusBar = view;
     if (view.tooltipList) {
       const tooltip = new vscode.MarkdownString();
-      tooltip.appendText(view.tooltip);
-      tooltip.appendMarkdown("\n\n");
+      if (view.tooltip) {
+        tooltip.appendText(view.tooltip);
+        tooltip.appendMarkdown("\n\n");
+      }
       for (const line of view.tooltipList) {
         tooltip.appendMarkdown("- ");
         tooltip.appendText(line);
         tooltip.appendMarkdown("\n");
+      }
+      if (view.tooltipMore) {
+        // The picker lists every bundle with its result, so the rest are one click away.
+        tooltip.isTrusted = { enabledCommands: [STATUS_BAR_COMMAND] };
+        tooltip.appendMarkdown(`\n[Show ${view.tooltipMore} more](command:${STATUS_BAR_COMMAND})`);
       }
       statusBarItem.tooltip = tooltip;
     } else {
