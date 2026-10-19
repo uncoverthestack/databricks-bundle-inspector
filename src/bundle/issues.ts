@@ -12,6 +12,7 @@ import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
+import { isRemotePath } from "./resources/task.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -29,6 +30,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "not_a_notebook",
   "file_is_a_notebook",
   "excluded_from_sync",
+  "path_not_checked",
   "include_matches_nothing",
   "resource_not_included",
   "widget_not_set",
@@ -77,6 +79,34 @@ export interface InspectorIssue {
   yamlPath?: string;
   fixHint?: string;
   fix?: IssueFix;
+}
+
+/**
+ * A local path the structural preview leaves unresolved because it uses a variable, so
+ * none of the checks that read the file ran. Remote paths are not local files.
+ */
+function usesVariable(rawPath: string): boolean {
+  return rawPath.includes("${") && !isRemotePath(rawPath);
+}
+
+/**
+ * Says a file was not checked, so that "not checked" never looks like "no problems".
+ * The variable's value can come from places the preview doesn't see (target, overrides,
+ * BUNDLE_VAR_, --var), so the inspector doesn't resolve it itself.
+ */
+function pathNotCheckedIssue(
+  rawPath: string,
+  targetName: string | null | undefined,
+): Pick<InspectorIssue, "severity" | "kind" | "title" | "fixHint"> {
+  return {
+    severity: "info",
+    kind: "path_not_checked",
+    title: targetName
+      ? `Not checked: "${rawPath}" still uses a variable for target "${targetName}", so the file isn't known.`
+      : `Not checked: "${rawPath}" uses a variable, so the file is only known once a target is resolved. Pick a target in the graph to check it.`,
+    fixHint:
+      "The structural preview leaves variables in paths unresolved, so the missing file, notebook and code checks don't run on this file.",
+  };
 }
 
 function replacementFix(oldText: string, newText: string): IssueFix {
@@ -493,6 +523,25 @@ export function buildInspectorIssues(
         });
       }
 
+      if (usesVariable(ref.path) && ref.source !== "GIT" && !parentJobHasGitSource(graph, task)) {
+        const id = `path-not-checked:${task.id}:${ref.yamlPath}`;
+        if (!issues.some((issue) => issue.id === id)) {
+          issues.push({
+            id,
+            ...pathNotCheckedIssue(ref.path, targetName),
+            taskId: task.id,
+            taskName: task.displayName,
+            yamlPath: ref.yamlPath,
+            ...issueLocation(
+              ref.sourceFile || sourceFileForTask(task),
+              ref.sourceLine || undefined,
+              ref.sourceColumn,
+            ),
+          });
+        }
+        continue;
+      }
+
       // The CLI does not check task paths in a job with a git_source.
       if (ref.notebookProblem && !parentJobHasGitSource(graph, task)) {
         issues.push({
@@ -611,6 +660,16 @@ export function buildInspectorIssues(
 
   for (const pipeline of graph.nodes) {
     for (const ref of pipeline.pipelineLibraries ?? []) {
+      if (!ref.checked && usesVariable(ref.path)) {
+        issues.push({
+          id: `path-not-checked:${pipeline.id}:${ref.yamlPath}`,
+          ...pathNotCheckedIssue(ref.path, targetName),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
       if (ref.checked && ref.notebookProblem) {
         issues.push({
           id: `notebook-path:${pipeline.id}:${ref.yamlPath}`,

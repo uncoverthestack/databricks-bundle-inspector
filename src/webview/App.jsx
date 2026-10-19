@@ -59,7 +59,12 @@ function hasTemplate(path) {
 
 function getFileStatus(ref) {
   if (hasTemplate(ref.path)) {
-    return { key: "template", label: "TEMPLATE", color: "#fbbf24" };
+    return {
+      key: "template",
+      label: "TEMPLATE",
+      color: "#fbbf24",
+      title: "Not checked: this path uses a variable, so the file is only known once a target is resolved. Pick a target to check it.",
+    };
   }
   if (isRemotePath(ref.path)) {
     return { key: "remote", label: "REMOTE", color: "#60a5fa" };
@@ -133,6 +138,7 @@ function issueKindLabel(kind) {
       task_value_not_upstream: "Task value",
       task_value_key_not_set: "Task value",
       excluded_from_sync: "Not deployed",
+      path_not_checked: "Not checked",
       include_matches_nothing: "Include pattern",
       resource_not_included: "Not included",
     }[kind] ?? "Issue"
@@ -354,6 +360,7 @@ function buildIssueItems(
             task_value_not_upstream: "Task Values",
             task_value_key_not_set: "Task Values",
             excluded_from_sync: "Files Not Deployed",
+            path_not_checked: "Paths Not Checked",
             include_matches_nothing: "Include Patterns",
             resource_not_included: "Resource Files Not Included",
           }[issue.kind] ?? "Issues",
@@ -1547,7 +1554,10 @@ function RefItem({
           )}
         </span>
       </div>
-      <span className="ml-3 shrink-0 text-[10px] font-semibold tracking-widest text-stone-500">
+      <span
+        title={line ? undefined : status?.title}
+        className="ml-3 shrink-0 text-[10px] font-semibold tracking-widest text-stone-500"
+      >
         {line ? `L${line}` : (status?.label ?? edgeKind)}
       </span>
     </div>
