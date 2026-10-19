@@ -1,5 +1,6 @@
 import { AlertTriangle, X } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
+import { severityMeta } from "../lib/issueSeverity";
 
 export default function HeaderChipPanel({ title, items, onClose, onSelectItem }) {
   const groups = new Map();
@@ -60,13 +61,8 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                     {item.severity ? (
                       <AlertTriangle
                         size={13}
-                        className={
-                          item.severity === "error"
-                            ? "mt-0.5 shrink-0 text-red-400"
-                            : item.severity === "info"
-                              ? "mt-0.5 shrink-0 text-sky-400"
-                              : "mt-0.5 shrink-0 text-yellow-400"
-                        }
+                        aria-label={severityMeta(item.severity).label}
+                        className={`mt-0.5 shrink-0 ${severityMeta(item.severity).colorClass}`}
                       />
                     ) : (
                       <span
@@ -84,7 +80,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                         </span>
                       )}
                       {item.fixHint && (
-                        <span className="mt-1 block text-[11px] leading-snug text-stone-600">
+                        <span className="mt-1 block text-[11px] leading-snug text-stone-300">
                           {item.fixHint}
                         </span>
                       )}

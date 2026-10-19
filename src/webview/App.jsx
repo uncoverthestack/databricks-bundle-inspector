@@ -19,6 +19,7 @@ import {
 } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
+import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import "@xyflow/react/dist/style.css";
 
 function isPipelineTask(task) {
@@ -161,7 +162,8 @@ function summarizeTaskIssues(
       detail:
         issue.detail && issue.title && issue.detail !== issue.title
           ? issue.title
-          : issue.fixHint,
+          : undefined,
+      fixHint: issue.fixHint,
       file: issue.file,
       line: issue.line,
       column: issue.column,
@@ -1556,18 +1558,27 @@ function RefSection({ title, items, onOpenFile }) {
   );
 }
 
+const ISSUE_SUMMARY_LIMIT = 4;
+
 function IssueSummarySection({ items, onOpenFile }) {
+  const itemsKey = items?.map((item) => item.id).join("|") ?? "";
+  const [expandedKey, setExpandedKey] = useState(null);
+  const expanded = expandedKey === itemsKey;
+
   if (!items?.length) return null;
-  const visibleItems = items.slice(0, 4);
-  const extraCount = items.length - visibleItems.length;
+  const ordered = orderBySeverity(items);
+  const visibleItems = expanded ? ordered : ordered.slice(0, ISSUE_SUMMARY_LIMIT);
+  const hiddenCount = ordered.length - ISSUE_SUMMARY_LIMIT;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-300/80">
-        Issue Summary
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+        Issue Summary · {items.length}
       </div>
-      <div className="overflow-hidden rounded-xl border border-red-500/30 bg-red-500/5">
+      <div className="overflow-hidden rounded-xl border border-stone-800">
         {visibleItems.map((item) => {
           const clickable = Boolean(item.file && onOpenFile);
+          const severity = severityMeta(item.severity);
+          const Icon = item.severity === "info" ? Info : AlertTriangle;
           return (
             <div
               key={item.id}
@@ -1586,30 +1597,38 @@ function IssueSummarySection({ items, onOpenFile }) {
                   : undefined
               }
               className={[
-                "flex items-start gap-2 border-b border-red-500/10 px-3 py-2.5 last:border-0",
+                "flex items-start gap-2 border-b border-stone-800 px-3 py-2.5 last:border-0",
                 clickable
-                  ? "cursor-pointer outline-none hover:bg-red-500/10 focus:bg-red-500/10 focus:ring-1 focus:ring-red-400/30"
+                  ? "cursor-pointer outline-none hover:bg-stone-900 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
                   : "",
               ].join(" ")}
             >
-              <AlertTriangle
+              <Icon
                 size={13}
-                className="mt-0.5 shrink-0 text-red-300"
+                className={`mt-0.5 shrink-0 ${severity.colorClass}`}
               />
               <div className="min-w-0 flex-1">
-                <div title={item.title} className="line-clamp-2 text-xs font-medium text-red-200">
+                <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${severity.colorClass}`}>
+                  {severity.label}
+                </div>
+                <div title={item.title} className="mt-0.5 line-clamp-2 text-xs font-medium text-stone-100">
                   {item.title}
                 </div>
                 {item.detail && (
-                  <div title={item.detail} className="mt-0.5 line-clamp-2 text-[11px] text-red-200/60">
+                  <div title={item.detail} className="mt-0.5 line-clamp-2 text-[11px] text-stone-400">
                     {item.detail}
+                  </div>
+                )}
+                {item.fixHint && (
+                  <div className="mt-1 text-[11px] leading-snug text-stone-300">
+                    {item.fixHint}
                   </div>
                 )}
               </div>
               {item.location && (
                 <span
                   title={item.location}
-                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-red-200/70"
+                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-stone-400"
                 >
                   {item.location}
                   {clickable && <span className="ml-1">↗</span>}
@@ -1618,10 +1637,14 @@ function IssueSummarySection({ items, onOpenFile }) {
             </div>
           );
         })}
-        {extraCount > 0 && (
-          <div className="px-3 py-2 text-[11px] text-red-200/60">
-            +{extraCount} more issue{extraCount === 1 ? "" : "s"}
-          </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpandedKey(expanded ? null : itemsKey)}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-blue-300 outline-none hover:bg-stone-900 hover:text-blue-200 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
+          >
+            {expanded ? "Show fewer" : `Show all ${items.length} issues`}
+          </button>
         )}
       </div>
     </section>
@@ -1988,7 +2011,6 @@ function DetailPanel({
   parsedBundle,
   targetName,
   inspectorIssues,
-  graphMode,
   onSelectTask,
   onClose,
   onOpenFile,
@@ -2265,12 +2287,10 @@ function DetailPanel({
 
       {/* Body */}
       <div className="flex-1 space-y-5 overflow-auto p-5">
-        {graphMode === "issues" && (
-          <IssueSummarySection
-            items={issueSummaryItems}
-            onOpenFile={onOpenFile}
-          />
-        )}
+        <IssueSummarySection
+          items={issueSummaryItems}
+          onOpenFile={onOpenFile}
+        />
 
         {/* Task Configuration */}
         <section>
@@ -2971,7 +2991,6 @@ export default function App({
             parsedBundle={effectiveResolutionBundle}
             targetName={effectiveTargetName}
             inspectorIssues={inspectorIssues}
-            graphMode={graphMode}
             onSelectTask={selectTaskNode}
             onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
