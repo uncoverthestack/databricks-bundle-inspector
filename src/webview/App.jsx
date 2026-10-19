@@ -2795,6 +2795,8 @@ export default function App({
   };
 
   function selectTaskNode(nodeId) {
+    // The Issues list sits above the task details, so picking a task closes it.
+    setActiveHeaderPanel(null);
     setSelectedNodeId(nodeId);
     setFocusRequest({ nodeId, nonce: Date.now() });
   }

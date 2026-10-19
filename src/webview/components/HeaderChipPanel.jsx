@@ -1,6 +1,12 @@
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, Info, X } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
 import { severityMeta } from "../lib/issueSeverity";
+
+/** Notes get the info icon, as in the task panel; errors and warnings the triangle. */
+function SeverityIcon({ severity, ...props }) {
+  const Icon = severity === "info" ? Info : AlertTriangle;
+  return <Icon size={13} {...props} />;
+}
 
 export default function HeaderChipPanel({ title, items, onClose, onSelectItem }) {
   const groups = new Map();
@@ -59,8 +65,8 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                     ].join(" ")}
                   >
                     {item.severity ? (
-                      <AlertTriangle
-                        size={13}
+                      <SeverityIcon
+                        severity={item.severity}
                         aria-label={severityMeta(item.severity).label}
                         className={`mt-0.5 shrink-0 ${severityMeta(item.severity).colorClass}`}
                       />
