@@ -944,6 +944,22 @@ function addTaskReferenceGraph(
 interface SourceIndex {
   resourceSourceMap: Map<string, string>;
   yamlLocationMaps: Map<string, YamlLocationMap>;
+  /**
+   * For each job, its tasks' positions in the file that defines it, by task_key.
+   * In a real target the CLI sorts tasks by key, so a task's position in the CLI
+   * output is not its position in the file.
+   */
+  taskPositions: Map<string, Map<string, number>>;
+}
+
+/** Positions in a `tasks:` list by key. A repeated key keeps its first position, which is where the CLI merges the copies. */
+function positionsByTaskKey(tasks: unknown[]): Map<string, number> {
+  const positions = new Map<string, number>();
+  tasks.forEach((task, index) => {
+    const key = toRecord(task).task_key;
+    if (typeof key === "string" && !positions.has(key)) positions.set(key, index);
+  });
+  return positions;
 }
 
 async function buildSourceIndex(
@@ -952,6 +968,7 @@ async function buildSourceIndex(
 ): Promise<SourceIndex> {
   const resourceSourceMap = new Map<string, string>();
   const yamlLocationMaps = new Map<string, YamlLocationMap>();
+  const taskPositions = new Map<string, Map<string, number>>();
 
   async function parseResourceFile(filePath: string): Promise<void> {
     try {
@@ -960,9 +977,12 @@ async function buildSourceIndex(
       const yaml = parseYaml(content) as Record<string, unknown> | null;
       const resources = (yaml?.resources ?? {}) as Record<string, Record<string, unknown>>;
       for (const [resourceGroup, resourceMap] of Object.entries(resources)) {
-        for (const resourceKey of Object.keys(resourceMap ?? {})) {
+        for (const [resourceKey, resource] of Object.entries(resourceMap ?? {})) {
           const key = `${resourceGroup}.${resourceKey}`;
-          if (!resourceSourceMap.has(key)) resourceSourceMap.set(key, filePath);
+          if (resourceSourceMap.has(key)) continue;
+          resourceSourceMap.set(key, filePath);
+          const tasks = toRecord(resource).tasks;
+          if (Array.isArray(tasks)) taskPositions.set(key, positionsByTaskKey(tasks));
         }
       }
     } catch {
@@ -993,7 +1013,7 @@ async function buildSourceIndex(
     await parseResourceFile(p);
   }
 
-  return { resourceSourceMap, yamlLocationMaps };
+  return { resourceSourceMap, yamlLocationMaps, taskPositions };
 }
 
 /**
@@ -1059,8 +1079,12 @@ export async function extractBundleGraph(
         bundleRoot,
         (parsedBundle.include ?? []).filter((p): p is string => typeof p === "string"),
       )
-    : { resourceSourceMap: new Map<string, string>(), yamlLocationMaps: new Map<string, YamlLocationMap>() };
-  const { resourceSourceMap, yamlLocationMaps } = sourceIndex;
+    : {
+        resourceSourceMap: new Map<string, string>(),
+        yamlLocationMaps: new Map<string, YamlLocationMap>(),
+        taskPositions: new Map<string, Map<string, number>>(),
+      };
+  const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
 
   // Variable nodes from bundle definition (always, when bundleRoot provided)
   if (bundleRoot) {
@@ -1163,13 +1187,22 @@ export async function extractBundleGraph(
         `${resourceNode.resourceGroup}.${resourceNode.resourceKey}`,
       ) ?? "";
       const sourceFileDir = sourceFilePath ? dirname(sourceFilePath) : "";
-      const taskYamlPrefix = `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.tasks[${taskIndex}]`;
+      // Found by key, not by taskIndex: a real target sorts the tasks. A task that is not
+      // in the job's file (for example one a target adds) gets no location there.
+      const sourceTaskIndex = taskPositions
+        .get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`)
+        ?.get(taskKey);
+      const taskYamlPrefix =
+        sourceTaskIndex === undefined
+          ? undefined
+          : `resources.${resourceNode.resourceGroup}.${resourceNode.resourceKey}.tasks[${sourceTaskIndex}]`;
       const sourceLocations = sourceFilePath
         ? yamlLocationMaps.get(sourceFilePath)
         : undefined;
       const resolveSourceLocation = (yamlPath: string) => {
         const taskPrefix = `tasks.${taskKey}`;
         if (yamlPath.startsWith(taskPrefix)) {
+          if (!taskYamlPrefix) return undefined;
           const suffix = yamlPath.slice(taskPrefix.length);
           return sourceLocations?.get(`${taskYamlPrefix}${suffix}`);
         }
@@ -1249,7 +1282,7 @@ export async function extractBundleGraph(
     });
   });
 
-  addConfigSecretReferences(parsedBundle, resourceSourceMap, yamlLocationMaps, nodeMap, addNode, addEdge);
+  addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
 
   return { nodes: [...nodeMap.values()], edges };
 }
@@ -1272,8 +1305,7 @@ export function bundleSecretScopes(nodes: Iterable<BundleGraphNode>): BundleSecr
  */
 function addConfigSecretReferences(
   parsedBundle: ParsedBundleConfig,
-  resourceSourceMap: Map<string, string>,
-  yamlLocationMaps: Map<string, YamlLocationMap>,
+  { resourceSourceMap, yamlLocationMaps, taskPositions }: SourceIndex,
   nodeMap: Map<string, BundleGraphNode>,
   addNode: (node: BundleGraphNode) => void,
   addEdge: (edge: BundleEdge) => void,
@@ -1287,12 +1319,13 @@ function addConfigSecretReferences(
     clusterPath: string,
     cluster: unknown,
     sourceIds: string[],
+    locate = true,
   ): void {
     const file = resourceSourceMap.get(`${group}.${key}`) ?? "";
     for (const ref of findClusterSecretReferences(cluster)) {
       const base = clusterPath ? `resources.${group}.${key}.${clusterPath}` : `resources.${group}.${key}`;
       const yamlPath = `${base}.${ref.path}`;
-      const location = yamlLocationMaps.get(file)?.get(yamlPath);
+      const location = locate ? yamlLocationMaps.get(file)?.get(yamlPath) : undefined;
       const match = matchSecretScope(ref.scope, scopes);
       addNode({
         id: match.nodeId,
@@ -1336,8 +1369,18 @@ function addConfigSecretReferences(
         .map(({ task, taskIndex }) => taskId(task, taskIndex));
       link("jobs", jobKey, `job_clusters[${index}].new_cluster`, jobCluster.new_cluster, users);
     });
+    // By key, as for task locations: a real target sorts the tasks.
+    const positions = taskPositions.get(`jobs.${jobKey}`);
     tasks.forEach((task, index) => {
-      link("jobs", jobKey, `tasks[${index}].new_cluster`, task.new_cluster, [taskId(task, index)]);
+      const sourceIndex = task.task_key === undefined ? undefined : positions?.get(task.task_key);
+      link(
+        "jobs",
+        jobKey,
+        `tasks[${sourceIndex ?? index}].new_cluster`,
+        task.new_cluster,
+        [taskId(task, index)],
+        sourceIndex !== undefined,
+      );
     });
   }
 
