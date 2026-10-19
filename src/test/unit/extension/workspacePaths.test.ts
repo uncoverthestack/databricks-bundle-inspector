@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
-import { localizeWorkspacePaths, type SourceDocument } from "../../../bundle/workspacePaths.js";
+import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../../../bundle/workspacePaths.js";
+import { buildInspectorIssues } from "../../../bundle/issues.js";
 
 // Shapes follow real `bundle validate -o json` output for a fully resolved target (CLI
 // 1.21.0, checked against a workspace): local paths become paths under
@@ -236,5 +237,91 @@ describe("extractBundleGraph reads real target paths through YAML merge keys", (
     const graph = await extractBundleGraph(output(job([notebookTask("t", `${FILES}/src/nb`)])), bundleRoot);
     const task = graph.nodes.find((node) => node.nodeType === "task");
     expect(task?.taskData?.fileReferences[0]).toMatchObject({ path: "./src/nb.py", exists: true });
+  });
+});
+
+// Shape from real `bundle validate -t dev -o json` output, CLI 1.21.0, logged in: when a
+// path fails the CLI's check, it stops and leaves every path relative to the bundle root,
+// with no workspace.file_path prefix.
+describe("localizeBundleRootPaths", () => {
+  const rootOutput = (resources: unknown) =>
+    ({ bundle: { name: "demo", target: "dev" }, ...(resources as object) }) as unknown as ParsedBundleConfig;
+
+  test("maps each field back to the value written in its YAML file", () => {
+    const written = {
+      resources: {
+        jobs: {
+          j: {
+            tasks: [
+              notebookTask("nb", "../src/etl"),
+              { task_key: "py", spark_python_task: { python_file: "../src/job.py" } },
+              { task_key: "loop", for_each_task: { task: notebookTask("inner", "../src/nb.py") } },
+            ],
+          },
+        },
+        pipelines: { p: { libraries: [{ notebook: { path: "../src/nb.py" } }, { glob: { include: "../src/dlt/**" } }] } },
+      },
+    };
+    const reported = rootOutput({
+      resources: {
+        jobs: {
+          j: {
+            tasks: [
+              notebookTask("nb", "src/etl"),
+              { task_key: "py", spark_python_task: { python_file: "src/job.py" } },
+              { task_key: "loop", for_each_task: { task: notebookTask("inner", "src/nb.py") } },
+            ],
+          },
+        },
+        pipelines: { p: { libraries: [{ notebook: { path: "src/nb.py" } }, { glob: { include: "src/dlt/**" } }] } },
+      },
+    });
+    const result = localizeBundleRootPaths(reported, writtenInResources(written), dirOf, bundleRoot) as any;
+    expect(result.resources.jobs.j.tasks.map((t: any) => t.notebook_task?.notebook_path ?? t.spark_python_task?.python_file ?? t.for_each_task.task.notebook_task.notebook_path)).toEqual(["../src/etl", "../src/job.py", "../src/nb.py"]);
+    expect(result.resources.pipelines.p.libraries[0].notebook.path).toBe("../src/nb.py");
+    expect(result.resources.pipelines.p.libraries[1].glob.include).toBe("../src/dlt/**");
+  });
+
+  test("reads a target override from databricks.yml, where it is written", () => {
+    const sources: SourceDocument[] = [
+      { file: path.join(resourcesDir, "job.yml"), doc: job([notebookTask("nb", "../src/nb.py")]) },
+      { file: path.join(bundleRoot, "databricks.yml"), doc: { targets: { dev: job([notebookTask("nb", "./src/other.py")]) } } },
+    ];
+    const result = localizeBundleRootPaths(rootOutput(job([notebookTask("nb", "src/other.py")])), sources, dirOf, bundleRoot);
+    expect(notebookPathOf(result)).toBe("../src/other.py");
+  });
+
+  test("leaves the output alone when it is already as written, as in the structural preview", () => {
+    const reported = rootOutput(job([notebookTask("nb", "../src/nb.py")]));
+    expect(localizeBundleRootPaths(reported, writtenInResources(job([notebookTask("nb", "../src/nb.py")])), dirOf, bundleRoot)).toBe(reported);
+  });
+
+  test("leaves a path alone when the two don't name the same file", () => {
+    // From a sync root above the bundle, or any other base: not the bundle root.
+    const reported = rootOutput(job([notebookTask("nb", "proj/src/nb.py")]));
+    expect(localizeBundleRootPaths(reported, writtenInResources(job([notebookTask("nb", "../src/nb.py")])), dirOf, bundleRoot)).toBe(reported);
+    const elsewhere = rootOutput(job([notebookTask("nb", "lib/nb.py")]));
+    expect(localizeBundleRootPaths(elsewhere, writtenInResources(job([notebookTask("nb", "../src/nb.py")])), dirOf, bundleRoot)).toBe(elsewhere);
+  });
+
+  test("fills in variables before comparing, and skips workspace and unresolved paths", () => {
+    const withVariable = { ...rootOutput(job([notebookTask("nb", "src/nb.py")])), variables: { dir: { value: "../src" } } } as unknown as ParsedBundleConfig;
+    expect(notebookPathOf(localizeBundleRootPaths(withVariable, writtenInResources(job([notebookTask("nb", "${var.dir}/nb.py")])), dirOf, bundleRoot))).toBe("../src/nb.py");
+    const workspace = rootOutput(job([notebookTask("nb", "/Workspace/Shared/nb")]));
+    expect(localizeBundleRootPaths(workspace, writtenInResources(job([notebookTask("nb", "/Workspace/Shared/nb")])), dirOf, bundleRoot)).toBe(workspace);
+    const unresolved = rootOutput(job([notebookTask("nb", "src/nb.py")]));
+    expect(localizeBundleRootPaths(unresolved, writtenInResources(job([notebookTask("nb", "${workspace.file_path}/src/nb.py")])), dirOf, bundleRoot)).toBe(unresolved);
+  });
+
+  test("end to end: a notebook path without its extension keeps its hint, at the right file", async () => {
+    await writeFile(path.join(resourcesDir, "job.yml"), "resources:\n  jobs:\n    j:\n      tasks:\n        - task_key: nb\n          notebook_task:\n            notebook_path: ../src/etl\n");
+    await touch("src/etl.py", "# Databricks notebook source\n");
+    await writeFile(path.join(bundleRoot, "databricks.yml"), "bundle:\n  name: demo\ninclude:\n  - resources/*.yml\n");
+    const reported = { ...rootOutput(job([notebookTask("nb", "src/etl")])), include: ["resources/job.yml"] } as unknown as ParsedBundleConfig;
+    const graph = await extractBundleGraph(reported, bundleRoot);
+    const issues = buildInspectorIssues(graph, reported, [], bundleRoot, "dev");
+    expect(issues.map((issue) => [issue.kind, issue.title])).toEqual([
+      ["notebook_missing_extension", 'Notebook "../src/etl" may not be found. Did you mean "../src/etl.py"?'],
+    ]);
   });
 });

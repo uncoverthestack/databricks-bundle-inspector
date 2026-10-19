@@ -89,4 +89,62 @@ describe(`a real target's workspace paths are read as local files (${cli})`, () 
     const yml = "bundle: {name: varpath}\nvariables:\n  nb_dir: {default: ./src}\ntargets:\n  dev:\n    default: true\n    variables: {nb_dir: ./other}\nresources:\n  jobs:\n    j:\n      tasks:\n        - task_key: t\n          notebook_task: {notebook_path: \"${var.nb_dir}/nb.py\"}\n";
     expect(await mappedNotebook(yml, { "src/nb.py": NOTEBOOK, "other/nb.py": NOTEBOOK })).toBe(path.join("other", "nb.py"));
   });
+
+  /**
+   * #187: when one path fails the CLI's check, it stops and leaves every path relative to
+   * the bundle root. Each must still be read from the folder it is written in.
+   */
+  (profile ? test : test.skip)("a path that fails the CLI's check is still diagnosed from its own folder", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-root-paths-"));
+    created.push(dir);
+    await mkdir(path.join(dir, "src"));
+    await mkdir(path.join(dir, "resources"));
+    await writeFile(path.join(dir, "src", "etl.py"), "# Databricks notebook source\nprint(1)\n");
+    await writeFile(path.join(dir, "src", "job.py"), "print(1)\n");
+    await writeFile(
+      path.join(dir, "databricks.yml"),
+      "bundle:\n  name: root-paths\ninclude:\n  - resources/*.yml\ntargets:\n  dev:\n    default: true\n",
+    );
+    await writeFile(
+      path.join(dir, "resources", "job.yml"),
+      [
+        "resources:",
+        "  jobs:",
+        "    nightly:",
+        "      tasks:",
+        "        - task_key: no_extension",
+        "          notebook_task:",
+        "            notebook_path: ../src/etl",
+        "        - task_key: missing",
+        "          notebook_task:",
+        "            notebook_path: ../src/nope.py",
+        "        - task_key: fine",
+        "          spark_python_task:",
+        "            python_file: ../src/job.py",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await validateBundle(dir, "dev", cli, profile);
+    if (!result.ok) throw new Error(result.error.details ?? result.error.error);
+    const reported = Object.fromEntries(
+      (result.data.resources?.jobs?.nightly?.tasks ?? []).map((task: any) => [
+        task.task_key,
+        task.notebook_task?.notebook_path ?? task.spark_python_task?.python_file,
+      ]),
+    );
+    // If this fails, the CLI stopped leaving paths relative to the bundle root and the rest proves less.
+    expect(reported).toEqual({ no_extension: "src/etl", missing: "src/nope.py", fine: "src/job.py" });
+
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(result.data, dir));
+    const resolved = graph.nodes
+      .filter((node) => node.nodeType === "task")
+      .map((node) => path.relative(dir, node.taskData!.fileReferences[0]!.resolvedPath!));
+    expect(resolved.sort()).toEqual(["src/etl", "src/job.py", "src/nope.py"]);
+    const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir, "dev")
+      .filter((issue) => issue.kind !== "cli_diagnostic")
+      .map((issue) => `${issue.taskName}: ${issue.kind}`)
+      .sort();
+    expect(issues).toEqual(["missing: missing_file", "no_extension: notebook_missing_extension"]);
+  });
 });
