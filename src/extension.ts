@@ -686,7 +686,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   function bundleMessageDataFromInspection(
     inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
     requestedTarget?: string,
-    options?: { focusIssues?: boolean; initialJobKey?: string | undefined },
+    options?: { focusIssues?: boolean; initialJobKey?: string | undefined; preserveView?: boolean },
   ): object | undefined {
     const { result } = inspection;
     if (!result.ok) return undefined;
@@ -709,6 +709,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       targetFallbackMessage: inspection.fallbackMessage ?? null,
       profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
+      preserveView: options?.preserveView === true,
       // The job a resource file defines, so the graph opens on it. A nonce, as the same job
       // may be asked for again after the user picked another.
       initialJob: options?.initialJobKey ? { key: options.initialJobKey, nonce: Date.now() } : null,
@@ -803,7 +804,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           activeRequestedTarget = undefined;
         }
         if (!activeRequestedTarget) {
-          const messageData = bundleMessageDataFromInspection(probeInspection);
+          const messageData = bundleMessageDataFromInspection(probeInspection, undefined, { preserveView: true });
           if (messageData) {
             postBundleData(messageData);
           }
@@ -819,6 +820,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const messageData = bundleMessageDataFromInspection(
         inspection,
         activeRequestedTarget,
+        { preserveView: true },
       );
       if (messageData) {
         postBundleData(messageData);
@@ -1069,7 +1071,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const bundleMessageData = bundleMessageDataFromInspection(
         inspection,
         requestedTarget,
-        { ...options, initialJobKey },
+        { ...options, initialJobKey, preserveView: options?.trigger === "target_switch" },
       );
       if (!bundleMessageData) return;
 

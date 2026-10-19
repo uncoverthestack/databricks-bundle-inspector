@@ -13,3 +13,7 @@ case where the file system ignores it, and deleting a nested bundle while its
 parent still loads the same resource file.
 
 Tests restore edited files. No Databricks login is needed.
+
+`npm run test:e2e:graph-refresh` also checks the rendered graph dropdown after
+opening Bundle Issues, repeated saves, and refreshing the structural preview.
+It uses Chromium's loopback debugging interface in the isolated test window.

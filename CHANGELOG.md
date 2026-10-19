@@ -25,6 +25,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Saving a file keeps the job you selected in the graph**, including after opening Bundle Issues. Refreshing used to reset that view and switch back to the job it first opened on.
 - **Inspecting a nested bundle uses that bundle.** When a nested bundle used `databricks.yaml` and its parent used `databricks.yml`, the CLI could load the parent instead. Every check now explicitly selects the bundle being inspected, including when an inherited environment variable points elsewhere.
 - **Inspect from a resource file chooses its first job when the cursor is outside the job definitions**, including a later variables or pipelines section. It used to choose the last job. Invalid YAML is no longer used to choose a job.
 - **A Databricks CLI warning shows once in the Problems panel**, not twice: after a successful check it was listed by the CLI, without a code, and again by the inspector.

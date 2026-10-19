@@ -1,0 +1,153 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import * as vscode from "vscode";
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const jobSelector = 'header select:not([aria-label="Target"])';
+
+async function waitFor(check: () => Promise<boolean>, label: string): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await sleep(100);
+  }
+  assert.fail(`Timed out waiting for ${label}`);
+}
+
+/** Minimal CDP client, used only inside the real VS Code test window. */
+class Browser {
+  private next = 0;
+  private pending = new Map<number, {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  constructor(private socket: WebSocket) {
+    socket.addEventListener("message", event => {
+      const data = JSON.parse(String(event.data));
+      const pending = this.pending.get(data.id);
+      if (!pending) return;
+      this.pending.delete(data.id);
+      clearTimeout(pending.timer);
+      if (data.error) pending.reject(new Error(JSON.stringify(data.error)));
+      else pending.resolve(data.result);
+    });
+  }
+  call(method: string, params: object = {}, sessionId?: string): Promise<any> {
+    const id = ++this.next;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP timed out: ${method}`));
+      }, 5000);
+      this.pending.set(id, { resolve, reject, timer });
+      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    });
+  }
+  close(): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Browser connection closed"));
+    }
+    this.pending.clear();
+    this.socket.close();
+  }
+}
+
+export function graphRefreshSuite() {
+  describe("rendered graph after refreshing", function () {
+    this.timeout(120_000);
+
+    it("keeps a user-selected job through saves after opening Issues and refreshing the preview", async function () {
+      assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const config = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
+      await vscode.window.showTextDocument(config);
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, "alpha/resources/jobs.yml")));
+      const original = document.getText();
+      const line = original.split(/\r?\n/).findIndex(text => text.includes("name: alpha_second"));
+      const editor = await vscode.window.showTextDocument(document);
+      editor.selection = new vscode.Selection(line, 0, line, 0);
+      await vscode.commands.executeCommand("databricksBundleInspector.openBundleIssues");
+
+      const info = await (await fetch(`http://127.0.0.1:${process.env.E2E_CDP_PORT}/json/version`)).json() as { webSocketDebuggerUrl: string };
+      const socket = new WebSocket(info.webSocketDebuggerUrl);
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", () => reject(new Error("Cannot connect to VS Code's browser")), { once: true });
+      });
+      const browser = new Browser(socket);
+      let graph: { sessionId: string; contextId: number } | undefined;
+      const select = `document.querySelector(${JSON.stringify(jobSelector)})`;
+      const evaluate = async (expression: string, sessionId: string, contextId: number) => {
+        const result = await browser.call("Runtime.evaluate", { expression, contextId, returnByValue: true }, sessionId);
+        assert.ok(!result.exceptionDetails, "graph script must execute");
+        return result.result?.value;
+      };
+      try {
+        await waitFor(async () => {
+          const { targetInfos } = await browser.call("Target.getTargets");
+          for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {
+            const { sessionId } = await browser.call("Target.attachToTarget", { targetId: target.targetId, flatten: true });
+            const { frameTree } = await browser.call("Page.getFrameTree", {}, sessionId);
+            const frames: any[] = [];
+            const visit = (node: any) => { frames.push(node.frame); for (const child of node.childFrames ?? []) visit(child); };
+            visit(frameTree);
+            for (const frame of frames) {
+              const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-graph-test" }, sessionId);
+              if (await evaluate(`${select}?.value`, sessionId, executionContextId) === "alpha_second") {
+                graph = { sessionId, contextId: executionContextId };
+                return true;
+              }
+            }
+            await browser.call("Target.detachFromTarget", { sessionId });
+          }
+          return false;
+        }, "the rendered job dropdown");
+        assert.ok(graph);
+        const issuesOpen = `Boolean(document.querySelector('button[aria-label="Close Issues in This Job"]'))`;
+        assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true);
+        await evaluate(`(()=>{const s=${select};s.value='alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`, graph.sessionId, graph.contextId);
+        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "alpha_first", "the user's job selection");
+        // Choosing a job closes the panel. Reopen it through the actual Issues button.
+        await evaluate(`[...document.querySelectorAll('header button')].find(button => button.textContent.trim().startsWith('Issues'))?.click()`, graph.sessionId, graph.contextId);
+        await waitFor(async () => await evaluate(issuesOpen, graph!.sessionId, graph!.contextId) === true, "the reopened Issues panel");
+
+        for (let round = 0; round < 3; round++) {
+          const name = `alpha_first_refresh_${round}`;
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), original.replace("name: alpha_first", `name: ${name}`));
+          await vscode.workspace.applyEdit(edit);
+          await document.save();
+          await waitFor(async () => {
+            const data = await vscode.commands.executeCommand<any>("databricksBundleInspector.test.graphData");
+            return data?.parsedBundle?.resources?.jobs?.alpha_first?.name === name;
+          }, "the saved data reaching the graph");
+          // Let React commit the posted refresh before reading the actual dropdown.
+          await sleep(200);
+          assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "alpha_first", `selection after save ${round + 1}`);
+          assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true, "save keeps the Issues panel open");
+        }
+        await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", undefined);
+        await sleep(200);
+        assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "alpha_first", "selection after refreshing the structural preview");
+
+        const reopened = await vscode.window.showTextDocument(document);
+        reopened.selection = new vscode.Selection(line, 0, line, 0);
+        await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "alpha_second", "a fresh Inspect request selecting the job under the cursor");
+        const requested = await vscode.commands.executeCommand<any>("databricksBundleInspector.test.graphData");
+        assert.equal(requested.preserveView, false, "a new inspection is distinct from a refresh");
+        assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), false, "a fresh Inspect request returns to the normal view");
+      } finally {
+        browser.close();
+        const restore = new vscode.WorkspaceEdit();
+        restore.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), original);
+        await vscode.workspace.applyEdit(restore);
+        await document.save();
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+  });
+}

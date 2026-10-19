@@ -6,6 +6,7 @@ import { savedFileSuite } from "./savedFile.test.js";
 import { targetsSuite } from "./targets.test.js";
 import { issueCodesSuite } from "./issueCodes.test.js";
 import { resourceFilesSuite } from "./resourceFiles.test.js";
+import { graphRefreshSuite } from "./graphRefresh.test.js";
 
 /** Entry point VS Code calls from the extension host. */
 export function run(): Promise<void> {
@@ -15,6 +16,7 @@ export function run(): Promise<void> {
   if (suite === "includeMistakes") includeMistakesSuite();
   else if (suite === "issueCodes") issueCodesSuite();
   else if (suite === "resourceFiles") resourceFilesSuite();
+  else if (suite === "graphRefresh") graphRefreshSuite();
   else if (suite === "alwaysOn") alwaysOnSuite();
   else if (suite === "savedFile") savedFileSuite();
   else if (suite === "targets") targetsSuite();
