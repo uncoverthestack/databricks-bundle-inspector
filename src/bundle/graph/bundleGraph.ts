@@ -18,6 +18,7 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
+import { localizeWorkspacePaths } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
   matchSecretScope,
@@ -1054,7 +1055,7 @@ export function extractResourceNodes(parsedBundle: ParsedBundleConfig): Resource
  * from each task's local path and expression analysis.
  */
 export async function extractBundleGraph(
-  parsedBundle: ParsedBundleConfig,
+  cliOutput: ParsedBundleConfig,
   bundleRoot?: string,
 ): Promise<BundleGraph> {
   const nodeMap = new Map<string, BundleGraphNode>();
@@ -1072,12 +1073,10 @@ export async function extractBundleGraph(
     }
   }
 
-  const resourceNodes = extractResourceNodes(parsedBundle);
-
   const sourceIndex = bundleRoot
     ? await buildSourceIndex(
         bundleRoot,
-        (parsedBundle.include ?? []).filter((p): p is string => typeof p === "string"),
+        (cliOutput.include ?? []).filter((p): p is string => typeof p === "string"),
       )
     : {
         resourceSourceMap: new Map<string, string>(),
@@ -1085,6 +1084,16 @@ export async function extractBundleGraph(
         taskPositions: new Map<string, Map<string, number>>(),
       };
   const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
+
+  // A fully resolved real target has workspace paths; read the local files instead.
+  const parsedBundle = bundleRoot
+    ? localizeWorkspacePaths(cliOutput, bundleRoot, (group, key) => {
+        const file = resourceSourceMap.get(`${group}.${key}`);
+        return file ? dirname(file) : bundleRoot;
+      })
+    : cliOutput;
+
+  const resourceNodes = extractResourceNodes(parsedBundle);
 
   // Variable nodes from bundle definition (always, when bundleRoot provided)
   if (bundleRoot) {
