@@ -1,0 +1,6 @@
+bundle:
+  name: issue_codes_stress
+bogus_top_level: true
+include:
+  - resources/*.yml
+  - resource/*.yml

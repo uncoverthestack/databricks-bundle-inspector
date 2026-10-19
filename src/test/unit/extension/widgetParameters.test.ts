@@ -38,7 +38,7 @@ describe("widget and parameter mismatches", () => {
     const config = fixtureConfig();
     const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, bundleRoot));
     issues = buildInspectorIssues(graph, config, [], bundleRoot).filter(
-      (issue) => issue.kind === "widget_parameter_mismatch",
+      (issue) => issue.kind === "widget_not_set" || issue.kind === "unused_parameter",
     );
   });
 

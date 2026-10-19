@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as vscode from "vscode";
+import { codeValue } from "../../../bundle/issueDocs.js";
 
 const ROUNDS = 3;
 const BROKEN = 'key="rowcount"';
@@ -24,7 +25,7 @@ function databricksCliAvailable(): boolean {
 function warningShown(): boolean {
   return vscode.languages
     .getDiagnostics()
-    .some(([, diagnostics]) => diagnostics.some((d) => d.code === "task_value_mismatch"));
+    .some(([, diagnostics]) => diagnostics.some((d) => codeValue(d.code)?.startsWith("task_value_")));
 }
 
 async function expectWarning(shown: boolean, after: string): Promise<void> {

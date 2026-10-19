@@ -63,6 +63,7 @@ import {
   runBundleDiagnostics,
   trackBundleFiles,
   updateBundleDiagnostics,
+  setIssueDocsVersion,
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
@@ -90,6 +91,7 @@ let telemetry: Telemetry | undefined;
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
   telemetry = createTelemetry(extensionContext);
+  setIssueDocsVersion(String(extensionContext.extension.packageJSON.version ?? ""));
   configureCliLookup({
     // The Databricks extension ships its own CLI in `bin`, so users of it often have one
     // without having installed it. Read on every lookup, as it may be installed later.
@@ -1213,7 +1215,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     ),
     // Runs after a quick fix is applied: counts which kind of fix, never the values.
     vscode.commands.registerCommand(QUICK_FIX_APPLIED_COMMAND, (kind: unknown) => {
-      if (kind === "missing_file" || kind === "include_matches_nothing") {
+      if (kind === "notebook_missing_extension" || kind === "include_matches_nothing") {
         telemetry?.logUsage("quick_fix_applied", { kind });
       }
     }),

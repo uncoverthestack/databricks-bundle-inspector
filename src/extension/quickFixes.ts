@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { InspectorIssueKind, IssueFix } from "../bundle/issues.js";
 import { locateFix } from "../bundle/quickFix.js";
+import { codeValue } from "../bundle/issueDocs.js";
 
 /** A fix the last check offered, keyed to the diagnostic it belongs to. */
 export interface StoredFix extends IssueFix {
@@ -34,7 +35,7 @@ function storedFixFor(uri: vscode.Uri, diagnostic: vscode.Diagnostic): StoredFix
         (fix) =>
           fix.line === diagnostic.range.start.line &&
           fix.message === diagnostic.message &&
-          fix.kind === String(diagnostic.code),
+          fix.kind === codeValue(diagnostic.code),
       );
     if (match) return match;
   }

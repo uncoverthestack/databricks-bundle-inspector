@@ -60,7 +60,7 @@
   "issues": [
     {
       "severity": "error",
-      "kind": "missing_file",
+      "kind": "missing_pipeline_source",
       "title": "Pipeline source folder has no files",
       "detail": "../src/dlt/empty/**",
       "file": "resources/pipelines.yml",
@@ -70,7 +70,7 @@
     },
     {
       "severity": "error",
-      "kind": "missing_file",
+      "kind": "missing_pipeline_source",
       "title": "Missing pipeline source file",
       "detail": "../src/dlt/missing_file.py",
       "file": "resources/pipelines.yml",
@@ -80,7 +80,7 @@
     },
     {
       "severity": "error",
-      "kind": "missing_file",
+      "kind": "missing_pipeline_source",
       "title": "Missing pipeline source file",
       "detail": "../src/dlt/missing_notebook.py",
       "file": "resources/pipelines.yml",

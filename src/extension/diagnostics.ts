@@ -8,6 +8,19 @@ import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "../bundle/bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
+import { issueDocsUrl } from "../bundle/issueDocs.js";
+import type { InspectorIssueKind } from "../bundle/issues.js";
+
+// The installed version, so a code links to the docs of the behaviour the user has.
+let docsVersion: string | undefined;
+export function setIssueDocsVersion(version: string | undefined): void {
+  docsVersion = version;
+}
+
+/** A finding's code in the Problems panel: its name, linked to its section in the docs. */
+function linkedCode(kind: InspectorIssueKind): { value: string; target: vscode.Uri } {
+  return { value: kind, target: vscode.Uri.parse(issueDocsUrl(kind, docsVersion)) };
+}
 
 function toVsCodeDiagnostics(
   bundleDiagnostics: BundleDiagnostic[],
@@ -27,6 +40,7 @@ function toVsCodeDiagnostics(
         : vscode.DiagnosticSeverity.Warning;
     const diagnostic = new vscode.Diagnostic(range, d.message, severity);
     diagnostic.source = `Databricks Bundle (${bundleLabel})`;
+    diagnostic.code = linkedCode("cli_diagnostic");
     const existing = map.get(absPath) ?? [];
     existing.push(diagnostic);
     map.set(absPath, existing);
@@ -58,7 +72,7 @@ function inspectorIssuesToVsCodeDiagnostics(
       severity,
     );
     diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;
-    diagnostic.code = issue.kind;
+    diagnostic.code = linkedCode(issue.kind);
     if (issue.fix) {
       const key = vscode.Uri.file(issue.file).toString();
       const fileFixes = fixes.get(key) ?? [];
@@ -224,8 +238,11 @@ export async function updateBundleDiagnostics(
         bundleRoot,
         fixes,
       );
+      // The inspector's issues already hold every CLI diagnostic, with its code, so
+      // the CLI's own copies would show each message twice.
+      fresh.clear();
       for (const [absPath, diagnostics] of inspectorDiagnostics) {
-        fresh.set(absPath, [...(fresh.get(absPath) ?? []), ...diagnostics]);
+        fresh.set(absPath, diagnostics);
       }
       for (const issue of inspectorIssues) {
         if (issue.file) continue;

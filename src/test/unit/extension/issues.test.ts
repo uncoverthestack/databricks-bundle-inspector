@@ -397,7 +397,7 @@ describe("buildInspectorIssues", () => {
       {
         id: "validation:0:0",
         severity: "error",
-        kind: "validation_diagnostic",
+        kind: "cli_diagnostic",
         title: "invalid bundle",
         fixHint: "Review the Databricks CLI validation diagnostic.",
         file: path.resolve("/workspace/demo", "databricks.yml"),
@@ -437,7 +437,7 @@ describe("buildInspectorIssues", () => {
       {
         id: "validation:0:0",
         severity: "error",
-        kind: "validation_diagnostic",
+        kind: "cli_diagnostic",
         title: "invalid bundle",
         fixHint: "Review the Databricks CLI validation diagnostic.",
         yamlPath: "resources.pipelines.p1",
@@ -533,7 +533,7 @@ describe("pipeline issues and job scoping", () => {
       {
         id: "missing-pipeline-source:resources.pipelines.bronze:libraries[0].notebook.path",
         severity: "error",
-        kind: "missing_file",
+        kind: "missing_pipeline_source",
         title: "Missing pipeline source file",
         detail: "../src/dlt/missing.py",
         resourceId: "resources.pipelines.bronze",
@@ -546,7 +546,7 @@ describe("pipeline issues and job scoping", () => {
       {
         id: "missing-pipeline-source:resources.pipelines.bronze:libraries[1].glob.include",
         severity: "error",
-        kind: "missing_file",
+        kind: "missing_pipeline_source",
         title: "Pipeline source folder has no files",
         detail: "../src/dlt/empty/**",
         resourceId: "resources.pipelines.bronze",

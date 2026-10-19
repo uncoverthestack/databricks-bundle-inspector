@@ -51,12 +51,15 @@ describe("include pattern that matches nothing", () => {
     ["databricks.yml", "include:\n  - resource/*.yml\n"],
     ["databricks.yaml", "include:\n  - resource/*.yml\n"],
     ["databricks.yml", "include:\n  - \"resource/*.yml\"  # jobs\n"],
+    // Windows line endings: the line and the entry are the same.
+    ["databricks.yml", "bundle:\r\n  name: test\r\ninclude:\r\n  - resource/*.yml\r\n"],
   ])("offers a fix that replaces exactly the entry in %s: %j", (name, text) => {
     const root = makeBundle({ [name]: text, "resources/a.yml": JOB_FILE });
     const [issue] = includeIssues(config(), root).filter((i) => i.kind === "include_matches_nothing");
     expect(issue?.fix).toEqual({ oldText: "resource/*.yml", newText: "resources/*.yml", title: 'Change to "resources/*.yml"' });
     expect(issue?.file).toBe(path.join(root, name));
-    const line = text.split("\n")[issue!.line! - 1]!;
+    // As the editor gives it: without the line ending.
+    const line = text.split(/\r?\n/)[issue!.line! - 1]!;
     const span = locateFix(line, issue!.fix!.oldText);
     expect(line.slice(0, span!.start) + issue!.fix!.newText + line.slice(span!.end)).toBe(
       line.replace("resource/", "resources/"),

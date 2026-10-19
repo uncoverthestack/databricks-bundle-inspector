@@ -30,7 +30,11 @@ function fixedLine(issue: InspectorIssue): string | undefined {
  * (`src/etl`), while a resource file holds them from its own folder (`../src/etl`).
  */
 describe(`the missing-extension fix edits the path as written (${cli})`, () => {
-  test("with the inspector's probe target: in a resource file, a pipeline, and databricks.yml, but not through a variable", async () => {
+  // Windows line endings must give the same lines and the same fixes.
+  test.each([
+    ["\\n", "\n"],
+    ["\\r\\n", "\r\n"],
+  ])("with the inspector's probe target and %s line endings: in a resource file, a pipeline, and databricks.yml, but not through a variable", async (_label, eol) => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-quick-fix-"));
     created.push(dir);
     await mkdir(path.join(dir, "src"));
@@ -59,7 +63,7 @@ describe(`the missing-extension fix edits the path as written (${cli})`, () => {
         "  dev:",
         "    default: true",
         "",
-      ].join("\n"),
+      ].join(eol),
     );
     await writeFile(
       path.join(dir, "resources", "job.yml"),
@@ -80,7 +84,7 @@ describe(`the missing-extension fix edits the path as written (${cli})`, () => {
         "        - notebook:",
         "            path: ../src/etl  # the bronze notebook",
         "",
-      ].join("\n"),
+      ].join(eol),
     );
 
     const result = await validateBundle(dir, undefined, cli);
@@ -91,13 +95,13 @@ describe(`the missing-extension fix edits the path as written (${cli})`, () => {
 
     const graph = await enrichGraphWithFileContent(await extractBundleGraph(result.data, dir));
     const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir);
-    const missing = (end: string) => issues.find((issue) => issue.kind === "missing_file" && issue.yamlPath?.endsWith(end));
+    const missing = (end: string) => issues.find((issue) => issue.kind === "notebook_missing_extension" && issue.yamlPath?.endsWith(end));
 
     const plain = missing("tasks.plain.notebook_task.notebook_path");
     expect(plain?.fix).toEqual({ oldText: "../src/etl", newText: "../src/etl.py", title: 'Change to "../src/etl.py"' });
     expect(fixedLine(plain!)).toBe("            notebook_path: ../src/etl.py");
 
-    const pipeline = issues.find((issue) => issue.resourceId === "resources.pipelines.bronze" && issue.kind === "missing_file");
+    const pipeline = issues.find((issue) => issue.resourceId === "resources.pipelines.bronze" && issue.kind === "notebook_missing_extension");
     expect(fixedLine(pipeline!)).toBe("            path: ../src/etl.py  # the bronze notebook");
 
     const atRoot = missing("tasks.at_root.notebook_task.notebook_path");

@@ -58,7 +58,7 @@ describe(`a real target's workspace paths are read as local files (${cli})`, () 
     const task = graph.nodes.find((node) => node.nodeType === "task");
     expect(task?.taskData?.fileReferences[0]).toMatchObject({ path: "../src/load.py", exists: true });
     const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir, "dev");
-    expect(issues.map((issue) => issue.kind)).toContain("widget_parameter_mismatch");
+    expect(issues.map((issue) => issue.kind)).toContain("widget_not_set");
   });
 
   /** Writes a bundle under `parent/proj` and returns the graph path of its only task, resolved. */
