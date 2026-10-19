@@ -1,0 +1,20 @@
+bundle:
+  name: targets-e2e
+
+include:
+  - resources/*.yml
+
+# No workspace host here on purpose: the tests pass a profile from ~/.databrickscfg,
+# and the CLI takes the host from it. Nothing about a real workspace is committed.
+targets:
+  dev:
+    default: true
+    resources:
+      jobs:
+        nightly:
+          tasks:
+            - task_key: load
+              notebook_task:
+                notebook_path: ./src/load.py
+                base_parameters:
+                  run_date: "2026-01-01"

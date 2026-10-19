@@ -27,7 +27,9 @@ The graph opens in a new editor panel. It refreshes automatically when you save 
 
 ## Targets
 
-The graph starts as a **structural preview**: the CLI resolves the bundle with a made-up target, so it needs no login or network. To see a real target, pick it in the dropdown at the top of the graph. The CLI then resolves the bundle for that target, which uses your Databricks login and may contact the workspace. If the target can't be inspected, the graph falls back to the structural preview and its tooltip says why.
+The graph starts as a **structural preview**: the CLI resolves the bundle with a made-up target, so it needs no login or network. To see a real target, pick it in the dropdown at the top of the graph. The CLI then resolves the bundle for that target, which uses your Databricks login and may contact the workspace. When the CLI reports a problem with the target, such as a login error, it is listed with the graph's issues.
+
+With a login, the CLI gives workspace paths instead of local ones (a notebook path becomes something like `/Workspace/Users/<you>/.bundle/<bundle>/<target>/files/src/load`). The inspector can't read files at those paths, so checks that read your files (missing files, widgets, secrets, task values) run only in the structural preview. A real target is for its configuration and variables.
 
 If several profiles in `~/.databrickscfg` point at the same workspace, the CLI refuses to choose one. Set `databricksBundleInspector.profile` to the profile to use. The structural preview doesn't use it.
 
