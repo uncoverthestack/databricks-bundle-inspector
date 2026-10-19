@@ -18,3 +18,8 @@ targets:
                 notebook_path: ./src/load.py
                 base_parameters:
                   run_date: "2026-01-01"
+  # A made-up workspace (.invalid never resolves). The e2e test points the CLI at a
+  # throwaway config file with two profiles for it, to show the profile choice.
+  ambiguous:
+    workspace:
+      host: https://ambiguous.example.invalid

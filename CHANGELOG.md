@@ -4,6 +4,15 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Fixed
+
+- **Choosing a login profile no longer means editing settings or reading CLI advice you can't follow.** When several profiles in `~/.databrickscfg` point at a picked target's workspace, the Databricks CLI refuses to choose, and its message told you to set `DATABRICKS_CONFIG_PROFILE` or pass `--profile`, which can't be done from VS Code. The graph now says which profiles match and offers a **Choose profile** button that lists just those; the choice is saved and the target is checked again. The **Choose Databricks Login Profile** command changes it later.
+- **No pop-up for a picked target's errors.** They are listed in the graph, which is on screen. The structural preview's warning is reworded.
+
+### Changed
+
+- **`databricksBundleInspector.profile` is now a machine setting**: it is kept in your user settings, not synced to other machines, and not read from a workspace's settings, since profile names belong to one machine. A profile saved in a workspace's settings with 0.3.0 is no longer used; choose it again when the graph asks.
+
 ## [0.3.0] - 2026-10-19
 
 ### Added

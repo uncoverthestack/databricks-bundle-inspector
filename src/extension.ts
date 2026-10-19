@@ -21,6 +21,12 @@ import {
   verifyCliPath,
   type CliProblem,
 } from "./databricksCli/validateDatabricksCli.js";
+import {
+  listProfiles,
+  parseAmbiguousProfiles,
+  profilesForHost,
+  type DatabricksProfile,
+} from "./databricksCli/profiles.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import { folderIgnoresCase } from "./bundle/pathCase.js";
@@ -538,8 +544,80 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       inspectedTargetMode: inspection.inspectedTargetMode,
       requestedTarget: requestedTarget ?? null,
       targetFallbackMessage: inspection.fallbackMessage ?? null,
+      profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
     };
+  }
+
+  /**
+   * Several profiles in ~/.databrickscfg match the picked target's workspace and the CLI
+   * won't choose. The graph offers a choice instead of the CLI's advice to set
+   * DATABRICKS_CONFIG_PROFILE or pass --profile, which an extension user can't do.
+   */
+  function ambiguousProfilesOf(
+    inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
+  ): { host: string; names: string[] } | undefined {
+    const messages = [
+      ...(inspection.result.ok
+        ? (inspection.result.issues ?? []).flatMap((issue) => [
+            ...(issue.diagnostics ?? []).map((d) => d.message),
+            issue.details ?? "",
+          ])
+        : []),
+      inspection.fallbackMessage ?? "",
+    ];
+    for (const message of messages) {
+      const found = parseAmbiguousProfiles(message);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  /**
+   * Lets the user pick the login profile for real targets and saves it in their user
+   * settings. With a host, only that workspace's profiles are offered. Returns whether
+   * the setting changed.
+   */
+  async function chooseProfile(match?: { host: string; names: string[] }): Promise<boolean> {
+    const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+    const all = cli.ok ? await listProfiles(cli.candidate) : [];
+    const offered = match
+      ? profilesForHost(all, match.host).length > 0
+        ? profilesForHost(all, match.host)
+        : match.names.map((name): DatabricksProfile => ({ name }))
+      : all;
+    const current = getConfiguredProfile(getConfiguration());
+    const USE_DEFAULT = "Use the Databricks CLI's own choice";
+    const items: vscode.QuickPickItem[] = [
+      ...offered.map((profile) => ({
+        label: profile.name,
+        ...(profile.host ? { description: profile.host } : {}),
+        ...(profile.name === current ? { detail: "Currently selected" } : {}),
+      })),
+      ...(match ? [] : [{ label: USE_DEFAULT, description: "Clears the saved profile" }]),
+    ];
+    if (offered.length === 0) {
+      const clear = "Clear saved profile";
+      const choice = await vscode.window.showInformationMessage(
+        "No Databricks login profiles were found. Run `databricks auth login` in a terminal to add one." +
+          (current ? ` The saved profile "${current}" no longer exists.` : ""),
+        ...(current ? [clear] : []),
+      );
+      if (choice !== clear) return false;
+      await getConfiguration().update("profile", undefined, vscode.ConfigurationTarget.Global);
+      return true;
+    }
+    const picked = await vscode.window.showQuickPick(items, {
+      title: "Databricks login profile",
+      placeHolder: match
+        ? "Several profiles match this workspace. Choose the one to use for real targets."
+        : "Choose the profile to use when you pick a target in the graph",
+    });
+    if (!picked) return false;
+    const value = picked.label === USE_DEFAULT ? undefined : picked.label;
+    if (value === current) return false;
+    await getConfiguration().update("profile", value, vscode.ConfigurationTarget.Global);
+    return true;
   }
 
   async function refreshActiveBundlePanel(
@@ -783,13 +861,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
           .flatMap((i) => i.diagnostics ?? [])
           .filter((d) => d.severity === "error") ?? [];
-      if (errorDiagnostics.length > 0) {
-        const suffix = errorDiagnostics.length > 1 ? ` (+${errorDiagnostics.length - 1} more)` : "";
+      // A picked target's errors are listed in the graph, which is on screen, so no pop-up.
+      if (errorDiagnostics.length > 0 && showsPreview) {
+        const suffix = errorDiagnostics.length > 1 ? ` (and ${errorDiagnostics.length - 1} more)` : "";
         const firstMessage = errorDiagnostics[0]?.message ?? "Unknown error";
         void vscode.window.showWarningMessage(
-          `Bundle has validation errors — graph may be incomplete. ${firstMessage}${suffix}`,
-          // A picked target's errors are in the graph only: the Problems panel shows the preview.
-          ...(showsPreview ? ["Show Problems"] : []),
+          `The bundle has validation errors, so the graph may be incomplete. ${firstMessage}${suffix}`,
+          "Show Problems",
         ).then((choice) => {
           if (choice === "Show Problems") {
             void vscode.commands.executeCommand("workbench.actions.view.problems");
@@ -854,6 +932,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             (typeof message.target === "string" || message.target === null)
           ) {
             void selectTarget(typeof message.target === "string" ? message.target : undefined);
+          }
+          if (message?.type === "chooseProfile") {
+            void chooseProfileFromGraph();
           }
           if (message?.type === "openFile" && typeof message.path === "string") {
             if (
@@ -934,6 +1015,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     await inspectBundle(target, { trigger: "target_switch" }, bundleDirForPanel);
   }
 
+  /** The graph's "Choose profile" button: pick one of the matching profiles, then check the target again. */
+  async function chooseProfileFromGraph(): Promise<void> {
+    const match = (activeBundleData as { profileChoice?: { host: string; names: string[] } } | undefined)
+      ?.profileChoice;
+    if (await chooseProfile(match ?? undefined)) await selectTarget(activeRequestedTarget);
+  }
+
   // Only when VS Code runs the e2e tests (--extensionTestsPath), never for users: the
   // tests cannot click in the graph, so they pick a target the way its dropdown does and
   // read what the graph was last sent.
@@ -950,8 +1038,24 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         "databricksBundleInspector.test.graphData",
         () => activeBundleData,
       ),
+      vscode.commands.registerCommand(
+        "databricksBundleInspector.test.chooseProfileFromGraph",
+        async () => {
+          await chooseProfileFromGraph();
+          return activeBundleData;
+        },
+      ),
     );
   }
+
+  extensionContext.subscriptions.push(
+    vscode.commands.registerCommand("databricksBundleInspector.chooseProfile", async () => {
+      // A graph showing a real target checks it again with the new profile.
+      if ((await chooseProfile()) && activePanel && activeRequestedTarget) {
+        await selectTarget(activeRequestedTarget);
+      }
+    }),
+  );
 
   const disposable = vscode.commands.registerCommand(
     "databricksBundleInspector.inspectBundle",
