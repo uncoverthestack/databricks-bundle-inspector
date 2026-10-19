@@ -29,11 +29,19 @@ To see the graph:
 1. Open the bundle file, or a resource file it loads through `include` (for example `resources/etl_job.yml`).
 2. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
 
-The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save the bundle file or related configurations.
+The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
+
+## Understanding and fixing problems
+
+Click a finding's code in the **Problems** panel to open its explanation in [the checks guide](checks.md). Each code has its own example, severity, fix and limits. The graph's task details also list problems as **Error**, **Warning** or **Note**.
+
+For a notebook path missing its extension, or a mistyped include pattern with a suggested replacement, open the affected YAML line and use the light bulb's **Quick Fix** menu. The fix edits that value; saving the file runs the checks again. It is only offered while the value still matches what was checked.
 
 ## Targets
 
 The graph starts as a **structural preview**: the CLI resolves the bundle with a made-up target, so it needs no login or network. To see a real target, pick it in the dropdown at the top of the graph. The CLI then resolves the bundle for that target, which uses your Databricks login and may contact the workspace. When the CLI reports a problem with the target, such as a login error, it is listed with the graph's issues.
+
+In the structural preview, a local file path containing a variable such as `${var.nb_dir}/load.py` gets a **Not checked** note in the Problems panel. The inspector cannot read that file yet, so its file checks have not run. The graph's **TEMPLATE** label explains this too. Pick a target to let the CLI resolve the path; a target may need a Databricks login. If the path still contains a variable afterward, the note says it remains unchecked.
 
 With a login, the CLI gives workspace paths instead of local ones (a notebook path becomes something like `/Workspace/Users/<you>/.bundle/<bundle>/<target>/files/src/load`). The inspector reads the local files those paths come from, so the checks that read your files (widgets, secrets, task values, notebook rules) run for the target as well. To know which local file each one is, it compares them with the paths as you wrote them in your YAML (with `${var...}` and `${bundle.target}` filled in from the CLI's values). This works whether files are uploaded from the bundle folder or, with `sync.paths` reaching outside it, from a parent. It needs at least one path written as a plain path or with a variable; if every path is written with `${workspace.file_path}`, nothing is mapped. A path that can't be matched to exactly one local file stays as the CLI gave it, and its checks are skipped for that target rather than run on a guess.
 

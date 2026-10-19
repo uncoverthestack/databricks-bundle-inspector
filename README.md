@@ -26,14 +26,16 @@ Problems that pass `databricks bundle validate` and only fail when you deploy or
 - **Secret scopes** named by their resource key instead of their name.
 - **Unresolved variables** for the selected target.
 
-Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on code read Python and SQL. Scala and R are not read.
+Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" For a notebook path missing its extension or a mistyped include pattern, use the light bulb to apply a suggested **Quick Fix**. Click a finding's code in the Problems panel to read what it means and how to fix it.
+
+The inspector also reports **Not checked** when a variable prevents it from checking a local file. Checks on code read Python and SQL. Scala and R are not read.
 
 [Every check, and what code is read](docs/checks.md)
 
 ## What it shows
 
 - **Job graph**: tasks and what they depend on, with pan, zoom and search.
-- **Task details**: type, source file, parameters, compute and linked pipelines.
+- **Task details**: type, source file, parameters, compute, linked pipelines and problems labelled **Error**, **Warning** or **Note**.
 - **Secrets and widgets** found in each task's code.
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
@@ -42,7 +44,7 @@ Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on c
 
 1. Install the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install), `v0.299.0` or newer.
 2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, shows the count in the status bar, and checks again every time you save.
-3. For the graph, open the bundle file and click **Inspect Databricks Bundle** in the editor title bar.
+3. For the graph, open the bundle file or a resource file it loads through `include`, then click **Inspect Databricks Bundle** in the editor title bar. From a resource file, the graph opens on the job under your cursor, or the file's first job.
 
 If the CLI can't be found, Inspect says why and links to the install steps for your OS. Besides your `PATH`, the inspector looks for the CLI the Databricks extension ships and, on Windows, in the `Path` Windows has stored, so a WinGet install works without a restart. Otherwise restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
 
@@ -70,7 +72,9 @@ To turn it off, use either setting:
 
 ## Project status
 
-Version 0.3.1. Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Latest release: [0.3.1](https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.3.1). This README also describes changes on `main` that are awaiting release; see [Unreleased changes](CHANGELOG.md#unreleased).
+
+Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
 ## License
 
