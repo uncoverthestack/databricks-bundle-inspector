@@ -114,6 +114,25 @@ function replacementFix(oldText: string, newText: string): IssueFix {
 }
 
 /**
+ * The fix for an include entry, at the column its value starts after `- `, so the
+ * Quick Fix menu checks the exact place and never edits part of a longer value.
+ * Nothing when the entry isn't written there as one value (a flow list, an escape).
+ */
+function includeEntryFix(
+  bundleText: string | undefined,
+  line: number,
+  entry: string,
+  suggestion: string,
+): Pick<InspectorIssue, "column" | "fix"> {
+  const lineText = bundleText?.split(/\r?\n/)[line - 1] ?? "";
+  const marker = /^\s*-\s+/.exec(lineText);
+  if (!marker) return {};
+  const column = marker[0].length + 1;
+  if (writtenValueAt(lineText, column) !== entry) return {};
+  return { column, fix: replacementFix(entry, suggestion) };
+}
+
+/**
  * The fix for a notebook path without its extension: the path as written in the file
  * gets the extension. The CLI reports paths from the bundle root, while a resource file
  * holds them from its own folder, so the fix is built from the file. Nothing is offered
@@ -829,7 +848,7 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
         includeCaveat(entry) ??
         "Check the folder name and the file extension (.yml or .yaml) in the include entry in databricks.yml.",
       file: bundleFilePath,
-      ...(line ? { line, fix: replacementFix(entry, suggestion) } : {}),
+      ...(line ? { line, ...includeEntryFix(bundleText, line, entry, suggestion) } : {}),
     });
   }
 

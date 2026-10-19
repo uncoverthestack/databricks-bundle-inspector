@@ -60,7 +60,7 @@ describe("include pattern that matches nothing", () => {
     expect(issue?.file).toBe(path.join(root, name));
     // As the editor gives it: without the line ending.
     const line = text.split(/\r?\n/)[issue!.line! - 1]!;
-    const span = locateFix(line, issue!.fix!.oldText);
+    const span = locateFix(line, issue!.fix!.oldText, issue!.column!);
     expect(line.slice(0, span!.start) + issue!.fix!.newText + line.slice(span!.end)).toBe(
       line.replace("resource/", "resources/"),
     );

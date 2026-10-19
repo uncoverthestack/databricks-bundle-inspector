@@ -26,11 +26,13 @@ function commentStart(line: string): number {
 function isWholeValue(line: string, start: number, end: number): boolean {
   const before = line[start - 1];
   const after = line[end];
-  if (before !== undefined && QUOTES.has(before)) return after === before;
-  if (before !== undefined && before !== " " && before !== "\t") return false;
-  // Plain YAML values end at the end of the line or at a comment.
-  const rest = line.slice(end);
-  return rest.trim() === "" || /^[ \t]+#/.test(rest);
+  const quoted = before !== undefined && QUOTES.has(before);
+  if (quoted && after !== before) return false;
+  if (!quoted && before !== undefined && before !== " " && before !== "\t") return false;
+  // The value is the last thing on the line, apart from a comment, or, when quoted, it
+  // ends a flow mapping or list entry ({ path: "x" }, [ "x", ... ]).
+  const rest = line.slice(quoted ? end + 1 : end);
+  return rest.trim() === "" || /^[ \t]+#/.test(rest) || (quoted && /^[ \t]*[,}\]]/.test(rest));
 }
 
 /**
@@ -40,9 +42,10 @@ function isWholeValue(line: string, start: number, end: number): boolean {
  *
  * @param line The text of the issue's line.
  * @param oldText The value as the check read it.
- * @param column The issue's 1-based column, when it has one: the value must start there.
+ * @param column The issue's 1-based column: the value must start there, so a copy of the
+ *   value elsewhere on the line, or inside a longer plain value, is never edited.
  */
-export function locateFix(line: string, oldText: string, column?: number): TextSpan | undefined {
+export function locateFix(line: string, oldText: string, column: number): TextSpan | undefined {
   if (!oldText) return undefined;
   const found: TextSpan[] = [];
   const code = commentStart(line);
@@ -52,7 +55,7 @@ export function locateFix(line: string, oldText: string, column?: number): TextS
     if (!isWholeValue(line, start, end)) continue;
     // The column points at the value node, which starts at its opening quote when quoted.
     const valueStart = QUOTES.has(line[start - 1] ?? "") ? start - 1 : start;
-    if (column !== undefined && valueStart !== column - 1) continue;
+    if (valueStart !== column - 1) continue;
     found.push({ start, end });
   }
   return found.length === 1 ? found[0] : undefined;
@@ -68,7 +71,12 @@ export function writtenValueAt(line: string, column: number): string | undefined
   if (first === undefined) return undefined;
   if (QUOTES.has(first)) {
     const end = line.indexOf(first, start + 1);
-    return end === -1 ? undefined : line.slice(start + 1, end) || undefined;
+    if (end === -1) return undefined;
+    const inner = line.slice(start + 1, end);
+    // An escape ("a\"b", 'it''s') means the text isn't the value as written; don't guess.
+    if (first === '"' && inner.includes("\\")) return undefined;
+    if (first === "'" && line[end + 1] === "'") return undefined;
+    return inner || undefined;
   }
   const value = line.slice(start, commentStart(line)).trim();
   return value || undefined;

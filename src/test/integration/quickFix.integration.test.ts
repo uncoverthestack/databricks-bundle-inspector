@@ -20,7 +20,7 @@ afterAll(async () => {
 function fixedLine(issue: InspectorIssue): string | undefined {
   if (!issue.fix || !issue.file || !issue.line) return undefined;
   const line = readFileSync(issue.file, "utf8").split(/\r?\n/)[issue.line - 1]!;
-  const span = locateFix(line, issue.fix.oldText, issue.column);
+  const span = locateFix(line, issue.fix.oldText, issue.column ?? -1);
   return span ? line.slice(0, span.start) + issue.fix.newText + line.slice(span.end) : undefined;
 }
 

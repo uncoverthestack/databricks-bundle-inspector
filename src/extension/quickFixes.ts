@@ -57,7 +57,7 @@ export class InspectorQuickFixProvider implements vscode.CodeActionProvider {
     const actions: vscode.CodeAction[] = [];
     for (const diagnostic of context.diagnostics) {
       const fix = storedFixFor(document.uri, diagnostic);
-      if (!fix || fix.line >= document.lineCount) continue;
+      if (!fix || fix.column === undefined || fix.line >= document.lineCount) continue;
       const span = locateFix(document.lineAt(fix.line).text, fix.oldText, fix.column);
       if (!span) continue;
 
