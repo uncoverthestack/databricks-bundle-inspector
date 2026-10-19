@@ -148,5 +148,30 @@ export function includeMistakesSuite() {
         await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
       }
     });
+
+    it("the graph reports the same include mistakes as the Problems panel", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the include-mistakes fixture should be the open folder");
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "databricks.yml")));
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      for (let waited = 0; includeProblems(root).length < 3 && waited < 30_000; waited += 500) await sleep(500);
+
+      const graph = await vscode.commands.executeCommand<{
+        inspectorIssues?: { kind: string; file?: string; line?: number }[];
+      }>("databricksBundleInspector.test.graphData");
+      const inGraph = (graph?.inspectorIssues ?? [])
+        .filter((issue) => INCLUDE_KINDS.has(issue.kind) && issue.file)
+        .map((issue) => ({
+          file: path.relative(root, issue.file!).split(path.sep).join("/"),
+          line: issue.line ?? 1,
+          kind: issue.kind,
+        }))
+        .sort((a, b) => a.file.localeCompare(b.file));
+      assert.deepEqual(
+        inGraph,
+        includeProblems(root).map(({ file, line, kind }) => ({ file, line, kind })),
+      );
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
   });
 }

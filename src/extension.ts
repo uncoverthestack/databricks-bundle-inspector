@@ -622,7 +622,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     const enrichedGraph = await enrichGraphWithFileContent(graph);
     const inspectorIssues = buildInspectorIssues(
       enrichedGraph,
-      resolutionBundle,
+      // The whole config, as the Problems panel's check has it: `sync` and `include` decide
+      // the sync and include checks. Only variables and targets come from the merge.
+      { ...bundleData, ...resolutionBundle },
       result.issues ?? [],
       bundleDir,
       inspectedTargetMode === "target" ? inspectedTarget : undefined,
