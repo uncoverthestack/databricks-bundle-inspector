@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
 - [Bundle configuration](#bundle-configuration): `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
@@ -76,6 +76,15 @@ A task or pipeline points at a file that `bundle deploy` won't upload: it matche
 - **Example:** `notebook_path: ../scripts/report.py`, with `scripts/` in `.gitignore`.
 - **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule.
 - **Limits:** not checked in bundles that use `sync.paths`, which sync from a different root.
+
+### `path_not_checked`
+
+A task or pipeline path uses a variable, such as `${var.nb_dir}/load.py`, so the structural preview doesn't know which file it is, and none of the checks that read the file ran: missing file, notebook rules, widgets, secrets, task values and files `bundle deploy` would skip. This note says so, so that "not checked" never looks like "no problems".
+
+- **Severity:** note.
+- **Example:** `notebook_path: ${var.nb_dir}/load.py`.
+- **Fix:** pick a target in the graph. The Databricks CLI then resolves the variable, with its value from the target, overrides or environment, and the file is checked. Nothing needs to change in the bundle.
+- **Limits:** the inspector doesn't resolve variables itself, as their values can come from places the preview doesn't see (`BUNDLE_VAR_<name>`, `--var`, `.databricks/bundle/<target>/variable-overrides.json`). Remote paths (`/Workspace/...`, `dbfs:/`) and paths in a job with `git_source` get no note.
 
 ## `include`
 

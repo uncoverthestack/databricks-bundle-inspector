@@ -20,6 +20,7 @@ module.exports = {
     "<rootDir>/src/test/integration/realTargetPaths.integration.test.ts",
     "<rootDir>/src/test/integration/verifyCliPath.integration.test.ts",
     "<rootDir>/src/test/integration/quickFix.integration.test.ts",
+    "<rootDir>/src/test/integration/pathNotChecked.integration.test.ts",
   ],
   modulePathIgnorePatterns: ["<rootDir>/.vscode-test/", "<rootDir>/out/"],
   verbose: true,
