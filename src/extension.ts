@@ -11,6 +11,7 @@ import { buildInspectorIssues } from "./bundle/issues.js";
 import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
+  getConfiguredProfile,
 } from "./databricksCli/config.js";
 import {
   databricksCliInstallUrl,
@@ -428,8 +429,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     requestedTarget?: string,
     options?: { silentFallback?: boolean },
   ) {
-    const configuredPath = getConfiguredDatabricksCliPath(getConfiguration());
-    let result = await validateBundle(bundleDir, requestedTarget, configuredPath);
+    const config = getConfiguration();
+    const configuredPath = getConfiguredDatabricksCliPath(config);
+    let result = await validateBundle(
+      bundleDir,
+      requestedTarget,
+      configuredPath,
+      getConfiguredProfile(config),
+    );
     let inspectedTarget = requestedTarget ?? BUNDLE_PROBE_TARGET;
     let inspectedTargetMode: "target" | "probe" =
       requestedTarget ? "target" : "probe";
@@ -725,15 +732,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       await trackBundleFiles(bundleDir, fileToBundleRoot);
       const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
       const { result } = inspection;
-      const diagnosticsGraph = await updateBundleDiagnostics(
-        result,
-        bundleDir,
-        diagnosticCollection,
-        fileToBundleRoot,
-      );
-      recordCheck(bundleDir, result, { inspected: true });
-      if (result.ok && diagnosticsGraph) {
-        await watchBundle(bundleDir, result.data, diagnosticsGraph);
+      // The Problems panel and the status bar always show the structural preview, which
+      // needs no login, so a save never flips them to another target. A real target picked
+      // in the graph changes the graph only. A target that fell back to the preview counts.
+      const showsPreview = inspection.inspectedTargetMode === "probe";
+      if (showsPreview) {
+        const diagnosticsGraph = await updateBundleDiagnostics(
+          result,
+          bundleDir,
+          diagnosticCollection,
+          fileToBundleRoot,
+        );
+        recordCheck(bundleDir, result, { inspected: true });
+        if (result.ok && diagnosticsGraph) {
+          await watchBundle(bundleDir, result.data, diagnosticsGraph);
+        }
       }
 
       const cliOutdated = await checkCliVersion(result);
@@ -775,7 +788,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         const firstMessage = errorDiagnostics[0]?.message ?? "Unknown error";
         void vscode.window.showWarningMessage(
           `Bundle has validation errors — graph may be incomplete. ${firstMessage}${suffix}`,
-          "Show Problems",
+          // A picked target's errors are in the graph only: the Problems panel shows the preview.
+          ...(showsPreview ? ["Show Problems"] : []),
         ).then((choice) => {
           if (choice === "Show Problems") {
             void vscode.commands.executeCommand("workbench.actions.view.problems");
@@ -839,13 +853,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             message?.type === "selectTarget" &&
             (typeof message.target === "string" || message.target === null)
           ) {
-            const bundleDirForPanel = activeBundleDir;
-            if (!bundleDirForPanel) return;
-            void inspectBundle(
-              typeof message.target === "string" ? message.target : undefined,
-              { trigger: "target_switch" },
-              bundleDirForPanel,
-            );
+            void selectTarget(typeof message.target === "string" ? message.target : undefined);
           }
           if (message?.type === "openFile" && typeof message.path === "string") {
             if (
@@ -917,6 +925,32 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         `Error: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /** A target picked in the graph's dropdown, or the structural preview for `undefined`. */
+  async function selectTarget(target: string | undefined): Promise<void> {
+    const bundleDirForPanel = activeBundleDir;
+    if (!bundleDirForPanel) return;
+    await inspectBundle(target, { trigger: "target_switch" }, bundleDirForPanel);
+  }
+
+  // Only when VS Code runs the e2e tests (--extensionTestsPath), never for users: the
+  // tests cannot click in the graph, so they pick a target the way its dropdown does and
+  // read what the graph was last sent.
+  if (extensionContext.extensionMode === vscode.ExtensionMode.Test) {
+    extensionContext.subscriptions.push(
+      vscode.commands.registerCommand(
+        "databricksBundleInspector.test.selectTarget",
+        async (target?: string) => {
+          await selectTarget(target);
+          return activeBundleData;
+        },
+      ),
+      vscode.commands.registerCommand(
+        "databricksBundleInspector.test.graphData",
+        () => activeBundleData,
+      ),
+    );
   }
 
   const disposable = vscode.commands.registerCommand(

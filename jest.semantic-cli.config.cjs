@@ -16,6 +16,7 @@ module.exports = {
   testMatch: [
     "<rootDir>/src/test/integration/semanticCli.integration.test.ts",
     "<rootDir>/src/test/integration/bundleCodeNotRun.integration.test.ts",
+    "<rootDir>/src/test/integration/bundleFolderUntouched.integration.test.ts",
   ],
   modulePathIgnorePatterns: ["<rootDir>/.vscode-test/", "<rootDir>/out/"],
   verbose: true,

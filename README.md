@@ -35,7 +35,7 @@ Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" Checks on c
 - **Job graph**: tasks and what they depend on, with pan, zoom and search.
 - **Task details**: type, source file, parameters, compute and linked pipelines.
 - **Secrets and widgets** found in each task's code.
-- **Targets**: switch target to see variables and issues resolved for it.
+- **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
 
 ## Getting started
@@ -51,8 +51,9 @@ If the CLI can't be found, Inspect says why and links to the install steps for y
 ## Safety
 
 - It runs one program, the Databricks CLI you installed, to validate the bundle. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run.
+- It writes nothing into your bundle folder, not even the `.databricks` folder the CLI creates for a real target.
 - It stays off until you tell VS Code you trust the folder.
-- The checks that run by themselves need no login. Inspecting a real target uses your active CLI profile and may contact your workspace.
+- The checks that run by themselves need no login. Picking a real target in the graph uses your active CLI profile, or the one set in `databricksBundleInspector.profile`, and may contact your workspace.
 
 See the [security policy](SECURITY.md).
 

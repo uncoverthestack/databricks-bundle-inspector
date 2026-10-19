@@ -3,6 +3,7 @@ import { cliNotFoundSuite } from "./cliNotFound.test.js";
 import { includeMistakesSuite } from "./includeMistakes.test.js";
 import { alwaysOnSuite } from "./alwaysOn.test.js";
 import { savedFileSuite } from "./savedFile.test.js";
+import { targetsSuite } from "./targets.test.js";
 
 /** Entry point VS Code calls from the extension host. */
 export function run(): Promise<void> {
@@ -12,6 +13,7 @@ export function run(): Promise<void> {
   if (suite === "includeMistakes") includeMistakesSuite();
   else if (suite === "alwaysOn") alwaysOnSuite();
   else if (suite === "savedFile") savedFileSuite();
+  else if (suite === "targets") targetsSuite();
   else cliNotFoundSuite();
   return new Promise((resolve, reject) => {
     mocha.run((failures) =>

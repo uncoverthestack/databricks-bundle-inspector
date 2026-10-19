@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 /**
@@ -8,9 +10,30 @@ import path from "node:path";
  */
 export const RESTRICTED_EXECUTION_VARIABLE = "DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION";
 
+/**
+ * Where the CLI keeps its working files. By default that is `<bundle>/.databricks`,
+ * which `bundle validate` creates (with a `.gitignore`) for a real target with a login.
+ * Set to another folder, nothing is written into the bundle folder.
+ */
+export const BUNDLE_TMP_VARIABLE = "DATABRICKS_BUNDLE_TMP";
+
 /** The environment every CLI call for a bundle gets, so inspecting never runs the bundle's code. */
 export function restrictedCliEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return { ...base, [RESTRICTED_EXECUTION_VARIABLE]: "1" };
+}
+
+/** A folder outside the bundle for the CLI's working files: the same one for the same bundle, another per bundle. */
+export function bundleTempDir(bundleDir: string, tempRoot: string = os.tmpdir()): string {
+  const id = createHash("sha256").update(path.resolve(bundleDir)).digest("hex").slice(0, 16);
+  return path.join(tempRoot, "databricks-bundle-inspector", id);
+}
+
+/** The environment for a CLI call on a bundle: it never runs the bundle's code and never writes into its folder. */
+export function bundleCliEnv(
+  bundleDir: string,
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return { ...restrictedCliEnv(base), [BUNDLE_TMP_VARIABLE]: bundleTempDir(bundleDir) };
 }
 
 interface NotRunDiagnostic {

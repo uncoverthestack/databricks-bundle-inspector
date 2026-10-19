@@ -2537,9 +2537,11 @@ export default function App({
       ? targetFallbackMessage
         ? `Could not inspect the requested target. Showing structural preview. ${targetFallbackMessage}`
         : "Inspected as a structural preview. Use this as structural feedback, not a deploy-target guarantee."
-      : inspectedTarget
-        ? `Inspected target: ${inspectedTarget}`
-        : "No explicit Databricks target was reported by the bundle output.";
+      : `${
+          inspectedTarget
+            ? `Inspected target: ${inspectedTarget}.`
+            : "No explicit Databricks target was reported by the bundle output."
+        } The Problems panel and status bar show the structural preview.`;
   const effectiveTargetName =
     inspectedTargetMode === "target"
       ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
@@ -2827,7 +2829,8 @@ export default function App({
         targetTitle={targetTitle}
         targetMode={inspectedTargetMode}
         targetOptions={targetOptions}
-        selectedTarget={requestedTarget}
+        // What is shown, not what was asked for: a target that fell back shows the preview.
+        selectedTarget={inspectedTargetMode === "target" ? requestedTarget : undefined}
         onTargetChange={onSelectTarget}
         jobKeys={jobKeys}
         selectedJobKey={selectedJobKey}

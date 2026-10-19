@@ -34,6 +34,10 @@ async function main() {
     extensionTestsEnv: {
       E2E_PAUSE_MS: process.env.E2E_PAUSE_MS ?? "0",
       E2E_SUITE: suite,
+      // A ~/.databrickscfg profile for the cases that need a login (see the targets fixture).
+      ...(process.env.INSPECTOR_TEST_PROFILE
+        ? { INSPECTOR_TEST_PROFILE: process.env.INSPECTOR_TEST_PROFILE }
+        : {}),
       // The extension checks the open bundle as soon as VS Code starts. A real CLI found
       // then stays cached for the session, so this suite starts with none on the PATH.
       ...(suite === "cliNotFound"

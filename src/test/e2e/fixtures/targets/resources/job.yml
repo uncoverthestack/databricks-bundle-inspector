@@ -1,0 +1,8 @@
+resources:
+  jobs:
+    nightly:
+      name: targets-e2e-nightly
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ../src/load.py

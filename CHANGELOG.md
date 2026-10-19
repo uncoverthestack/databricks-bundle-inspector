@@ -4,6 +4,11 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Pick a target in the graph again.** The dropdown at the top of the graph lists "structural preview" and each of the bundle's targets. A real target shows the bundle as the CLI resolves it for that target, with its variables and configuration. It uses your Databricks login and may contact the workspace. With a login, the CLI gives workspace paths instead of local ones (for example a notebook path becomes `/Workspace/.../files/src/load`), so checks that read your files (missing files, widgets, secrets, task values) only run in the structural preview. When the CLI reports a problem with the target, such as a login error, it is listed with the graph's issues. The Problems panel and the status bar keep showing the structural preview, which needs no login, so saving a file never switches them to another target. The picker was removed in 0.1.1 because a real target made the CLI create a `.databricks` folder in the bundle; the extension now has the CLI keep its working files in your system's temp folder, so nothing is written into the bundle folder.
+- **A `databricksBundleInspector.profile` setting** for the `~/.databrickscfg` profile to use when you pick a target. Needed when several profiles point at the same workspace: the CLI then refuses to choose one. The structural preview doesn't use it.
+
 ### Fixed
 
 - **With a real target selected, a finding on a task now points at that task's line.** The Databricks CLI sorts each job's tasks by `task_key` when it resolves a real target, and the inspector found a task's line by its position in that sorted list. In a job whose tasks are not written in alphabetical order, a missing file or a secret in a task's cluster could be shown on another task's line. The structural preview, the default, was not affected. A task that is not written in the job's file, such as one a target adds, is now shown without a line instead of on another task's line.

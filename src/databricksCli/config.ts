@@ -20,3 +20,15 @@ export function getConfiguredDatabricksCliPath(
 ): string | undefined {
   return config.get<string>("cliPath");
 }
+
+/**
+ * Gets the user-configured `~/.databrickscfg` profile for real targets.
+ *
+ * @param config The workspace configuration section for the extension.
+ * @returns The configured profile, or `undefined` if not set.
+ */
+export function getConfiguredProfile(
+  config: vscode.WorkspaceConfiguration,
+): string | undefined {
+  return config.get<string>("profile")?.trim() || undefined;
+}
