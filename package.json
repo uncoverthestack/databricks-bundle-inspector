@@ -136,7 +136,6 @@
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
     "test:schema-coverage": "jest --config jest.schema-coverage.config.cjs",
     "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint",
-    "test:integration:cli": "RUN_REAL_DATABRICKS_CLI_TESTS=1 vscode-test",
     "deps:repair-native": "node scripts/repair-native-optional-deps.mjs",
     "cli:install-matrix": "node scripts/install-databricks-cli-matrix.mjs",
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
@@ -166,6 +165,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@jest/globals": "^30.5.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.10",
