@@ -60,4 +60,33 @@ describe(`a real target's workspace paths are read as local files (${cli})`, () 
     const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir, "dev");
     expect(issues.map((issue) => issue.kind)).toContain("widget_parameter_mismatch");
   });
+
+  /** Writes a bundle under `parent/proj` and returns the graph path of its only task, resolved. */
+  async function mappedNotebook(databricksYml: string, files: Record<string, string>): Promise<string | undefined> {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "dbi-real-paths-"));
+    created.push(parent);
+    const dir = path.join(parent, "proj");
+    for (const [relative, content] of Object.entries({ ...files, "databricks.yml": databricksYml })) {
+      await mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
+      await writeFile(path.join(dir, relative), content);
+    }
+    const result = await validateBundle(dir, "dev", cli, profile);
+    if (!result.ok) throw new Error(result.error.details ?? result.error.error);
+    const graph = await extractBundleGraph(result.data, dir);
+    const ref = graph.nodes.find((node) => node.nodeType === "task")?.taskData?.fileReferences[0];
+    return ref?.exists && ref.resolvedPath ? path.relative(dir, ref.resolvedPath) : undefined;
+  }
+  const NOTEBOOK = "# Databricks notebook source\nprint(1)\n";
+
+  (profile ? test : test.skip)("files uploaded from the parent folder, with a folder named like the bundle inside it", async () => {
+    // sync.paths [".."] makes the CLI upload the parent, so the path comes back as ./files/proj/src/nb.
+    // proj/proj/src/nb.py exists too, and must not be taken for it.
+    const yml = "bundle: {name: shadow}\nsync: {paths: [\"..\"]}\ntargets:\n  dev: {default: true}\nresources:\n  jobs:\n    j:\n      tasks:\n        - task_key: t\n          notebook_task: {notebook_path: ./src/nb.py}\n";
+    expect(await mappedNotebook(yml, { "src/nb.py": NOTEBOOK, "proj/src/nb.py": NOTEBOOK })).toBe(path.join("src", "nb.py"));
+  });
+
+  (profile ? test : test.skip)("a path built from a variable", async () => {
+    const yml = "bundle: {name: varpath}\nvariables:\n  nb_dir: {default: ./src}\ntargets:\n  dev:\n    default: true\n    variables: {nb_dir: ./other}\nresources:\n  jobs:\n    j:\n      tasks:\n        - task_key: t\n          notebook_task: {notebook_path: \"${var.nb_dir}/nb.py\"}\n";
+    expect(await mappedNotebook(yml, { "src/nb.py": NOTEBOOK, "other/nb.py": NOTEBOOK })).toBe(path.join("other", "nb.py"));
+  });
 });
