@@ -25,6 +25,16 @@ To see the graph:
 
 The graph opens in a new editor panel. It refreshes automatically when you save the bundle file or related configurations.
 
+## Targets
+
+The graph starts as a **structural preview**: the CLI resolves the bundle with a made-up target, so it needs no login or network. To see a real target, pick it in the dropdown at the top of the graph. The CLI then resolves the bundle for that target, which uses your Databricks login and may contact the workspace. If the target can't be inspected, the graph falls back to the structural preview and its tooltip says why.
+
+If several profiles in `~/.databrickscfg` point at the same workspace, the CLI refuses to choose one. Set `databricksBundleInspector.profile` to the profile to use. The structural preview doesn't use it.
+
+The Problems panel and the status bar always show the structural preview, so they never need a login, including when you save. A picked target changes the graph only.
+
+Nothing is written into your bundle folder. For a real target the CLI would normally create a `.databricks` folder there; the extension has it keep its working files in your system's temp folder instead.
+
 ## Commands
 
 | Command ID | Title | When available |

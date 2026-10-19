@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
-import { explainCodeNotRun, restrictedCliEnv } from "../databricksCli/restrictedExecution.js";
+import { bundleCliEnv, explainCodeNotRun } from "../databricksCli/restrictedExecution.js";
 import type {
   CliProblem,
   CliResolutionFailure,
@@ -194,6 +194,7 @@ function isExpectedProbeTargetFailure(
  * @param bundleDir Absolute or relative path to the directory containing `databricks.yml`.
  * @param target Deployment target to validate against. Defaults to the probe target.
  * @param configuredCliPath Optional user-configured CLI path from extension settings.
+ * @param profile Optional `~/.databrickscfg` profile from extension settings, used for real targets.
  * @returns A {@link BundleResult} that is either `ok` with parsed bundle data and any
  *   diagnostics, or `!ok` with a structured error.
  */
@@ -201,11 +202,17 @@ export async function validateBundle(
   bundleDir: string,
   target?: string,
   configuredCliPath?: string,
+  profile?: string,
 ): Promise<BundleResult> {
-  return validateBundleWithDependencies(bundleDir, target, {
-    execFileAsync,
-    resolveDatabricksCli: () => resolveDatabricksCli(configuredCliPath),
-  });
+  return validateBundleWithDependencies(
+    bundleDir,
+    target,
+    {
+      execFileAsync,
+      resolveDatabricksCli: () => resolveDatabricksCli(configuredCliPath),
+    },
+    profile,
+  );
 }
 
 /**
@@ -214,6 +221,7 @@ export async function validateBundle(
  * @param bundleDir Absolute or relative path to the directory containing `databricks.yml`.
  * @param target Deployment target to validate against. Defaults to {@link BUNDLE_PROBE_TARGET}.
  * @param dependencies Injected `execFileAsync` and `resolveDatabricksCli` implementations.
+ * @param profile Optional `~/.databrickscfg` profile, passed for real targets only.
  * @returns A {@link BundleResult} that is either `ok` with parsed bundle data and any
  *   diagnostics, or `!ok` with a structured error.
  */
@@ -221,6 +229,7 @@ export async function validateBundleWithDependencies(
   bundleDir: string,
   target: string | undefined = BUNDLE_PROBE_TARGET,
   dependencies: ValidateBundleDependencies,
+  profile?: string,
 ): Promise<BundleResult> {
   const resolvedBundleDir = path.resolve(bundleDir);
   const bundleName = path.basename(resolvedBundleDir);
@@ -249,13 +258,20 @@ export async function validateBundleWithDependencies(
   if (target) {
     args.push("--target", target);
   }
+  // A real target may need a login. With several profiles for the same host the CLI
+  // refuses to pick one, so the user can name it. The structural preview needs none.
+  const trimmedProfile = profile?.trim();
+  if (target && target !== BUNDLE_PROBE_TARGET && trimmedProfile) {
+    args.push("--profile", trimmedProfile);
+  }
 
   try {
     const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {
       cwd: resolvedBundleDir,
       timeout: 30_000,
-      // Never let the CLI run scripts or Python that the bundle defines.
-      env: restrictedCliEnv(),
+      // Never let the CLI run scripts or Python that the bundle defines, or write
+      // its working files into the bundle folder.
+      env: bundleCliEnv(resolvedBundleDir),
     });
 
     const parsed = parseBundleConfig(JSON.parse(stdout));

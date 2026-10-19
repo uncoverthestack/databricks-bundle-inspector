@@ -78,6 +78,11 @@
           "scope": "machine",
           "description": "Optional path to the Databricks CLI executable. When empty, the extension uses databricks from PATH."
         },
+        "databricksBundleInspector.profile": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional profile from `~/.databrickscfg` to use when you pick a target in the graph. Needed when several profiles point at the same workspace. Not used by the structural preview, which needs no login."
+        },
         "databricksBundleInspector.telemetry.enabled": {
           "type": "boolean",
           "default": true,

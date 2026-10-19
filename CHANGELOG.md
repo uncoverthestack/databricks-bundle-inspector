@@ -4,6 +4,11 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Pick a target in the graph again.** The dropdown at the top of the graph lists "structural preview" and each of the bundle's targets. A real target shows the bundle as the CLI resolves it for that target, with its variables and issues. It uses your Databricks login and may contact the workspace; if it can't be inspected, the graph falls back to the structural preview and says why. The Problems panel and the status bar keep showing the structural preview, which needs no login, so saving a file never switches them to another target. The picker was removed in 0.1.1 because a real target made the CLI create a `.databricks` folder in the bundle; the extension now has the CLI keep its working files in your system's temp folder, so nothing is written into the bundle folder.
+- **A `databricksBundleInspector.profile` setting** for the `~/.databrickscfg` profile to use when you pick a target. Needed when several profiles point at the same workspace: the CLI then refuses to choose one. The structural preview doesn't use it.
+
 ### Changed
 
 - **Usage telemetry now waits for you.** Nothing is sent until you have closed or answered the telemetry notice, and nothing from that VS Code window: events wait on your machine and are sent from the next time VS Code is opened, so you have time to turn it off. Before, events could be sent about a minute after the notice was requested, or when VS Code closed, even if you had not seen it. A notice that never reached the screen (VS Code closed first, or Do Not Disturb) is now shown again instead of counting as seen. If you already got the notice in an earlier version, nothing changes for you.

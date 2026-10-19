@@ -24,5 +24,8 @@ Only the latest release on the VS Code Marketplace and Open VSX receives fixes.
   Python under the `python` section), so the extension starts it with
   `DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION` set, which makes the CLI refuse. A test runs
   this against every supported CLI version. Versions 0.2.0 and older did not set it.
+- It writes nothing into the folder you open. For a real target the CLI keeps working files in
+  `<bundle>/.databricks`, so the extension sets `DATABRICKS_BUNDLE_TMP` to a folder in the
+  system temp folder instead. A test checks that the bundle folder is unchanged after a check.
 - Usage telemetry never includes paths, names or file contents, and can be turned off.
   See the [README](README.md#telemetry).

@@ -5,6 +5,7 @@ import {
   validateBundleWithDependencies,
 } from "../../../bundle/validateBundle.js";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
+import { bundleTempDir } from "../../../databricksCli/restrictedExecution.js";
 
 function createBundle(): ParsedBundleConfig {
   return {
@@ -34,7 +35,69 @@ describe("validateBundleWithDependencies", () => {
 
     expect(env?.DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION).toBe("1");
     // Every other variable is passed through. On Windows PATH is spelled "Path".
-    expect(env).toEqual({ ...process.env, DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION: "1" });
+    expect(env).toEqual({
+      ...process.env,
+      DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION: "1",
+      DATABRICKS_BUNDLE_TMP: bundleTempDir("/workspace/demo"),
+    });
+  });
+
+  test("tells the CLI to keep its working files outside the bundle folder", async () => {
+    const tempDirs: string[] = [];
+    for (const bundleDir of ["/workspace/demo", "/workspace/demo", "/workspace/other"]) {
+      await validateBundleWithDependencies(bundleDir, "dev", {
+        execFileAsync: async (_file, _args, options) => {
+          tempDirs.push(options?.env?.DATABRICKS_BUNDLE_TMP ?? "");
+          return { stdout: JSON.stringify(createBundle()), stderr: "" };
+        },
+        resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+      });
+    }
+
+    const [first, again, other] = tempDirs;
+    expect(first).toBeTruthy();
+    // The same folder for the same bundle, another for another bundle.
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+    for (const dir of tempDirs) {
+      const fromBundle = path.relative(path.resolve("/workspace/demo"), dir);
+      expect(fromBundle.startsWith("..") || path.isAbsolute(fromBundle)).toBe(true);
+    }
+  });
+
+  describe("--profile", () => {
+    async function argsFor(target: string | undefined, profile: string | undefined) {
+      let args: string[] = [];
+      await validateBundleWithDependencies(
+        "/workspace/demo",
+        target,
+        {
+          execFileAsync: async (_file, callArgs) => {
+            args = callArgs;
+            return { stdout: JSON.stringify(createBundle()), stderr: "" };
+          },
+          resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+        },
+        profile,
+      );
+      return args;
+    }
+
+    test("is passed for a real target when a profile is set", async () => {
+      expect(await argsFor("prod", " WORK ")).toEqual([
+        "bundle", "validate", "--output", "json", "--target", "prod", "--profile", "WORK",
+      ]);
+    });
+
+    test("is never passed for the structural preview", async () => {
+      expect(await argsFor(undefined, "WORK")).not.toContain("--profile");
+      expect(await argsFor(BUNDLE_PROBE_TARGET, "WORK")).not.toContain("--profile");
+    });
+
+    test("is not passed when no profile is set", async () => {
+      expect(await argsFor("prod", undefined)).not.toContain("--profile");
+      expect(await argsFor("prod", "  ")).not.toContain("--profile");
+    });
   });
 
   test("returns CLI_NOT_FOUND when no CLI is resolved", async () => {
