@@ -7,6 +7,7 @@ import { enrichGraphWithFileContent } from "../bundle/graph/enrichGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "../bundle/bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
+import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
 
 function toVsCodeDiagnostics(
   bundleDiagnostics: BundleDiagnostic[],
@@ -36,6 +37,7 @@ function toVsCodeDiagnostics(
 function inspectorIssuesToVsCodeDiagnostics(
   issues: InspectorIssue[],
   bundleDir: string,
+  fixes: Map<string, StoredFix[]>,
 ): Map<string, vscode.Diagnostic[]> {
   const map = new Map<string, vscode.Diagnostic[]>();
   const bundleLabel = path.basename(bundleDir);
@@ -57,6 +59,12 @@ function inspectorIssuesToVsCodeDiagnostics(
     );
     diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;
     diagnostic.code = issue.kind;
+    if (issue.fix) {
+      const key = vscode.Uri.file(issue.file).toString();
+      const fileFixes = fixes.get(key) ?? [];
+      fileFixes.push({ ...issue.fix, kind: issue.kind, line, column: issue.column, message: diagnostic.message });
+      fixes.set(key, fileFixes);
+    }
     const existing = map.get(issue.file) ?? [];
     existing.push(diagnostic);
     map.set(issue.file, existing);
@@ -125,6 +133,7 @@ export function forgetBundleDiagnostics(
   }
   diagnosticFilesByBundle.delete(bundleRoot);
   graphOnlyByBundle.delete(bundleRoot);
+  forgetBundleFixes(bundleRoot);
 }
 
 /**
@@ -191,6 +200,7 @@ export async function updateBundleDiagnostics(
 
   const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
   let graph: BundleGraph | undefined;
+  const fixes = new Map<string, StoredFix[]>();
   // When validation failed, what the CLI reported without a file is all there is.
   const graphOnly = {
     problems: result.ok ? 0 : extractDiagnostics(result).filter((d) => !d.path).length,
@@ -212,6 +222,7 @@ export async function updateBundleDiagnostics(
       const inspectorDiagnostics = inspectorIssuesToVsCodeDiagnostics(
         inspectorIssues,
         bundleRoot,
+        fixes,
       );
       for (const [absPath, diagnostics] of inspectorDiagnostics) {
         fresh.set(absPath, [...(fresh.get(absPath) ?? []), ...diagnostics]);
@@ -242,6 +253,7 @@ export async function updateBundleDiagnostics(
   }
   diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
   graphOnlyByBundle.set(bundleRoot, graphOnly);
+  setBundleFixes(bundleRoot, fixes);
   return graph;
 }
 

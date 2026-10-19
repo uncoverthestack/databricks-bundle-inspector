@@ -46,6 +46,7 @@ import {
   type BundleWatchSpec,
 } from "./bundle/watchedFiles.js";
 import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
+import { InspectorQuickFixProvider, QUICK_FIX_APPLIED_COMMAND } from "./extension/quickFixes.js";
 import {
   countBucket,
   fileKind,
@@ -1202,6 +1203,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   // A click on the status bar item. Inspect does the rest: it opens the graph with the
   // issues, or says what is wrong (for a missing CLI, with the install guide button).
   // With several bundles in the folder it first asks which one, the one in view on top.
+  extensionContext.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      [{ scheme: "file", language: "yaml" }],
+      new InspectorQuickFixProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+    // Runs after a quick fix is applied: counts which kind of fix, never the values.
+    vscode.commands.registerCommand(QUICK_FIX_APPLIED_COMMAND, (kind: unknown) => {
+      if (kind === "missing_file" || kind === "include_matches_nothing") {
+        telemetry?.logUsage("quick_fix_applied", { kind });
+      }
+    }),
+  );
+
   const statusBarDisposable = vscode.commands.registerCommand(STATUS_BAR_COMMAND, async () => {
     let bundleRoot = statusBarBundle();
     if (foundBundles.size > 1) {

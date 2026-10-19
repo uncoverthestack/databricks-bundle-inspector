@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
@@ -11,6 +11,7 @@ import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js"
 import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
+import { writtenValueAt } from "./quickFix.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -30,6 +31,18 @@ export type InspectorIssueKind =
   | "include_matches_nothing"
   | "resource_not_included";
 
+/**
+ * A fix that is one exact replacement in the issue's file, on the issue's line: the
+ * value written as `oldText` becomes `newText`. Only offered while the file still says
+ * `oldText` there, so it never edits a value that came from somewhere else.
+ */
+export interface IssueFix {
+  oldText: string;
+  newText: string;
+  /** What the Quick Fix menu says, e.g. `Change to "src/etl.py"`. */
+  title: string;
+}
+
 export interface InspectorIssue {
   id: string;
   severity: InspectorIssueSeverity;
@@ -48,6 +61,38 @@ export interface InspectorIssue {
   column?: number;
   yamlPath?: string;
   fixHint?: string;
+  fix?: IssueFix;
+}
+
+function replacementFix(oldText: string, newText: string): IssueFix {
+  return { oldText, newText, title: `Change to "${newText}"` };
+}
+
+/**
+ * The fix for a notebook path without its extension: the path as written in the file
+ * gets the extension. The CLI reports paths from the bundle root, while a resource file
+ * holds them from its own folder, so the fix is built from the file. Nothing is offered
+ * when the written value leads somewhere else, as a variable or target override does.
+ */
+function missingExtensionFix(
+  rawPath: string,
+  problem: NotebookPathProblem,
+  resolvedPath: string | undefined,
+  file: string | undefined,
+  line: number | undefined,
+  column: number | undefined,
+): Pick<InspectorIssue, "fix"> {
+  if (problem.kind !== "missing_extension" || !resolvedPath || !file || !line || !column) return {};
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  const written = writtenValueAt(text.split(/\r?\n/)[line - 1] ?? "", column);
+  if (!written || path.resolve(path.dirname(file), written) !== resolvedPath) return {};
+  const extension = problem.suggestedPath.slice(rawPath.length);
+  return { fix: replacementFix(written, written + extension) };
 }
 
 function isMissingLocalPath(ref: {
@@ -439,6 +484,14 @@ export function buildInspectorIssues(
           id: `notebook-path:${task.id}:${ref.yamlPath}:${ref.path}`,
           severity: "error",
           ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          ...missingExtensionFix(
+            ref.path,
+            ref.notebookProblem,
+            ref.resolvedPath,
+            ref.sourceFile || sourceFileForTask(task),
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
           taskId: task.id,
           taskName: task.displayName,
           yamlPath: ref.yamlPath,
@@ -548,6 +601,14 @@ export function buildInspectorIssues(
           id: `notebook-path:${pipeline.id}:${ref.yamlPath}`,
           severity: "error",
           ...notebookProblemIssue(ref.path, ref.notebookProblem),
+          ...missingExtensionFix(
+            ref.path,
+            ref.notebookProblem,
+            ref.resolvedPath,
+            ref.sourceFile,
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
           resourceId: pipeline.id,
           yamlPath: `${pipeline.id}.${ref.yamlPath}`,
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
@@ -694,7 +755,7 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
         includeCaveat(entry) ??
         "Check the folder name and the file extension (.yml or .yaml) in the include entry in databricks.yml.",
       file: bundleFilePath,
-      ...(line ? { line } : {}),
+      ...(line ? { line, fix: replacementFix(entry, suggestion) } : {}),
     });
   }
 

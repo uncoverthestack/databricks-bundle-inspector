@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Quick fixes for two findings** ([#165](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/165)). A notebook path without its extension, and an `include` pattern with a likely typo, now have a light bulb in the editor: **Change to "src/etl.py"** or **Change to "resources/*.yml"** applies the suggestion (also from the Quick Fix menu, `Cmd+.` on macOS, `Ctrl+.` on Windows and Linux). The fix edits the path as written in the file, so `../src/etl` in a resource file becomes `../src/etl.py`. It is only offered while the file still holds that value at that place: a path built from a variable, or a line edited since the check, gets no fix. Saving re-checks as usual and clears the problem.
+
 ### Changed
 
 - **A task's problems show when you click it, in any graph mode**, not only in Issues mode. Each problem is labelled and coloured by how serious it is (red **Error**, yellow **Warning**, blue **Note**), errors first. **Show all N issues** expands the list in place, where it used to say "+N more issues". The advice on how to fix a problem is easier to read, in the task panel and in the Issues list. The task's issue chip counts the same problems as the Issue Summary, coloured by the most serious one, where it could say "No issues" above a list of five, and each problem shows its line (`Ln 141`) instead of a cut-off file name, with its full text instead of two lines.

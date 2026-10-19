@@ -79,5 +79,74 @@ export function includeMistakesSuite() {
 
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
+
+    it("fixes the misspelled include from the Quick Fix menu, and the warning goes on save", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the include-mistakes fixture should be the open folder");
+      const bundleUri = vscode.Uri.file(path.join(root, "databricks.yml"));
+      const original = await vscode.workspace.fs.readFile(bundleUri);
+      const matchesNothing = () => includeProblems(root).filter((p) => p.kind === "include_matches_nothing");
+
+      try {
+        const document = await vscode.workspace.openTextDocument(bundleUri);
+        await vscode.window.showTextDocument(document);
+        const problem = vscode.languages
+          .getDiagnostics(bundleUri)
+          .find((d) => d.code === "include_matches_nothing");
+        assert.ok(problem, "the misspelled include should be reported before it is fixed");
+
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider",
+          bundleUri,
+          problem.range,
+          vscode.CodeActionKind.QuickFix.value,
+        );
+        const fix = actions.find((action) => action.title === 'Change to "resources/*.yml"');
+        assert.ok(fix?.edit, `expected the include fix, got: ${actions.map((a) => a.title).join(", ")}`);
+        assert.equal(fix.isPreferred, true);
+
+        await vscode.workspace.applyEdit(fix.edit);
+        assert.equal(document.lineAt(problem.range.start.line).text, "  - resources/*.yml");
+        if (PAUSE_MS > 0) await sleep(PAUSE_MS);
+        await document.save();
+
+        for (let waited = 0; matchesNothing().length > 0 && waited < 30_000; waited += 500) await sleep(500);
+        assert.deepEqual(matchesNothing(), [], "saving the fix clears the warning");
+      } finally {
+        await vscode.workspace.fs.writeFile(bundleUri, original);
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+
+    it("offers no fix once the entry no longer says what the check read", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the include-mistakes fixture should be the open folder");
+      const bundleUri = vscode.Uri.file(path.join(root, "databricks.yml"));
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      for (let waited = 0; includeProblems(root).length < 3 && waited < 30_000; waited += 500) await sleep(500);
+
+      const document = await vscode.workspace.openTextDocument(bundleUri);
+      await vscode.window.showTextDocument(document);
+      const problem = vscode.languages.getDiagnostics(bundleUri).find((d) => d.code === "include_matches_nothing");
+      assert.ok(problem, "the misspelled include should be reported again");
+
+      try {
+        // Edit the entry without saving, so the check still holds the old value.
+        const line = problem.range.start.line;
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(bundleUri, document.lineAt(line).range, "  - resourcez/*.yml");
+        await vscode.workspace.applyEdit(edit);
+
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider",
+          bundleUri,
+          problem.range,
+          vscode.CodeActionKind.QuickFix.value,
+        );
+        assert.deepEqual(actions.filter((action) => action.title.startsWith("Change to")).map((a) => a.title), []);
+      } finally {
+        await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+      }
+    });
   });
 }

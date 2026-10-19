@@ -65,6 +65,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   job_selected: {},
   search_result_selected: {},
   issue_item_selected: {},
+  quick_fix_applied: { kind: oneOf("missing_file", "include_matches_nothing") },
   extension_uninstalled: {},
 };
 

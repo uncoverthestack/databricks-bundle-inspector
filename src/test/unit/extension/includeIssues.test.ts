@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { includeIssues } from "../../../bundle/issues.js";
+import { locateFix } from "../../../bundle/quickFix.js";
 
 const JOB_FILE = "resources:\n  jobs:\n    a_job:\n      name: a\n";
 
@@ -43,6 +44,22 @@ describe("include pattern that matches nothing", () => {
     });
     expect(issue?.title).toBe(
       'No files match the include pattern "resource/*.yml", so nothing from it is loaded. Did you mean "resources/*.yml"?',
+    );
+  });
+
+  test.each([
+    ["databricks.yml", "include:\n  - resource/*.yml\n"],
+    ["databricks.yaml", "include:\n  - resource/*.yml\n"],
+    ["databricks.yml", "include:\n  - \"resource/*.yml\"  # jobs\n"],
+  ])("offers a fix that replaces exactly the entry in %s: %j", (name, text) => {
+    const root = makeBundle({ [name]: text, "resources/a.yml": JOB_FILE });
+    const [issue] = includeIssues(config(), root).filter((i) => i.kind === "include_matches_nothing");
+    expect(issue?.fix).toEqual({ oldText: "resource/*.yml", newText: "resources/*.yml", title: 'Change to "resources/*.yml"' });
+    expect(issue?.file).toBe(path.join(root, name));
+    const line = text.split("\n")[issue!.line! - 1]!;
+    const span = locateFix(line, issue!.fix!.oldText);
+    expect(line.slice(0, span!.start) + issue!.fix!.newText + line.slice(span!.end)).toBe(
+      line.replace("resource/", "resources/"),
     );
   });
 
