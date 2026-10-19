@@ -19,6 +19,7 @@ import {
 } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
+import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import "@xyflow/react/dist/style.css";
 
 function isPipelineTask(task) {
@@ -161,7 +162,8 @@ function summarizeTaskIssues(
       detail:
         issue.detail && issue.title && issue.detail !== issue.title
           ? issue.title
-          : issue.fixHint,
+          : undefined,
+      fixHint: issue.fixHint,
       file: issue.file,
       line: issue.line,
       column: issue.column,
@@ -1556,18 +1558,27 @@ function RefSection({ title, items, onOpenFile }) {
   );
 }
 
+const ISSUE_SUMMARY_LIMIT = 4;
+
 function IssueSummarySection({ items, onOpenFile }) {
+  const itemsKey = items?.map((item) => item.id).join("|") ?? "";
+  const [expandedKey, setExpandedKey] = useState(null);
+  const expanded = expandedKey === itemsKey;
+
   if (!items?.length) return null;
-  const visibleItems = items.slice(0, 4);
-  const extraCount = items.length - visibleItems.length;
+  const ordered = orderBySeverity(items);
+  const visibleItems = expanded ? ordered : ordered.slice(0, ISSUE_SUMMARY_LIMIT);
+  const hiddenCount = ordered.length - ISSUE_SUMMARY_LIMIT;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-300/80">
-        Issue Summary
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+        Issue Summary · {items.length}
       </div>
-      <div className="overflow-hidden rounded-xl border border-red-500/30 bg-red-500/5">
+      <div className="overflow-hidden rounded-xl border border-stone-800">
         {visibleItems.map((item) => {
           const clickable = Boolean(item.file && onOpenFile);
+          const severity = severityMeta(item.severity);
+          const Icon = item.severity === "info" ? Info : AlertTriangle;
           return (
             <div
               key={item.id}
@@ -1586,42 +1597,55 @@ function IssueSummarySection({ items, onOpenFile }) {
                   : undefined
               }
               className={[
-                "flex items-start gap-2 border-b border-red-500/10 px-3 py-2.5 last:border-0",
+                "flex items-start gap-2 border-b border-stone-800 px-3 py-2.5 last:border-0",
                 clickable
-                  ? "cursor-pointer outline-none hover:bg-red-500/10 focus:bg-red-500/10 focus:ring-1 focus:ring-red-400/30"
+                  ? "cursor-pointer outline-none hover:bg-stone-900 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
                   : "",
               ].join(" ")}
             >
-              <AlertTriangle
+              <Icon
                 size={13}
-                className="mt-0.5 shrink-0 text-red-300"
+                className={`mt-0.5 shrink-0 ${severity.colorClass}`}
               />
               <div className="min-w-0 flex-1">
-                <div title={item.title} className="line-clamp-2 text-xs font-medium text-red-200">
+                <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${severity.colorClass}`}>
+                  {severity.label}
+                </div>
+                <div className="mt-0.5 break-words text-xs font-medium text-stone-100">
                   {item.title}
                 </div>
                 {item.detail && (
-                  <div title={item.detail} className="mt-0.5 line-clamp-2 text-[11px] text-red-200/60">
+                  <div className="mt-0.5 break-words text-[11px] text-stone-400">
                     {item.detail}
+                  </div>
+                )}
+                {item.fixHint && (
+                  <div className="mt-1 text-[11px] leading-snug text-stone-300">
+                    {item.fixHint}
                   </div>
                 )}
               </div>
               {item.location && (
                 <span
                   title={item.location}
-                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-red-200/70"
+                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-stone-400"
                 >
-                  {item.location}
+                  {/* Every row is usually in the same file, so the line is what tells them apart. */}
+                  {item.line ? `Ln ${item.line}` : item.location}
                   {clickable && <span className="ml-1">↗</span>}
                 </span>
               )}
             </div>
           );
         })}
-        {extraCount > 0 && (
-          <div className="px-3 py-2 text-[11px] text-red-200/60">
-            +{extraCount} more issue{extraCount === 1 ? "" : "s"}
-          </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpandedKey(expanded ? null : itemsKey)}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-blue-300 outline-none hover:bg-stone-900 hover:text-blue-200 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
+          >
+            {expanded ? "Show fewer" : `Show all ${items.length} issues`}
+          </button>
         )}
       </div>
     </section>
@@ -1930,33 +1954,43 @@ function Breadcrumb({ items }) {
   );
 }
 
-function TaskStatusChips({ node, taskIssues, computeItems, fileItems }) {
+/** Chip colours per severity, for the task's most serious issue. */
+const ISSUE_CHIP_CLASS = {
+  error: "border-red-500/30 bg-red-500/10 text-red-300",
+  warning: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+  info: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+};
+const PLAIN_CHIP_CLASS = "border-stone-800 bg-stone-900/70 text-stone-300";
+
+function TaskStatusChips({ node, issueItems, computeItems, fileItems }) {
+  // Counts the same list as the Issue Summary, so the two never disagree.
+  const issueCount = issueItems.length;
+  const worst = orderBySeverity(issueItems)[0]?.severity;
+  const issueChip = {
+    label: issueCount > 0 ? `${issueCount} issue${issueCount === 1 ? "" : "s"}` : "No issues",
+    className:
+      issueCount > 0
+        ? ISSUE_CHIP_CLASS[worst] ?? ISSUE_CHIP_CLASS.warning
+        : "border-stone-800 bg-stone-900/70 text-stone-400",
+  };
   const chips = [
-    node.taskTypeLabel,
-    taskIssues.total > 0
-      ? `${taskIssues.total} issue${taskIssues.total === 1 ? "" : "s"}`
-      : "No issues",
-    computeItems[0]?.name,
-    fileItems.length > 0
-      ? `${fileItems.length} file${fileItems.length === 1 ? "" : "s"}`
-      : undefined,
+    node.taskTypeLabel && { label: node.taskTypeLabel, className: PLAIN_CHIP_CLASS },
+    issueChip,
+    computeItems[0]?.name && { label: computeItems[0].name, className: PLAIN_CHIP_CLASS },
+    fileItems.length > 0 && {
+      label: `${fileItems.length} file${fileItems.length === 1 ? "" : "s"}`,
+      className: PLAIN_CHIP_CLASS,
+    },
   ].filter(Boolean);
 
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
       {chips.map((chip) => (
         <span
-          key={chip}
-          className={[
-            "rounded-md border px-2 py-0.5 text-[11px]",
-            String(chip).includes("issue")
-              ? taskIssues.total > 0
-                ? "border-red-500/30 bg-red-500/10 text-red-300"
-                : "border-stone-800 bg-stone-900/70 text-stone-400"
-              : "border-stone-800 bg-stone-900/70 text-stone-300",
-          ].join(" ")}
+          key={chip.label}
+          className={`rounded-md border px-2 py-0.5 text-[11px] ${chip.className}`}
         >
-          {chip}
+          {chip.label}
         </span>
       ))}
     </div>
@@ -1988,7 +2022,6 @@ function DetailPanel({
   parsedBundle,
   targetName,
   inspectorIssues,
-  graphMode,
   onSelectTask,
   onClose,
   onOpenFile,
@@ -2002,7 +2035,6 @@ function DetailPanel({
   if (!node || node.nodeType !== "task") return null;
 
   const parentJob = nodeById.get(node.parentId);
-  const taskIssues = getTaskIssueCounts(node, parsedBundle, targetName);
   const issueSummaryItems = summarizeTaskIssues(
     node,
     parsedBundle,
@@ -2250,7 +2282,7 @@ function DetailPanel({
           <Breadcrumb items={breadcrumbItems} />
           <TaskStatusChips
             node={node}
-            taskIssues={taskIssues}
+            issueItems={issueSummaryItems}
             computeItems={computeItems}
             fileItems={fileItems}
           />
@@ -2265,12 +2297,10 @@ function DetailPanel({
 
       {/* Body */}
       <div className="flex-1 space-y-5 overflow-auto p-5">
-        {graphMode === "issues" && (
-          <IssueSummarySection
-            items={issueSummaryItems}
-            onOpenFile={onOpenFile}
-          />
-        )}
+        <IssueSummarySection
+          items={issueSummaryItems}
+          onOpenFile={onOpenFile}
+        />
 
         {/* Task Configuration */}
         <section>
@@ -2971,7 +3001,6 @@ export default function App({
             parsedBundle={effectiveResolutionBundle}
             targetName={effectiveTargetName}
             inspectorIssues={inspectorIssues}
-            graphMode={graphMode}
             onSelectTask={selectTaskNode}
             onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
