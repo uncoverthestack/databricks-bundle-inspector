@@ -2,7 +2,7 @@ import { describe, test, expect } from "@jest/globals";
 import { locateFix } from "../../../bundle/quickFix.js";
 
 /** The text a fix would replace, or undefined when none is offered. */
-function replaced(line: string, oldText: string, column?: number): string | undefined {
+function replaced(line: string, oldText: string, column: number): string | undefined {
   const span = locateFix(line, oldText, column);
   return span ? line.slice(span.start, span.end) : undefined;
 }
@@ -20,9 +20,9 @@ describe("locateFix", () => {
   });
 
   test("finds a list entry with no column, and keeps a comment after it", () => {
-    expect(locateFix("  - resource/*.yml", "resource/*.yml")).toEqual({ start: 4, end: 18 });
-    expect(replaced("  - resource/*.yml  # jobs", "resource/*.yml")).toBe("resource/*.yml");
-    expect(replaced(`  - "resource/*.yml"`, "resource/*.yml")).toBe("resource/*.yml");
+    expect(locateFix("  - resource/*.yml", "resource/*.yml", 5)).toEqual({ start: 4, end: 18 });
+    expect(replaced("  - resource/*.yml  # jobs", "resource/*.yml", 5)).toBe("resource/*.yml");
+    expect(replaced(`  - "resource/*.yml"`, "resource/*.yml", 5)).toBe("resource/*.yml");
   });
 
   test("offers nothing when the value is now different, as after an edit", () => {
@@ -42,13 +42,22 @@ describe("locateFix", () => {
   });
 
   test("offers nothing when the line holds the value twice and no column picks one", () => {
-    expect(locateFix("  - a.yml # a.yml", "a.yml")).toEqual({ start: 4, end: 9 });
-    expect(locateFix(`  key: "x" "x"`, "x")).toBeUndefined();
+    expect(locateFix("  - a.yml # a.yml", "a.yml", 5)).toEqual({ start: 4, end: 9 });
+    expect(locateFix(`  key: "x" "x"`, "x", 8)).toBeUndefined();
+    // A quoted value that ends a flow mapping or list entry is still one value.
+    expect(replaced(`  notebook_task: { notebook_path: "./src/etl" }`, "./src/etl", 35)).toBe("./src/etl");
+    expect(replaced(`  include: ["resource/*.yml", "b"]`, "resource/*.yml", 13)).toBe("resource/*.yml");
+  });
+
+  test("offers nothing for a copy of the value inside a longer plain value", () => {
+    // YAML reads "resource/*.yml resource/*.yml" as one value: neither copy is the value.
+    expect(locateFix("  - resource/*.yml resource/*.yml", "resource/*.yml", 5)).toBeUndefined();
+    expect(locateFix("  notebook_path: src/etl src/etl  # x", "src/etl", 18)).toBeUndefined();
   });
 
   test("offers nothing for an empty value, mismatched quotes, or text inside a key", () => {
-    expect(locateFix("  notebook_path: src/etl", "")).toBeUndefined();
+    expect(locateFix("  notebook_path: src/etl", "", 18)).toBeUndefined();
     expect(locateFix(`  notebook_path: "src/etl'`, "src/etl", 18)).toBeUndefined();
-    expect(locateFix("  src/etl: value", "src/etl")).toBeUndefined();
+    expect(locateFix("  src/etl: value", "src/etl", 3)).toBeUndefined();
   });
 });

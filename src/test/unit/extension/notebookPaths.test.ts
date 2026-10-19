@@ -136,7 +136,7 @@ describe("notebook path issues on the fixture bundle", () => {
       });
       const lines = readFileSync(issue.file!, "utf8").split("\n");
       const line = lines[issue.line! - 1]!;
-      const span = locateFix(line, issue.fix!.oldText, issue.column);
+      const span = locateFix(line, issue.fix!.oldText, issue.column!);
       expect(span).toBeDefined();
       const fixed = line.slice(0, span!.start) + issue.fix!.newText + line.slice(span!.end);
       expect(fixed.trim()).toMatch(/^(- )?(notebook_path|path): \.\.\/src\/nb_noext\.sql$/);

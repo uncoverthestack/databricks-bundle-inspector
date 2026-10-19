@@ -74,7 +74,8 @@
       "kind": "include_matches_nothing",
       "title": "No files match the include pattern \"resource/*.yml\", so nothing from it is loaded. Did you mean \"resources/*.yml\"?",
       "file": "databricks.yml",
-      "line": 9
+      "line": 9,
+      "column": 5
     },
     {
       "severity": "warning",
