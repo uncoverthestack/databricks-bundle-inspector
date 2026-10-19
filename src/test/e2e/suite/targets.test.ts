@@ -5,6 +5,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
+import { codeValue } from "../../../bundle/issueDocs.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -45,7 +46,7 @@ function problemsWidgets(): string[] {
   return vscode.languages
     .getDiagnostics()
     .flatMap(([, diagnostics]) => diagnostics)
-    .filter((d) => d.code === "widget_parameter_mismatch")
+    .filter((d) => codeValue(d.code) === "widget_not_set")
     .map((d) => /widget "([^"]+)"/.exec(d.message)?.[1] ?? "")
     .sort();
 }
@@ -53,7 +54,7 @@ function problemsWidgets(): string[] {
 /** Names of the widgets the graph's issue list warns about. */
 function graphWidgets(data: GraphData | undefined): string[] {
   return (data?.inspectorIssues ?? [])
-    .filter((issue) => issue.kind === "widget_parameter_mismatch")
+    .filter((issue) => issue.kind === "widget_not_set")
     .map((issue) => /widget "([^"]+)"/.exec(issue.title)?.[1] ?? "")
     .sort();
 }
@@ -156,7 +157,7 @@ export function targetsSuite() {
       const data = await pickTarget("dev");
 
       assert.ok(
-        data?.inspectorIssues.some((issue) => issue.kind === "validation_diagnostic"),
+        data?.inspectorIssues.some((issue) => issue.kind === "cli_diagnostic"),
         "the CLI's login error should be listed in the graph",
       );
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");

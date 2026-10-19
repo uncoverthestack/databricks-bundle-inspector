@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import * as vscode from "vscode";
+import { codeValue } from "../../../bundle/issueDocs.js";
 
 /** How long to leave the result on screen before the window closes. 0 in normal runs. */
 const PAUSE_MS = Number(process.env.E2E_PAUSE_MS ?? 0);
@@ -24,11 +25,11 @@ function includeProblems(root: string): { file: string; line: number; kind: stri
     .getDiagnostics()
     .flatMap(([uri, diagnostics]) =>
       diagnostics
-        .filter((d) => INCLUDE_KINDS.has(String(d.code)))
+        .filter((d) => INCLUDE_KINDS.has(codeValue(d.code) ?? ""))
         .map((d) => ({
           file: path.relative(root, uri.fsPath).split(path.sep).join("/"),
           line: d.range.start.line + 1,
-          kind: String(d.code),
+          kind: codeValue(d.code) ?? "",
           message: d.message,
         })),
     )
@@ -72,6 +73,11 @@ export function includeMistakesSuite() {
         ],
       );
       assert.match(problems[0]!.message, /Did you mean "resources\/\*\.yml"\?/);
+      // Each code links to its section in the docs, at this version's tag.
+      const code = vscode.languages.getDiagnostics(vscode.Uri.file(path.join(root, "databricks.yml")))
+        .find((d) => codeValue(d.code) === "include_matches_nothing")?.code;
+      assert.ok(typeof code === "object", "the code should carry a link");
+      assert.match(code.target.toString(), /\/blob\/v\d+\.\d+\.\d+\/docs\/checks\.md#include_matches_nothing$/);
       assert.ok(
         !problems.some((p) => p.file === "paused/job.yml"),
         "paused/job.yml is named in a comment in databricks.yml, so it must not be reported",
@@ -92,7 +98,7 @@ export function includeMistakesSuite() {
         await vscode.window.showTextDocument(document);
         const problem = vscode.languages
           .getDiagnostics(bundleUri)
-          .find((d) => d.code === "include_matches_nothing");
+          .find((d) => codeValue(d.code) === "include_matches_nothing");
         assert.ok(problem, "the misspelled include should be reported before it is fixed");
 
         const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
@@ -127,7 +133,7 @@ export function includeMistakesSuite() {
 
       const document = await vscode.workspace.openTextDocument(bundleUri);
       await vscode.window.showTextDocument(document);
-      const problem = vscode.languages.getDiagnostics(bundleUri).find((d) => d.code === "include_matches_nothing");
+      const problem = vscode.languages.getDiagnostics(bundleUri).find((d) => codeValue(d.code) === "include_matches_nothing");
       assert.ok(problem, "the misspelled include should be reported again");
 
       try {

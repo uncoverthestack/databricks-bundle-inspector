@@ -9,7 +9,7 @@ function issue(
   return {
     id,
     severity,
-    kind: "validation_diagnostic",
+    kind: "cli_diagnostic",
     title: `${severity} issue`,
   };
 }

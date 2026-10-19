@@ -15,21 +15,36 @@ import { writtenValueAt } from "./quickFix.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
-export type InspectorIssueKind =
-  | "missing_file"
-  | "missing_library"
-  | "unresolved_variable"
-  | "validation_diagnostic"
-  | "unknown_or_deprecated_field"
-  | "unknown_task_type"
-  | "git_source_not_recommended"
-  | "secret_scope_name_mismatch"
-  | "notebook_type_mismatch"
-  | "widget_parameter_mismatch"
-  | "task_value_mismatch"
-  | "excluded_from_sync"
-  | "include_matches_nothing"
-  | "resource_not_included";
+/**
+ * The code each finding shows in the Problems panel, and its section in docs/checks.md,
+ * in the order the page lists them. A code that has shipped is never renamed or removed:
+ * users write them down, and quick fixes, telemetry and the docs rely on them. Each code
+ * means one fix.
+ */
+export const INSPECTOR_ISSUE_KINDS = [
+  "missing_file",
+  "notebook_missing_extension",
+  "missing_pipeline_source",
+  "missing_library",
+  "not_a_notebook",
+  "file_is_a_notebook",
+  "excluded_from_sync",
+  "include_matches_nothing",
+  "resource_not_included",
+  "widget_not_set",
+  "unused_parameter",
+  "task_value_unknown_task",
+  "task_value_not_upstream",
+  "task_value_key_not_set",
+  "secret_scope_name_mismatch",
+  "unresolved_variable",
+  "cli_diagnostic",
+  "unknown_or_deprecated_field",
+  "unknown_task_type",
+  "git_source_not_recommended",
+] as const;
+
+export type InspectorIssueKind = (typeof INSPECTOR_ISSUE_KINDS)[number];
 
 /**
  * A fix that is one exact replacement in the issue's file, on the issue's line: the
@@ -156,7 +171,7 @@ function notebookProblemIssue(
 ): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
   if (problem.kind === "missing_extension") {
     return {
-      kind: "missing_file",
+      kind: "notebook_missing_extension",
       title: `Notebook "${path}" may not be found. Did you mean "${problem.suggestedPath}"?`,
       fixHint:
         "Local notebook paths need their file extension (.py, .r, .scala, .sql or .ipynb).",
@@ -164,7 +179,7 @@ function notebookProblemIssue(
   }
   if (problem.kind === "is_a_notebook") {
     return {
-      kind: "notebook_type_mismatch",
+      kind: "file_is_a_notebook",
       title: `"${path}" may be a notebook, not a file.`,
       fixHint:
         "Its first line is the Databricks notebook header, so the CLI treats it as a notebook. Remove that line, or run it from a notebook task or a pipeline notebook library.",
@@ -172,7 +187,7 @@ function notebookProblemIssue(
   }
   const header = notebookHeaderFor(path);
   return {
-    kind: "notebook_type_mismatch",
+    kind: "not_a_notebook",
     title: `"${path}" may not be a notebook.`,
     fixHint: header
       ? `Add "${header}" as its first line, or run it from a task that takes a file.`
@@ -238,7 +253,7 @@ function widgetParameterIssues(
       issues.push({
         id,
         severity: "warning",
-        kind: "widget_parameter_mismatch",
+        kind: "widget_not_set",
         title: `Notebook "${unset.target}", run with %run, reads widget "${unset.name}", which may not be set.`,
         taskId: task.id,
         taskName: task.displayName,
@@ -270,7 +285,7 @@ function widgetParameterIssues(
         issues.push({
           id: `widget-other-language:${task.id}:${ref.resolvedPath}:${read.name}`,
           severity: "warning",
-          kind: "widget_parameter_mismatch",
+          kind: "widget_not_set",
           title: `Widget "${read.name}" is read in ${where} but created in ${created}, so it may not be set when the notebook runs as a job.`,
           taskId: task.id,
           taskName: task.displayName,
@@ -287,7 +302,7 @@ function widgetParameterIssues(
       issues.push({
         id: `widget-not-passed:${task.id}:${ref.resolvedPath}:${read.name}`,
         severity: "warning",
-        kind: "widget_parameter_mismatch",
+        kind: "widget_not_set",
         title: suggestion
           ? `Notebook reads widget "${read.name}", which this task may not pass. Did you mean "${suggestion}"?`
           : `Notebook reads widget "${read.name}", which this task may not pass.`,
@@ -316,7 +331,7 @@ function widgetParameterIssues(
       issues.push({
         id: `parameters-not-checked:${task.id}:${ref.yamlPath}`,
         severity: "info",
-        kind: "widget_parameter_mismatch",
+        kind: "unused_parameter",
         title: `Not checked whether the notebook uses ${names}: it reads widgets by names only known at runtime.`,
         taskId: task.id,
         taskName: task.displayName,
@@ -332,7 +347,7 @@ function widgetParameterIssues(
       issues.push({
         id: `parameter-not-read:${task.id}:${parameter.yamlPath}`,
         severity: "info",
-        kind: "widget_parameter_mismatch",
+        kind: "unused_parameter",
         title: `Parameter "${parameter.name}" may not be used: the notebook doesn't read a widget with that name.`,
         taskId: task.id,
         taskName: task.displayName,
@@ -405,7 +420,7 @@ function validationDiagnosticIssue(
   }
 
   return {
-    kind: "validation_diagnostic",
+    kind: "cli_diagnostic",
     title: diagnostic.message ?? issue.message,
     fixHint: "Review the Databricks CLI validation diagnostic.",
   };
@@ -634,7 +649,7 @@ export function buildInspectorIssues(
       issues.push({
         id: `missing-pipeline-source:${pipeline.id}:${ref.yamlPath}`,
         severity: "error",
-        kind: "missing_file",
+        kind: "missing_pipeline_source",
         title:
           ref.kind === "glob"
             ? "Pipeline source folder has no files"
@@ -920,7 +935,6 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         const base = {
           id,
           severity: "warning" as const,
-          kind: "task_value_mismatch" as const,
           taskId: reader.id,
           taskName: reader.displayName,
           yamlPath: read.yamlPath ?? `tasks.${readerKey}`,
@@ -931,6 +945,7 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           const suggestion = closestName(read.taskKey, [...tasks.keys()]);
           issues.push({
             ...base,
+            kind: "task_value_unknown_task",
             title: `Task value ${valueName} is read from task "${read.taskKey}", which may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
             fixHint: "taskKey must be the task_key of a task in the same job. Databricks reports an incorrectly named task as an error when the job runs.",
           });
@@ -939,6 +954,7 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         if (!upstreamOf(readerKey).has(read.taskKey)) {
           issues.push({
             ...base,
+            kind: "task_value_not_upstream",
             title: `Task "${read.taskKey}" isn't upstream of this task, so its value ${valueName} may not be set yet.`,
             fixHint: `Add "${read.taskKey}" to this task's depends_on, directly or through another dependency, so it runs first.`,
           });
@@ -949,6 +965,7 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           const suggestion = closestName(read.key, [...keys]);
           issues.push({
             ...base,
+            kind: "task_value_key_not_set",
             title: `Task "${read.taskKey}" may not set value "${read.key}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
             fixHint: `The task's code has no dbutils.jobs.taskValues.set(key="${read.key}", ...). Databricks reports a missing key as an error when the job runs.`,
           });

@@ -37,7 +37,7 @@ describe("task values", () => {
     const config = fixtureConfig();
     const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, bundleRoot));
     issues = buildInspectorIssues(graph, config, [], bundleRoot).filter(
-      (issue) => issue.kind === "task_value_mismatch",
+      (issue) => issue.kind.startsWith("task_value_"),
     );
   });
 

@@ -80,13 +80,26 @@ describe("notebook path issues on the fixture bundle", () => {
     const config = fixtureConfig();
     const graph = await extractBundleGraph(config, bundleRoot);
     issues = buildInspectorIssues(graph, config, [], bundleRoot).filter(
-      (issue) => issue.kind === "missing_file" || issue.kind === "notebook_type_mismatch",
+      (issue) => ["notebook_missing_extension", "not_a_notebook", "file_is_a_notebook"].includes(issue.kind),
     );
   });
 
   function titleAt(yamlPathEnd: string): string | undefined {
     return issues.find((issue) => issue.yamlPath?.endsWith(yamlPathEnd))?.title;
   }
+  function kindAt(yamlPathEnd: string): string | undefined {
+    return issues.find((issue) => issue.yamlPath?.endsWith(yamlPathEnd))?.kind;
+  }
+
+  test("each mix-up has its own code, as each has its own fix", () => {
+    expect(kindAt("tasks.no_extension.notebook_task.notebook_path")).toBe("notebook_missing_extension");
+    expect(kindAt("tasks.plain_sql.notebook_task.notebook_path")).toBe("not_a_notebook");
+    expect(kindAt("tasks.python_file_is_notebook.spark_python_task.python_file")).toBe("file_is_a_notebook");
+    expect(kindAt("tasks.sql_file_is_notebook.sql_task.file.path")).toBe("file_is_a_notebook");
+    expect(kindAt("libraries[0].notebook.path")).toBe("notebook_missing_extension");
+    expect(kindAt("libraries[1].notebook.path")).toBe("not_a_notebook");
+    expect(kindAt("libraries[2].file.path")).toBe("file_is_a_notebook");
+  });
 
   test("job tasks follow the CLI's notebook rules", () => {
     expect(titleAt("tasks.no_extension.notebook_task.notebook_path")).toBe(
@@ -129,7 +142,7 @@ describe("notebook path issues on the fixture bundle", () => {
       expect(fixed.trim()).toMatch(/^(- )?(notebook_path|path): \.\.\/src\/nb_noext\.sql$/);
     }
     // Only the missing extension has one exact fix; the other notebook mix-ups do not.
-    expect(issues.filter((issue) => issue.kind === "notebook_type_mismatch" && issue.fix)).toEqual([]);
+    expect(issues.filter((issue) => issue.kind !== "notebook_missing_extension" && issue.fix)).toEqual([]);
   });
 
   test("pipeline libraries follow the CLI's notebook rules", () => {

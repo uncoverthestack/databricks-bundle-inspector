@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import * as vscode from "vscode";
+import { codeValue } from "../../../bundle/issueDocs.js";
 
 /** How long to leave the result on screen before the window closes. 0 in normal runs. */
 const PAUSE_MS = Number(process.env.E2E_PAUSE_MS ?? 0);
@@ -27,7 +28,7 @@ function inspectorProblems(root: string): { file: string; line: number; kind: st
         .map((d) => ({
           file: path.relative(root, uri.fsPath).split(path.sep).join("/"),
           line: d.range.start.line + 1,
-          kind: String(d.code),
+          kind: codeValue(d.code) ?? "",
         })),
     )
     .sort((a, b) => a.file.localeCompare(b.file));
