@@ -6,6 +6,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
+- **A file that isn't checked because its path uses a variable now says so** ([#174](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/174)). In the structural preview, a task or pipeline path such as `${var.nb_dir}/load.py` stays unresolved, so none of the checks that read the file ran, and nothing said so. It now gets a note, `path_not_checked`, at the path's line: "Not checked: ... Pick a target in the graph to check it." The graph's `TEMPLATE` label says the same when you hover it. Remote paths, values that aren't paths, and jobs with `git_source` get no note.
 - **Quick fixes for two findings** ([#165](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/165)). A notebook path without its extension, and an `include` pattern with a likely typo, now have a light bulb in the editor: **Change to "src/etl.py"** or **Change to "resources/*.yml"** applies the suggestion (also from the Quick Fix menu, `Cmd+.` on macOS, `Ctrl+.` on Windows and Linux). The fix edits the path as written in the file, so `../src/etl` in a resource file becomes `../src/etl.py`. It is only offered while the file still holds that value at that place: a path built from a variable, or a line edited since the check, gets no fix. Saving re-checks as usual and clears the problem.
 
 ### Changed
