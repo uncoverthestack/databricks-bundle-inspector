@@ -1,19 +1,15 @@
 import { test, expect } from "@jest/globals";
 import { verifyCliPath } from "../../databricksCli/validateDatabricksCli.js";
 
-const runRealCliTests = process.env.RUN_REAL_DATABRICKS_CLI_TESTS === "1";
+const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
 
-const maybeTest = runRealCliTests ? test : test.skip;
+// Runs against every CLI version in the matrix, so a change in how the CLI prints its
+// version (which the extension parses) fails here first.
+test(`verifyCliPath recognises a real Databricks CLI (${cli})`, async () => {
+  const result = await verifyCliPath(cli);
 
-maybeTest(
-  "verifyCliPath works with a real Databricks CLI installation",
-  async () => {
-    const result = await verifyCliPath("databricks");
-
-    expect(result.ok).toBe(true);
-
-    if (result.ok) {
-      expect(result.versionOutput).toMatch(/^v\d+\.\d+\.\d+$/);
-    }
-  },
-);
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.versionOutput).toMatch(/^v\d+\.\d+\.\d+$/);
+  }
+});
