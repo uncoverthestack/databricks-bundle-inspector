@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-19
+
 ### Fixed
 
 - **Choosing a login profile no longer means editing settings or reading CLI advice you can't follow.** When several profiles in `~/.databrickscfg` point at a picked target's workspace, the Databricks CLI refuses to choose, and its message told you to set `DATABRICKS_CONFIG_PROFILE` or pass `--profile`, which can't be done from VS Code. The graph now says which profiles match and offers a **Choose profile** button that lists just those; the choice is saved and the target is checked again. The **Choose Databricks Login Profile** command changes it later.
@@ -272,6 +274,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.3.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.0...v0.2.1
