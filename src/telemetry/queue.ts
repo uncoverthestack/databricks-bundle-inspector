@@ -55,7 +55,10 @@ export class TelemetryQueue {
   }
 
   flush(): Promise<void> {
-    this.flushing ??= this.drain().finally(() => {
+    // A flush in flight may already have passed the events enqueued since it began,
+    // so run again once it is done.
+    if (this.flushing) return this.flushing.then(() => this.flush());
+    this.flushing = this.drain().finally(() => {
       this.flushing = undefined;
     });
     return this.flushing;
