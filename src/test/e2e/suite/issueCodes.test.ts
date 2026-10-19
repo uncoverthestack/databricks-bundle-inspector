@@ -6,10 +6,10 @@ import { codeValue } from "../../../bundle/issueDocs.js";
 const ROUNDS = 5;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(check: () => boolean, label: string): Promise<void> {
+async function waitFor(check: () => boolean | Promise<boolean>, label: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    if (check()) return;
+    if (await check()) return;
     await sleep(100);
   }
   assert.fail(`Timed out waiting for ${label}`);
@@ -35,10 +35,10 @@ export function issueCodesSuite() {
       await waitFor(() => Boolean(finding(resource, "notebook_missing_extension")), "notebook finding");
     }
 
-    function assertLinkedAndUnique(): void {
+    function assertLinkedAndUnique(minimumFindings = 4): void {
       const keys = new Set<string>();
       const all = diagnostics();
-      assert.ok(all.length >= 4, "both CLI warnings and both fixable findings should exist");
+      assert.ok(all.length >= minimumFindings, `at least ${minimumFindings} current findings should exist`);
       for (const { uri, item } of all) {
         assert.equal(typeof item.code, "object", `${item.message} must have a linked code`);
         if (typeof item.code !== "object") continue;
@@ -173,6 +173,95 @@ export function issueCodesSuite() {
       } finally {
         await replaceDocument(original);
         await waitFor(() => missing().length === 1, "original fixture restored");
+      }
+    });
+
+    it("rejects stale Quick Fixes after unsaved edits and leaves repeated text in comments alone", async function () {
+      for (const example of [
+        { uri: bundle, kind: "include_matches_nothing", prefix: "  - ", oldValue: "resource/*.yml", newValue: "resources/*.yml" },
+        { uri: resource, kind: "notebook_missing_extension", prefix: "            notebook_path: ", oldValue: "../src/etl", newValue: "../src/etl.py" },
+      ]) {
+        await inspect();
+        const document = await vscode.workspace.openTextDocument(example.uri);
+        const original = document.getText();
+        const diagnostic = finding(example.uri, example.kind)!;
+        const line = diagnostic.range.start.line;
+        const title = `Change to "${example.newValue}"`;
+        async function changeLine(text: string): Promise<void> {
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(example.uri, document.lineAt(line).range, example.prefix + text);
+          await vscode.workspace.applyEdit(edit);
+        }
+        async function fixes(): Promise<vscode.CodeAction[]> {
+          const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+            "vscode.executeCodeActionProvider", example.uri, diagnostic.range, vscode.CodeActionKind.QuickFix.value,
+          );
+          return actions.filter(action => action.title === title);
+        }
+        try {
+          for (const text of [
+            `${example.oldValue} ${example.oldValue}`,
+            `"${example.oldValue} ${example.oldValue}"`,
+            `'${example.oldValue}' trailing`,
+            `prefix/${example.oldValue}`,
+            `"${example.oldValue.replace("/", "\\u002f")}"`,
+          ]) {
+            await changeLine(text);
+            assert.ok(finding(example.uri, example.kind), "the old diagnostic must still be present before saving");
+            assert.equal((await fixes()).length, 0, `do not change a different YAML value: ${text}`);
+          }
+          await changeLine(`${example.oldValue} # keep ${example.oldValue}`);
+          const fix = (await fixes())[0];
+          assert.ok(fix?.edit, "a comment does not change the YAML value");
+          await vscode.workspace.applyEdit(fix.edit);
+          assert.equal(document.lineAt(line).text, `${example.prefix}${example.newValue} # keep ${example.oldValue}`);
+        } finally {
+          const restore = new vscode.WorkspaceEdit();
+          restore.replace(example.uri, new vscode.Range(0, 0, document.lineCount, 0), original);
+          await vscode.workspace.applyEdit(restore);
+          await document.save();
+          await inspect();
+        }
+      }
+    });
+
+    it("keeps 900 unchecked-path notes correct through repeated edits in a 1,000-task job", async function () {
+      const document = await vscode.workspace.openTextDocument(resource);
+      const original = document.getText();
+      const notes = () => vscode.languages.getDiagnostics(resource).filter(item => codeValue(item.code) === "path_not_checked");
+      const graph = () => vscode.commands.executeCommand<{
+        inspectorIssues: Array<{ kind: string; file?: string; line?: number }>;
+      }>("databricksBundleInspector.test.graphData");
+      try {
+        for (const variablePaths of [true, false, true, false]) {
+          const tasks = Array.from({ length: 1000 }, (_, index) =>
+            `        - task_key: extract_${index}\n          notebook_task:\n            notebook_path: ${variablePaths && index < 900 ? "${workspace.file_path}/src/etl.py" : "../src/etl.py"}`,
+          ).join("\n");
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(resource, new vscode.Range(0, 0, document.lineCount, 0), `resources:\n  jobs:\n    nightly:\n      name: issue_codes_nightly\n      bogus_job_field: true\n      tasks:\n${tasks}\n`);
+          await vscode.workspace.applyEdit(edit);
+          await document.save();
+          const expected = variablePaths ? 900 : 0;
+          await waitFor(() => notes().length === expected, `${expected} unchecked paths after saving 1,000 tasks`);
+          await waitFor(async () => {
+            const data = await graph();
+            return data?.inspectorIssues.filter(issue => issue.kind === "path_not_checked").length === expected;
+          }, "the graph matching the saved Problems entries");
+          for (const item of notes()) {
+            assert.equal(item.severity, vscode.DiagnosticSeverity.Information);
+            assert.equal(document.lineAt(item.range.start.line).text.trim(), "notebook_path: ${workspace.file_path}/src/etl.py");
+            assert.equal(typeof item.code, "object");
+            if (typeof item.code === "object") assert.ok(item.code.target.fragment === "path_not_checked");
+          }
+          assertLinkedAndUnique(3);
+          assert.equal(vscode.languages.getDiagnostics(resource).filter(item => codeValue(item.code) === "missing_file").length, 0);
+        }
+      } finally {
+        const restore = new vscode.WorkspaceEdit();
+        restore.replace(resource, new vscode.Range(0, 0, document.lineCount, 0), original);
+        await vscode.workspace.applyEdit(restore);
+        await document.save();
+        await waitFor(() => Boolean(finding(resource, "notebook_missing_extension")), "the original one-task fixture restored");
       }
     });
   });
