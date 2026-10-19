@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Fixed
+
+- **With a real target selected, a finding on a task now points at that task's line.** The Databricks CLI sorts each job's tasks by `task_key` when it resolves a real target, and the inspector found a task's line by its position in that sorted list. In a job whose tasks are not written in alphabetical order, a missing file or a secret in a task's cluster could be shown on another task's line. The structural preview, the default, was not affected. A task that is not written in the job's file, such as one a target adds, is now shown without a line instead of on another task's line.
+
 ## [0.2.2] - 2026-10-18
 
 ### Added
