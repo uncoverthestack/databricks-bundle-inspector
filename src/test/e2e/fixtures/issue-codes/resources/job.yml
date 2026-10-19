@@ -1,0 +1,9 @@
+resources:
+  jobs:
+    nightly:
+      name: issue_codes_nightly
+      bogus_job_field: true
+      tasks:
+        - task_key: extract
+          notebook_task:
+            notebook_path: ../src/etl
