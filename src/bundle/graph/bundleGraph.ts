@@ -18,7 +18,7 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
-import { localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
+import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
   matchSecretScope,
@@ -1092,11 +1092,19 @@ export async function extractBundleGraph(
   const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
 
   // A fully resolved real target has workspace paths; read the local files instead.
+  const dirOf = (group: string, key: string) => {
+    const file = resourceSourceMap.get(`${group}.${key}`);
+    return file ? dirname(file) : bundleRoot!;
+  };
+  // Real-target paths, read back as the YAML has them: uploaded paths first, then paths the
+  // CLI left relative to the bundle root because one of them failed its check.
   const parsedBundle = bundleRoot
-    ? localizeWorkspacePaths(cliOutput, sourceIndex.sourceDocuments, (group, key) => {
-        const file = resourceSourceMap.get(`${group}.${key}`);
-        return file ? dirname(file) : bundleRoot;
-      })
+    ? localizeBundleRootPaths(
+        localizeWorkspacePaths(cliOutput, sourceIndex.sourceDocuments, dirOf),
+        sourceIndex.sourceDocuments,
+        dirOf,
+        bundleRoot,
+      )
     : cliOutput;
 
   const resourceNodes = extractResourceNodes(parsedBundle);

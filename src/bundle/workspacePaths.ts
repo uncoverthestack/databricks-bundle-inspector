@@ -215,3 +215,54 @@ export function localizeWorkspacePaths(
   }
   return mapped ? copy : config;
 }
+
+/**
+ * Returns the CLI output with paths written relative to the bundle root mapped back to the
+ * values written in the YAML. With a real target, the CLI rewrites each path from its YAML
+ * file's folder to the bundle root before uploading it; when any path then fails its check
+ * (a missing file, a notebook without its extension), the CLI stops there and leaves every
+ * path in that form, without the `workspace.file_path` prefix that
+ * {@link localizeWorkspacePaths} maps. The inspector reads paths from their YAML file's
+ * folder, so it would look for `src/etl` in `resources/src/etl`.
+ *
+ * A path is only mapped when the CLI's value, read from the bundle root, and the value
+ * written in the YAML, read from its own file, name the same file. So the file never
+ * changes, only the folder its path is counted from. Anything else stays as the CLI gave it.
+ *
+ * @param sources The bundle's YAML files as written.
+ * @param dirOf The folder of the YAML file that defines a resource.
+ * @param bundleRoot The folder of `databricks.yml`.
+ */
+export function localizeBundleRootPaths(
+  config: ParsedBundleConfig,
+  sources: SourceDocument[],
+  dirOf: (group: string, key: string) => string,
+  bundleRoot: string,
+): ParsedBundleConfig {
+  const output = record(config);
+  const copy = structuredClone(config);
+  const slots = new Map(slotsIn(record(copy)?.resources).map((slot) => [slot.id, slot]));
+  const target = record(output?.bundle)?.target;
+  let mapped = false;
+  for (const { file, doc } of sources) {
+    const d = record(doc);
+    const written = [
+      ...slotsIn(d?.resources),
+      ...(typeof target === "string" ? slotsIn(record(record(record(d?.targets)?.[target]))?.resources) : []),
+    ];
+    for (const anchor of written) {
+      const slot = slots.get(anchor.id);
+      const value = slot && substituted(anchor.holder[anchor.key] as string, output);
+      const reported = slot?.holder[slot.key] as string | undefined;
+      if (!slot || !value || !reported || reported === value) continue;
+      if (path.isAbsolute(reported) || path.isAbsolute(value) || reported.includes("${")) continue;
+      const local = path.resolve(path.dirname(file), value);
+      if (path.resolve(bundleRoot, reported) !== local) continue;
+      const [group, key] = slot.id.split(".");
+      const relative = path.relative(dirOf(group!, key!), local).split(path.sep).join("/") || ".";
+      slot.holder[slot.key] = relative.startsWith(".") ? relative : `./${relative}`;
+      mapped = true;
+    }
+  }
+  return mapped ? copy : config;
+}
