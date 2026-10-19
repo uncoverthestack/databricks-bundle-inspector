@@ -1630,7 +1630,8 @@ function IssueSummarySection({ items, onOpenFile }) {
                   title={item.location}
                   className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-stone-400"
                 >
-                  {item.location}
+                  {/* Every row is usually in the same file, so the line is what tells them apart. */}
+                  {item.line ? `Ln ${item.line}` : item.location}
                   {clickable && <span className="ml-1">↗</span>}
                 </span>
               )}
@@ -1953,33 +1954,43 @@ function Breadcrumb({ items }) {
   );
 }
 
-function TaskStatusChips({ node, taskIssues, computeItems, fileItems }) {
+/** Chip colours per severity, for the task's most serious issue. */
+const ISSUE_CHIP_CLASS = {
+  error: "border-red-500/30 bg-red-500/10 text-red-300",
+  warning: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+  info: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+};
+const PLAIN_CHIP_CLASS = "border-stone-800 bg-stone-900/70 text-stone-300";
+
+function TaskStatusChips({ node, issueItems, computeItems, fileItems }) {
+  // Counts the same list as the Issue Summary, so the two never disagree.
+  const issueCount = issueItems.length;
+  const worst = orderBySeverity(issueItems)[0]?.severity;
+  const issueChip = {
+    label: issueCount > 0 ? `${issueCount} issue${issueCount === 1 ? "" : "s"}` : "No issues",
+    className:
+      issueCount > 0
+        ? ISSUE_CHIP_CLASS[worst] ?? ISSUE_CHIP_CLASS.warning
+        : "border-stone-800 bg-stone-900/70 text-stone-400",
+  };
   const chips = [
-    node.taskTypeLabel,
-    taskIssues.total > 0
-      ? `${taskIssues.total} issue${taskIssues.total === 1 ? "" : "s"}`
-      : "No issues",
-    computeItems[0]?.name,
-    fileItems.length > 0
-      ? `${fileItems.length} file${fileItems.length === 1 ? "" : "s"}`
-      : undefined,
+    node.taskTypeLabel && { label: node.taskTypeLabel, className: PLAIN_CHIP_CLASS },
+    issueChip,
+    computeItems[0]?.name && { label: computeItems[0].name, className: PLAIN_CHIP_CLASS },
+    fileItems.length > 0 && {
+      label: `${fileItems.length} file${fileItems.length === 1 ? "" : "s"}`,
+      className: PLAIN_CHIP_CLASS,
+    },
   ].filter(Boolean);
 
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
       {chips.map((chip) => (
         <span
-          key={chip}
-          className={[
-            "rounded-md border px-2 py-0.5 text-[11px]",
-            String(chip).includes("issue")
-              ? taskIssues.total > 0
-                ? "border-red-500/30 bg-red-500/10 text-red-300"
-                : "border-stone-800 bg-stone-900/70 text-stone-400"
-              : "border-stone-800 bg-stone-900/70 text-stone-300",
-          ].join(" ")}
+          key={chip.label}
+          className={`rounded-md border px-2 py-0.5 text-[11px] ${chip.className}`}
         >
-          {chip}
+          {chip.label}
         </span>
       ))}
     </div>
@@ -2024,7 +2035,6 @@ function DetailPanel({
   if (!node || node.nodeType !== "task") return null;
 
   const parentJob = nodeById.get(node.parentId);
-  const taskIssues = getTaskIssueCounts(node, parsedBundle, targetName);
   const issueSummaryItems = summarizeTaskIssues(
     node,
     parsedBundle,
@@ -2272,7 +2282,7 @@ function DetailPanel({
           <Breadcrumb items={breadcrumbItems} />
           <TaskStatusChips
             node={node}
-            taskIssues={taskIssues}
+            issueItems={issueSummaryItems}
             computeItems={computeItems}
             fileItems={fileItems}
           />
