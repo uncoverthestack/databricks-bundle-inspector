@@ -10,24 +10,27 @@ import { isMap, LineCounter, parseDocument } from "yaml";
  */
 export function jobKeyAtLine(text: string, cursorLine: number): string | undefined {
   const lineCounter = new LineCounter();
-  let jobs: { key: string; line: number }[];
+  let jobs: { key: string; firstLine: number; lastLine: number }[];
   try {
     const document = parseDocument(text, { lineCounter });
+    if (document.errors.length > 0) return undefined;
     const resources = isMap(document.contents) ? document.contents.get("resources", true) : undefined;
     const jobMap = isMap(resources) ? resources.get("jobs", true) : undefined;
     if (!isMap(jobMap)) return undefined;
     jobs = jobMap.items.flatMap((item) => {
       const key = (item.key as { value?: unknown } | null)?.value;
       const offset = (item.key as { range?: [number, number, number] } | null)?.range?.[0];
-      return typeof key === "string" && typeof offset === "number"
-        ? [{ key, line: lineCounter.linePos(offset).line - 1 }]
+      const end = (item.value as { range?: [number, number, number] } | null)?.range?.[2]
+        ?? (item.key as { range?: [number, number, number] } | null)?.range?.[2];
+      return typeof key === "string" && typeof offset === "number" && typeof end === "number"
+        ? [{ key, firstLine: lineCounter.linePos(offset).line - 1, lastLine: lineCounter.linePos(Math.max(offset, end - 1)).line - 1 }]
         : [];
     });
   } catch {
     return undefined;
   }
-  // Each job runs from its key's line to the next job's.
-  const holding = [...jobs].reverse().find((job) => job.line <= cursorLine);
+  // A later section (pipelines, variables, etc.) is outside the last job too.
+  const holding = jobs.find((job) => job.firstLine <= cursorLine && cursorLine <= job.lastLine);
   return (holding ?? jobs[0])?.key;
 }
 

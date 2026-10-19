@@ -1,0 +1,14 @@
+resources:
+  jobs:
+    beta_first:
+      name: beta_first
+      tasks:
+        - task_key: first
+          notebook_task:
+            notebook_path: ../src/task.py
+    beta_second:
+      name: beta_second
+      tasks:
+        - task_key: second
+          notebook_task:
+            notebook_path: ../src/task.py

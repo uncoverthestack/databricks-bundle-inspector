@@ -1,0 +1,5 @@
+bundle:
+  name: resource_alpha
+include:
+  - resources/*.yml
+  - teams/sales/resources/*.yml

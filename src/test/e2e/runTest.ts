@@ -5,6 +5,7 @@
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import net from "node:net";
 import { runTests } from "@vscode/test-electron";
 import { folderIgnoresCase, swapLetterCase } from "../../bundle/pathCase.js";
 
@@ -16,6 +17,17 @@ async function main() {
   // and a clean profile means no leftover cliPath setting.
   const userData = await mkdtemp(path.join(os.tmpdir(), "dbi-e2e-"));
   const suite = process.env.E2E_SUITE ?? "cliNotFound";
+  // Only the rendered-graph suite needs Chromium's loopback debugging interface.
+  let debuggingPort: number | undefined;
+  if (suite === "graphRefresh") {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    debuggingPort = (server.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
   let folder = path.join(root, process.env.E2E_FIXTURE ?? "src/test/e2e/fixtures/bundle");
   // `E2E_FOLDER_CASE=other` opens the folder under another letter case, as happens when
   // someone types a path by hand. That path only exists where the file system ignores case.
@@ -34,6 +46,7 @@ async function main() {
     extensionTestsEnv: {
       E2E_PAUSE_MS: process.env.E2E_PAUSE_MS ?? "0",
       E2E_SUITE: suite,
+      ...(debuggingPort ? { E2E_CDP_PORT: String(debuggingPort) } : {}),
       // A ~/.databrickscfg profile for the cases that need a login (see the targets fixture).
       ...(process.env.INSPECTOR_TEST_PROFILE
         ? { INSPECTOR_TEST_PROFILE: process.env.INSPECTOR_TEST_PROFILE }
@@ -54,6 +67,7 @@ async function main() {
       "--disable-extensions",
       // Keeps test runs out of PostHog.
       "--disable-telemetry",
+      ...(debuggingPort ? [`--remote-debugging-port=${debuggingPort}`] : []),
       // Otherwise VS Code reads the PATH back from the login shell.
       ...(suite === "cliNotFound" ? ["--force-disable-user-env"] : []),
     ],

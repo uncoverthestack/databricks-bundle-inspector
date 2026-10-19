@@ -1,0 +1,4 @@
+bundle:
+  name: resource_beta
+include:
+  - resources/*.yml

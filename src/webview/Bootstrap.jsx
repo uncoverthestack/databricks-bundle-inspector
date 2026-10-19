@@ -76,11 +76,12 @@ export default function Bootstrap() {
             ? data.profileChoice
             : null,
         );
-        setFocusIssuesNonce(
-          typeof data.focusIssuesNonce === "number"
-            ? data.focusIssuesNonce
-            : null,
-        );
+        // Data refreshes keep the view; explicit Inspect or Issues requests can reset it.
+        if (typeof data.focusIssuesNonce === "number") {
+          setFocusIssuesNonce(data.focusIssuesNonce);
+        } else if (!data.preserveView) {
+          setFocusIssuesNonce(null);
+        }
         // Kept until the next one, so a target switch stays on the job the user is viewing.
         if (
           data.initialJob &&

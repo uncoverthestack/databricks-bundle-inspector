@@ -1,0 +1,14 @@
+resources:
+  jobs:
+    sales_first:
+      name: sales_first
+      tasks:
+        - task_key: first
+          notebook_task:
+            notebook_path: ../src/task.py
+    sales_second:
+      name: sales_second
+      tasks:
+        - task_key: second
+          notebook_task:
+            notebook_path: ../src/task.py

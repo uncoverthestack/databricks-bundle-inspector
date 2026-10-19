@@ -145,6 +145,8 @@
     "test:e2e:watch": "E2E_PAUSE_MS=15000 npm run test:e2e",
     "test:e2e:include": "E2E_SUITE=includeMistakes E2E_FIXTURE=src/test/fixtures/include-mistakes npm run test:e2e",
     "test:e2e:issue-codes": "E2E_SUITE=issueCodes E2E_FIXTURE=src/test/e2e/fixtures/issue-codes npm run test:e2e",
+    "test:e2e:resource-files": "E2E_SUITE=resourceFiles E2E_FIXTURE=src/test/e2e/fixtures/resource-files npm run test:e2e",
+    "test:e2e:graph-refresh": "npm run build:webview && E2E_SUITE=graphRefresh E2E_FIXTURE=src/test/e2e/fixtures/resource-files npm run test:e2e",
     "test:e2e:include:watch": "E2E_PAUSE_MS=10000 npm run test:e2e:include",
     "test:e2e:always-on": "E2E_SUITE=alwaysOn E2E_FIXTURE=src/test/e2e/fixtures/always-on npm run test:e2e",
     "test:e2e:always-on:watch": "E2E_PAUSE_MS=10000 npm run test:e2e:always-on",

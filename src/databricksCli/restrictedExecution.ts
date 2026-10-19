@@ -17,6 +17,9 @@ export const RESTRICTED_EXECUTION_VARIABLE = "DATABRICKS_BUNDLE_RESTRICTED_CODE_
  */
 export const BUNDLE_TMP_VARIABLE = "DATABRICKS_BUNDLE_TMP";
 
+/** The bundle explicitly selected by the inspector, rather than one the CLI discovers above it. */
+export const BUNDLE_ROOT_VARIABLE = "DATABRICKS_BUNDLE_ROOT";
+
 /** The environment every CLI call for a bundle gets, so inspecting never runs the bundle's code. */
 export function restrictedCliEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return { ...base, [RESTRICTED_EXECUTION_VARIABLE]: "1" };
@@ -28,12 +31,19 @@ export function bundleTempDir(bundleDir: string, tempRoot: string = os.tmpdir())
   return path.join(tempRoot, "databricks-bundle-inspector", id);
 }
 
-/** The environment for a CLI call on a bundle: it never runs the bundle's code and never writes into its folder. */
+/** Uses the selected bundle, without running its code or writing into its folder. */
 export function bundleCliEnv(
   bundleDir: string,
   base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return { ...restrictedCliEnv(base), [BUNDLE_TMP_VARIABLE]: bundleTempDir(bundleDir) };
+  const root = path.resolve(bundleDir);
+  return {
+    ...restrictedCliEnv(base),
+    [BUNDLE_TMP_VARIABLE]: bundleTempDir(root),
+    [BUNDLE_ROOT_VARIABLE]: root,
+    // The CLI also accepts this older name. Neither inherited value may select another bundle.
+    BUNDLE_ROOT: root,
+  };
 }
 
 interface NotRunDiagnostic {

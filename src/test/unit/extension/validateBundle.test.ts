@@ -34,12 +34,18 @@ describe("validateBundleWithDependencies", () => {
     });
 
     expect(env?.DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION).toBe("1");
-    // Every other variable is passed through. On Windows PATH is spelled "Path".
-    expect(env).toEqual({
-      ...process.env,
-      DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION: "1",
-      DATABRICKS_BUNDLE_TMP: bundleTempDir("/workspace/demo"),
-    });
+    expect(env?.DATABRICKS_BUNDLE_ROOT).toBe(path.resolve("/workspace/demo"));
+    expect(env?.BUNDLE_ROOT).toBe(path.resolve("/workspace/demo"));
+    expect(env?.DATABRICKS_BUNDLE_TMP).toBe(bundleTempDir("/workspace/demo"));
+    // Check pass-through without dumping the process environment if an assertion fails.
+    // On Windows PATH is spelled "Path".
+    const overridden = new Set([
+      "DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION", "DATABRICKS_BUNDLE_TMP",
+      "DATABRICKS_BUNDLE_ROOT", "BUNDLE_ROOT",
+    ]);
+    for (const key of Object.keys(process.env)) {
+      if (!overridden.has(key)) expect(env?.[key] === process.env[key]).toBe(true);
+    }
   });
 
   test("tells the CLI to keep its working files outside the bundle folder", async () => {
