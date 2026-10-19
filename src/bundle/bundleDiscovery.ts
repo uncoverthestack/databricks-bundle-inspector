@@ -1,7 +1,13 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 /** Matches a bundle file anywhere below a folder. */
 export const BUNDLE_FILE_GLOB = "**/databricks.{yml,yaml}";
+
+/** Whether a folder still holds a bundle file, for example after one was deleted. */
+export function hasBundleFile(bundleRoot: string): boolean {
+  return ["databricks.yml", "databricks.yaml"].some((name) => existsSync(path.join(bundleRoot, name)));
+}
 
 /** Folders that hold installed or generated files, never a bundle the user is working on. */
 export const SKIPPED_FOLDERS: readonly string[] = [

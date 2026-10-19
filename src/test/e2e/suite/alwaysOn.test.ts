@@ -33,6 +33,38 @@ function inspectorProblems(root: string): { file: string; line: number; kind: st
     .sort((a, b) => a.file.localeCompare(b.file));
 }
 
+/** Errors and warnings in the Problems panel from the inspector, as its own count would have them. */
+function inspectorProblemCount(): number {
+  return vscode.languages
+    .getDiagnostics()
+    .flatMap(([, diagnostics]) => diagnostics)
+    .filter(
+      (d) =>
+        d.source?.startsWith("Databricks Bundle Inspector") &&
+        (d.severity === vscode.DiagnosticSeverity.Error || d.severity === vscode.DiagnosticSeverity.Warning),
+    ).length;
+}
+
+interface ShownStatusBar {
+  view?: { text: string; tooltip: string; tooltipList?: string[] };
+  folderCount: { problems: number; notes: number; graphOnly: number };
+}
+
+/** What the status bar item shows now (a test-only command; the API can't read it). */
+async function statusBar(): Promise<ShownStatusBar> {
+  return (await vscode.commands.executeCommand<ShownStatusBar>("databricksBundleInspector.test.statusBar"))!;
+}
+
+/** Waits until the item shows `text`, and returns what it shows then (or at the timeout). */
+async function statusBarText(text: string, timeoutMs = 30_000): Promise<ShownStatusBar> {
+  let shown = await statusBar();
+  for (let waited = 0; shown.view?.text !== text && waited < timeoutMs; waited += 250) {
+    await sleep(250);
+    shown = await statusBar();
+  }
+  return shown;
+}
+
 /**
  * Opens the always-on fixture with a real Databricks CLI and never runs Inspect.
  * The extension has to start by itself and report the bundle in the subfolder.
@@ -58,11 +90,35 @@ export function alwaysOnSuite() {
       assert.deepEqual(inspectorProblems(root), [
         { file: "teams/sales/databricks.yml", line: 6, kind: "include_matches_nothing" },
       ]);
+
+      // Two bundles (venv is skipped): the item covers both, problems first in the list,
+      // and its count is the Problems panel's.
+      const shown = await statusBarText("$(warning) 2 bundles: 1 problem");
+      assert.equal(shown.view?.text, "$(warning) 2 bundles: 1 problem");
+      assert.deepEqual(shown.view?.tooltipList, ["sales: 1 problem", "marketing: no problems"]);
+      assert.equal(shown.folderCount.problems, inspectorProblemCount());
+      assert.equal(shown.folderCount.graphOnly, 0);
       assert.deepEqual(
         vscode.window.tabGroups.all.flatMap((group) => group.tabs.map((tab) => tab.label)),
         [],
         "starting up must not open the inspector panel or any file",
       );
+    });
+
+    it("shows the same folder-wide text whichever bundle's file is open", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the always-on fixture should be the open folder");
+      const texts: (string | undefined)[] = [];
+      try {
+        for (const file of ["teams/sales/databricks.yml", "teams/marketing/databricks.yml", "teams/sales/databricks.yml"]) {
+          await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, file)));
+          await sleep(300);
+          texts.push((await statusBar()).view?.text);
+        }
+      } finally {
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+      assert.deepEqual(texts, Array(3).fill("$(warning) 2 bundles: 1 problem"));
     });
 
     it("re-checks on save, still without Inspect", async function () {
@@ -83,9 +139,34 @@ export function alwaysOnSuite() {
         if (PAUSE_MS > 0) await sleep(PAUSE_MS);
 
         assert.deepEqual(inspectorProblems(root), [], "fixing the include clears the warning");
+        const shown = await statusBarText("$(pass) 2 bundles: no problems");
+        assert.equal(shown.view?.text, "$(pass) 2 bundles: no problems");
+        assert.equal(shown.folderCount.problems, 0);
       } finally {
         await vscode.workspace.fs.writeFile(bundleUri, original);
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+
+    it("drops a bundle whose file is deleted, and says what the one left covers", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the always-on fixture should be the open folder");
+      const bundleUri = vscode.Uri.file(path.join(root, "teams/sales/databricks.yml"));
+      const original = await vscode.workspace.fs.readFile(bundleUri);
+      try {
+        await vscode.workspace.fs.delete(bundleUri);
+        const shown = await statusBarText("$(pass) Bundle: no problems · 1 task");
+        if (PAUSE_MS > 0) await sleep(PAUSE_MS);
+
+        assert.equal(shown.view?.text, "$(pass) Bundle: no problems · 1 task");
+        assert.equal(
+          shown.view?.tooltip,
+          'Databricks Bundle Inspector checked "marketing": 1 job, 1 task and 1 file. No problems found. Click to open the graph.',
+        );
+        assert.equal(shown.view?.tooltipList, undefined);
+      } finally {
+        // The bundle stays forgotten for the rest of the run: only opening a folder looks for new ones.
+        await vscode.workspace.fs.writeFile(bundleUri, original);
       }
     });
 

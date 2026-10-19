@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **The status bar says what was checked, and covers the whole folder when it has several bundles** ([#181](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/181)). With one bundle, a clean check reads `Bundle: no problems · 12 tasks`, and the tooltip lists the jobs, tasks, pipelines and files it covered. With several, the item counts every bundle, the same as the Problems panel (`3 bundles: 5 problems`), instead of only the bundle of the open file, and lists each bundle in its tooltip. Bundles not checked yet are never counted as clean (`3 of 12 bundles checked: no problems`). While a check runs longer than half a second the icon turns, except when `workbench.reduceMotion` is `on`. A bundle whose `databricks.yml` is deleted, or whose workspace folder is removed, is dropped instead of showing as not checked.
+
 ### Fixed
 
 - **The Databricks CLI is found in more places when it's installed but VS Code can't see it** ([#180](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/180)). When `databricks` on VS Code's `PATH` doesn't work, the inspector now also tries every other `databricks` on the `PATH` (for when the first is another program), on Windows the `Path` Windows has stored (so a WinGet install works without restarting VS Code), and the CLI the Databricks extension ships. Each is checked with `--version` first. Nothing changes where the CLI was already found.

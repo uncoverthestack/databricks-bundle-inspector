@@ -44,6 +44,8 @@ export type BundleCheckState = "checked" | "cli_missing" | "failed" | "pending";
 export interface StatusBarView {
   text: string;
   tooltip: string;
+  /** With several bundles: one line per bundle, shown as a list under the tooltip. */
+  tooltipList?: string[];
   /** Highlighted when the extension cannot do its job at all. */
   warning: boolean;
 }
@@ -75,7 +77,7 @@ const plural = (count: number, word: string) => (count === 1 ? `1 ${word}` : `${
 export function bundleSummary(
   state: BundleCheckState | undefined,
   count: BundleCount,
-  cliIssue?: CliIssue,
+  cliIssue?: CliIssue | undefined,
 ): string {
   if (!state || state === "pending") return "not checked yet";
   if (state === "cli_missing") return cliIssueWords(cliIssue).text;
@@ -85,86 +87,239 @@ export function bundleSummary(
   return "no problems";
 }
 
+/** What a check covered, counted from its graph. */
+export interface BundleContents {
+  jobs: number;
+  /** A `for_each` task counts once: its inner task is not a task of its own. */
+  tasks: number;
+  pipelines: number;
+  /** Local files the tasks point at, each path once. */
+  files: number;
+}
+
+/** Counts what a check covered from the graph it built. */
+export function bundleContents(graph: {
+  nodes: ReadonlyArray<{ nodeType: string; resourceGroup?: string; location?: string }>;
+}): BundleContents {
+  const contents: BundleContents = { jobs: 0, tasks: 0, pipelines: 0, files: 0 };
+  for (const node of graph.nodes) {
+    if (node.nodeType === "job") contents.jobs++;
+    else if (node.nodeType === "task") contents.tasks++;
+    else if (node.nodeType === "file" && node.location === "local") contents.files++;
+    else if (node.resourceGroup === "pipelines") contents.pipelines++;
+  }
+  return contents;
+}
+
+/** "3 jobs, 12 tasks, 1 pipeline and 8 files", leaving out what there is none of. */
+export function describeContents(contents: BundleContents): string {
+  const parts = [
+    contents.jobs > 0 ? plural(contents.jobs, "job") : undefined,
+    contents.tasks > 0 ? plural(contents.tasks, "task") : undefined,
+    contents.pipelines > 0 ? plural(contents.pipelines, "pipeline") : undefined,
+    contents.files > 0 ? plural(contents.files, "file") : undefined,
+  ].filter((part): part is string => part !== undefined);
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
+}
+
+/** The one number the item shows next to a clean result: tasks, or pipelines when there are no tasks. */
+function contentsLabel(contents: BundleContents | undefined): string {
+  if (!contents) return "";
+  if (contents.tasks > 0) return ` · ${plural(contents.tasks, "task")}`;
+  if (contents.pipelines > 0) return ` · ${plural(contents.pipelines, "pipeline")}`;
+  return "";
+}
+
+/** One bundle as the status bar sees it. */
+export interface BundleStatus {
+  /** The bundle's folder name. */
+  name: string;
+  /** How its last check ended; `undefined` or `pending` when it has not been checked. */
+  state: BundleCheckState | undefined;
+  /** What that check found. */
+  count: BundleCount;
+  /** What that check covered, when it built a graph. */
+  contents?: BundleContents | undefined;
+  /** Why the CLI could not be used, when that is how the check ended. */
+  cliIssue?: CliIssue | undefined;
+}
+
+/** Whether a bundle's last check says anything about it. A failed check that reported errors does. */
+function wasChecked(bundle: BundleStatus): boolean {
+  return bundle.state === "checked" || (bundle.state === "failed" && bundle.count.problems > 0);
+}
+
+/** How many bundle lines the tooltip lists before it says how many more there are. */
+export const TOOLTIP_BUNDLE_LIMIT = 15;
+
 /**
- * What the status bar item says about one bundle, or `undefined` to hide it when the
- * open folders hold none. With several bundles it is about the one in view, so the
- * count on the item and the issues in the graph are the same.
+ * What the status bar item says, or `undefined` to hide it when the open folders hold
+ * no bundle. With one bundle it is about that bundle and says what was checked. With
+ * several it is about the whole folder, so its count agrees with the Problems panel.
  *
- * @param state The last check of that bundle.
- * @param count What that check found.
- * @param bundleName The bundle's folder name.
- * @param otherBundles How many more bundles the open folders hold.
- * @param cliIssue Why the CLI could not be used, when that is how the check ended.
+ * @param bundles Every bundle found in the open folders, in the order found.
+ * @param folderCount With several bundles: what they found together, each file counted once.
  */
 export function statusBarView(
-  state: BundleCheckState | undefined,
-  count: BundleCount,
-  bundleName: string,
-  otherBundles: number,
-  cliIssue?: CliIssue,
+  bundles: readonly BundleStatus[],
+  folderCount?: BundleCount,
 ): StatusBarView | undefined {
-  if (!state) return undefined;
-  const summary = bundleSummary(state, count, cliIssue);
-  const click =
-    otherBundles === 0
-      ? "Click to open the graph."
-      : `Click to open the graph, or pick one of the ${plural(otherBundles, "other bundle")} in this folder.`;
+  if (bundles.length === 0) return undefined;
+  if (bundles.length === 1) return singleBundleView(bundles[0]!);
+  return folderView(bundles, folderCount ?? sumCounts(bundles));
+}
 
-  if (state === "pending") {
+function sumCounts(bundles: readonly BundleStatus[]): BundleCount {
+  return bundles.reduce<BundleCount>(
+    (sum, bundle) => ({
+      problems: sum.problems + bundle.count.problems,
+      notes: sum.notes + bundle.count.notes,
+      graphOnly: (sum.graphOnly ?? 0) + (bundle.count.graphOnly ?? 0),
+    }),
+    { problems: 0, notes: 0, graphOnly: 0 },
+  );
+}
+
+function cliMissingView(issue: CliIssue | undefined): StatusBarView {
+  const words = cliIssueWords(issue);
+  return { text: `$(warning) ${words.text}`, tooltip: words.tooltip, warning: true };
+}
+
+/** Where the problems are: the Problems panel, the graph, or both. */
+function whereTheyAre(count: BundleCount): string {
+  const total = count.problems + count.notes;
+  const graphOnly = count.graphOnly ?? 0;
+  if (graphOnly === 0) return "They are listed in the Problems panel.";
+  if (graphOnly >= total) return "They have no file to point at, so they show only in the graph.";
+  return `${graphOnly} of them ${graphOnly === 1 ? "has" : "have"} no file to point at and ${graphOnly === 1 ? "shows" : "show"} only in the graph. The rest are listed in the Problems panel.`;
+}
+
+const NOT_ALL_CHECKED =
+  "In a folder with many bundles only the first few are checked when it opens. Saving one of its files checks it, and so does opening its graph.";
+
+function singleBundleView(bundle: BundleStatus): StatusBarView {
+  const { name, state, count, contents } = bundle;
+  const summary = bundleSummary(state, count, bundle.cliIssue);
+  const click = "Click to open the graph.";
+
+  if (!state || state === "pending") {
     return {
       text: `$(circle-large-outline) Bundle: ${summary}`,
-      tooltip: `Databricks Bundle Inspector has not checked "${bundleName}" yet. In a folder with many bundles only the first few are checked when it opens. Saving one of its files checks it, and so does opening its graph. ${click}`,
+      tooltip: `Databricks Bundle Inspector has not checked "${name}" yet. ${NOT_ALL_CHECKED} ${click}`,
       warning: false,
     };
   }
-
-  if (state === "cli_missing") {
-    return {
-      text: `$(warning) ${summary}`,
-      tooltip: cliIssueWords(cliIssue).tooltip,
-      warning: true,
-    };
-  }
+  if (state === "cli_missing") return cliMissingView(bundle.cliIssue);
 
   if (count.problems === 0 && state === "failed") {
     return {
       text: `$(warning) Bundle: ${summary}`,
-      tooltip: `Databricks Bundle Inspector could not check "${bundleName}". Click to see why.`,
+      tooltip: `Databricks Bundle Inspector could not check "${name}". Click to see why.`,
       warning: false,
     };
   }
+
+  const covered = contents ? describeContents(contents) : "";
+  const checked = covered ? `Databricks Bundle Inspector checked "${name}": ${covered}.` : `Databricks Bundle Inspector checked "${name}".`;
 
   if (count.problems === 0 && count.notes === 0) {
     return {
-      text: `$(pass) Bundle: ${summary}`,
-      tooltip: `Databricks Bundle Inspector checked "${bundleName}" and found no problems. ${click}`,
+      text: `$(pass) Bundle: ${summary}${contentsLabel(contents)}`,
+      tooltip: `${checked} No problems found. ${click}`,
       warning: false,
     };
   }
-
-  const total = count.problems + count.notes;
-  const graphOnly = count.graphOnly ?? 0;
-  const where =
-    graphOnly === 0
-      ? "They are listed in the Problems panel."
-      : graphOnly >= total
-        ? "They have no file to point at, so they show only in the graph."
-        : `${graphOnly} of them ${graphOnly === 1 ? "has" : "have"} no file to point at and ${graphOnly === 1 ? "shows" : "show"} only in the graph. The rest are listed in the Problems panel.`;
 
   // Notes are suggestions, not faults, but "no problems" would hide that there is something to read.
   if (count.problems === 0) {
     return {
-      text: `$(info) Bundle: ${summary}`,
-      tooltip: `Databricks Bundle Inspector found no errors or warnings in "${bundleName}", and has ${plural(count.notes, "note")} on it. ${where} ${click}`,
+      text: `$(info) Bundle: ${summary}${contentsLabel(contents)}`,
+      tooltip: `${checked} No errors or warnings, and ${plural(count.notes, "note")}. ${whereTheyAre(count)} ${click}`,
       warning: false,
     };
   }
-  const andNotes = count.notes === 0 ? "" : ` and has ${plural(count.notes, "note")} on it`;
+  const andNotes = count.notes === 0 ? "" : ` and ${plural(count.notes, "note")}`;
   const unfinished = state === "failed" ? " The check could not finish, so there may be more." : "";
   return {
     text: `$(warning) Bundle: ${summary}`,
-    tooltip: `Databricks Bundle Inspector found ${plural(count.problems, "problem")} in "${bundleName}"${andNotes}.${unfinished} ${where} ${click}`,
+    tooltip: `${checked} Found ${plural(count.problems, "problem")}${andNotes}.${unfinished} ${whereTheyAre(count)} ${click}`,
     warning: false,
+  };
+}
+
+function folderView(bundles: readonly BundleStatus[], count: BundleCount): StatusBarView {
+  // The CLI is the same for every bundle; without it nothing in the folder is checked.
+  const cliMissing = bundles.find((bundle) => bundle.state === "cli_missing");
+  if (cliMissing) return cliMissingView(cliMissing.cliIssue);
+
+  const total = bundles.length;
+  const checked = bundles.filter(wasChecked).length;
+  const scope = checked === total ? `${total} bundles` : `${checked} of ${total} bundles checked`;
+  const click = "Click to pick a bundle and open its graph.";
+  const tooltipList = bundleLines(bundles);
+
+  if (checked === 0) {
+    return {
+      text: `$(circle-large-outline) ${total} bundles: not checked yet`,
+      tooltip: `Databricks Bundle Inspector has not checked the ${total} bundles in this folder yet. ${NOT_ALL_CHECKED} ${click}`,
+      tooltipList,
+      warning: false,
+    };
+  }
+
+  const unchecked = total - checked;
+  const rest = unchecked === 0 ? "" : ` ${plural(unchecked, "bundle")} ${unchecked === 1 ? "is" : "are"} not checked, so ${unchecked === 1 ? "it is" : "they are"} not counted. ${NOT_ALL_CHECKED}`;
+  const checkedWhat = `Databricks Bundle Inspector checked ${checked === total ? `the ${total} bundles` : `${checked} of the ${total} bundles`} in this folder`;
+
+  if (count.problems === 0 && count.notes === 0) {
+    return {
+      text: `$(pass) ${scope}: no problems`,
+      tooltip: `${checkedWhat} and found no problems.${rest} ${click}`,
+      tooltipList,
+      warning: false,
+    };
+  }
+  if (count.problems === 0) {
+    return {
+      text: `$(info) ${scope}: ${plural(count.notes, "note")}`,
+      tooltip: `${checkedWhat}: no errors or warnings, and ${plural(count.notes, "note")}. ${whereTheyAre(count)}${rest} ${click}`,
+      tooltipList,
+      warning: false,
+    };
+  }
+  const andNotes = count.notes === 0 ? "" : ` and ${plural(count.notes, "note")}`;
+  return {
+    text: `$(warning) ${scope}: ${plural(count.problems, "problem")}`,
+    tooltip: `${checkedWhat} and found ${plural(count.problems, "problem")}${andNotes}. ${whereTheyAre(count)}${rest} ${click}`,
+    tooltipList,
+    warning: false,
+  };
+}
+
+/** One line per bundle, those with problems first, then the rest in the order found. */
+function bundleLines(bundles: readonly BundleStatus[]): string[] {
+  const ordered = [
+    ...bundles.filter((bundle) => bundle.count.problems > 0),
+    ...bundles.filter((bundle) => bundle.count.problems === 0),
+  ];
+  const lines = ordered
+    .slice(0, TOOLTIP_BUNDLE_LIMIT)
+    .map((bundle) => `${bundle.name}: ${bundleSummary(bundle.state, bundle.count, bundle.cliIssue)}`);
+  const more = ordered.length - TOOLTIP_BUNDLE_LIMIT;
+  if (more > 0) lines.push(`and ${plural(more, "more bundle")}`);
+  return lines;
+}
+
+/**
+ * The item while a check runs longer than a moment: the same result, with a turning
+ * icon in place of its own. Without the motion when the user asked VS Code for less.
+ */
+export function checkingView(view: StatusBarView, reduceMotion: boolean): StatusBarView {
+  const icon = reduceMotion ? "$(sync)" : "$(sync~spin)";
+  return {
+    ...view,
+    text: view.text.replace(/^\$\([^)]+\)/, icon),
+    tooltip: `Checking now. ${view.tooltip}`,
   };
 }
 

@@ -1,0 +1,11 @@
+bundle:
+  name: always_on_marketing
+
+resources:
+  jobs:
+    weekly:
+      name: weekly
+      tasks:
+        - task_key: report
+          spark_python_task:
+            python_file: ./src/report.py
