@@ -32,6 +32,7 @@ import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import { folderIgnoresCase } from "./bundle/pathCase.js";
 import {
   BUNDLE_FILE_GLOB,
+  hasBundleFile,
   MAX_BUNDLES_CHECKED_ON_OPEN,
   SKIPPED_FOLDERS_GLOB,
   selectBundleRoots,
@@ -55,6 +56,8 @@ import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
 import { cliFileName, configureCliLookup } from "./databricksCli/cliCandidates.js";
 import {
   bundleProblemCount,
+  folderProblemCount,
+  forgetBundleDiagnostics,
   readIncludePatterns,
   runBundleDiagnostics,
   trackBundleFiles,
@@ -63,13 +66,17 @@ import {
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
 import {
+  bundleContents,
   bundleForFile,
   bundleSummary,
+  checkingView,
   checkStateOf,
   orderForPicking,
   statusBarView,
   type BundleCheckState,
+  type BundleContents,
   type CliIssue,
+  type StatusBarView,
 } from "./extension/statusBar.js";
 
 // Re-exported so existing imports of it from this module keep working.
@@ -113,10 +120,38 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   const checkStates = new Map<string, BundleCheckState>();
   /** Why the CLI could not be used, for bundles whose last check ended that way. */
   const cliIssues = new Map<string, CliIssue>();
+  /** What the last check of each bundle covered, when it built a graph. */
+  const bundleContentsByRoot = new Map<string, BundleContents>();
+  /** Checks running now. The item turns only when one runs longer than a moment. */
+  let checksRunning = 0;
+  let showChecking = false;
+  let checkingTimer: ReturnType<typeof setTimeout> | undefined;
+  const CHECKING_DELAY_MS = 500;
+
+  async function whileChecking<T>(run: () => Promise<T>): Promise<T> {
+    checksRunning++;
+    checkingTimer ??= setTimeout(() => {
+      showChecking = true;
+      renderStatusBar();
+    }, CHECKING_DELAY_MS);
+    try {
+      return await run();
+    } finally {
+      checksRunning--;
+      if (checksRunning === 0) {
+        clearTimeout(checkingTimer);
+        checkingTimer = undefined;
+        showChecking = false;
+        renderStatusBar();
+      }
+    }
+  }
   /** Every bundle found in the open folders, checked or not, in the order found. */
   const foundBundles = new Set<string>();
 
   let lastStatusBarBundle: string | undefined;
+  /** What the item shows now, for the e2e tests, which can't read the status bar. */
+  let shownStatusBar: StatusBarView | undefined;
 
   /**
    * The bundle the item is about, and a click opens: the open file's. With no file in
@@ -137,22 +172,50 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   function renderStatusBar(): void {
-    const bundleRoot = statusBarBundle();
-    const view =
-      bundleRoot &&
-      statusBarView(
-        checkStates.get(bundleRoot) ?? "pending",
-        bundleProblemCount(bundleRoot, diagnosticCollection),
-        path.basename(bundleRoot),
-        foundBundles.size - 1,
-        cliIssues.get(bundleRoot),
-      );
-    if (!view) {
+    const roots = [...foundBundles];
+    const baseView = statusBarView(
+      roots.map((root) => ({
+        name: path.basename(root),
+        state: checkStates.get(root) ?? "pending",
+        count: bundleProblemCount(root, diagnosticCollection),
+        contents: bundleContentsByRoot.get(root),
+        cliIssue: cliIssues.get(root),
+      })),
+      roots.length > 1 ? folderProblemCount(roots, diagnosticCollection) : undefined,
+    );
+    if (!baseView) {
+      shownStatusBar = undefined;
       statusBarItem.hide();
       return;
     }
+    const view = showChecking
+      ? checkingView(
+          baseView,
+          vscode.workspace.getConfiguration("workbench").get("reduceMotion") === "on",
+        )
+      : baseView;
     statusBarItem.text = view.text;
-    statusBarItem.tooltip = view.tooltip;
+    shownStatusBar = view;
+    if (view.tooltipList) {
+      const tooltip = new vscode.MarkdownString();
+      if (view.tooltip) {
+        tooltip.appendText(view.tooltip);
+        tooltip.appendMarkdown("\n\n");
+      }
+      for (const line of view.tooltipList) {
+        tooltip.appendMarkdown("- ");
+        tooltip.appendText(line);
+        tooltip.appendMarkdown("\n");
+      }
+      if (view.tooltipMore) {
+        // The picker lists every bundle with its result, so the rest are one click away.
+        tooltip.isTrusted = { enabledCommands: [STATUS_BAR_COMMAND] };
+        tooltip.appendMarkdown(`\n[Show ${view.tooltipMore} more](command:${STATUS_BAR_COMMAND})`);
+      }
+      statusBarItem.tooltip = tooltip;
+    } else {
+      statusBarItem.tooltip = view.tooltip;
+    }
     statusBarItem.backgroundColor = view.warning
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;
@@ -162,9 +225,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   function recordCheck(
     bundleRoot: string,
     result: BundleValidationResult,
+    graph: Parameters<typeof bundleContents>[0] | undefined,
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    if (result.ok && graph) {
+      bundleContentsByRoot.set(bundleRoot, bundleContents(graph));
+    } else {
+      bundleContentsByRoot.delete(bundleRoot);
+    }
     if (!result.ok && result.error.cliProblem) {
       cliIssues.set(bundleRoot, {
         problem: result.error.cliProblem,
@@ -247,15 +316,22 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       );
       return undefined;
     }
+    // A bundle whose file was deleted is no longer one: forget it rather than report it unchecked.
+    if (!hasBundleFile(bundleRoot)) {
+      forgetBundle(bundleRoot);
+      return undefined;
+    }
     runningRefreshes.add(bundleRoot);
     try {
-      const { result, graph } = await runBundleDiagnostics(
-        bundleRoot,
-        currentConfiguredCliPath(),
-        diagnosticCollection,
-        fileToBundleRoot,
+      const { result, graph } = await whileChecking(() =>
+        runBundleDiagnostics(
+          bundleRoot,
+          currentConfiguredCliPath(),
+          diagnosticCollection,
+          fileToBundleRoot,
+        ),
       );
-      recordCheck(bundleRoot, result);
+      recordCheck(bundleRoot, result, graph);
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
@@ -342,6 +418,24 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       ),
       outsideFiles: outside.join("\n"),
     });
+  }
+
+  /** Drops a bundle that is gone: its diagnostics, its watchers, and its place in the status bar. */
+  function forgetBundle(bundleRoot: string): void {
+    forgetBundleDiagnostics(bundleRoot, diagnosticCollection);
+    const watch = bundleWatches.get(bundleRoot);
+    watch?.rootWatcher.dispose();
+    watch?.outsideWatchers.forEach((watcher) => watcher.dispose());
+    bundleWatches.delete(bundleRoot);
+    const pending = pendingRefreshes.get(bundleRoot);
+    if (pending) clearTimeout(pending.timer);
+    pendingRefreshes.delete(bundleRoot);
+    foundBundles.delete(bundleRoot);
+    checkStates.delete(bundleRoot);
+    cliIssues.delete(bundleRoot);
+    bundleContentsByRoot.delete(bundleRoot);
+    if (lastStatusBarBundle === bundleRoot) lastStatusBarBundle = undefined;
+    renderStatusBar();
   }
 
   extensionContext.subscriptions.push({
@@ -448,6 +542,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
   extensionContext.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders((event) => {
+      for (const folder of event.removed) {
+        for (const root of [...foundBundles]) {
+          if (root === folder.uri.fsPath || root.startsWith(folder.uri.fsPath + path.sep)) forgetBundle(root);
+        }
+      }
       void checkBundlesIn(event.added);
     }),
   );
@@ -837,7 +936,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       activeBundleDir = bundleDir;
       activeRequestedTarget = requestedTarget;
       await trackBundleFiles(bundleDir, fileToBundleRoot);
-      const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
+      const inspection = await whileChecking(() =>
+        inspectBundleAtTarget(bundleDir, requestedTarget),
+      );
       const { result } = inspection;
       // The Problems panel and the status bar always show the structural preview, which
       // needs no login, so a save never flips them to another target. A real target picked
@@ -850,7 +951,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           diagnosticCollection,
           fileToBundleRoot,
         );
-        recordCheck(bundleDir, result, { inspected: true });
+        recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true });
         if (result.ok && diagnosticsGraph) {
           await watchBundle(bundleDir, result.data, diagnosticsGraph);
         }
@@ -1067,6 +1168,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         "databricksBundleInspector.test.graphData",
         () => activeBundleData,
       ),
+      vscode.commands.registerCommand("databricksBundleInspector.test.statusBar", () => ({
+        view: shownStatusBar,
+        folderCount: folderProblemCount(foundBundles, diagnosticCollection),
+      })),
       vscode.commands.registerCommand(
         "databricksBundleInspector.test.chooseProfileFromGraph",
         async () => {

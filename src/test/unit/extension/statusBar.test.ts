@@ -1,10 +1,17 @@
 import { describe, test, expect } from "@jest/globals";
 import {
+  bundleContents,
   bundleForFile,
   bundleSummary,
+  checkingView,
   checkStateOf,
+  describeContents,
   orderForPicking,
   statusBarView,
+  TOOLTIP_BUNDLE_LIMIT,
+  type BundleCheckState,
+  type BundleCount,
+  type BundleStatus,
 } from "../../../extension/statusBar.js";
 
 describe("checkStateOf", () => {
@@ -37,87 +44,82 @@ describe("bundleSummary", () => {
   });
 });
 
-describe("statusBarView", () => {
-  const none = { problems: 0, notes: 0 };
+const none = { problems: 0, notes: 0 };
+const sales = { jobs: 3, tasks: 12, pipelines: 1, files: 8 };
 
+/** The item for a folder with this one bundle. */
+function one(
+  state: BundleCheckState | undefined,
+  count: BundleCount,
+  extra: Partial<BundleStatus> = {},
+) {
+  return statusBarView([{ name: "orders_etl", state, count, ...extra }]);
+}
+
+describe("statusBarView, one bundle", () => {
   test("is hidden when the folder has no bundle", () => {
-    expect(statusBarView(undefined, none, "", 0)).toBeUndefined();
+    expect(statusBarView([])).toBeUndefined();
   });
 
-  test("says so when the checks ran and found nothing", () => {
-    expect(statusBarView("checked", none, "orders_etl", 0)).toMatchObject({
-      text: "$(pass) Bundle: no problems",
-      warning: false,
-    });
+  test("says what was checked when it found nothing", () => {
+    const view = one("checked", none, { contents: sales });
+    expect(view).toMatchObject({ text: "$(pass) Bundle: no problems · 12 tasks", warning: false });
+    expect(view?.tooltip).toBe("Checked 3 jobs, 12 tasks, 1 pipeline and 8 files.");
   });
 
-  test("counts the problems, with the right singular, and names the bundle", () => {
-    expect(statusBarView("checked", { problems: 1, notes: 0 }, "orders_etl", 0)?.text).toBe(
-      "$(warning) Bundle: 1 problem",
+  test("names pipelines when a bundle has no tasks, and nothing when it has neither", () => {
+    expect(one("checked", none, { contents: { jobs: 0, tasks: 0, pipelines: 1, files: 0 } })?.text).toBe(
+      "$(pass) Bundle: no problems · 1 pipeline",
     );
-    const view = statusBarView("checked", { problems: 3, notes: 0 }, "orders_etl", 0);
+    const empty = one("checked", none, { contents: { jobs: 0, tasks: 0, pipelines: 0, files: 0 } });
+    expect(empty?.text).toBe("$(pass) Bundle: no problems");
+    expect(empty?.tooltip).toBe('Checked "orders_etl".');
+  });
+
+  test("still says no problems when the contents are unknown", () => {
+    expect(one("checked", none)?.text).toBe("$(pass) Bundle: no problems");
+  });
+
+  test("puts the result before the contents, as VS Code cuts long text from the end", () => {
+    expect(one("checked", none, { contents: sales })?.text.indexOf("no problems")).toBeLessThan(
+      one("checked", none, { contents: sales })!.text.indexOf("12 tasks"),
+    );
+  });
+
+  test("counts the problems, with the right singular, and leaves the contents to the tooltip", () => {
+    expect(one("checked", { problems: 1, notes: 0 }, { contents: sales })?.text).toBe("$(warning) Bundle: 1 problem");
+    const view = one("checked", { problems: 3, notes: 0 }, { contents: sales });
     expect(view?.text).toBe("$(warning) Bundle: 3 problems");
-    expect(view?.tooltip).toContain('found 3 problems in "orders_etl".');
-    expect(view?.tooltip).toContain("They are listed in the Problems panel. Click to open the graph.");
+    expect(view?.tooltip).toBe("Checked 3 jobs, 12 tasks, 1 pipeline and 8 files.");
   });
 
   test("does not say 'no problems' when there are only notes", () => {
-    const view = statusBarView("checked", { problems: 0, notes: 67 }, "orders_etl", 0);
-    expect(view?.text).toBe("$(info) Bundle: 67 notes");
-    expect(view?.tooltip).toContain("no errors or warnings");
-    expect(statusBarView("checked", { problems: 0, notes: 1 }, "orders_etl", 0)?.text).toBe(
-      "$(info) Bundle: 1 note",
-    );
+    const view = one("checked", { problems: 0, notes: 67 }, { contents: sales });
+    expect(view?.text).toBe("$(info) Bundle: 67 notes · 12 tasks");
+    expect(one("checked", { problems: 0, notes: 1 })?.text).toBe("$(info) Bundle: 1 note");
   });
 
-  test("leads with the problems and mentions the notes in the tooltip", () => {
-    const view = statusBarView("checked", { problems: 2, notes: 5 }, "orders_etl", 0);
-    expect(view?.text).toBe("$(warning) Bundle: 2 problems");
-    expect(view?.tooltip).toContain("and has 5 notes on it");
+  test("leads with the problems when there are notes too", () => {
+    expect(one("checked", { problems: 2, notes: 5 })?.text).toBe("$(warning) Bundle: 2 problems");
   });
 
-  test("counts issues that have no file, and says they are only in the graph", () => {
-    const all = statusBarView("checked", { problems: 2, notes: 0, graphOnly: 2 }, "orders_etl", 0);
-    expect(all?.text).toBe("$(warning) Bundle: 2 problems");
-    expect(all?.tooltip).toContain("They have no file to point at, so they show only in the graph.");
-    expect(all?.tooltip).not.toContain("Problems panel");
-
-    const some = statusBarView("checked", { problems: 3, notes: 1, graphOnly: 1 }, "orders_etl", 0);
-    expect(some?.tooltip).toContain("1 of them has no file to point at and shows only in the graph.");
-    expect(some?.tooltip).toContain("The rest are listed in the Problems panel.");
-  });
-
-  test("shows the errors of a check that failed, and says there may be more", () => {
-    const view = statusBarView("failed", { problems: 1, notes: 0 }, "orders_etl", 0);
-    expect(view?.text).toBe("$(warning) Bundle: 1 problem");
-    expect(view?.tooltip).toContain("The check could not finish, so there may be more.");
+  test("shows the errors of a check that failed", () => {
+    expect(one("failed", { problems: 1, notes: 0 })?.text).toBe("$(warning) Bundle: 1 problem");
   });
 
   test("says the bundle was not checked when a failed check reported nothing", () => {
-    expect(statusBarView("failed", none, "orders_etl", 0)).toMatchObject({
-      text: "$(warning) Bundle: not checked",
-      warning: false,
-    });
-  });
-
-  test("offers the other bundles when the folder holds more than one", () => {
-    expect(statusBarView("checked", { problems: 3, notes: 0 }, "orders_etl", 1)?.tooltip).toContain(
-      "or pick one of the 1 other bundle in this folder.",
-    );
-    expect(statusBarView("checked", none, "orders_etl", 4)?.tooltip).toContain(
-      "or pick one of the 4 other bundles in this folder.",
-    );
+    expect(one("failed", none)).toMatchObject({ text: "$(warning) Bundle: not checked", warning: false });
   });
 
   test("says a bundle that was found but not checked yet is waiting, not clean", () => {
-    const view = statusBarView("pending", none, "orders_etl", 12);
+    const view = one("pending", none);
     expect(view?.text).toBe("$(circle-large-outline) Bundle: not checked yet");
-    expect(view?.tooltip).toContain("only the first few are checked");
+    expect(view?.tooltip).toBe("Save a file or open the graph to check it.");
     expect(view?.warning).toBe(false);
   });
 
   test("is highlighted and says the CLI was not found when nothing could be checked", () => {
-    const view = statusBarView("cli_missing", none, "orders_etl", 0);
+    const view = one("cli_missing", none);
     expect(view).toMatchObject({ text: "$(warning) Databricks CLI not found", warning: true });
     expect(view?.tooltip).toContain("Nothing is being checked");
   });
@@ -129,11 +131,145 @@ describe("statusBarView", () => {
     [{ problem: "not_databricks_cli" }, '"databricks" is another program', "is not the Databricks CLI"],
     [{ problem: "configured_path_invalid" }, "Check the cliPath setting", "cliPath setting is not a working"],
   ] as const)("says why the CLI could not be used: %o", (issue, text, tooltip) => {
-    const view = statusBarView("cli_missing", none, "orders_etl", 0, issue);
+    const view = one("cli_missing", none, { cliIssue: issue });
     expect(view).toMatchObject({ text: `$(warning) ${text}`, warning: true });
     expect(view?.tooltip).toContain(tooltip);
     expect(view?.tooltip).toContain("Nothing is being checked");
     expect(bundleSummary("cli_missing", none, issue)).toBe(text);
+  });
+});
+
+describe("statusBarView, several bundles", () => {
+  const bundle = (name: string, state: BundleCheckState | undefined, count: BundleCount = none): BundleStatus => ({
+    name,
+    state,
+    count,
+  });
+
+  test("covers the whole folder when every bundle is clean", () => {
+    const view = statusBarView([bundle("sales", "checked"), bundle("marketing", "checked"), bundle("ops", "checked")]);
+    expect(view).toMatchObject({ text: "$(pass) 3 bundles: no problems", warning: false });
+    expect(view?.tooltip).toBe("");
+    expect(view?.tooltipList).toEqual(["sales: no problems", "marketing: no problems", "ops: no problems"]);
+    expect(view?.tooltipMore).toBeUndefined();
+  });
+
+  test("counts another bundle's problems, not only the one in view", () => {
+    const view = statusBarView([bundle("sales", "checked"), bundle("marketing", "checked", { problems: 5, notes: 0 })]);
+    expect(view?.text).toBe("$(warning) 2 bundles: 5 problems");
+    expect(view?.tooltipList).toEqual(["marketing: 5 problems", "sales: no problems"]);
+  });
+
+  test("uses the folder count it is given, which counts a shared file once", () => {
+    const view = statusBarView(
+      [bundle("outer", "checked", { problems: 2, notes: 0 }), bundle("inner", "checked", { problems: 2, notes: 0 })],
+      { problems: 2, notes: 0, graphOnly: 0 },
+    );
+    expect(view?.text).toBe("$(warning) 2 bundles: 2 problems");
+  });
+
+  test("never says 'no problems' about bundles it has not checked", () => {
+    const bundles = [
+      ...Array.from({ length: 3 }, (_, i) => bundle(`b${i}`, "checked")),
+      ...Array.from({ length: 9 }, (_, i) => bundle(`later${i}`, "pending")),
+    ];
+    const view = statusBarView(bundles);
+    expect(view?.text).toBe("$(pass) 3 of 12 bundles checked: no problems");
+    expect(view?.tooltipList).toEqual(["b0: no problems", "b1: no problems", "b2: no problems"]);
+    expect(view?.tooltipMore).toBe(9);
+  });
+
+  test("counts a failed check that reported nothing as not checked", () => {
+    const view = statusBarView([bundle("sales", "checked"), bundle("broken", "failed")]);
+    expect(view?.text).toBe("$(pass) 1 of 2 bundles checked: no problems");
+    expect(view?.tooltipList).toContain("broken: not checked");
+  });
+
+  test("says nothing was checked yet rather than 'no problems'", () => {
+    expect(statusBarView([bundle("a", "pending"), bundle("b", undefined)])?.text).toBe(
+      "$(circle-large-outline) 2 bundles: not checked yet",
+    );
+  });
+
+  test("shows notes when there are no problems", () => {
+    expect(statusBarView([bundle("a", "checked", { problems: 0, notes: 2 }), bundle("b", "checked")])?.text).toBe(
+      "$(info) 2 bundles: 2 notes",
+    );
+  });
+
+  test("says the CLI is missing when any bundle could not be checked for that reason", () => {
+    const view = statusBarView([
+      bundle("sales", "checked"),
+      { ...bundle("ops", "cli_missing"), cliIssue: { problem: "not_databricks_cli", versionOutput: "Version 0.18.0" } },
+    ]);
+    expect(view).toMatchObject({ text: "$(warning) Legacy Databricks CLI (0.18.0)", warning: true });
+  });
+
+  test("does not depend on which bundle is listed first", () => {
+    const a = bundle("sales", "checked");
+    const b = bundle("marketing", "checked", { problems: 5, notes: 0 });
+    expect(statusBarView([a, b])?.text).toBe(statusBarView([b, a])?.text);
+  });
+
+  test("50 bundles: the text stays short, the tooltip lists the first 3, problems first, and links to the rest", () => {
+    const bundles = Array.from({ length: 50 }, (_, i) =>
+      bundle(`bundle_${i}`, i < 40 ? "checked" : "pending", { problems: i === 30 || i === 7 ? 1 : 0, notes: 0 }),
+    );
+    const view = statusBarView(bundles);
+    expect(view?.text).toBe("$(warning) 40 of 50 bundles checked: 2 problems");
+    expect(view?.tooltipList).toHaveLength(TOOLTIP_BUNDLE_LIMIT);
+    expect(view?.tooltipList).toEqual(["bundle_7: 1 problem", "bundle_30: 1 problem", "bundle_0: no problems"]);
+    expect(view?.tooltipMore).toBe(47);
+  });
+});
+
+describe("checkingView", () => {
+  const view = { text: "$(pass) Bundle: no problems · 12 tasks", tooltip: "Checked.", warning: false };
+
+  test("swaps the icon for a turning one and keeps the result", () => {
+    expect(checkingView(view, false)).toEqual({
+      text: "$(sync~spin) Bundle: no problems · 12 tasks",
+      tooltip: "Checking now. Checked.",
+      warning: false,
+    });
+  });
+
+  test("still says it is checking when the tooltip is only a list", () => {
+    expect(checkingView({ ...view, tooltip: "" }, false).tooltip).toBe("Checking now.");
+  });
+
+  test("does not turn when the user asked VS Code for less motion", () => {
+    expect(checkingView(view, true).text).toBe("$(sync) Bundle: no problems · 12 tasks");
+  });
+});
+
+describe("bundleContents", () => {
+  test("counts jobs, tasks, pipelines and local files from the graph", () => {
+    expect(
+      bundleContents({
+        nodes: [
+          { nodeType: "job" },
+          { nodeType: "task" },
+          { nodeType: "task" },
+          { nodeType: "resource", resourceGroup: "pipelines" },
+          { nodeType: "resource", resourceGroup: "schemas" },
+          { nodeType: "file", location: "local" },
+          { nodeType: "file", location: "workspace" },
+          { nodeType: "variable" },
+        ],
+      }),
+    ).toEqual({ jobs: 1, tasks: 2, pipelines: 1, files: 1 });
+  });
+});
+
+describe("describeContents", () => {
+  test.each([
+    [{ jobs: 3, tasks: 12, pipelines: 1, files: 8 }, "3 jobs, 12 tasks, 1 pipeline and 8 files"],
+    [{ jobs: 1, tasks: 1, pipelines: 0, files: 0 }, "1 job and 1 task"],
+    [{ jobs: 0, tasks: 0, pipelines: 2, files: 0 }, "2 pipelines"],
+    [{ jobs: 0, tasks: 0, pipelines: 0, files: 0 }, ""],
+  ])("%o -> %s", (contents, text) => {
+    expect(describeContents(contents)).toBe(text);
   });
 });
 

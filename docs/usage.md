@@ -43,6 +43,13 @@ If several profiles in `~/.databrickscfg` point at the same workspace, the CLI r
 
 The Problems panel and the status bar always show the structural preview, so they never need a login, including when you save. A picked target changes the graph only.
 
+The status bar item sums up the last checks:
+
+- **One bundle in the folder:** the result, then what was checked, for example `Bundle: no problems · 12 tasks`. The tooltip says how many jobs, tasks, pipelines and local files the check covered.
+- **Several bundles:** the whole folder, for example `3 bundles: 5 problems`, the same count as the Problems panel. The tooltip lists the first 3 bundles, those with problems first; **Show N more** opens the picker with every bundle and its result. A folder with many bundles only gets its first few checked when it opens; the others are never counted as clean (`3 of 12 bundles checked: no problems`).
+- **While a check runs** longer than half a second, its icon turns. It stays still when `workbench.reduceMotion` is `on`.
+- **When the Databricks CLI can't be used,** it says why, highlighted.
+
 Nothing is written into your bundle folder. For a real target the CLI would normally create a `.databricks` folder there; the extension has it keep its working files in your system's temp folder instead.
 
 ## Commands

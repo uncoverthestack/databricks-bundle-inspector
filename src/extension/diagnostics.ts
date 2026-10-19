@@ -115,6 +115,51 @@ export function bundleProblemCount(
   return count;
 }
 
+/** Clears what a bundle put in the Problems panel, for a bundle that is gone. */
+export function forgetBundleDiagnostics(
+  bundleRoot: string,
+  collection: vscode.DiagnosticCollection,
+): void {
+  for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
+    collection.delete(vscode.Uri.file(file));
+  }
+  diagnosticFilesByBundle.delete(bundleRoot);
+  graphOnlyByBundle.delete(bundleRoot);
+}
+
+/**
+ * What the last checks of several bundles found together, as the Problems panel shows
+ * it: a file two bundles report on (nested bundles) counts once, with the diagnostics it
+ * holds now. Issues with no file are added per bundle.
+ */
+export function folderProblemCount(
+  bundleRoots: Iterable<string>,
+  collection: vscode.DiagnosticCollection,
+): { problems: number; notes: number; graphOnly: number } {
+  const count = { problems: 0, notes: 0, graphOnly: 0 };
+  const files = new Set<string>();
+  for (const root of bundleRoots) {
+    const graphOnly = graphOnlyByBundle.get(root) ?? { problems: 0, notes: 0 };
+    count.problems += graphOnly.problems;
+    count.notes += graphOnly.notes;
+    count.graphOnly += graphOnly.problems + graphOnly.notes;
+    for (const file of diagnosticFilesByBundle.get(root) ?? []) files.add(file);
+  }
+  for (const file of files) {
+    for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
+      if (
+        diagnostic.severity === vscode.DiagnosticSeverity.Error ||
+        diagnostic.severity === vscode.DiagnosticSeverity.Warning
+      ) {
+        count.problems++;
+      } else {
+        count.notes++;
+      }
+    }
+  }
+  return count;
+}
+
 /**
  * Updates diagnostics for one bundle root from an existing validation result.
  *
