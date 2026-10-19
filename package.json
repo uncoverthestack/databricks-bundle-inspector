@@ -142,17 +142,17 @@
     "prepare": "husky",
     "build:e2e": "node scripts/build-e2e.mjs",
     "test:e2e": "npm run build:ext && npm run build:e2e && node out/e2e/runTest.cjs",
-    "test:e2e:watch": "E2E_PAUSE_MS=15000 npm run test:e2e",
-    "test:e2e:include": "E2E_SUITE=includeMistakes E2E_FIXTURE=src/test/fixtures/include-mistakes npm run test:e2e",
-    "test:e2e:issue-codes": "E2E_SUITE=issueCodes E2E_FIXTURE=src/test/e2e/fixtures/issue-codes npm run test:e2e",
-    "test:e2e:resource-files": "E2E_SUITE=resourceFiles E2E_FIXTURE=src/test/e2e/fixtures/resource-files npm run test:e2e",
-    "test:e2e:graph-refresh": "npm run build:webview && E2E_SUITE=graphRefresh E2E_FIXTURE=src/test/e2e/fixtures/resource-files npm run test:e2e",
-    "test:e2e:include:watch": "E2E_PAUSE_MS=10000 npm run test:e2e:include",
-    "test:e2e:always-on": "E2E_SUITE=alwaysOn E2E_FIXTURE=src/test/e2e/fixtures/always-on npm run test:e2e",
-    "test:e2e:always-on:watch": "E2E_PAUSE_MS=10000 npm run test:e2e:always-on",
-    "test:e2e:saved-file": "E2E_SUITE=savedFile E2E_FIXTURE=src/test/e2e/fixtures/saved-file npm run test:e2e",
-    "test:e2e:saved-file:other-case": "E2E_FOLDER_CASE=other npm run test:e2e:saved-file",
-    "test:e2e:targets": "E2E_SUITE=targets E2E_FIXTURE=src/test/e2e/fixtures/targets npm run test:e2e"
+    "test:e2e:watch": "npm run test:e2e -- --pause-ms 15000",
+    "test:e2e:include": "npm run test:e2e -- --suite includeMistakes --fixture src/test/fixtures/include-mistakes",
+    "test:e2e:issue-codes": "npm run test:e2e -- --suite issueCodes --fixture src/test/e2e/fixtures/issue-codes",
+    "test:e2e:resource-files": "npm run test:e2e -- --suite resourceFiles --fixture src/test/e2e/fixtures/resource-files",
+    "test:e2e:graph-refresh": "npm run build:webview && npm run test:e2e -- --suite graphRefresh --fixture src/test/e2e/fixtures/resource-files",
+    "test:e2e:include:watch": "npm run test:e2e:include -- --pause-ms 10000",
+    "test:e2e:always-on": "npm run test:e2e -- --suite alwaysOn --fixture src/test/e2e/fixtures/always-on",
+    "test:e2e:always-on:watch": "npm run test:e2e:always-on -- --pause-ms 10000",
+    "test:e2e:saved-file": "npm run test:e2e -- --suite savedFile --fixture src/test/e2e/fixtures/saved-file",
+    "test:e2e:saved-file:other-case": "npm run test:e2e:saved-file -- --folder-case other",
+    "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets"
   },
   "lint-staged": {
     "*.ts": "eslint --fix"

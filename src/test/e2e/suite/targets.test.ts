@@ -12,7 +12,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * A profile from ~/.databrickscfg for the cases that need a login. The fixture has no
  * workspace host: the CLI takes it from this profile, so nothing about a real workspace
- * is committed. Run with `INSPECTOR_TEST_PROFILE=<profile> npm run test:e2e:targets`.
+ * is committed. Run with `npm run test:e2e:targets -- --profile <profile>`.
  */
 const profile = process.env.INSPECTOR_TEST_PROFILE?.trim() || undefined;
 
