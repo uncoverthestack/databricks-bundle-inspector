@@ -29,6 +29,7 @@ import {
 } from "./databricksCli/profiles.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
+import { bundleThatLoaded, jobKeyAtLine } from "./bundle/resourceFiles.js";
 import { folderIgnoresCase } from "./bundle/pathCase.js";
 import {
   BUNDLE_FILE_GLOB,
@@ -64,6 +65,7 @@ import {
   trackBundleFiles,
   updateBundleDiagnostics,
   setIssueDocsVersion,
+  bundleLoadedFiles,
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
@@ -174,7 +176,36 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return lastStatusBarBundle;
   }
 
+  // Whether each bundle's folder ignores letter case, as found when it is first watched.
+  const ignoresCaseByRoot = new Map<string, boolean>();
+
+  /**
+   * The bundle an editor's file belongs to: the bundle file itself, or a file the bundle's
+   * last check loaded through `include`, by the CLI's own list.
+   */
+  function bundleOfEditor(editor: vscode.TextEditor | undefined): string | undefined {
+    const filePath = editor?.document.uri.scheme === "file" ? editor.document.fileName : undefined;
+    if (!filePath) return undefined;
+    return (
+      getBundleDirFromEditor(editor) ??
+      bundleThatLoaded(filePath, bundleLoadedFiles(), (root) => ignoresCaseByRoot.get(root) ?? false)
+    );
+  }
+
+  // Shows Inspect on a resource file. One key for the file in front, set here, because the
+  // extension compares paths the way the save handler does, on every platform; a list of
+  // paths matched by `resourcePath in ...` would rely on VS Code's spelling of a path.
+  let activeFileInBundle: boolean | undefined;
+  function updateActiveFileContext(): void {
+    const inBundle = bundleOfEditor(vscode.window.activeTextEditor) !== undefined;
+    if (inBundle === activeFileInBundle) return;
+    activeFileInBundle = inBundle;
+    void vscode.commands.executeCommand("setContext", "databricksBundleInspector.activeFileInBundle", inBundle);
+  }
+
   function renderStatusBar(): void {
+    // Runs after every check and editor change, which is when the active file's bundle can change.
+    updateActiveFileContext();
     const roots = [...foundBundles];
     const baseView = statusBarView(
       roots.map((root) => ({
@@ -361,7 +392,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     outsideFiles: string;
   }
   const bundleWatches = new Map<string, BundleWatch>();
-  const ignoresCaseByRoot = new Map<string, boolean>();
 
   function createWatcher(
     bundleRoot: string,
@@ -656,7 +686,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   function bundleMessageDataFromInspection(
     inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
     requestedTarget?: string,
-    options?: { focusIssues?: boolean },
+    options?: { focusIssues?: boolean; initialJobKey?: string | undefined },
   ): object | undefined {
     const { result } = inspection;
     if (!result.ok) return undefined;
@@ -679,6 +709,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       targetFallbackMessage: inspection.fallbackMessage ?? null,
       profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
+      // The job a resource file defines, so the graph opens on it. A nonce, as the same job
+      // may be asked for again after the user picked another.
+      initialJob: options?.initialJobKey ? { key: options.initialJobKey, nonce: Date.now() } : null,
     };
   }
 
@@ -913,12 +946,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     ) =>
       telemetry?.logUsage("inspect_bundle", {
         trigger: options?.trigger ?? "command",
+        from_resource_file: fromResourceFile,
         outcome,
         duration_ms: Date.now() - startedAt,
         ...properties,
       });
-    const bundleDir =
-      bundleDirOverride ?? getBundleDirFromEditor(vscode.window.activeTextEditor);
+    const editor = vscode.window.activeTextEditor;
+    const bundleDir = bundleDirOverride ?? bundleOfEditor(editor);
+    // Started from a resource file `include` loads, not from the bundle file.
+    const fromResourceFile =
+      !bundleDirOverride && bundleDir !== undefined && !getBundleDirFromEditor(editor);
+    const initialJobKey =
+      fromResourceFile && editor
+        ? jobKeyAtLine(editor.document.getText(), editor.selection.active.line)
+        : undefined;
 
     if (!bundleDir) {
       if (options?.focusIssues && activePanel && activeBundleData) {
@@ -928,7 +969,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
       logInspect("no_bundle_file");
       vscode.window.showInformationMessage(
-        "Open a databricks.yaml or databricks.yml file, then run Inspect Databricks Bundle.",
+        "Open a databricks.yml file, or a resource file it includes, then run Inspect Databricks Bundle.",
       );
       return;
     }
@@ -1028,7 +1069,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const bundleMessageData = bundleMessageDataFromInspection(
         inspection,
         requestedTarget,
-        options,
+        { ...options, initialJobKey },
       );
       if (!bundleMessageData) return;
 

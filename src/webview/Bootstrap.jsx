@@ -19,6 +19,7 @@ export default function Bootstrap() {
   const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
   const [profileChoice, setProfileChoice] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
+  const [initialJob, setInitialJob] = useState(null);
 
   useEffect(() => {
     vscodeApi?.postMessage({ type: "webviewReady" });
@@ -80,6 +81,14 @@ export default function Bootstrap() {
             ? data.focusIssuesNonce
             : null,
         );
+        // Kept until the next one, so a target switch stays on the job the user is viewing.
+        if (
+          data.initialJob &&
+          typeof data.initialJob.key === "string" &&
+          typeof data.initialJob.nonce === "number"
+        ) {
+          setInitialJob(data.initialJob);
+        }
       }
       if (data.type === "focusIssues") {
         setFocusIssuesNonce(Date.now());
@@ -132,7 +141,7 @@ export default function Bootstrap() {
 
   return (
     <App
-      key={focusIssuesNonce ?? "inspector"}
+      key={`${focusIssuesNonce ?? "inspector"}:${initialJob?.nonce ?? ""}`}
       parsedBundle={parsedBundle}
       resolutionBundle={resolutionBundle ?? parsedBundle}
       graph={bundleGraph}
@@ -146,6 +155,7 @@ export default function Bootstrap() {
       profileChoice={profileChoice}
       onChooseProfile={handleChooseProfile}
       focusIssuesNonce={focusIssuesNonce}
+      initialJobKey={initialJob?.key}
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}
       onCopyReviewSummary={handleCopyReviewSummary}

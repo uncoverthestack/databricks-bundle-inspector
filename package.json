@@ -62,7 +62,7 @@
       {
         "command": "databricksBundleInspector.inspectBundle",
         "title": "Inspect Databricks Bundle",
-        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/"
+        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle"
       },
       {
         "command": "databricksBundleInspector.openBundleIssues",
@@ -105,14 +105,14 @@
         {
           "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
-          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle"
         }
       ],
       "editor/context": [
         {
           "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
-          "when": "resourceFilename =~ /^databricks\\.ya?ml$/"
+          "when": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle"
         }
       ]
     }

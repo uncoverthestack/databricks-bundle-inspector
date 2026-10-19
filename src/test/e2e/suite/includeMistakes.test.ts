@@ -179,5 +179,35 @@ export function includeMistakesSuite() {
       );
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
+
+    it("opens the graph from a resource file include loads, on the job under the cursor", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the include-mistakes fixture should be the open folder");
+      type GraphData = { initialJob?: { key: string; nonce: number } | null; parsedBundle?: { bundle?: { name?: string } } };
+      // A check has run: the always-on check on open, or the tests above.
+      for (let waited = 0; includeProblems(root).length < 3 && waited < 30_000; waited += 500) await sleep(500);
+
+      const resourceFile = await vscode.workspace.openTextDocument(path.join(root, "resources", "top.job.yml"));
+      const editor = await vscode.window.showTextDocument(resourceFile);
+      const secondJobLine = resourceFile.getText().split(/\r?\n/).findIndex((line) => line.includes("second_job:"));
+      editor.selection = new vscode.Selection(secondJobLine + 2, 0, secondJobLine + 2, 0);
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      const fromSecond = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
+      assert.equal(fromSecond?.initialJob?.key, "second_job");
+      assert.equal(fromSecond?.parsedBundle?.bundle?.name, "include-mistakes");
+
+      editor.selection = new vscode.Selection(0, 0, 0, 0);
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      const fromTop = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
+      assert.equal(fromTop?.initialJob?.key, "top_job", "above the jobs, the file's first job");
+      if (PAUSE_MS > 0) await sleep(PAUSE_MS);
+
+      // A file include doesn't load is not part of the bundle, so Inspect doesn't open it.
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "resources", "legacy.job.yaml")));
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      const afterLegacy = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
+      assert.equal(afterLegacy?.initialJob?.nonce, fromTop?.initialJob?.nonce, "nothing new was sent to the graph");
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
   });
 }
