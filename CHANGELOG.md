@@ -4,13 +4,14 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Fixed
+
+- **With a real target selected, a finding on a task now points at that task's line.** The Databricks CLI sorts each job's tasks by `task_key` when it resolves a real target, and the inspector found a task's line by its position in that sorted list. In a job whose tasks are not written in alphabetical order, a missing file or a secret in a task's cluster could be shown on another task's line. The structural preview, the default, was not affected. A task that is not written in the job's file, such as one a target adds, is now shown without a line instead of on another task's line.
+- **Usage events logged right after VS Code starts are no longer held back until the next send.** A send that had just finished could swallow a request to send newer events.
+
 ### Changed
 
 - **Usage telemetry now waits for you.** Nothing is sent until you have closed or answered the telemetry notice, and nothing from that VS Code window: events wait on your machine and are sent from the next time VS Code is opened, so you have time to turn it off. Before, events could be sent about a minute after the notice was requested, or when VS Code closed, even if you had not seen it. A notice that never reached the screen (VS Code closed first, or Do Not Disturb) is now shown again instead of counting as seen. If you already got the notice in an earlier version, nothing changes for you.
-
-### Fixed
-
-- **Usage events logged right after VS Code starts are no longer held back until the next send.** A send that had just finished could swallow a request to send newer events.
 
 ## [0.2.2] - 2026-10-18
 
