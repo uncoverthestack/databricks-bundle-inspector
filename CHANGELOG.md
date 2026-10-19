@@ -26,6 +26,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **The graph no longer scrolls out of view in a short editor.** With the Problems panel open below a small editor, the Issues list could reach past the bottom of the graph, so scrolling it moved the whole page: the header slid off the top and a light strip showed at the bottom. The Issues list and search results now fit the space and scroll on their own, and the page itself never scrolls.
 - **Saving a file keeps the job you selected in the graph**, including after opening Bundle Issues. Refreshing used to reset that view and switch back to the job it first opened on.
 - **Inspecting a nested bundle uses that bundle.** When a nested bundle used `databricks.yaml` and its parent used `databricks.yml`, the CLI could load the parent instead. Every check now explicitly selects the bundle being inspected, including when an inherited environment variable points elsewhere.
 - **Inspect from a resource file chooses its first job when the cursor is outside the job definitions**, including a later variables or pipelines section. It used to choose the last job. Invalid YAML is no longer used to choose a job.

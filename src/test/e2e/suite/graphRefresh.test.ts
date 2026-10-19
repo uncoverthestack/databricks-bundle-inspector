@@ -149,5 +149,71 @@ export function graphRefreshSuite() {
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       }
     });
+
+    it("a short webview never scrolls the page: the Issues list fits, and its items scroll inside it", async function () {
+      assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
+      await vscode.commands.executeCommand("databricksBundleInspector.openBundleIssues");
+
+      const info = await (await fetch(`http://127.0.0.1:${process.env.E2E_CDP_PORT}/json/version`)).json() as { webSocketDebuggerUrl: string };
+      const socket = new WebSocket(info.webSocketDebuggerUrl);
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", () => reject(new Error("Cannot connect to VS Code's browser")), { once: true });
+      });
+      const browser = new Browser(socket);
+      try {
+        let graph: { sessionId: string; contextId: number } | undefined;
+        const evaluate = async (expression: string) => {
+          const result = await browser.call("Runtime.evaluate", { expression, contextId: graph!.contextId, returnByValue: true }, graph!.sessionId);
+          assert.ok(!result.exceptionDetails, "graph script must execute");
+          return result.result?.value;
+        };
+        const panel = `document.querySelector('[aria-label="Close Issues in This Job"]')?.closest('div.absolute')`;
+        await waitFor(async () => {
+          const { targetInfos } = await browser.call("Target.getTargets");
+          for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {
+            const { sessionId } = await browser.call("Target.attachToTarget", { targetId: target.targetId, flatten: true });
+            const { frameTree } = await browser.call("Page.getFrameTree", {}, sessionId);
+            const frames: any[] = [];
+            const visit = (node: any) => { frames.push(node.frame); for (const child of node.childFrames ?? []) visit(child); };
+            visit(frameTree);
+            for (const frame of frames) {
+              const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-layout-test" }, sessionId);
+              graph = { sessionId, contextId: executionContextId };
+              if (await evaluate(`Boolean(${panel})`)) return true;
+            }
+            await browser.call("Target.detachFromTarget", { sessionId });
+          }
+          return false;
+        }, "the open Issues list");
+
+        // As with the Problems panel open below a small editor. The webview gets less than
+        // the size asked for (about 100px goes to VS Code's frame around it).
+        await browser.call("Emulation.setVisibleSize", { width: 1000, height: 230 }, graph!.sessionId);
+        await sleep(500);
+        const short = await evaluate(`(() => { const p = ${panel}; const list = p.querySelector('.overflow-auto');
+          return { height: innerHeight, needed: p.getBoundingClientRect().top + p.firstElementChild.getBoundingClientRect().height + list.scrollHeight }; })()`);
+        // Otherwise the Issues list fits anyway and the test proves nothing.
+        assert.ok(short.needed > short.height + 20, `the Issues list should need more room than the webview has: ${JSON.stringify(short)}`);
+        const box = await evaluate(`(() => { const r = ${panel}.querySelector('.overflow-auto').getBoundingClientRect(); return { x: r.left + r.width / 2, y: Math.min(r.top + 10, innerHeight - 5) }; })()`);
+        for (let i = 0; i < 20; i++) {
+          await browser.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: 400 }, graph!.sessionId);
+        }
+        await sleep(300);
+        const layout = await evaluate(`({
+          pageTaller: document.documentElement.scrollHeight > innerHeight,
+          scrollY,
+          headerTop: Math.round(document.querySelector('header').getBoundingClientRect().top),
+          panelInside: ${panel}.getBoundingClientRect().bottom <= innerHeight,
+          listScrolls: (() => { const list = ${panel}.querySelector('.overflow-auto'); return list.scrollHeight > list.clientHeight && getComputedStyle(list).overflowY === 'auto'; })(),
+        })`);
+        assert.deepEqual(layout, { pageTaller: false, scrollY: 0, headerTop: 0, panelInside: true, listScrolls: true });
+      } finally {
+        browser.close();
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
   });
 }

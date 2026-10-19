@@ -55,8 +55,10 @@ html,
 body {
   margin: 0;
   width: 100%;
-  min-height: 100%;
-  background: #b8ceff;
+  height: 100%;
+  overflow: hidden;
+  /* The app's own background, so no gap can show as a light strip. */
+  background: #111111;
   font-family:
     Inter,
     ui-sans-serif,

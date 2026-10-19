@@ -2876,8 +2876,10 @@ export default function App({
   }
 
   return (
+    // overflow-hidden: a floating panel taller than a short webview (the Problems panel
+    // open below it) must not make the page scroll, which would push the header out of view.
     <div
-      className="relative flex h-screen flex-col"
+      className="relative flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: "#111111" }}
     >
       <AppHeader

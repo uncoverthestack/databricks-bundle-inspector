@@ -24,7 +24,7 @@ export default function SearchBox({ value, items, onChange, onSelect }) {
         className="h-7 w-full rounded-md border border-stone-800 bg-stone-950 pl-8 pr-2 text-xs text-stone-200 outline-none placeholder:text-stone-600 focus:border-blue-500"
       />
       {matches.length > 0 && (
-        <div className="absolute left-0 right-0 top-8 z-20 overflow-hidden rounded-md border border-stone-800 bg-stone-950 shadow-xl">
+        <div className="absolute left-0 right-0 top-8 z-20 max-h-[calc(100vh-4rem)] overflow-auto overscroll-contain rounded-md border border-stone-800 bg-stone-950 shadow-xl">
           {matches.map((item) => {
             const meta = kindMeta(item.kind);
             return (
