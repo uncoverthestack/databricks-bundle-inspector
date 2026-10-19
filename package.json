@@ -67,6 +67,10 @@
       {
         "command": "databricksBundleInspector.openBundleIssues",
         "title": "Open Bundle Issues"
+      },
+      {
+        "command": "databricksBundleInspector.chooseProfile",
+        "title": "Choose Databricks Login Profile"
       }
     ],
     "configuration": {
@@ -81,7 +85,8 @@
         "databricksBundleInspector.profile": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Optional profile from `~/.databrickscfg` to use when you pick a target in the graph. Needed when several profiles point at the same workspace. Not used by the structural preview, which needs no login."
+          "scope": "machine",
+          "markdownDescription": "Profile from `~/.databrickscfg` to use when you pick a target in the graph. Needed when several profiles point at the same workspace; the graph then offers to choose one. Set it with the **Choose Databricks Login Profile** command. Not used by the structural preview, which needs no login."
         },
         "databricksBundleInspector.telemetry.enabled": {
           "type": "boolean",

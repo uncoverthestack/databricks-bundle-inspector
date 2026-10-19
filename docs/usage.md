@@ -33,7 +33,7 @@ With a login, the CLI gives workspace paths instead of local ones (a notebook pa
 
 If the CLI stops partway through a target, for example on a variable with no value, it prints what it had resolved so far, and the graph shows that.
 
-If several profiles in `~/.databrickscfg` point at the same workspace, the CLI refuses to choose one. Set `databricksBundleInspector.profile` to the profile to use. The structural preview doesn't use it.
+If several profiles in `~/.databrickscfg` point at the same workspace, the CLI refuses to choose one. The graph then lists the matching profiles with a **Choose profile** button; your choice is saved in your user settings (`databricksBundleInspector.profile`) and the target is checked again. To change it later, run **Choose Databricks Login Profile** from the Command Palette. The structural preview doesn't use a profile.
 
 The Problems panel and the status bar always show the structural preview, so they never need a login, including when you save. A picked target changes the graph only.
 
@@ -45,6 +45,7 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 | --- | --- | --- |
 | `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is named `databricks.yml` or `databricks.yaml` |
 | `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
+| `databricksBundleInspector.chooseProfile` | Choose Databricks Login Profile | Command Palette; lists the profiles in `~/.databrickscfg` and saves the one used when you pick a target |
 
 ## How it works
 

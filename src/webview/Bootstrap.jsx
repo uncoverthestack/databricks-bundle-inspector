@@ -17,6 +17,7 @@ export default function Bootstrap() {
   const [requestedTarget, setRequestedTarget] = useState(null);
   const [targetOptions, setTargetOptions] = useState([]);
   const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
+  const [profileChoice, setProfileChoice] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
 
   useEffect(() => {
@@ -69,6 +70,11 @@ export default function Bootstrap() {
             ? data.targetFallbackMessage
             : null,
         );
+        setProfileChoice(
+          data.profileChoice && Array.isArray(data.profileChoice.names)
+            ? data.profileChoice
+            : null,
+        );
         setFocusIssuesNonce(
           typeof data.focusIssuesNonce === "number"
             ? data.focusIssuesNonce
@@ -99,6 +105,10 @@ export default function Bootstrap() {
       line: line ?? undefined,
       column: column ?? undefined,
     });
+  }
+
+  function handleChooseProfile() {
+    vscodeApi?.postMessage({ type: "chooseProfile" });
   }
 
   function handleSelectTarget(target) {
@@ -133,6 +143,8 @@ export default function Bootstrap() {
       requestedTarget={requestedTarget}
       targetOptions={targetOptions}
       targetFallbackMessage={targetFallbackMessage}
+      profileChoice={profileChoice}
+      onChooseProfile={handleChooseProfile}
       focusIssuesNonce={focusIssuesNonce}
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}

@@ -2493,6 +2493,8 @@ export default function App({
   requestedTarget,
   targetOptions: providedTargetOptions = [],
   targetFallbackMessage,
+  profileChoice,
+  onChooseProfile,
   focusIssuesNonce,
   onSelectTarget,
   onOpenFile,
@@ -2847,6 +2849,26 @@ export default function App({
           onCopyReviewSummary ? handleCopyReviewSummary : undefined
         }
       />
+
+      {profileChoice && (
+        <div
+          role="status"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-100"
+        >
+          <span>
+            Several Databricks login profiles match this workspace
+            {profileChoice.names.length > 0 ? ` (${profileChoice.names.join(", ")})` : ""}.
+            Choose the one to use for this target.
+          </span>
+          <button
+            type="button"
+            onClick={onChooseProfile}
+            className="rounded-md border border-amber-400/40 px-2 py-0.5 font-medium text-amber-50 hover:bg-amber-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          >
+            Choose profile
+          </button>
+        </div>
+      )}
 
       {activeHeaderPanel && (
         <HeaderChipPanel
