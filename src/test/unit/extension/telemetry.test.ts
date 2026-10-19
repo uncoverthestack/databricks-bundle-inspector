@@ -135,6 +135,22 @@ describe("TelemetryQueue", () => {
     expect(queue.size).toBe(1);
   });
 
+  it("sends events enqueued while a flush of an empty queue is finishing", async () => {
+    const sent: string[] = [];
+    const queue = new TelemetryQueue(
+      memoryStorage(),
+      async (batch: QueuedEvent[]) => {
+        sent.push(...batch.map((e) => e.event));
+        return "sent";
+      },
+      { now: () => NOW },
+    );
+    void queue.flush();
+    queue.enqueue(makeEvent("late"));
+    await queue.flush();
+    expect(sent).toEqual(["late"]);
+  });
+
   it("clear empties memory and storage", () => {
     const storage = memoryStorage();
     const queue = new TelemetryQueue(storage, async () => "sent", { now: () => NOW });

@@ -58,7 +58,7 @@ See the [security policy](SECURITY.md).
 
 ## Telemetry
 
-The extension collects anonymous usage data, such as which features are used. Never file paths, names or contents. You are told once, before anything is collected.
+The extension collects usage data, such as which features are used. Never file paths, names or contents. Nothing is sent until you have closed the notice about it and opened VS Code again.
 
 To turn it off, use either setting:
 

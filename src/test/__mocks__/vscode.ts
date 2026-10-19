@@ -7,10 +7,12 @@ export const workspace = {
     inspect: () => undefined,
     update: async () => {},
   }),
+  onDidChangeConfiguration: () => ({ dispose: () => {} }),
 };
 
 export const Uri = {
   file: (p: string) => ({ fsPath: p, toString: () => `file://${p}` }),
+  parse: (value: string) => ({ toString: () => value }),
   joinPath: (...args: { fsPath: string }[]) => ({
     fsPath: args.map((a) => a.fsPath).join("/"),
   }),
@@ -32,4 +34,20 @@ export enum ConfigurationTarget {
 export const window = {
   showErrorMessage: () => {},
   showInformationMessage: () => {},
+};
+
+export enum ExtensionMode {
+  Production = 1,
+  Development = 2,
+  Test = 3,
+}
+
+export const env = {
+  appName: "Visual Studio Code",
+  machineId: "test-machine-id",
+  sessionId: "test-session-id",
+  openExternal: async () => true,
+  createTelemetryLogger: () => {
+    throw new Error("replace env.createTelemetryLogger in the test");
+  },
 };
