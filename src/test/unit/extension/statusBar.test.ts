@@ -121,6 +121,20 @@ describe("statusBarView", () => {
     expect(view).toMatchObject({ text: "$(warning) Databricks CLI not found", warning: true });
     expect(view?.tooltip).toContain("Nothing is being checked");
   });
+
+  test.each([
+    [{ problem: "not_installed" }, "Databricks CLI not found", "install it or locate it"],
+    [{ problem: "not_databricks_cli", versionOutput: "Version 0.18.0" }, "Legacy Databricks CLI (0.18.0)", "legacy databricks-cli pip package"],
+    [{ problem: "not_databricks_cli", versionOutput: "jq-1.7.1" }, '"databricks" is another program', "is not the Databricks CLI"],
+    [{ problem: "not_databricks_cli" }, '"databricks" is another program', "is not the Databricks CLI"],
+    [{ problem: "configured_path_invalid" }, "Check the cliPath setting", "cliPath setting is not a working"],
+  ] as const)("says why the CLI could not be used: %o", (issue, text, tooltip) => {
+    const view = statusBarView("cli_missing", none, "orders_etl", 0, issue);
+    expect(view).toMatchObject({ text: `$(warning) ${text}`, warning: true });
+    expect(view?.tooltip).toContain(tooltip);
+    expect(view?.tooltip).toContain("Nothing is being checked");
+    expect(bundleSummary("cli_missing", none, issue)).toBe(text);
+  });
 });
 
 describe("orderForPicking", () => {

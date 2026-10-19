@@ -12,7 +12,7 @@ Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector
 
 When `databricks` on VS Code's `PATH` doesn't work, the inspector also tries, in this order:
 
-1. every other `databricks` on that `PATH`, for when the first one is the legacy pip package;
+1. every other `databricks` on that `PATH`, for when the first one is something else, such as a legacy pip package older than 0.17.8 (from 0.17.8 the legacy package hands over to the Databricks CLI by itself when both are on the `PATH`);
 2. on Windows, the `Path` Windows has stored for you and for the system, read with `reg.exe` (read only). An install adds its folder there, but VS Code only reads it when it starts;
 3. the CLI the [Databricks extension](https://marketplace.visualstudio.com/items?itemName=databricks.databricks) ships, if you have it.
 

@@ -3,6 +3,7 @@ import {
   extractDatabricksVersion,
   isDatabricksCliVersionOutput,
   isOlderThanSupported,
+  legacyCliVersion,
 } from "../../../databricksCli/parsing.js";
 
 describe("extractDatabricksVersion", () => {
@@ -48,5 +49,24 @@ describe("isOlderThanSupported", () => {
   test("claims nothing when the version is missing or unreadable", () => {
     expect(isOlderThanSupported(undefined)).toBe(false);
     expect(isOlderThanSupported("dev")).toBe(false);
+  });
+});
+
+describe("legacyCliVersion", () => {
+  test.each([
+    // The legacy package's own output (databricks_cli/version.py at tag 0.18.0).
+    ["Version 0.18.0", "0.18.0"],
+    ["Version 0.17.7\n", "0.17.7"],
+    ["Version 0.9.1", "0.9.1"],
+    // Not the legacy package, or not sure: the neutral wording is used instead.
+    ["Version: 0.18.0", undefined],
+    ["Version 0.100.0", undefined],
+    ["Version 1.0.0", undefined],
+    ["Databricks CLI v0.18.0", undefined],
+    ["jq-1.7.1", undefined],
+    ["Version 0.18.0 extra", undefined],
+    ["", undefined],
+  ])("%j -> %s", (output, expected) => {
+    expect(legacyCliVersion(output)).toBe(expected);
   });
 });

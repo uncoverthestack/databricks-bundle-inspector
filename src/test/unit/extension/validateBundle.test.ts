@@ -140,13 +140,32 @@ describe("validateBundleWithDependencies", () => {
       resolveDatabricksCli: async () => ({
         ok: false,
         problem: "not_databricks_cli",
-        versionOutput: "Version: 0.18.0",
+        versionOutput: "databricks 2.1.0",
       }),
     });
 
     if (result.ok) throw new Error("expected failure");
     expect(result.error.cliProblem).toBe("not_databricks_cli");
-    expect(result.error.error).toContain('not the Databricks CLI (it printed "Version: 0.18.0")');
+    expect(result.error.cliVersionOutput).toBe("databricks 2.1.0");
+    expect(result.error.error).toBe(
+      'The "databricks" command on your PATH is not the Databricks CLI (it printed "databricks 2.1.0"). Install the Databricks CLI.',
+    );
+  });
+
+  test("names the legacy pip package when that is what answered", async () => {
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => ({ stdout: "", stderr: "" }),
+      resolveDatabricksCli: async () => ({
+        ok: false,
+        problem: "not_databricks_cli",
+        versionOutput: "Version 0.18.0",
+      }),
+    });
+
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.error).toBe(
+      'The "databricks" command on your PATH is the legacy databricks-cli pip package (0.18.0), which can\'t check bundles. Install the Databricks CLI.',
+    );
   });
 
   test("returns parsed bundle on successful validation", async () => {

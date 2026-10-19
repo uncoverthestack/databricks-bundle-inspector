@@ -69,6 +69,7 @@ import {
   orderForPicking,
   statusBarView,
   type BundleCheckState,
+  type CliIssue,
 } from "./extension/statusBar.js";
 
 // Re-exported so existing imports of it from this module keep working.
@@ -110,6 +111,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   statusBarItem.command = STATUS_BAR_COMMAND;
   extensionContext.subscriptions.push(statusBarItem);
   const checkStates = new Map<string, BundleCheckState>();
+  /** Why the CLI could not be used, for bundles whose last check ended that way. */
+  const cliIssues = new Map<string, CliIssue>();
   /** Every bundle found in the open folders, checked or not, in the order found. */
   const foundBundles = new Set<string>();
 
@@ -142,6 +145,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         bundleProblemCount(bundleRoot, diagnosticCollection),
         path.basename(bundleRoot),
         foundBundles.size - 1,
+        cliIssues.get(bundleRoot),
       );
     if (!view) {
       statusBarItem.hide();
@@ -161,6 +165,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    if (!result.ok && result.error.cliProblem) {
+      cliIssues.set(bundleRoot, {
+        problem: result.error.cliProblem,
+        ...(result.error.cliVersionOutput !== undefined
+          ? { versionOutput: result.error.cliVersionOutput }
+          : {}),
+      });
+    } else {
+      cliIssues.delete(bundleRoot);
+    }
     foundBundles.add(bundleRoot);
     // The bundle whose graph was just opened is the one the user is looking at.
     if (options.inspected) lastStatusBarBundle = bundleRoot;
@@ -1093,6 +1107,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           detail: bundleSummary(
             checkStates.get(root),
             bundleProblemCount(root, diagnosticCollection),
+            cliIssues.get(root),
           ),
           root,
         })),

@@ -1,3 +1,40 @@
+import { legacyCliVersion } from "../databricksCli/parsing.js";
+import type { CliProblem } from "../databricksCli/validateDatabricksCli.js";
+
+/** Why no Databricks CLI could be used, as the last check reported it. */
+export interface CliIssue {
+  problem: CliProblem;
+  /** With `not_databricks_cli`: what that other program printed for `--version`. */
+  versionOutput?: string;
+}
+
+/** The status bar's words for a CLI that could not be used: short text, then the tooltip. */
+function cliIssueWords(issue: CliIssue | undefined): { text: string; tooltip: string } {
+  const unchecked = "Databricks Bundle Inspector needs the Databricks CLI to check this bundle. Nothing is being checked.";
+  if (issue?.problem === "configured_path_invalid") {
+    return {
+      text: "Check the cliPath setting",
+      tooltip: `The databricksBundleInspector.cliPath setting is not a working Databricks CLI, and none was found elsewhere. ${unchecked} Click to see what to do.`,
+    };
+  }
+  if (issue?.problem === "not_databricks_cli") {
+    const legacy = legacyCliVersion(issue.versionOutput ?? "");
+    return legacy
+      ? {
+          text: `Legacy Databricks CLI (${legacy})`,
+          tooltip: `The "databricks" command found is the legacy databricks-cli pip package (${legacy}), which can't check bundles. ${unchecked} Click to install the Databricks CLI.`,
+        }
+      : {
+          text: `"databricks" is another program`,
+          tooltip: `The "databricks" command found is not the Databricks CLI. ${unchecked} Click to install the Databricks CLI.`,
+        };
+  }
+  return {
+    text: "Databricks CLI not found",
+    tooltip: `${unchecked} Click to install it or locate it.`,
+  };
+}
+
 /**
  * How the last check of one bundle ended. `pending` is a bundle that was found but not
  * checked yet: a folder with many bundles only gets its first few checked on open.
@@ -35,9 +72,13 @@ const plural = (count: number, word: string) => (count === 1 ? `1 ${word}` : `${
  * One bundle's result in a few words, as the item and the bundle list show it.
  * A check that failed but still reported errors shows those errors.
  */
-export function bundleSummary(state: BundleCheckState | undefined, count: BundleCount): string {
+export function bundleSummary(
+  state: BundleCheckState | undefined,
+  count: BundleCount,
+  cliIssue?: CliIssue,
+): string {
   if (!state || state === "pending") return "not checked yet";
-  if (state === "cli_missing") return "Databricks CLI not found";
+  if (state === "cli_missing") return cliIssueWords(cliIssue).text;
   if (count.problems > 0) return plural(count.problems, "problem");
   if (state === "failed") return "not checked";
   if (count.notes > 0) return plural(count.notes, "note");
@@ -53,15 +94,17 @@ export function bundleSummary(state: BundleCheckState | undefined, count: Bundle
  * @param count What that check found.
  * @param bundleName The bundle's folder name.
  * @param otherBundles How many more bundles the open folders hold.
+ * @param cliIssue Why the CLI could not be used, when that is how the check ended.
  */
 export function statusBarView(
   state: BundleCheckState | undefined,
   count: BundleCount,
   bundleName: string,
   otherBundles: number,
+  cliIssue?: CliIssue,
 ): StatusBarView | undefined {
   if (!state) return undefined;
-  const summary = bundleSummary(state, count);
+  const summary = bundleSummary(state, count, cliIssue);
   const click =
     otherBundles === 0
       ? "Click to open the graph."
@@ -78,8 +121,7 @@ export function statusBarView(
   if (state === "cli_missing") {
     return {
       text: `$(warning) ${summary}`,
-      tooltip:
-        "Databricks Bundle Inspector needs the Databricks CLI to check this bundle, and could not find it. Nothing is being checked. Click to install it or locate it.",
+      tooltip: cliIssueWords(cliIssue).tooltip,
       warning: true,
     };
   }

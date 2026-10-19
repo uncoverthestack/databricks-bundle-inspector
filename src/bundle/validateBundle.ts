@@ -10,6 +10,7 @@ import type {
   CliResolutionFailure,
   VerifiedDatabricksCli,
 } from "../databricksCli/validateDatabricksCli.js";
+import { legacyCliVersion } from "../databricksCli/parsing.js";
 import {
   parseAvailableTargets,
   parseBundleDiagnostics,
@@ -53,6 +54,8 @@ export interface BundleError {
   errorCode?: string;
   /** Set with `CLI_NOT_FOUND`: why no Databricks CLI could be used. */
   cliProblem?: CliProblem;
+  /** With `not_databricks_cli`: what that other program printed for `--version`. */
+  cliVersionOutput?: string;
   details?: string;
   diagnostics?: import("./parseBundleDiagnostics.js").BundleDiagnostic[];
 }
@@ -122,8 +125,12 @@ function cliNotFoundMessage(failure: CliResolutionFailure): string {
     case "configured_path_invalid":
       return `The databricksBundleInspector.cliPath setting ("${failure.configuredPath}") is not a working Databricks CLI, and none was found on your PATH. Fix the setting or install the Databricks CLI.`;
     case "not_databricks_cli": {
+      const legacy = legacyCliVersion(failure.versionOutput ?? "");
+      if (legacy) {
+        return `The "databricks" command on your PATH is the legacy databricks-cli pip package (${legacy}), which can't check bundles. Install the Databricks CLI.`;
+      }
       const printed = failure.versionOutput?.trim().slice(0, 60);
-      return `The "databricks" command on your PATH is not the Databricks CLI${printed ? ` (it printed "${printed}")` : ""}. This is usually the legacy databricks-cli pip package. Install the Databricks CLI and put it first on your PATH.`;
+      return `The "databricks" command on your PATH is not the Databricks CLI${printed ? ` (it printed "${printed}")` : ""}. Install the Databricks CLI.`;
     }
     case "not_installed":
       return "Databricks CLI not found. Just installed it? Restart VS Code. Otherwise, locate it.";
@@ -247,6 +254,7 @@ export async function validateBundleWithDependencies(
         error: cliNotFoundMessage(cliResult),
         errorCode: "CLI_NOT_FOUND",
         cliProblem: cliResult.problem,
+        ...(cliResult.versionOutput !== undefined ? { cliVersionOutput: cliResult.versionOutput } : {}),
       },
     };
   }

@@ -36,7 +36,7 @@ function machine(overrides: Partial<CliLookupEnvironment> & { files?: string[] }
 }
 
 const NEW_CLI = { stdout: "Databricks CLI v0.299.0", stderr: "" };
-const PIP_CLI = { stdout: "Version: 0.18.0", stderr: "" };
+const PIP_CLI = { stdout: "Version 0.18.0", stderr: "" };
 
 describe("resolveDatabricksCli", () => {
   beforeEach(() => {
@@ -110,12 +110,12 @@ describe("resolveDatabricksCli", () => {
   });
 
   test("reports a databricks command that is not the Databricks CLI", async () => {
-    mockRunVersionCommand.mockResolvedValue({ stdout: "Version: 0.18.0", stderr: "" });
+    mockRunVersionCommand.mockResolvedValue({ stdout: "Version 0.18.0", stderr: "" });
 
     await expect(resolveDatabricksCli(undefined, machine())).resolves.toEqual({
       ok: false,
       problem: "not_databricks_cli",
-      versionOutput: "Version: 0.18.0",
+      versionOutput: "Version 0.18.0",
     });
   });
 });
@@ -155,7 +155,7 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
     await expect(resolveDatabricksCli(undefined, lookup)).resolves.toEqual({
       ok: false,
       problem: "not_databricks_cli",
-      versionOutput: "Version: 0.18.0",
+      versionOutput: "Version 0.18.0",
     });
   });
 
