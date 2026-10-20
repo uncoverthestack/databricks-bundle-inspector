@@ -19,8 +19,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The trust benchmark: nothing is packaged or published unless the end-to-end suites
+  # pass on Windows, Linux and macOS for the exact commit being released.
+  e2e:
+    name: E2E on every OS
+    uses: ./.github/workflows/e2e.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+
   package:
     name: Package GitHub release
+    needs: e2e
     runs-on: ubuntu-latest
     permissions:
       contents: write
