@@ -26,6 +26,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Closing the graph while it is still opening no longer breaks it for the rest of the session.** The graph's close was missed if it happened while the graph loaded, so every later Inspect and refresh failed ("Webview is disposed"), and the graph's data could be lost. Seen on Windows, where loading is slower.
 - **Large bundles are read.** The Databricks CLI's output was capped at Node's default of 1 MiB, so a bundle of about 1,000 tasks with long descriptions failed with "Failed to validate Databricks bundle" and no reason. The limit is now 64 MB, and output beyond it says so.
 - **A check that runs out of time says it timed out**, instead of "Failed to validate Databricks bundle".
 - **A folder whose name starts with `..`, such as `..data`, is treated as part of the bundle**, so `sync.exclude` and `.gitignore` apply to it and a new YAML file in it is noticed. It was mistaken for a folder above the bundle.
