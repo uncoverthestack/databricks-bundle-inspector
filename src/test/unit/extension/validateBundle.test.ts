@@ -6,6 +6,8 @@ import {
   BUNDLE_PROBE_TARGET,
   validateBundleWithDependencies,
   MAX_CLI_OUTPUT_BYTES,
+  PREVIEW_TIMEOUT_MS,
+  REAL_TARGET_TIMEOUT_MS,
 } from "../../../bundle/validateBundle.js";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { bundleTempDir } from "../../../databricksCli/restrictedExecution.js";
@@ -523,4 +525,41 @@ describe("validateBundleWithDependencies: large output and time limits", () => {
     });
     expect(result.ok ? undefined : result.error.errorCode).toBe("VALIDATION_TIMEOUT");
   });
+});
+
+describe("validateBundleWithDependencies: time limit per mode", () => {
+  const cli = async () => ({ ok: true as const, candidate: "databricks", versionOutput: undefined });
+
+  test("a real target gets a shorter limit than the structural preview", async () => {
+    const limits: Record<string, number | undefined> = {};
+    for (const target of [undefined, "dev"]) {
+      await validateBundleWithDependencies("/workspace/demo", target, {
+        execFileAsync: async (_file, _args, options) => {
+          limits[target ?? "preview"] = options?.timeout;
+          return { stdout: JSON.stringify(createBundle()), stderr: "" };
+        },
+        resolveDatabricksCli: cli,
+      });
+    }
+    expect(limits).toEqual({ preview: PREVIEW_TIMEOUT_MS, dev: REAL_TARGET_TIMEOUT_MS });
+    expect(REAL_TARGET_TIMEOUT_MS).toBeLessThan(PREVIEW_TIMEOUT_MS);
+  });
+
+  test("a real target that hangs stops at its limit and says how long it waited", async () => {
+    // A real child that never answers, stopped by the real limit passed to execFile.
+    const run = promisify(execFile);
+    const started = Date.now();
+    const result = await validateBundleWithDependencies("/workspace/demo", "dev", {
+      execFileAsync: (_file, _args, options) =>
+        run(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { ...options, cwd: undefined }),
+      resolveDatabricksCli: cli,
+    });
+    const waited = Date.now() - started;
+    expect(result.ok ? undefined : result.error.errorCode).toBe("VALIDATION_TIMEOUT");
+    expect(result.ok ? undefined : result.error.error).toBe(
+      `Databricks bundle validation timed out after ${REAL_TARGET_TIMEOUT_MS / 1000} seconds.`,
+    );
+    expect(waited).toBeGreaterThanOrEqual(REAL_TARGET_TIMEOUT_MS - 500);
+    expect(waited).toBeLessThan(REAL_TARGET_TIMEOUT_MS + 5_000);
+  }, REAL_TARGET_TIMEOUT_MS + 10_000);
 });
