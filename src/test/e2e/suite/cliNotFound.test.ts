@@ -262,7 +262,7 @@ export function cliNotFoundSuite() {
         until: (recorded) => recorded.infos.length > 0 && existsSync(calls),
       });
 
-      assert.equal(popups.length, 1, "the second Inspect finds the CLI");
+      assert.equal(popups.length, 1, `the second Inspect finds the CLI; pop-ups: ${JSON.stringify(popups)}`);
       assert.deepEqual(infos, [
         {
           message: `Using Databricks CLI v0.299.2 from ${cli}. Saved to the databricksBundleInspector.cliPath setting.`,
