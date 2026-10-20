@@ -111,6 +111,12 @@ function getTaskIssueCounts(taskNode, parsedBundle, targetName) {
   };
 }
 
+/** The first line of a CLI message, without its "Error: " prefix. The full text is the tooltip. */
+function firstLine(message) {
+  const line = message.split("\n").find((part) => part.trim()) ?? "";
+  return line.trim().replace(/^Error:\s*/, "");
+}
+
 function formatSourceLocation(file, line) {
   if (!file) return null;
   const fileLabel = basename(file) || file;
@@ -2906,6 +2912,18 @@ export default function App({
           onCopyReviewSummary ? handleCopyReviewSummary : undefined
         }
       />
+
+      {inspectedTargetMode === "probe" && requestedTarget && targetFallbackMessage && (
+        <div
+          role="status"
+          title={targetFallbackMessage}
+          className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-100"
+        >
+          Could not inspect target "{requestedTarget}", so this is the structural preview.
+          {/* The profile note below says what to do instead of the CLI's advice. */}
+          {!profileChoice && ` The Databricks CLI said: ${firstLine(targetFallbackMessage)}`}
+        </div>
+      )}
 
       {profileChoice && (
         <div

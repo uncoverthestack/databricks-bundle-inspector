@@ -20,6 +20,7 @@ const profile = process.env.INSPECTOR_TEST_PROFILE?.trim() || undefined;
 interface GraphData {
   inspectedTargetMode: "target" | "probe";
   inspectedTarget: string;
+  targetFallbackMessage: string | null;
   inspectorIssues: Array<{ kind: string; title: string }>;
   parsedBundle: { resources?: { jobs?: Record<string, { name?: string }> } };
   profileChoice?: { host: string; names: string[] } | null;
@@ -140,26 +141,29 @@ export function targetsSuite() {
       noDatabricksFolder();
     });
 
-    // When the CLI fails but still prints a bundle, the graph shows what it printed. How
-    // the graph should label that is #136; these cases check what this change owns.
+    // When the CLI fails on a real target it still prints a bundle, but one it stopped
+    // building part way, so the graph shows the structural preview and the CLI's reason.
 
-    it("a target the CLI rejects leaves the Problems panel and the bundle folder alone", async function () {
+    it("a target the CLI rejects shows the preview and leaves the bundle folder alone", async function () {
       // For example a target removed from databricks.yml after the dropdown listed it.
-      await pickTarget("no_such_target");
+      const data = await pickTarget("no_such_target");
 
+      assert.equal(data?.inspectedTargetMode, "probe");
+      assert.match(data?.targetFallbackMessage ?? "", /no_such_target/);
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
     });
 
-    it("with a profile that doesn't exist, the CLI's error reaches the graph's issue list", async function () {
+    it("with a profile that doesn't exist, the graph shows the preview and the CLI's error", async function () {
       await setProfile("NO_SUCH_PROFILE_E2E");
 
       const data = await pickTarget("dev");
 
-      assert.ok(
-        data?.inspectorIssues.some((issue) => issue.kind === "cli_diagnostic"),
-        "the CLI's login error should be listed in the graph",
-      );
+      // Without the fallback the graph said "dev" but held the base task, so it warned
+      // about run_date, which dev passes (#136).
+      assert.equal(data?.inspectedTargetMode, "probe", "the graph is not labelled dev");
+      assert.match(data?.targetFallbackMessage ?? "", /NO_SUCH_PROFILE_E2E/);
+      assert.deepEqual(graphWidgets(data), ["run_date"], "the preview's warning, labelled as the preview");
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
     });

@@ -369,7 +369,14 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    if (isAuthError(stderr) && stdout?.trim()) {
+    // A real target the CLI could not finish counts as failed, so the caller falls back to
+    // the structural preview with this error as the reason. The CLI stops at its first error
+    // and still prints the bundle, but with the target only half applied: without a login it
+    // stops before merging tasks that share a `task_key`, filling in variables and lookups,
+    // or applying the target's mode.
+    const inspectsRealTarget = (target ?? BUNDLE_PROBE_TARGET) !== BUNDLE_PROBE_TARGET;
+
+    if (!inspectsRealTarget && isAuthError(stderr) && stdout?.trim()) {
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
@@ -400,7 +407,7 @@ export async function validateBundleWithDependencies(
     }
 
     // Try to parse stdout even if command failed — probe target always exits non-zero
-    if (stdout?.trim()) {
+    if (!inspectsRealTarget && stdout?.trim()) {
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
@@ -464,7 +471,8 @@ export async function validateBundleWithDependencies(
       bundleDir: resolvedBundleDir,
       bundleName,
       error: "Failed to validate Databricks bundle.",
-      errorCode: "VALIDATION_FAILED",
+      errorCode:
+        inspectsRealTarget && isAuthError(stderr) ? "AUTH_NOT_CONFIGURED" : "VALIDATION_FAILED",
       ...(details ? { details } : {}),
     };
     if (diagnostics.length > 0) bundleError.diagnostics = diagnostics;
