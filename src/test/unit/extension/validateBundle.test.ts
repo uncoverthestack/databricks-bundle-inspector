@@ -323,13 +323,13 @@ describe("validateBundleWithDependencies", () => {
   // The CLI stops at its first error and still prints the bundle, with the target only
   // half applied, so the caller falls back to the structural preview.
   describe("a real target the CLI could not finish", () => {
-    const failWith = (stderr: string) => {
+    const failWith = (stderr: string, printed: unknown = createBundle()) => {
       jest.spyOn(console, "warn").mockImplementation(() => {});
       return validateBundleWithDependencies("/workspace/demo", "dev", {
         execFileAsync: async () => {
           throw Object.assign(new Error("exit status 1"), {
             stderr,
-            stdout: JSON.stringify(createBundle()),
+            stdout: JSON.stringify(printed),
           });
         },
         resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: "v0.295.0" }),
@@ -354,6 +354,38 @@ describe("validateBundleWithDependencies", () => {
       if (result.ok) return;
       expect(result.error.errorCode).toBe("VALIDATION_FAILED");
       expect(result.error.details).toContain("profile NO_SUCH_PROFILE_E2E not found");
+    });
+
+    const pastLogin = (tasks: unknown[]) => ({
+      ...createBundle(),
+      workspace: { current_user: { userName: "someone@example.com" } },
+      resources: { jobs: { sample_job: { name: "Sample Job", tasks } } },
+    });
+
+    test("is shown, with the error listed, when the CLI got past login and had nothing left to merge", async () => {
+      const result = await failWith(
+        "Error: notebook src/nope.py not found",
+        pastLogin([{ task_key: "missing", notebook_task: { notebook_path: "src/nope.py" } }]),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.issues?.[0]?.code).toBe("BUNDLE_DIAGNOSTICS");
+      expect(result.issues?.[0]?.diagnostics?.[0]).toMatchObject({
+        severity: "error",
+        message: "notebook src/nope.py not found",
+      });
+    });
+
+    test("fails when the CLI stopped before merging the target's tasks into the base ones", async () => {
+      const result = await failWith(
+        "Error: no value assigned to required variable run_date.",
+        pastLogin([{ task_key: "load" }, { task_key: "load", notebook_task: { notebook_path: "./src/load.py" } }]),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.details).toContain("no value assigned to required variable run_date");
     });
   });
 
