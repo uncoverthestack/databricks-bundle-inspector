@@ -591,11 +591,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   let activeTargetOptions: string[] = [];
   let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
 
-  async function inspectBundleAtTarget(
-    bundleDir: string,
-    requestedTarget?: string,
-    options?: { silentFallback?: boolean },
-  ) {
+  async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
     const config = getConfiguration();
     const configuredPath = getConfiguredDatabricksCliPath(config);
     let result = await validateBundle(
@@ -608,21 +604,19 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     let inspectedTargetMode: "target" | "probe" =
       requestedTarget ? "target" : "probe";
     let fallbackMessage: string | undefined;
+    let fallbackErrorCode: string | undefined;
 
     if (!result.ok && requestedTarget) {
       fallbackMessage = result.error.details ?? result.error.error;
+      fallbackErrorCode = result.error.errorCode;
       result = await validateBundle(bundleDir, undefined, configuredPath);
       inspectedTarget = BUNDLE_PROBE_TARGET;
       inspectedTargetMode = "probe";
-      if (!options?.silentFallback) {
-        vscode.window.showWarningMessage(
-          `Could not inspect target "${requestedTarget}". Showing structural preview instead.`,
-        );
-      }
+      // No pop-up: the graph is on screen and says why it shows the preview.
     }
 
     if (!result.ok) {
-      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage };
+      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackErrorCode };
     }
 
     const bundleData = result.data;
@@ -672,6 +666,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       inspectedTarget,
       inspectedTargetMode,
       fallbackMessage,
+      fallbackErrorCode,
     };
   }
 
@@ -793,9 +788,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   ) {
     try {
       if (options?.refreshTargets) {
-        const probeInspection = await inspectBundleAtTarget(bundleDir, undefined, {
-          silentFallback: true,
-        });
+        const probeInspection = await inspectBundleAtTarget(bundleDir, undefined);
         if (
           activeRequestedTarget &&
           activeTargetOptions.length > 0 &&
@@ -812,11 +805,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         }
       }
 
-      const inspection = await inspectBundleAtTarget(
-        bundleDir,
-        activeRequestedTarget,
-        { silentFallback: true },
-      );
+      const inspection = await inspectBundleAtTarget(bundleDir, activeRequestedTarget);
       const messageData = bundleMessageDataFromInspection(
         inspection,
         activeRequestedTarget,
@@ -1058,9 +1047,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ...cliVersionProperty,
         target_mode: inspection.inspectedTargetMode,
         fell_back_to_probe: inspection.fallbackMessage !== undefined,
-        auth_configured: !(result.issues ?? []).some(
-          (issue) => issue.code === "AUTH_NOT_CONFIGURED",
-        ),
+        // A target that failed for lack of a login falls back to the preview, whose result
+        // has no auth issue, so the reason for the fallback counts too.
+        auth_configured:
+          inspection.fallbackErrorCode !== "AUTH_NOT_CONFIGURED" &&
+          !(result.issues ?? []).some((issue) => issue.code === "AUTH_NOT_CONFIGURED"),
         target_count: countBucket(inspection.targetOptions?.length ?? 0),
         job_count: countBucket(graphNodes.filter((n) => n.nodeType === "job").length),
         task_count: countBucket(graphNodes.filter((n) => n.nodeType === "task").length),

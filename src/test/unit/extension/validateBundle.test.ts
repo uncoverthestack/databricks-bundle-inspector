@@ -318,6 +318,43 @@ describe("validateBundleWithDependencies", () => {
     expect(result.issues?.[0]?.code).toBe("CLI_WARNING");
   });
 
+  // The CLI stops at its first error and still prints the bundle, with the target only
+  // half applied, so the caller falls back to the structural preview.
+  describe("a real target the CLI could not finish", () => {
+    const failWith = (stderr: string) => {
+      jest.spyOn(console, "warn").mockImplementation(() => {});
+      return validateBundleWithDependencies("/workspace/demo", "dev", {
+        execFileAsync: async () => {
+          throw Object.assign(new Error("exit status 1"), {
+            stderr,
+            stdout: JSON.stringify(createBundle()),
+          });
+        },
+        resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: "v0.295.0" }),
+      });
+    };
+
+    test("fails without a login, even though the CLI printed a bundle", async () => {
+      const result = await failWith("Error: cannot configure default credentials, please check the docs");
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.errorCode).toBe("AUTH_NOT_CONFIGURED");
+      expect(result.error.details).toContain("cannot configure default credentials");
+    });
+
+    test("fails on any other CLI error, with the CLI's message as the reason", async () => {
+      const result = await failWith(
+        "Error: cannot resolve bundle auth configuration: profile NO_SUCH_PROFILE_E2E not found",
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.errorCode).toBe("VALIDATION_FAILED");
+      expect(result.error.details).toContain("profile NO_SUCH_PROFILE_E2E not found");
+    });
+  });
+
   test("does not warn for expected probe target failure with valid JSON", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
