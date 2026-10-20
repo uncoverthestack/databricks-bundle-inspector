@@ -200,11 +200,26 @@ export function themesSuite() {
           returnByValue: true,
         }, pageSession);
         const offset = frame.result.value as { x: number; y: number };
+        // The canvas spot must be bare canvas: away from the boxes, edges, zoom buttons and
+        // minimap (whose shadows tint what is near them), and midway between the dots,
+        // which sit at 1px in each 16px tile.
         const spots = await evaluate(`(() => {
           const header = document.querySelector("header").getBoundingClientRect();
           const pane = document.querySelector(".react-flow").getBoundingClientRect();
-          return { header: { x: header.right - 3, y: header.top + 3 }, canvas: { x: pane.left + pane.width / 2, y: pane.bottom - 6 } };
-        })()`) as Record<string, { x: number; y: number }>;
+          const avoid = [...document.querySelectorAll(".react-flow__node, .react-flow__controls, .react-flow__minimap, .react-flow__edge")]
+            .map(el => el.getBoundingClientRect());
+          const clear = (x, y) => avoid.every(r => x < r.left - 48 || x > r.right + 48 || y < r.top - 48 || y > r.bottom + 48);
+          for (let y = pane.top + 9; y < pane.bottom; y += 16) {
+            for (let x = pane.left + 9; x < pane.right; x += 16) {
+              const top = document.elementFromPoint(x, y);
+              if (clear(x, y) && top && top.closest(".react-flow__pane, .react-flow__background")) {
+                return { header: { x: header.right - 3, y: header.top + 3 }, canvas: { x, y } };
+              }
+            }
+          }
+          return null;
+        })()`) as Record<string, { x: number; y: number }> | null;
+        assert.ok(spots, "a bare spot of canvas to read");
         const result: Record<string, string> = {};
         for (const [name, spot] of Object.entries(spots)) {
           const clip = { x: offset.x + spot.x, y: offset.y + spot.y, width: 1, height: 1, scale: 1 };
