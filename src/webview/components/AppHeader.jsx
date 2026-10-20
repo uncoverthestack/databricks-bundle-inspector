@@ -1,6 +1,7 @@
 import { ClipboardCopy } from "lucide-react";
 import GraphModeToggle from "./GraphModeToggle";
 import SearchBox from "./SearchBox";
+import { UI_COLOR } from "../lib/vscodeTheme";
 
 export default function AppHeader({
   bundleName,
@@ -25,10 +26,10 @@ export default function AppHeader({
 }) {
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-3 border-b border-stone-800/50 px-4"
-      style={{ backgroundColor: "#0d0d0d" }}
+      className="flex h-12 shrink-0 items-center gap-3 border-b border-line-soft px-4"
+      style={{ backgroundColor: UI_COLOR.panel }}
     >
-      <span className="truncate text-sm font-semibold text-stone-200">
+      <span className="truncate text-sm font-semibold text-fg">
         {bundleName ?? "Bundle Inspector"}
       </span>
       {targetOptions.length > 0 ? (
@@ -38,10 +39,10 @@ export default function AppHeader({
           value={selectedTarget ?? ""}
           onChange={(e) => onTargetChange?.(e.target.value || undefined)}
           className={[
-            "hidden cursor-pointer rounded-md border px-2 py-1 text-xs outline-none focus:border-blue-400 md:block",
+            "hidden cursor-pointer rounded-md border px-2 py-1 text-xs outline-none focus:border-accent md:block",
             targetMode === "probe"
-              ? "border-stone-800 bg-stone-900/70 text-stone-400"
-              : "border-blue-500/30 bg-blue-500/10 text-blue-200",
+              ? "border-line bg-widget text-fg-soft"
+              : "border-accent/40 bg-accent/10 text-link-active",
           ].join(" ")}
         >
           <option value="">structural preview</option>
@@ -54,17 +55,17 @@ export default function AppHeader({
       ) : (
         <span
           title={targetTitle}
-          className="hidden shrink-0 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-stone-400 md:inline-flex"
+          className="hidden shrink-0 rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-fg-soft md:inline-flex"
         >
           {targetLabel ?? "structural preview"}
         </span>
       )}
-      {jobKeys.length > 0 && <span className="text-xs text-stone-700">·</span>}
+      {jobKeys.length > 0 && <span className="text-xs text-muted">·</span>}
       {jobKeys.length > 1 ? (
         <select
           value={selectedJobKey ?? ""}
           onChange={(e) => onJobChange(e.target.value)}
-          className="cursor-pointer rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-200 outline-none focus:border-blue-400"
+          className="cursor-pointer rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
         >
           {jobOptions.map((o) => (
             <option key={o.value} value={o.value}>
@@ -73,7 +74,7 @@ export default function AppHeader({
           ))}
         </select>
       ) : jobKeys.length === 1 ? (
-        <span className="truncate text-xs text-stone-400">
+        <span className="truncate text-xs text-fg-soft">
           {selectedJobKey}
         </span>
       ) : null}
@@ -92,7 +93,7 @@ export default function AppHeader({
         <button
           type="button"
           onClick={onCopyReviewSummary}
-          className="hidden shrink-0 items-center gap-1.5 rounded-md border border-stone-700 bg-stone-900 px-2 py-1 text-xs text-stone-300 outline-none hover:border-stone-600 hover:bg-stone-800 hover:text-stone-100 focus:border-blue-400 md:inline-flex"
+          className="hidden shrink-0 items-center gap-1.5 rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg-soft outline-none hover:border-line-strong hover:bg-hover hover:text-fg focus:border-accent md:inline-flex"
           title="Copy bundle review summary"
         >
           <ClipboardCopy size={13} />

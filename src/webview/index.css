@@ -1,54 +1,84 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+/*
+ * Every colour in the graph view comes from here. VS Code gives a webview the current
+ * theme's colours as --vscode-* variables, and updates them when the theme changes; a
+ * colour the theme doesn't define is left out, so the fallback applies. The fallbacks
+ * are the view's own dark colours, for the standalone preview where VS Code isn't there.
+ * VS Code builds each name with replace('.', '-'), which replaces only the first dot,
+ * so only colour ids with one dot can be used.
+ *
+ * Defined on body, not :root: VS Code puts the theme kind on body, and the text colours
+ * below depend on it.
+ */
+body {
+  /* What text colours are blended toward to stand out more: black on a light theme, white on a dark one. */
+  --ui-ink: #ffffff;
+  --ui-surface: var(--vscode-editor-background, #111111);
+  --ui-panel: var(--vscode-sideBar-background, #0d0d0d);
+  --ui-widget: var(--vscode-editorWidget-background, #1c1917);
+  --ui-input: var(--vscode-input-background, #0c0a09);
+  --ui-hover: var(--vscode-list-hoverBackground, #292524);
+  --ui-fg: var(--vscode-foreground, #e7e5e4);
+  /* For text on a tinted fill, where the theme's own text colour can be too faint (Light+: #616161). */
+  --ui-fg-strong: color-mix(in srgb, var(--ui-fg) 50%, var(--ui-ink));
+  /*
+   * Some of VS Code's own colours are below WCAG AA (4.5:1) for small text: Light Modern's
+   * error red is 3.2:1 on white, Light+'s description grey 4.4:1. The text colours are
+   * blended toward --ui-ink by the least that clears AA on the built-in themes, measured
+   * by the themes e2e suite.
+   */
+  --ui-muted: color-mix(in srgb, var(--vscode-descriptionForeground, #a8a29e) 85%, var(--ui-ink));
+  --ui-fg-soft: color-mix(in srgb, var(--ui-fg) 70%, var(--ui-muted));
+  --ui-error: color-mix(in srgb, var(--vscode-errorForeground, #f87171) 70%, var(--ui-ink));
+  --ui-warning: color-mix(in srgb, var(--vscode-editorWarning-foreground, #facc15) 70%, var(--ui-ink));
+  --ui-info: color-mix(in srgb, var(--vscode-editorInfo-foreground, #38bdf8) 70%, var(--ui-ink));
+  --ui-ok: color-mix(in srgb, var(--vscode-charts-green, #4ade80) 70%, var(--ui-ink));
+  --ui-line: var(--vscode-panel-border, #292524);
+  --ui-line-soft: color-mix(in srgb, var(--ui-line) 55%, transparent);
+  --ui-line-strong: color-mix(in srgb, var(--ui-fg) 35%, transparent);
+  --ui-accent: var(--vscode-focusBorder, #3b82f6);
+  --ui-link: var(--vscode-textLink-foreground, #93c5fd);
+  --ui-link-active: var(--vscode-textLink-activeForeground, #bfdbfe);
+  --ui-shadow: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+/* Light and High Contrast Light. */
+body[data-vscode-theme-kind$="light"] {
+  --ui-ink: #000000;
+}
+
+/*
+ * High Contrast themes draw a solid border around everything. Both kinds are matched
+ * by the data attribute: a High Contrast Light theme also gets the vscode-high-contrast
+ * class, so the class can't tell the two apart.
+ */
+body[data-vscode-theme-kind^="vscode-high-contrast"] {
+  --ui-line: var(--vscode-contrastBorder, #6fc3df);
+  --ui-line-soft: var(--ui-line);
+  --ui-line-strong: var(--vscode-contrastActiveBorder, #f38518);
+}
+
+@theme inline {
+  --color-surface: var(--ui-surface);
+  --color-panel: var(--ui-panel);
+  --color-widget: var(--ui-widget);
+  --color-input: var(--ui-input);
+  --color-hover: var(--ui-hover);
+  --color-fg: var(--ui-fg);
+  --color-fg-strong: var(--ui-fg-strong);
+  --color-fg-soft: var(--ui-fg-soft);
+  --color-muted: var(--ui-muted);
+  --color-line: var(--ui-line);
+  --color-line-soft: var(--ui-line-soft);
+  --color-line-strong: var(--ui-line-strong);
+  --color-accent: var(--ui-accent);
+  --color-link: var(--ui-link);
+  --color-link-active: var(--ui-link-active);
+  --color-error: var(--ui-error);
+  --color-warning: var(--ui-warning);
+  --color-info: var(--ui-info);
+  --color-ok: var(--ui-ok);
 }
 
 html,
@@ -57,8 +87,6 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* The app's own background, so no gap can show as a light strip. */
-  background: #111111;
   font-family:
     Inter,
     ui-sans-serif,
@@ -69,22 +97,28 @@ body {
     sans-serif;
 }
 
+/* Fills the whole window too: a body background is drawn under the html element as well. */
+body {
+  background: var(--ui-surface);
+  color: var(--ui-fg);
+}
+
 #root {
   width: 100vw;
   height: 100vh;
 }
 
 .bundle-flow {
-  --xy-controls-button-background-color: #18181b;
-  --xy-controls-button-background-color-hover: #27272a;
-  --xy-controls-button-color: #d6d3d1;
-  --xy-controls-button-color-hover: #fafaf9;
-  --xy-controls-button-border-color: rgba(120, 113, 108, 0.55);
-  --xy-controls-box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  --xy-controls-button-background-color: var(--ui-widget);
+  --xy-controls-button-background-color-hover: var(--ui-hover);
+  --xy-controls-button-color: var(--ui-fg-soft);
+  --xy-controls-button-color-hover: var(--ui-fg);
+  --xy-controls-button-border-color: var(--ui-line);
+  --xy-controls-box-shadow: 0 10px 24px var(--ui-shadow);
 }
 
 .bundle-flow .react-flow__controls {
-  border: 1px solid rgba(120, 113, 108, 0.4);
+  border: 1px solid var(--ui-line);
   border-radius: 8px;
   overflow: hidden;
 }

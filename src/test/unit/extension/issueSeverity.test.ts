@@ -3,9 +3,9 @@ import { orderBySeverity, severityMeta } from "../../../webview/lib/issueSeverit
 
 describe("severityMeta", () => {
   test("gives each severity its own word and colour", () => {
-    expect(severityMeta("error")).toMatchObject({ label: "Error", colorClass: "text-red-400" });
-    expect(severityMeta("warning")).toMatchObject({ label: "Warning", colorClass: "text-yellow-400" });
-    expect(severityMeta("info")).toMatchObject({ label: "Note", colorClass: "text-sky-400" });
+    expect(severityMeta("error")).toMatchObject({ label: "Error", colorClass: "text-error" });
+    expect(severityMeta("warning")).toMatchObject({ label: "Warning", colorClass: "text-warning" });
+    expect(severityMeta("info")).toMatchObject({ label: "Note", colorClass: "text-info" });
     const colours = ["error", "warning", "info"].map((severity) => severityMeta(severity).colorClass);
     expect(new Set(colours).size).toBe(3);
   });

@@ -1,0 +1,45 @@
+# Every colour state of the graph on one screen, for the themes e2e suite: a found
+# notebook, a missing one (red box, an error), a widget no task sets (a warning), a path
+# the inspector can't check (TEMPLATE, a note), and a condition task with true and false
+# branches.
+bundle:
+  name: theme_check
+
+variables:
+  folder:
+    default: src
+
+resources:
+  jobs:
+    theme_job:
+      name: theme_job
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ./src/load.py
+            base_parameters:
+              region: emea
+        - task_key: missing_step
+          depends_on:
+            - task_key: load
+          notebook_task:
+            notebook_path: ./src/does_not_exist.py
+        - task_key: is_weekday
+          depends_on:
+            - task_key: load
+          condition_task:
+            op: EQUAL_TO
+            left: "{{job.start_time.is_weekday}}"
+            right: "true"
+        - task_key: on_weekday
+          depends_on:
+            - task_key: is_weekday
+              outcome: "true"
+          spark_python_task:
+            python_file: ./${var.folder}/report.py
+        - task_key: on_weekend
+          depends_on:
+            - task_key: is_weekday
+              outcome: "false"
+          notebook_task:
+            notebook_path: ./src/load.py
