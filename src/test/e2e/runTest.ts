@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 /**
  * Runs the e2e suite inside a real VS Code with this extension loaded.
  * Build first with `npm run test:e2e`, which bundles this file to out/e2e.
@@ -9,6 +10,22 @@ import net from "node:net";
 import { readOptions } from "./options.js";
 import { runTests } from "@vscode/test-electron";
 import { folderIgnoresCase, swapLetterCase } from "../../bundle/pathCase.js";
+
+
+/** The `databricks` on this process's PATH, as `{ E2E_REAL_CLI }`, or nothing when there is none. */
+function realDatabricksCli(): { E2E_REAL_CLI?: string } {
+  try {
+    const found = execFileSync(process.platform === "win32" ? "where" : "which", ["databricks"], { encoding: "utf8" })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    // `where` lists every match, including extensionless files; Windows runs the .exe.
+    const cli = found.find((file) => /\.exe$/i.test(file)) ?? found[0];
+    return cli ? { E2E_REAL_CLI: cli } : {};
+  } catch {
+    return {};
+  }
+}
 
 async function main() {
   const options = readOptions(process.argv.slice(2), process.env);
@@ -57,6 +74,10 @@ async function main() {
       // then stays cached for the session, so this suite starts with none on the PATH.
       ...(suite === "cliNotFound"
         ? {
+            // Real programs for the Windows cases, which can't run the suite's #!/bin/sh fakes:
+            // the Databricks CLI found before the PATH below replaces it, and this Node.js.
+            ...realDatabricksCli(),
+            E2E_NODE: process.execPath,
             PATH: process.platform === "win32" ? "C:\\Windows\\System32" : "/usr/bin:/bin",
             // On Windows the extension also reads the `Path` stored in the registry, which holds a real CLI.
             INSPECTOR_TEST_NO_STORED_PATH: "1",
