@@ -17,6 +17,7 @@ export default function Bootstrap() {
   const [requestedTarget, setRequestedTarget] = useState(null);
   const [targetOptions, setTargetOptions] = useState([]);
   const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
+  const [targetFallbackReason, setTargetFallbackReason] = useState(null);
   const [profileChoice, setProfileChoice] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
   const [initialJob, setInitialJob] = useState(null);
@@ -70,6 +71,9 @@ export default function Bootstrap() {
           typeof data.targetFallbackMessage === "string"
             ? data.targetFallbackMessage
             : null,
+        );
+        setTargetFallbackReason(
+          typeof data.targetFallbackReason === "string" ? data.targetFallbackReason : null,
         );
         setProfileChoice(
           data.profileChoice && Array.isArray(data.profileChoice.names)
@@ -153,6 +157,7 @@ export default function Bootstrap() {
       requestedTarget={requestedTarget}
       targetOptions={targetOptions}
       targetFallbackMessage={targetFallbackMessage}
+      targetFallbackReason={targetFallbackReason}
       profileChoice={profileChoice}
       onChooseProfile={handleChooseProfile}
       focusIssuesNonce={focusIssuesNonce}

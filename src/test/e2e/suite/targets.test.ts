@@ -21,6 +21,7 @@ interface GraphData {
   inspectedTargetMode: "target" | "probe";
   inspectedTarget: string;
   targetFallbackMessage: string | null;
+  targetFallbackReason: string | null;
   inspectorIssues: Array<{ kind: string; title: string }>;
   parsedBundle: { resources?: { jobs?: Record<string, { name?: string }> } };
   profileChoice?: { host: string; names: string[] } | null;
@@ -77,6 +78,54 @@ const pickTarget = async (target: string | undefined) =>
     "databricksBundleInspector.test.selectTarget",
     target,
   );
+
+/**
+ * Points the extension at a wrapper around the real CLI that logs each run, and can wait
+ * before a real target answers. POSIX shell only, so the cases using it skip on Windows.
+ */
+async function withLoggingCli<T>(
+  options: { slowTarget?: string },
+  body: (runs: () => Promise<string[]>) => Promise<T>,
+): Promise<T> {
+  const log = path.join(os.tmpdir(), `bdi-e2e-cli-${process.pid}.log`);
+  const wrapper = path.join(os.tmpdir(), `bdi-e2e-cli-${process.pid}.sh`);
+  const real = execFileSync("which", ["databricks"], { encoding: "utf8" }).trim();
+  const wait = options.slowTarget ? `case "$*" in *"--target ${options.slowTarget}"*) sleep 2;; esac\n` : "";
+  await writeFile(wrapper, `#!/bin/sh\necho "$*" >> "${log}"\n${wait}exec "${real}" "$@"\n`, { mode: 0o755 });
+  const config = vscode.workspace.getConfiguration("databricksBundleInspector");
+  await config.update("cliPath", wrapper, vscode.ConfigurationTarget.Global);
+  try {
+    return await body(async () =>
+      (existsSync(log) ? await readFile(log, "utf8") : "").split("\n").filter((line) => line.startsWith("bundle validate")),
+    );
+  } finally {
+    await config.update("cliPath", undefined, vscode.ConfigurationTarget.Global);
+    await rm(log, { force: true });
+    await rm(wrapper, { force: true });
+  }
+}
+
+/**
+ * Runs `body` with the CLI reading an empty `~/.databrickscfg` stand-in, so a missing
+ * profile gives the same message on every machine: with no config file at all (as on CI)
+ * the CLI reports no credentials instead. The tests run in the extension's own process,
+ * so the CLI it starts sees this.
+ */
+async function withEmptyCliConfig<T>(body: () => Promise<T>): Promise<T> {
+  const config = path.join(os.tmpdir(), `bdi-e2e-empty-${process.pid}.cfg`);
+  const saved = process.env.DATABRICKS_CONFIG_FILE;
+  await writeFile(config, "");
+  process.env.DATABRICKS_CONFIG_FILE = config;
+  try {
+    return await body();
+  } finally {
+    if (saved === undefined) delete process.env.DATABRICKS_CONFIG_FILE;
+    else process.env.DATABRICKS_CONFIG_FILE = saved;
+    await rm(config, { force: true });
+  }
+}
+
+const MISSING_PROFILE_REASON = 'there\'s no login profile named "NO_SUCH_PROFILE_E2E"';
 
 async function setProfile(value: string | undefined): Promise<void> {
   // The test VS Code has its own throwaway user settings; nothing is written to the fixture.
@@ -157,15 +206,62 @@ export function targetsSuite() {
     it("with a profile that doesn't exist, the graph shows the preview and the CLI's error", async function () {
       await setProfile("NO_SUCH_PROFILE_E2E");
 
-      const data = await pickTarget("dev");
+      const data = await withEmptyCliConfig(() => pickTarget("dev"));
 
       // Without the fallback the graph said "dev" but held the base task, so it warned
       // about run_date, which dev passes (#136).
       assert.equal(data?.inspectedTargetMode, "probe", "the graph is not labelled dev");
       assert.match(data?.targetFallbackMessage ?? "", /NO_SUCH_PROFILE_E2E/);
+      assert.equal(data?.targetFallbackReason, MISSING_PROFILE_REASON);
       assert.deepEqual(graphWidgets(data), ["run_date"], "the preview's warning, labelled as the preview");
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
+    });
+
+    it("after a fallback, saves refresh the preview without running the target again", async function () {
+      if (process.platform === "win32") this.skip();
+      await setProfile("NO_SUCH_PROFILE_E2E");
+      await withEmptyCliConfig(() => withLoggingCli({}, async (runs) => {
+        const picked = await pickTarget("dev");
+        assert.equal(picked?.inspectedTargetMode, "probe");
+
+        const document = await vscode.workspace.openTextDocument(jobFile);
+        const editor = await vscode.window.showTextDocument(document);
+        const before = (await runs()).length;
+        for (let i = 0; i < 2; i++) {
+          await editor.edit((edit) => edit.insert(document.positionAt(document.getText().length), `# save ${i}\n`));
+          await document.save();
+          await waitFor(async () => (await runs()).length > before + i, "the save's check");
+          await sleep(1000);
+        }
+        const afterSaves = (await runs()).slice(before);
+        assert.deepEqual(afterSaves.filter((run) => run.includes("--target dev")), [], "the failing target is not run on save");
+        const data = await graphData();
+        assert.equal(data?.inspectedTargetMode, "probe");
+        assert.equal(data?.targetFallbackReason, MISSING_PROFILE_REASON, "the note stays");
+
+        // Picking the target again retries it.
+        const count = (await runs()).length;
+        await pickTarget("dev");
+        assert.ok((await runs()).slice(count).some((run) => run.includes("--target dev")), "picking again runs the target");
+      }));
+      await writeFile(jobFile, original);
+      await setProfile(undefined);
+      noDatabricksFolder();
+    });
+
+    it("picking the preview while a slow target is still checked shows the preview (needs a login)", async function () {
+      if (!profile || process.platform === "win32") this.skip();
+      await setProfile(profile);
+      await withLoggingCli({ slowTarget: "dev" }, async () => {
+        const slow = pickTarget("dev");
+        await sleep(200);
+        await pickTarget(undefined);
+        await slow;
+        await sleep(500);
+        assert.equal((await graphData())?.inspectedTargetMode, "probe", "the last pick wins");
+      });
+      await setProfile(undefined);
     });
 
     it("a real target changes the graph, not the Problems panel (needs a login)", async function () {

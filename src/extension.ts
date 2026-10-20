@@ -6,6 +6,7 @@ import {
   extractBundleGraph,
 } from "./bundle/validateBundle.js";
 import type { BundleResult } from "./bundle/validateBundle.js";
+import { targetFallback, type TargetFallback } from "./bundle/fallbackReason.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
 import { buildInspectorIssues } from "./bundle/issues.js";
 import {
@@ -604,10 +605,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   let activeBundleData: unknown;
   let activeBundleDir: string | undefined;
   let activeRequestedTarget: string | undefined;
+  /**
+   * Why the picked target fell back to the preview. Saves then refresh the preview only,
+   * instead of running the failing target again; picking it again in the graph retries it.
+   */
+  let activeTargetFallback: TargetFallback | undefined;
   let activeTargetOptions: string[] = [];
   let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
   // The latest user navigation owns the panel, even if an older CLI finishes later.
   let activeInspectionId = 0;
+
+  function fallbackOf(inspection: { fallbackMessage?: string | undefined; fallbackReason?: string | undefined }): TargetFallback | undefined {
+    return inspection.fallbackMessage === undefined
+      ? undefined
+      : { message: inspection.fallbackMessage, reason: inspection.fallbackReason ?? inspection.fallbackMessage };
+  }
 
   async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
     const previousTargetOptions = activeBundleDir === bundleDir ? activeTargetOptions : [];
@@ -624,10 +636,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     let inspectedTargetMode: "target" | "probe" =
       requestedTarget ? "target" : "probe";
     let fallbackMessage: string | undefined;
+    let fallbackReason: string | undefined;
     let fallbackErrorCode: string | undefined;
 
     if (!result.ok && requestedTarget) {
-      fallbackMessage = result.error.details ?? result.error.error;
+      ({ message: fallbackMessage, reason: fallbackReason } = targetFallback(result.error));
       fallbackErrorCode = result.error.errorCode;
       result = await validateBundle(bundleDir, undefined, configuredPath);
       inspectedTarget = BUNDLE_PROBE_TARGET;
@@ -636,7 +649,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     if (!result.ok) {
-      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackErrorCode };
+      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackReason, fallbackErrorCode };
     }
 
     const bundleData = result.data;
@@ -685,6 +698,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       inspectedTarget,
       inspectedTargetMode,
       fallbackMessage,
+      fallbackReason,
       fallbackErrorCode,
     };
   }
@@ -727,6 +741,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       inspectedTargetMode: inspection.inspectedTargetMode,
       requestedTarget: requestedTarget ?? null,
       targetFallbackMessage: inspection.fallbackMessage ?? null,
+      targetFallbackReason: inspection.fallbackReason ?? null,
       profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
       preserveView: options?.preserveView === true,
@@ -817,8 +832,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     let requestedTarget = activeRequestedTarget;
     const isCurrent = () => inspectionId === activeInspectionId && activeBundleDir === bundleDir && livePanel() === panel;
     try {
+      let probeInspection: Awaited<ReturnType<typeof inspectBundleAtTarget>> | undefined;
       if (options?.refreshTargets) {
-        const probeInspection = await inspectBundleAtTarget(bundleDir, undefined);
+        probeInspection = await inspectBundleAtTarget(bundleDir, undefined);
         if (!isCurrent()) return;
         rememberInspection(probeInspection);
         if (
@@ -828,6 +844,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ) {
           requestedTarget = undefined;
           activeRequestedTarget = undefined;
+          activeTargetFallback = undefined;
         }
         if (!requestedTarget) {
           const messageData = bundleMessageDataFromInspection(probeInspection, undefined, { preserveView: true });
@@ -838,9 +855,19 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         }
       }
 
-      const inspection = await inspectBundleAtTarget(bundleDir, requestedTarget);
+      // A target that fell back is not run again on save: the preview is refreshed, and
+      // the graph keeps saying why the target isn't shown.
+      const fellBack = activeTargetFallback !== undefined;
+      const inspected =
+        fellBack && probeInspection
+          ? probeInspection
+          : await inspectBundleAtTarget(bundleDir, fellBack ? undefined : requestedTarget);
       if (!isCurrent()) return;
-      rememberInspection(inspection);
+      rememberInspection(inspected);
+      const inspection = fellBack
+        ? { ...inspected, fallbackMessage: activeTargetFallback?.message, fallbackReason: activeTargetFallback?.reason }
+        : inspected;
+      if (!fellBack) activeTargetFallback = fallbackOf(inspected);
       const messageData = bundleMessageDataFromInspection(
         inspection,
         requestedTarget,
@@ -1019,12 +1046,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
       activeBundleDir = bundleDir;
       activeRequestedTarget = requestedTarget;
+      activeTargetFallback = undefined;
       await trackBundleFiles(bundleDir, fileToBundleRoot);
       if (!isCurrent()) return;
       const inspection = await whileChecking(() =>
         inspectBundleAtTarget(bundleDir, requestedTarget),
       );
       if (!isCurrent()) return;
+      activeTargetFallback = fallbackOf(inspection);
       const { result } = inspection;
       // The Problems panel and the status bar always show the structural preview, which
       // needs no login, so a save never flips them to another target. A real target picked

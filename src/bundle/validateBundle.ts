@@ -15,6 +15,7 @@ import {
   parseAvailableTargets,
   parseBundleDiagnostics,
 } from "./parseBundleDiagnostics.js";
+import { cliAppliedTarget } from "./targetApplied.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -52,10 +53,11 @@ export const MAX_CLI_OUTPUT_BYTES = 64 * 1024 * 1024;
  * How long `bundle validate` may run. The structural preview needs no network and the
  * first run can be slow, so it gets longer. A real target normally answers in a few
  * seconds (under 3 in the e2e runs); one that hangs, such as behind a proxy or VPN that
- * drops the connection, falls back to the preview after this instead of after 30s.
+ * drops the connection, falls back to the preview after this instead of after 30s. 15s leaves
+ * room for a slow login or network without making a hang feel stuck.
  */
 export const PREVIEW_TIMEOUT_MS = 30_000;
-export const REAL_TARGET_TIMEOUT_MS = 10_000;
+export const REAL_TARGET_TIMEOUT_MS = 15_000;
 
 interface ValidateBundleDependencies {
   execFileAsync: ExecFileLike;
@@ -410,11 +412,10 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    // A real target the CLI could not finish counts as failed, so the caller falls back to
-    // the structural preview with this error as the reason. The CLI stops at its first error
-    // and still prints the bundle, but with the target only half applied: without a login it
-    // stops before merging tasks that share a `task_key`, filling in variables and lookups,
-    // or applying the target's mode.
+    // The CLI stops at its first error and still prints the bundle as far as it got. For a
+    // real target that is shown only when the target was applied (see cliAppliedTarget), with
+    // the error listed. Otherwise, as without a login, it counts as failed, so the caller falls
+    // back to the structural preview with this error as the reason.
     const inspectsRealTarget = (target ?? BUNDLE_PROBE_TARGET) !== BUNDLE_PROBE_TARGET;
 
     if (!inspectsRealTarget && isAuthError(stderr) && stdout?.trim()) {
@@ -448,10 +449,11 @@ export async function validateBundleWithDependencies(
     }
 
     // Try to parse stdout even if command failed — probe target always exits non-zero
-    if (!inspectsRealTarget && stdout?.trim()) {
+    if (stdout?.trim()) {
       try {
-        const parsed = parseBundleConfig(JSON.parse(stdout));
-        if (parsed.ok) {
+        const raw: unknown = JSON.parse(stdout);
+        const parsed = parseBundleConfig(raw);
+        if (parsed.ok && (!inspectsRealTarget || cliAppliedTarget(raw))) {
           const diagnostics = await readDiagnostics(
             stderr ?? "",
             target ?? BUNDLE_PROBE_TARGET,
