@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-20
+
 ### Added
 
 - **Open the graph from a resource file** ([#166](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/166), [PR #191](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/191)), not only from `databricks.yml`. Inspect Databricks Bundle now shows on any file the bundle's `include` loads, such as `resources/etl_job.yml`, and the graph opens on the job your cursor is in, or the file's first job. Which files count comes from the Databricks CLI's own list of the files it loaded, so a file `include` doesn't load gets no button.
@@ -315,6 +317,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.4.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.1...v0.2.2
