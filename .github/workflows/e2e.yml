@@ -1,0 +1,112 @@
+name: E2E
+
+# The VS Code end-to-end suites on Windows, Linux and macOS, with a real Databricks CLI.
+# The trust benchmark: every PR and push to main runs it, and a release only publishes
+# when it passes on all three (release.yml calls it).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit, branch or tag to test (the release's)."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # One OS failing must not hide the others' results.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            cli: windows_amd64
+            display: ""
+          # The only one of the three whose file system tells letter case apart, and where
+          # the extension runs for WSL, Remote-SSH and Codespaces users. No screen, so a
+          # virtual display.
+          - name: Linux
+            os: ubuntu-latest
+            cli: linux_amd64
+            display: "xvfb-run -a"
+          - name: macOS
+            os: macos-latest
+            cli: darwin_arm64
+            display: ""
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Install a virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Install Databricks CLI
+        run: |
+          set -euo pipefail
+          # Follow the web redirect, as in cli-compat.yml: release pages are public.
+          latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/databricks/cli/releases/latest)"
+          CLI_VERSION="${latest_url##*/v}"
+          echo "Installing Databricks CLI ${CLI_VERSION} (${{ matrix.cli }})"
+          archive="databricks_cli_${CLI_VERSION}_${{ matrix.cli }}.tar.gz"
+          base="https://github.com/databricks/cli/releases/download/v${CLI_VERSION}"
+          workdir="$RUNNER_TEMP/databricks-cli"
+          mkdir -p "$workdir"
+          cd "$workdir"
+          curl -fsSLO "$base/$archive"
+          curl -fsSLO "$base/databricks_cli_${CLI_VERSION}_SHA256SUMS"
+          if command -v sha256sum >/dev/null; then check=(sha256sum --check -); else check=(shasum -a 256 --check -); fi
+          grep " ${archive}\$" "databricks_cli_${CLI_VERSION}_SHA256SUMS" | "${check[@]}"
+          tar -xzf "$archive"
+          if [ "$RUNNER_OS" = "Windows" ]; then cygpath -w "$workdir" >> "$GITHUB_PATH"; else echo "$workdir" >> "$GITHUB_PATH"; fi
+
+      - name: Show CLI version
+        run: databricks --version
+
+      # Each suite opens its own folder; one step each so a failure names its suite.
+      - name: E2E, no CLI on PATH
+        run: ${{ matrix.display }} npm run test:e2e
+      - name: E2E, include
+        run: ${{ matrix.display }} npm run test:e2e:include
+      - name: E2E, issue codes
+        run: ${{ matrix.display }} npm run test:e2e:issue-codes
+      - name: E2E, always-on
+        run: ${{ matrix.display }} npm run test:e2e:always-on
+      - name: E2E, saved file
+        run: ${{ matrix.display }} npm run test:e2e:saved-file
+      - name: E2E, saved file, folder opened in another letter case
+        run: ${{ matrix.display }} npm run test:e2e:saved-file:other-case
+      - name: E2E, resource files
+        run: ${{ matrix.display }} npm run test:e2e:resource-files
+      - name: E2E, rendered graph
+        run: ${{ matrix.display }} npm run test:e2e:graph-refresh
+      # The cases that need a workspace login are skipped: CI has none.
+      - name: E2E, targets
+        run: ${{ matrix.display }} npm run test:e2e:targets
