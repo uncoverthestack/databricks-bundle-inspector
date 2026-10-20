@@ -105,6 +105,28 @@ async function withLoggingCli<T>(
   }
 }
 
+/**
+ * Runs `body` with the CLI reading an empty `~/.databrickscfg` stand-in, so a missing
+ * profile gives the same message on every machine: with no config file at all (as on CI)
+ * the CLI reports no credentials instead. The tests run in the extension's own process,
+ * so the CLI it starts sees this.
+ */
+async function withEmptyCliConfig<T>(body: () => Promise<T>): Promise<T> {
+  const config = path.join(os.tmpdir(), `bdi-e2e-empty-${process.pid}.cfg`);
+  const saved = process.env.DATABRICKS_CONFIG_FILE;
+  await writeFile(config, "");
+  process.env.DATABRICKS_CONFIG_FILE = config;
+  try {
+    return await body();
+  } finally {
+    if (saved === undefined) delete process.env.DATABRICKS_CONFIG_FILE;
+    else process.env.DATABRICKS_CONFIG_FILE = saved;
+    await rm(config, { force: true });
+  }
+}
+
+const MISSING_PROFILE_REASON = 'there\'s no login profile named "NO_SUCH_PROFILE_E2E"';
+
 async function setProfile(value: string | undefined): Promise<void> {
   // The test VS Code has its own throwaway user settings; nothing is written to the fixture.
   await vscode.workspace
@@ -184,13 +206,13 @@ export function targetsSuite() {
     it("with a profile that doesn't exist, the graph shows the preview and the CLI's error", async function () {
       await setProfile("NO_SUCH_PROFILE_E2E");
 
-      const data = await pickTarget("dev");
+      const data = await withEmptyCliConfig(() => pickTarget("dev"));
 
       // Without the fallback the graph said "dev" but held the base task, so it warned
       // about run_date, which dev passes (#136).
       assert.equal(data?.inspectedTargetMode, "probe", "the graph is not labelled dev");
       assert.match(data?.targetFallbackMessage ?? "", /NO_SUCH_PROFILE_E2E/);
-      assert.equal(data?.targetFallbackReason, 'there\'s no login profile named "NO_SUCH_PROFILE_E2E"');
+      assert.equal(data?.targetFallbackReason, MISSING_PROFILE_REASON);
       assert.deepEqual(graphWidgets(data), ["run_date"], "the preview's warning, labelled as the preview");
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
@@ -199,7 +221,7 @@ export function targetsSuite() {
     it("after a fallback, saves refresh the preview without running the target again", async function () {
       if (process.platform === "win32") this.skip();
       await setProfile("NO_SUCH_PROFILE_E2E");
-      await withLoggingCli({}, async (runs) => {
+      await withEmptyCliConfig(() => withLoggingCli({}, async (runs) => {
         const picked = await pickTarget("dev");
         assert.equal(picked?.inspectedTargetMode, "probe");
 
@@ -216,13 +238,13 @@ export function targetsSuite() {
         assert.deepEqual(afterSaves.filter((run) => run.includes("--target dev")), [], "the failing target is not run on save");
         const data = await graphData();
         assert.equal(data?.inspectedTargetMode, "probe");
-        assert.equal(data?.targetFallbackReason, 'there\'s no login profile named "NO_SUCH_PROFILE_E2E"', "the note stays");
+        assert.equal(data?.targetFallbackReason, MISSING_PROFILE_REASON, "the note stays");
 
         // Picking the target again retries it.
         const count = (await runs()).length;
         await pickTarget("dev");
         assert.ok((await runs()).slice(count).some((run) => run.includes("--target dev")), "picking again runs the target");
-      });
+      }));
       await writeFile(jobFile, original);
       await setProfile(undefined);
       noDatabricksFolder();

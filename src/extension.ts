@@ -610,7 +610,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * instead of running the failing target again; picking it again in the graph retries it.
    */
   let activeTargetFallback: TargetFallback | undefined;
-  /** Counts graph checks, so one that finishes after a newer one started is dropped. */
+  /**
+   * Counts the user's own inspections (Inspect, a target picked in the graph). A check that
+   * finishes after a newer one started is dropped. Save refreshes don't count: a refresh
+   * that ran into the user's own pick would drop the pick, and with it the job asked for.
+   */
   let latestGraphCheck = 0;
   let activeTargetOptions: string[] = [];
   let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
@@ -819,7 +823,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundleDir: string,
     options?: { refreshTargets?: boolean },
   ) {
-    const check = ++latestGraphCheck;
+    // Dropped if the user inspects again while it runs; it never drops their inspection.
+    const check = latestGraphCheck;
     try {
       let probeInspection: Awaited<ReturnType<typeof inspectBundleAtTarget>> | undefined;
       if (options?.refreshTargets) {
