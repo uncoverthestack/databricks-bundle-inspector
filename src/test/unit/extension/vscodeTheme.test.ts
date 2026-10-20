@@ -22,12 +22,12 @@ describe("colorModeForThemeKind", () => {
 });
 
 describe("theme colours", () => {
-  // The kind badge colours in lib/kindMeta.js are not themed yet (#214 follow-up).
   const themed = [
     "App.jsx",
     "Bootstrap.jsx",
     ...readdirSync(path.join(webview, "components")).map((file) => `components/${file}`),
     "lib/issueSeverity.ts",
+    "lib/kindMeta.js",
   ];
 
   test.each(themed)("%s sets no fixed colour", (file) => {
@@ -43,6 +43,13 @@ describe("theme colours", () => {
     const names = [...read("index.css").matchAll(/var\((--vscode-[^,)]+)/g)].map((match) => match[1]);
     expect(names.length).toBeGreaterThan(10);
     for (const name of names) expect(name).toMatch(/^--vscode-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?$/);
+  });
+
+  test("every kind colour has a dark value and a light-theme value", () => {
+    const css = read("index.css");
+    const kinds = new Set([...read("lib/kindMeta.js").matchAll(/color: "([a-z_]+)"/g)].map((match) => match[1]));
+    expect(kinds.size).toBeGreaterThan(10);
+    for (const kind of kinds) expect(css.split(`--kind-${kind}:`).length - 1).toBe(2);
   });
 
   test("every --ui colour used from JavaScript is defined in index.css", () => {

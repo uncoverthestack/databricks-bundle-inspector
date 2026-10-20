@@ -97,7 +97,6 @@ const MEASURE = String.raw`(() => {
       fg: hex(shown),
       bg: hex(bg),
       large: size >= 24 || (size >= 18.66 && weight >= 700),
-      // Kind badges (NB, PY, ...) keep their fixed colours until the #214 follow-up.
       badge: Boolean(el.closest(".react-flow__node .font-mono")),
       dimmed: opacityOf(el) < 1,
     });
@@ -267,15 +266,13 @@ export function themesSuite() {
         assert.equal(plain.surface, plain.editorBackground, "the page uses the editor background");
         assert.deepEqual(onScreen, { header: plain.header, canvas: plain.canvas }, "painted colours match the theme");
         const texts = [...plain.texts, ...selected.texts];
-        const failing = texts.filter((text: any) => !text.badge && !text.dimmed && failsAa(text));
+        const failing = texts.filter((text: any) => !text.dimmed && failsAa(text));
         assert.deepEqual(failing, [], "text below WCAG AA");
         const labels = plain.edgeLabels.filter(failsAa);
         assert.deepEqual(labels, [], "edge labels below WCAG AA");
-        if (theme.kind.startsWith("vscode-high-contrast")) {
-          // WCAG 1.4.11: a component's outline needs 3:1 against what is next to it.
-          const faint = plain.boxes.filter((box: any) => box.border < 3);
-          assert.deepEqual(faint, [], "task box borders in a High Contrast theme");
-        }
+        // WCAG 1.4.11: a component's outline needs 3:1 against what is next to it.
+        const faint = [...plain.boxes, ...selected.boxes].filter((box: any) => !box.dimmed && box.border < 3);
+        assert.deepEqual(faint, [], "task box borders against the canvas");
       });
     }
 

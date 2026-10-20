@@ -20,7 +20,7 @@ export default function TaskNode({ data, selected }) {
             ? UI_COLOR.accent
             : data.focusState === "related"
               ? `color-mix(in srgb, ${UI_COLOR.accent} 60%, transparent)`
-              : UI_COLOR.line,
+              : UI_COLOR.boxLine,
         // Tints over the widget colour, so a box never shows the canvas dots through it.
         backgroundColor: missing
           ? `color-mix(in srgb, ${UI_COLOR.error} 8%, ${UI_COLOR.widget})`
@@ -29,7 +29,7 @@ export default function TaskNode({ data, selected }) {
             : UI_COLOR.widget,
         opacity: dimmed ? 0.48 : 1,
       }}
-      className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-line-strong"
+      className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-fg-soft"
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <span

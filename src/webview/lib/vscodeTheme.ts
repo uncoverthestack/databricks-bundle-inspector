@@ -12,6 +12,7 @@ export const UI_COLOR = {
   muted: "var(--ui-muted)",
   line: "var(--ui-line)",
   lineSoft: "var(--ui-line-soft)",
+  boxLine: "var(--ui-box-line)",
   accent: "var(--ui-accent)",
   link: "var(--ui-link)",
   error: "var(--ui-error)",

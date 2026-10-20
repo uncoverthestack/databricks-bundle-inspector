@@ -41,11 +41,42 @@ body {
   --ui-link: var(--vscode-textLink-foreground, #93c5fd);
   --ui-link-active: var(--vscode-textLink-activeForeground, #bfdbfe);
   --ui-shadow: var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
+  /* A task box's outline: 3:1 against the canvas (WCAG 1.4.11), measured by the themes e2e suite. */
+  --ui-box-line: color-mix(in srgb, var(--ui-ink) 35%, var(--ui-surface));
+
+  /* Kind badges (NB, PY, ...) and dots. Light themes use a darker shade of the same hue below. */
+  --kind-notebook: #4ade80;
+  --kind-pipeline: #22d3ee;
+  --kind-sql: #fbbf24;
+  --kind-script: #60a5fa;
+  --kind-job: #a78bfa;
+  --kind-dashboard: #f472b6;
+  --kind-alert: #f87171;
+  --kind-cluster: #fb923c;
+  --kind-warehouse: #34d399;
+  --kind-file: #94a3b8;
+  --kind-variable: #c084fc;
+  --kind-widget: #e879f9;
+  --kind-other: #a8a29e;
 }
 
 /* Light and High Contrast Light. */
 body[data-vscode-theme-kind$="light"] {
   --ui-ink: #000000;
+  --ui-box-line: color-mix(in srgb, var(--ui-ink) 45%, var(--ui-surface));
+  --kind-notebook: #166534;
+  --kind-pipeline: #155e75;
+  --kind-sql: #92400e;
+  --kind-script: #1e40af;
+  --kind-job: #5b21b6;
+  --kind-dashboard: #9d174d;
+  --kind-alert: #991b1b;
+  --kind-cluster: #9a3412;
+  --kind-warehouse: #065f46;
+  --kind-file: #334155;
+  --kind-variable: #6b21a8;
+  --kind-widget: #86198f;
+  --kind-other: #44403c;
 }
 
 /*
@@ -57,6 +88,7 @@ body[data-vscode-theme-kind^="vscode-high-contrast"] {
   --ui-line: var(--vscode-contrastBorder, #6fc3df);
   --ui-line-soft: var(--ui-line);
   --ui-line-strong: var(--vscode-contrastActiveBorder, #f38518);
+  --ui-box-line: var(--ui-line);
 }
 
 @theme inline {
