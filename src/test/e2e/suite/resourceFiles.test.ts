@@ -95,12 +95,18 @@ export function resourceFilesSuite() {
     it("uses the CLI's loaded files even when files.exclude hides resources", async function () {
       const config = vscode.workspace.getConfiguration("files");
       const previous = config.inspect("exclude")?.workspaceValue;
+      // Setting a workspace value creates .vscode/settings.json, and clearing it leaves `{}`.
+      const settingsFile = vscode.Uri.file(path.join(root, ".vscode", "settings.json"));
+      const settingsExisted = await vscode.workspace.fs.stat(settingsFile).then(() => true, () => false);
       try {
         await config.update("exclude", { "**/resources/**": true }, vscode.ConfigurationTarget.Workspace);
         await inspectAlpha();
         await inspect("alpha/resources/jobs.yml", "name: alpha_second", "resource_alpha", "alpha_second");
       } finally {
         await config.update("exclude", previous, vscode.ConfigurationTarget.Workspace);
+        if (!settingsExisted) {
+          await vscode.workspace.fs.delete(vscode.Uri.file(path.join(root, ".vscode")), { recursive: true });
+        }
       }
     });
 
