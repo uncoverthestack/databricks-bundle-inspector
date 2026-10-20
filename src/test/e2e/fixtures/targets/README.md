@@ -7,7 +7,7 @@ Opened as a folder by `npm run test:e2e:targets`.
 `databricks.yml` has no workspace host on purpose. To run the cases that need a login, name a profile from your `~/.databrickscfg`; the CLI takes the host from it:
 
 ```
-INSPECTOR_TEST_PROFILE=<profile> npm run test:e2e:targets
+npm run test:e2e:targets -- --profile <profile>
 ```
 
 Without it, only the cases that need no login run.
