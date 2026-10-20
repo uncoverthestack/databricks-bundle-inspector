@@ -1,0 +1,1 @@
+Temporary file to test that the main-checks ruleset blocks an admin-bypass merge. This PR is closed without merging.
