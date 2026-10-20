@@ -55,7 +55,7 @@ If the CLI can't be found, Inspect says why and links to the install steps for y
 - It runs one program, the Databricks CLI you installed, to validate the bundle. To find it, Windows only, it may also read (never change) your stored `Path` with `reg.exe`. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run.
 - It writes nothing into your bundle folder, not even the `.databricks` folder the CLI creates for a real target.
 - It stays off until you tell VS Code you trust the folder.
-- The checks that run by themselves need no login. Picking a real target in the graph uses your active CLI profile, or the one set in `databricksBundleInspector.profile`, and may contact your workspace. A target that sets no `workspace.host` uses the workspace of your default profile. If the workspace doesn't answer within 10 seconds, the graph shows the structural preview instead and says why.
+- The checks that run by themselves need no login. Picking a real target in the graph uses your active CLI profile, or the one set in `databricksBundleInspector.profile`, and may contact your workspace. With a login, the CLI's `validate` also creates the target's empty files folder in your workspace if it is missing; nothing is uploaded. A target that sets no `workspace.host` uses the workspace of your default profile. If the workspace doesn't answer within 15 seconds, the graph shows the structural preview instead and says why.
 
 See the [security policy](SECURITY.md).
 
