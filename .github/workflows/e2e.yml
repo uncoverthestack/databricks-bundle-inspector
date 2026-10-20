@@ -136,6 +136,9 @@ jobs:
         run: ${{ matrix.display }} npm run test:e2e:resource-files
       - name: E2E, rendered graph
         run: ${{ matrix.display }} npm run test:e2e:graph-refresh
+      - name: E2E, overlapping inspections
+        if: runner.os != 'Windows'
+        run: ${{ matrix.display }} npm run test:e2e:inspection-races
       # The cases that need a workspace login are skipped: CI has none.
       - name: E2E, targets
         run: ${{ matrix.display }} npm run test:e2e:targets

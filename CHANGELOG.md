@@ -26,6 +26,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Older checks no longer replace your latest graph selection.** If you inspect another bundle or job while a check is still running, its older result is ignored. A save refresh from the previous bundle cannot replace the new one, and closing the graph cancels an inspection that started while it was open.
 - **A real target that doesn't answer falls back after 10 seconds, not 30** ([#136](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/136)). Behind a proxy or VPN that drops the connection, the Databricks CLI can hang; the graph now shows the structural preview after 10 seconds, with a note that says the check timed out and how long it waited. The structural preview keeps its 30 seconds.
 - **Closing the graph while it is still opening no longer breaks it for the rest of the session** ([PR #203](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/203)). The graph's close was missed if it happened while the graph loaded, so every later Inspect and refresh failed ("Webview is disposed"), and the graph's data could be lost. Seen on Windows, where loading is slower.
 - **Large bundles are read** ([PR #200](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/200)). The Databricks CLI's output was capped at Node's default of 1 MiB, so a bundle of about 1,000 tasks with long descriptions failed with "Failed to validate Databricks bundle" and no reason. The limit is now 64 MB, and output beyond it says so.
