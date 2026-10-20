@@ -153,6 +153,14 @@ export function graphRefreshSuite() {
     it("a short webview never scrolls the page: the Issues list fits, and its items scroll inside it", async function () {
       assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
       const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      // The previous test closes every editor. Until that close has finished, it can also
+      // close the graph this test opens while it loads, and the graph then quietly stays
+      // closed, so wait for the old graph tab to be gone.
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      await waitFor(
+        async () => !vscode.window.tabGroups.all.some((group) => group.tabs.some((tab) => tab.input instanceof vscode.TabInputWebview)),
+        "the previous graph to close",
+      );
       await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
       await vscode.commands.executeCommand("databricksBundleInspector.openBundleIssues");
 
