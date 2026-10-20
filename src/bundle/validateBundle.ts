@@ -48,6 +48,15 @@ type ExecFileLike = (
  */
 export const MAX_CLI_OUTPUT_BYTES = 64 * 1024 * 1024;
 
+/**
+ * How long `bundle validate` may run. The structural preview needs no network and the
+ * first run can be slow, so it gets longer. A real target normally answers in a few
+ * seconds (under 3 in the e2e runs); one that hangs, such as behind a proxy or VPN that
+ * drops the connection, falls back to the preview after this instead of after 30s.
+ */
+export const PREVIEW_TIMEOUT_MS = 30_000;
+export const REAL_TARGET_TIMEOUT_MS = 10_000;
+
 interface ValidateBundleDependencies {
   execFileAsync: ExecFileLike;
   resolveDatabricksCli: () => Promise<
@@ -285,10 +294,13 @@ export async function validateBundleWithDependencies(
     args.push("--profile", trimmedProfile);
   }
 
+  const timeout =
+    target && target !== BUNDLE_PROBE_TARGET ? REAL_TARGET_TIMEOUT_MS : PREVIEW_TIMEOUT_MS;
+
   try {
     const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {
       cwd: resolvedBundleDir,
-      timeout: 30_000,
+      timeout,
       maxBuffer: MAX_CLI_OUTPUT_BYTES,
       // Never let the CLI run scripts or Python that the bundle defines, or write
       // its working files into the bundle folder.
@@ -391,7 +403,7 @@ export async function validateBundleWithDependencies(
         error: {
           bundleDir: resolvedBundleDir,
           bundleName,
-          error: "Databricks bundle validation timed out.",
+          error: `Databricks bundle validation timed out after ${timeout / 1000} seconds.`,
           errorCode: "VALIDATION_TIMEOUT",
           details: getErrorMessage(error),
         },
