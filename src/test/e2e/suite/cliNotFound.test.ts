@@ -295,14 +295,16 @@ export function cliNotFoundSuite() {
 
       assert.equal(popups.length, 1, `the second Inspect finds the CLI; pop-ups: ${JSON.stringify(popups)}`);
       assert.equal(infos.length, 1, JSON.stringify(infos));
+      // The picked file as VS Code gives it, which writes a Windows drive letter in lowercase.
+      const picked = vscode.Uri.file(cli).fsPath;
       assert.match(
         infos[0]!.message,
-        new RegExp(`^Using Databricks CLI v${windows ? "\\d+\\.\\d+\\.\\d+" : "0\\.299\\.2"} from ${escapeRegExp(cli)}\\. Saved to the databricksBundleInspector\\.cliPath setting\\.$`),
+        new RegExp(`^Using Databricks CLI v${windows ? "\\d+\\.\\d+\\.\\d+" : "0\\.299\\.2"} from ${escapeRegExp(picked)}\\. Saved to the databricksBundleInspector\\.cliPath setting\\.$`),
       );
       assert.deepEqual(infos[0]!.buttons, []);
       assert.equal(
         vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath"),
-        cli,
+        picked,
       );
       // The bundle was validated with it: by the real CLI, or as the fake recorded.
       if (windows) assert.ok(await inspected(), "the bundle is inspected with the located CLI");
@@ -325,7 +327,7 @@ export function cliNotFoundSuite() {
       assert.match(
         popups[1]!.message,
         windows
-          ? /^node(\.exe)? is not the Databricks CLI \(it printed "v\d+\.\d+\.\d+"\)\. Pick databricks\.$/
+          ? /^node\.exe is not the Databricks CLI \(it printed "v\d+\.\d+\.\d+"\)\. Pick databricks\.exe\.$/
           : /^jq is not the Databricks CLI \(it printed "jq-1\.7\.1"\)\. Pick databricks\.$/,
       );
       assert.deepEqual(infos, []);
