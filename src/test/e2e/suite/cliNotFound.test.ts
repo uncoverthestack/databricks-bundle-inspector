@@ -143,6 +143,21 @@ async function fakeCli(script: string, name = "databricks"): Promise<string> {
   return bin;
 }
 
+/**
+ * A real program for a Windows run, which can't start the `#!/bin/sh` fakes above. The
+ * e2e job provides each one; a missing one fails in CI and only skips elsewhere, so a
+ * Windows run never passes by skipping.
+ */
+function windowsProgram(context: Mocha.Context, name: string, what: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  if (process.env.CI) assert.fail(`${name} is not set: the Windows e2e job must provide ${what}`);
+  console.log(`Skipped: set ${name} to ${what} to run this test on Windows.`);
+  context.skip();
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 async function setCliPath(value: string | undefined) {
   await vscode.workspace
     .getConfiguration("databricksBundleInspector")
@@ -201,11 +216,14 @@ export function cliNotFoundSuite() {
     });
 
     it("legacy pip databricks-cli on PATH: says it is the wrong program", async function () {
-      if (process.platform === "win32") this.skip();
-      // What the legacy package prints (databricks_cli/version.py, tag 0.18.0).
-      const bin = await fakeCli('echo "Version 0.18.0"');
+      // What the legacy package prints (databricks_cli/version.py, tag 0.18.0). On Windows,
+      // the real package: `pip install databricks-cli==0.18.0` gives a databricks.exe.
+      const bin =
+        process.platform === "win32"
+          ? path.dirname(windowsProgram(this, "E2E_LEGACY_CLI", "the databricks.exe of pip's databricks-cli 0.18.0"))
+          : await fakeCli('echo "Version 0.18.0"');
 
-      const { popups } = await inspectWithPath(`${bin}:${SYSTEM_PATH}`, undefined);
+      const { popups } = await inspectWithPath(`${bin}${path.delimiter}${SYSTEM_PATH}`, undefined);
 
       assert.equal(popups.length, 1);
       assert.match(
@@ -246,49 +264,72 @@ export function cliNotFoundSuite() {
     });
 
     it("Locate CLI…: a working CLI is saved as cliPath and the bundle is inspected again", async function () {
-      if (process.platform === "win32") this.skip();
+      const windows = process.platform === "win32";
       const calls = path.join(await mkdtemp(path.join(os.tmpdir(), "fake-cli-calls-")), "calls");
-      const bin = await fakeCli(
-        [
-          'if [ "$1" = "--version" ]; then echo "Databricks CLI v0.299.2"; exit 0; fi',
-          `echo "$1 $2" >> "${calls}"`,
-          'echo \'{"bundle":{"name":"e2e_cli_not_found"}}\'',
-        ].join("\n"),
-      );
-      const cli = path.join(bin, "databricks");
+      // On Windows the real Databricks CLI, which the test runner finds on the outer PATH.
+      const cli = windows
+        ? windowsProgram(this, "E2E_REAL_CLI", "the Databricks CLI (databricks.exe)")
+        : path.join(
+            await fakeCli(
+              [
+                'if [ "$1" = "--version" ]; then echo "Databricks CLI v0.299.2"; exit 0; fi',
+                `echo "$1 $2" >> "${calls}"`,
+                'echo \'{"bundle":{"name":"e2e_cli_not_found"}}\'',
+              ].join("\n"),
+            ),
+            "databricks",
+          );
+      const inspected = async () =>
+        (await vscode.commands.executeCommand<{ parsedBundle?: { bundle?: { name?: string } } }>(
+          "databricksBundleInspector.test.graphData",
+        ))?.parsedBundle?.bundle?.name === "e2e_cli_not_found";
 
+      let checked = false;
       const { popups, infos } = await inspectWithPath(SYSTEM_PATH, "Locate CLI…", {
         pick: cli,
-        until: (recorded) => recorded.infos.length > 0 && existsSync(calls),
+        until: (recorded) => {
+          if (recorded.infos.length > 0 && windows) void inspected().then((done) => (checked = done));
+          return recorded.infos.length > 0 && (windows ? checked : existsSync(calls));
+        },
       });
 
       assert.equal(popups.length, 1, `the second Inspect finds the CLI; pop-ups: ${JSON.stringify(popups)}`);
-      assert.deepEqual(infos, [
-        {
-          message: `Using Databricks CLI v0.299.2 from ${cli}. Saved to the databricksBundleInspector.cliPath setting.`,
-          buttons: [],
-        },
-      ]);
+      assert.equal(infos.length, 1, JSON.stringify(infos));
+      // The picked file as VS Code gives it, which writes a Windows drive letter in lowercase.
+      const picked = vscode.Uri.file(cli).fsPath;
+      assert.match(
+        infos[0]!.message,
+        new RegExp(`^Using Databricks CLI v${windows ? "\\d+\\.\\d+\\.\\d+" : "0\\.299\\.2"} from ${escapeRegExp(picked)}\\. Saved to the databricksBundleInspector\\.cliPath setting\\.$`),
+      );
+      assert.deepEqual(infos[0]!.buttons, []);
       assert.equal(
         vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath"),
-        cli,
+        picked,
       );
-      assert.match(await readFile(calls, "utf8"), /^bundle validate$/m);
+      // The bundle was validated with it: by the real CLI, or as the fake recorded.
+      if (windows) assert.ok(await inspected(), "the bundle is inspected with the located CLI");
+      else assert.match(await readFile(calls, "utf8"), /^bundle validate$/m);
     });
 
     it("Locate CLI…: a program that isn't the CLI is refused and nothing is saved", async function () {
-      if (process.platform === "win32") this.skip();
-      const bin = await fakeCli('echo "jq-1.7.1"', "jq");
+      // On Windows a real program that isn't the CLI: the Node.js that runs the tests.
+      const windows = process.platform === "win32";
+      const program = windows
+        ? windowsProgram(this, "E2E_NODE", "a Node.js executable (node.exe)")
+        : path.join(await fakeCli('echo "jq-1.7.1"', "jq"), "jq");
 
       const { popups, infos } = await inspectWithPath(SYSTEM_PATH, ["Locate CLI…", undefined], {
-        pick: path.join(bin, "jq"),
+        pick: program,
         until: (recorded) => recorded.popups.length >= 2,
       });
 
-      assert.deepEqual(popups[1], {
-        message: 'jq is not the Databricks CLI (it printed "jq-1.7.1"). Pick databricks.',
-        buttons: ["Locate CLI…"],
-      });
+      assert.deepEqual(popups[1]?.buttons, ["Locate CLI…"], JSON.stringify(popups));
+      assert.match(
+        popups[1]!.message,
+        windows
+          ? /^node\.exe is not the Databricks CLI \(it printed "v\d+\.\d+\.\d+"\)\. Pick databricks\.exe\.$/
+          : /^jq is not the Databricks CLI \(it printed "jq-1\.7\.1"\)\. Pick databricks\.$/,
+      );
       assert.deepEqual(infos, []);
       assert.equal(
         vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath"),
@@ -298,15 +339,18 @@ export function cliNotFoundSuite() {
 
     // Last: a CLI that is found stays cached for the rest of the session.
     it("CLI older than v0.299.0: warns once, and Open Update Guide opens the update section", async function () {
-      if (process.platform === "win32") this.skip();
-      const bin = await fakeCli(
-        [
-          'if [ "$1" = "--version" ]; then echo "Databricks CLI v0.250.0"; exit 0; fi',
-          'echo \'{"bundle":{"name":"e2e_cli_not_found"}}\'',
-        ].join("\n"),
-      );
+      // On Windows the real v0.250.0 release.
+      const bin =
+        process.platform === "win32"
+          ? path.dirname(windowsProgram(this, "E2E_OLD_CLI", "the databricks.exe of Databricks CLI v0.250.0"))
+          : await fakeCli(
+              [
+                'if [ "$1" = "--version" ]; then echo "Databricks CLI v0.250.0"; exit 0; fi',
+                'echo \'{"bundle":{"name":"e2e_cli_not_found"}}\'',
+              ].join("\n"),
+            );
 
-      const first = await inspectWithPath(`${bin}:${SYSTEM_PATH}`, "Open Update Guide");
+      const first = await inspectWithPath(`${bin}${path.delimiter}${SYSTEM_PATH}`, "Open Update Guide");
 
       assert.deepEqual(first.popups, [], "an outdated CLI still inspects the bundle");
       assert.deepEqual(first.warnings, [
@@ -318,7 +362,7 @@ export function cliNotFoundSuite() {
       ]);
       assert.deepEqual(first.opened, [INSTALL_DOCS + (UPDATE_SECTION[process.platform] ?? "")]);
 
-      const second = await inspectWithPath(`${bin}:${SYSTEM_PATH}`, undefined);
+      const second = await inspectWithPath(`${bin}${path.delimiter}${SYSTEM_PATH}`, undefined);
       assert.deepEqual(second.warnings, [], "the warning is shown once per session");
     });
   });
