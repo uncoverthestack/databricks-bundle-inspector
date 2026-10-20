@@ -90,6 +90,35 @@ jobs:
       - name: Show CLI version
         run: databricks --version
 
+      # Windows can't run the #!/bin/sh fakes the CLI-detection tests use elsewhere, so they
+      # get real programs: the legacy pip package and a CLI older than v0.299.0.
+      - name: Install the legacy pip databricks-cli (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/legacy-cli"
+          "$RUNNER_TEMP/legacy-cli/Scripts/python.exe" -m pip install --disable-pip-version-check --quiet "databricks-cli==0.18.0"
+          exe="$(cygpath -w "$RUNNER_TEMP/legacy-cli/Scripts/databricks.exe")"
+          "$exe" --version
+          echo "E2E_LEGACY_CLI=$exe" >> "$GITHUB_ENV"
+
+      - name: Install Databricks CLI v0.250.0, older than supported (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          version=0.250.0
+          archive="databricks_cli_${version}_windows_amd64.tar.gz"
+          base="https://github.com/databricks/cli/releases/download/v${version}"
+          workdir="$RUNNER_TEMP/old-databricks-cli"
+          mkdir -p "$workdir"
+          cd "$workdir"
+          curl -fsSLO "$base/$archive"
+          curl -fsSLO "$base/databricks_cli_${version}_SHA256SUMS"
+          grep " ${archive}\$" "databricks_cli_${version}_SHA256SUMS" | sha256sum --check -
+          tar -xzf "$archive"
+          ./databricks.exe --version
+          echo "E2E_OLD_CLI=$(cygpath -w "$workdir/databricks.exe")" >> "$GITHUB_ENV"
+
       # Each suite opens its own folder; one step each so a failure names its suite.
       - name: E2E, no CLI on PATH
         run: ${{ matrix.display }} npm run test:e2e
