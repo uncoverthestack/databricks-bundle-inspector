@@ -369,7 +369,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
-      if (activePanel && activeBundleDir === bundleRoot) {
+      if (livePanel() && activeBundleDir === bundleRoot) {
         if (flags.saved) {
           telemetry?.logUsage("bundle_refreshed_on_save", {
             bundle_file: flags.bundleFileSaved,
@@ -585,6 +585,22 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
 
   let activePanel: vscode.WebviewPanel | undefined;
+
+  /**
+   * The graph panel if it is still open. A closed panel throws on `.webview`; when its
+   * close was missed it would otherwise stay "active" for the rest of the session, and
+   * every Inspect and refresh would fail with "Webview is disposed".
+   */
+  function livePanel(): vscode.WebviewPanel | undefined {
+    if (!activePanel) return undefined;
+    try {
+      void activePanel.webview;
+      return activePanel;
+    } catch {
+      activePanel = undefined;
+      return undefined;
+    }
+  }
   let activeBundleData: unknown;
   let activeBundleDir: string | undefined;
   let activeRequestedTarget: string | undefined;
@@ -672,7 +688,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
   function postBundleData(data: object) {
     activeBundleData = data;
-    activePanel?.webview.postMessage({
+    livePanel()?.webview.postMessage({
       type: "bundleData",
       ...data,
     });
@@ -953,9 +969,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         : undefined;
 
     if (!bundleDir) {
-      if (options?.focusIssues && activePanel && activeBundleData) {
-        activePanel.reveal(vscode.ViewColumn.One);
-        activePanel.webview.postMessage({ type: "focusIssues" });
+      const openPanel = livePanel();
+      if (options?.focusIssues && openPanel && activeBundleData) {
+        openPanel.reveal(vscode.ViewColumn.One);
+        openPanel.webview.postMessage({ type: "focusIssues" });
         return;
       }
       logInspect("no_bundle_file");
@@ -1067,11 +1084,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (!bundleMessageData) return;
 
       // Create or show webview panel
-      if (activePanel) {
-        activePanel.reveal(vscode.ViewColumn.One);
+      const shown = livePanel();
+      if (shown) {
+        shown.reveal(vscode.ViewColumn.One);
         postBundleData(bundleMessageData);
       } else {
-        activePanel = vscode.window.createWebviewPanel(
+        const created = vscode.window.createWebviewPanel(
           "bundleInspector",
           "Bundle Inspector",
           vscode.ViewColumn.One,
@@ -1083,15 +1101,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             retainContextWhenHidden: true,
           },
         );
+        activePanel = created;
+        // Before anything awaits: a panel closed while its HTML loads must not stay active.
+        // Only this panel's own close clears it, not an older panel's late one.
+        created.onDidDispose(() => {
+          if (activePanel === created) activePanel = undefined;
+        });
 
-        activePanel.webview.html = await getWebviewContent(
-          activePanel.webview,
-          extensionContext.extensionUri,
-        );
-
-        activePanel.webview.onDidReceiveMessage((message) => {
+        created.webview.onDidReceiveMessage((message) => {
           if (message?.type === "webviewReady" && activeBundleData) {
-            activePanel?.webview.postMessage({
+            created.webview.postMessage({
               type: "bundleData",
               ...(activeBundleData as object),
             });
@@ -1163,9 +1182,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           }
         });
 
-        activePanel.onDidDispose(() => {
-          activePanel = undefined;
-        });
+        // Kept even if the panel closes while its page loads (a quick close, or a close
+        // still under way from before): the next panel then gets it on "webviewReady".
+        activeBundleData = bundleMessageData;
+        try {
+          created.webview.html = await getWebviewContent(
+            created.webview,
+            extensionContext.extensionUri,
+          );
+        } catch (error) {
+          if (livePanel() !== created) return;
+          throw error;
+        }
+        // Closed while loading: nothing to show it in.
+        if (livePanel() !== created) return;
 
         postBundleData(bundleMessageData);
       }
@@ -1224,7 +1254,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   extensionContext.subscriptions.push(
     vscode.commands.registerCommand("databricksBundleInspector.chooseProfile", async () => {
       // A graph showing a real target checks it again with the new profile.
-      if ((await chooseProfile()) && activePanel && activeRequestedTarget) {
+      if ((await chooseProfile()) && livePanel() && activeRequestedTarget) {
         await selectTarget(activeRequestedTarget);
       }
     }),
