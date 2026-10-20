@@ -115,7 +115,10 @@ export function resourceFilesSuite() {
         await inspectAlpha();
       }
       try {
-        await replace(original.replace("  - resources/*.yml\n", ""));
+        // Either line ending: a Windows checkout has CRLF.
+        const withoutInclude = original.replace(/ {2}- resources\/\*\.yml\r?\n/, "");
+        assert.notEqual(withoutInclude, original, "the include entry should have been removed");
+        await replace(withoutInclude);
         assert.ok(vscode.languages.getDiagnostics(uri("alpha/resources/jobs.yml"))
           .some(item => codeValue(item.code) === "resource_not_included"));
         await open("alpha/resources/jobs.yml");
