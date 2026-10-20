@@ -78,6 +78,8 @@ export function issueCodesSuite() {
     async function exerciseFix(uri: vscode.Uri, kind: string, oldValue: string, newValue: string): Promise<void> {
       const document = await vscode.workspace.openTextDocument(uri);
       const original = document.getText();
+      const originalEol = document.eol;
+      const originalBytes = await vscode.workspace.fs.readFile(uri);
       try {
         // Exercise Windows line endings through the actual editor, not just a text helper.
         const eolEdit = new vscode.WorkspaceEdit();
@@ -110,10 +112,20 @@ export function issueCodesSuite() {
           await waitFor(() => Boolean(finding(uri, kind)), `${kind} returns after restoring the mistake`);
         }
       } finally {
+        // The text and the line endings: the editor writes the text back with the
+        // document's current ones, which this test set to CRLF.
         const restore = new vscode.WorkspaceEdit();
-        restore.replace(uri, new vscode.Range(0, 0, document.lineCount, 0), original);
+        restore.set(uri, [
+          vscode.TextEdit.replace(new vscode.Range(0, 0, document.lineCount, 0), original),
+          vscode.TextEdit.setEndOfLine(originalEol),
+        ]);
         await vscode.workspace.applyEdit(restore);
         await document.save();
+        assert.deepEqual(
+          Buffer.from(await vscode.workspace.fs.readFile(uri)),
+          Buffer.from(originalBytes),
+          "the fixture is left exactly as it was",
+        );
       }
     }
 
