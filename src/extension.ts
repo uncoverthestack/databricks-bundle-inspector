@@ -1117,11 +1117,6 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           if (activePanel === created) activePanel = undefined;
         });
 
-        created.webview.html = await getWebviewContent(
-          created.webview,
-          extensionContext.extensionUri,
-        );
-
         created.webview.onDidReceiveMessage((message) => {
           if (message?.type === "webviewReady" && activeBundleData) {
             created.webview.postMessage({
@@ -1195,6 +1190,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             if (parsed) telemetry?.logUsage(parsed.event, parsed.properties);
           }
         });
+
+        // Kept even if the panel closes while its page loads (a quick close, or a close
+        // still under way from before): the next panel then gets it on "webviewReady".
+        activeBundleData = bundleMessageData;
+        try {
+          created.webview.html = await getWebviewContent(
+            created.webview,
+            extensionContext.extensionUri,
+          );
+        } catch (error) {
+          if (livePanel() !== created) return;
+          throw error;
+        }
+        // Closed while loading: nothing to show it in.
+        if (livePanel() !== created) return;
 
         postBundleData(bundleMessageData);
       }
