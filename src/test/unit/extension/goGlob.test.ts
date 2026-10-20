@@ -85,3 +85,20 @@ describe("globSync against a real folder", () => {
     expect(globSync(root, "resources/[.yml")).toBeUndefined();
   });
 });
+
+describe("globSync on Windows", () => {
+  let root: string;
+  beforeAll(() => {
+    root = mkdtempSync(path.join(tmpdir(), "dbi-glob-win-"));
+    mkdirSync(path.join(root, "resources"));
+    writeFileSync(path.join(root, "resources", "job.yml"), "resources: {}\n");
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  // Go's filepath.Match: "On Windows, escaping is disabled. Instead, '\\' is treated as path separator."
+  test("a backslash is a folder separator on Windows, and an escape elsewhere", () => {
+    expect(globSync(root, "resources\\*.yml", "win32")).toEqual(["resources/job.yml"]);
+    expect(globSync(root, "resources\\*.yml", "darwin")).toEqual([]);
+    expect(globSync(root, "resources/*.yml", "win32")).toEqual(["resources/job.yml"]);
+  });
+});

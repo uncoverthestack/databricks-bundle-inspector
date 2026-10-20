@@ -28,7 +28,8 @@ export type BundleChange = "config" | "source";
 
 function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  // ".." or "../x" leaves `dir`; a child named "..data" doesn't.
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 function toPosix(path: string): string {
