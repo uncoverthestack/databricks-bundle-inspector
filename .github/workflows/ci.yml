@@ -93,3 +93,69 @@ jobs:
 
       - name: Run semantic tests (jest)
         run: npm run test:semantic
+
+  # The VS Code end-to-end suites on Windows, with a real Databricks CLI. The unit tests
+  # above can't show how Windows paths, line endings, the CLI's own Windows behaviour
+  # (for example `\` as a separator in include) or a real VS Code window behave.
+  windows-e2e:
+    name: E2E (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.13.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Install Databricks CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Follow the web redirect, as in cli-compat.yml: release pages are public.
+          latest_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/databricks/cli/releases/latest)"
+          CLI_VERSION="${latest_url##*/v}"
+          echo "Installing Databricks CLI ${CLI_VERSION}"
+          archive="databricks_cli_${CLI_VERSION}_windows_amd64.tar.gz"
+          base="https://github.com/databricks/cli/releases/download/v${CLI_VERSION}"
+          workdir="$RUNNER_TEMP/databricks-cli"
+          mkdir -p "$workdir"
+          cd "$workdir"
+          curl -fsSLO "$base/$archive"
+          curl -fsSLO "$base/databricks_cli_${CLI_VERSION}_SHA256SUMS"
+          grep " ${archive}\$" "databricks_cli_${CLI_VERSION}_SHA256SUMS" | sha256sum --check -
+          tar -xzf "$archive" databricks.exe
+          cygpath -w "$workdir" >> "$GITHUB_PATH"
+
+      - name: Show CLI version
+        run: databricks --version
+
+      # Each suite opens its own folder; one step each so a failure names its suite.
+      - name: E2E, no CLI on PATH
+        run: npm run test:e2e
+      - name: E2E, include
+        run: npm run test:e2e:include
+      - name: E2E, issue codes
+        run: npm run test:e2e:issue-codes
+      - name: E2E, always-on
+        run: npm run test:e2e:always-on
+      - name: E2E, saved file
+        run: npm run test:e2e:saved-file
+      - name: E2E, saved file, folder opened in another letter case
+        run: npm run test:e2e:saved-file:other-case
+      - name: E2E, resource files
+        run: npm run test:e2e:resource-files
+      - name: E2E, rendered graph
+        run: npm run test:e2e:graph-refresh
+      # The cases that need a workspace login are skipped: CI has none.
+      - name: E2E, targets
+        run: npm run test:e2e:targets
