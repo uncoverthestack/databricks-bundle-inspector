@@ -610,14 +610,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * instead of running the failing target again; picking it again in the graph retries it.
    */
   let activeTargetFallback: TargetFallback | undefined;
-  /**
-   * Counts the user's own inspections (Inspect, a target picked in the graph). A check that
-   * finishes after a newer one started is dropped. Save refreshes don't count: a refresh
-   * that ran into the user's own pick would drop the pick, and with it the job asked for.
-   */
-  let latestGraphCheck = 0;
   let activeTargetOptions: string[] = [];
   let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
+  // The latest user navigation owns the panel, even if an older CLI finishes later.
+  let activeInspectionId = 0;
 
   function fallbackOf(inspection: { fallbackMessage?: string | undefined; fallbackReason?: string | undefined }): TargetFallback | undefined {
     return inspection.fallbackMessage === undefined
@@ -626,6 +622,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
+    const previousTargetOptions = activeBundleDir === bundleDir ? activeTargetOptions : [];
+    const previousStructuralBundle = activeBundleDir === bundleDir ? activeStructuralResolutionBundle : undefined;
     const config = getConfiguration();
     const configuredPath = getConfiguredDatabricksCliPath(config);
     let result = await validateBundle(
@@ -661,12 +659,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         : Object.keys(
             (bundleData as { targets?: Record<string, unknown> }).targets ?? {},
           );
-    if (discoveredTargetOptions.length > 0) {
-      activeTargetOptions = discoveredTargetOptions;
-      activeStructuralResolutionBundle = bundleData;
-    }
+    const targetOptions = discoveredTargetOptions.length > 0 ? discoveredTargetOptions : previousTargetOptions;
+    const structuralResolutionBundle = discoveredTargetOptions.length > 0 ? bundleData : previousStructuralBundle;
     const previousResolutionBundle: Partial<ParsedBundleConfig> =
-      activeStructuralResolutionBundle ?? {};
+      structuralResolutionBundle ?? {};
     const mergedVariables = {
       ...(previousResolutionBundle.variables ?? {}),
       ...(bundleData.variables ?? {}),
@@ -696,7 +692,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundleData,
       enrichedGraph,
       inspectorIssues,
-      targetOptions: activeTargetOptions,
+      targetOptions,
+      structuralResolutionBundle,
       resolutionBundle,
       inspectedTarget,
       inspectedTargetMode,
@@ -704,6 +701,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       fallbackReason,
       fallbackErrorCode,
     };
+  }
+
+  function rememberInspection(inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>): void {
+    if (!inspection.result.ok) return;
+    activeTargetOptions = inspection.targetOptions ?? [];
+    activeStructuralResolutionBundle = inspection.structuralResolutionBundle;
   }
 
   function postBundleData(data: object) {
@@ -823,22 +826,27 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundleDir: string,
     options?: { refreshTargets?: boolean },
   ) {
-    // Dropped if the user inspects again while it runs; it never drops their inspection.
-    const check = latestGraphCheck;
+    const panel = livePanel();
+    if (!panel || activeBundleDir !== bundleDir) return;
+    const inspectionId = activeInspectionId;
+    let requestedTarget = activeRequestedTarget;
+    const isCurrent = () => inspectionId === activeInspectionId && activeBundleDir === bundleDir && livePanel() === panel;
     try {
       let probeInspection: Awaited<ReturnType<typeof inspectBundleAtTarget>> | undefined;
       if (options?.refreshTargets) {
         probeInspection = await inspectBundleAtTarget(bundleDir, undefined);
-        if (check !== latestGraphCheck) return;
+        if (!isCurrent()) return;
+        rememberInspection(probeInspection);
         if (
-          activeRequestedTarget &&
+          requestedTarget &&
           activeTargetOptions.length > 0 &&
-          !activeTargetOptions.includes(activeRequestedTarget)
+          !activeTargetOptions.includes(requestedTarget)
         ) {
+          requestedTarget = undefined;
           activeRequestedTarget = undefined;
           activeTargetFallback = undefined;
         }
-        if (!activeRequestedTarget) {
+        if (!requestedTarget) {
           const messageData = bundleMessageDataFromInspection(probeInspection, undefined, { preserveView: true });
           if (messageData) {
             postBundleData(messageData);
@@ -853,21 +861,23 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const inspected =
         fellBack && probeInspection
           ? probeInspection
-          : await inspectBundleAtTarget(bundleDir, fellBack ? undefined : activeRequestedTarget);
-      if (check !== latestGraphCheck) return;
+          : await inspectBundleAtTarget(bundleDir, fellBack ? undefined : requestedTarget);
+      if (!isCurrent()) return;
+      rememberInspection(inspected);
       const inspection = fellBack
         ? { ...inspected, fallbackMessage: activeTargetFallback?.message, fallbackReason: activeTargetFallback?.reason }
         : inspected;
       if (!fellBack) activeTargetFallback = fallbackOf(inspected);
       const messageData = bundleMessageDataFromInspection(
         inspection,
-        activeRequestedTarget,
+        requestedTarget,
         { preserveView: true },
       );
       if (messageData) {
         postBundleData(messageData);
       }
     } catch (error) {
+      if (!isCurrent()) return;
       console.warn(
         `[BundleInspector] active panel refresh failed for ${bundleDir}:`,
         error,
@@ -1019,6 +1029,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return;
     }
 
+    const inspectionId = ++activeInspectionId;
+    const panelAtStart = livePanel();
+    let closedDuringInspection = false;
+    // A close that is already under way belongs to the previous request. Only a tab
+    // still open when this request starts can cancel it by being closed afterward.
+    const tabWasOpen = panelAtStart && vscode.window.tabGroups.all.some(group => group.tabs.some(tab =>
+      tab.input instanceof vscode.TabInputWebview && tab.label === panelAtStart.title && tab.input.viewType.endsWith(panelAtStart.viewType),
+    ));
+    const closeListener = tabWasOpen ? panelAtStart.onDidDispose(() => { closedDuringInspection = true; }) : undefined;
+    const isCurrent = () => inspectionId === activeInspectionId && !closedDuringInspection;
     try {
       if (activeBundleDir !== bundleDir) {
         activeTargetOptions = [];
@@ -1027,14 +1047,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       activeBundleDir = bundleDir;
       activeRequestedTarget = requestedTarget;
       activeTargetFallback = undefined;
-      const check = ++latestGraphCheck;
       await trackBundleFiles(bundleDir, fileToBundleRoot);
+      if (!isCurrent()) return;
       const inspection = await whileChecking(() =>
         inspectBundleAtTarget(bundleDir, requestedTarget),
       );
-      // A newer pick or refresh started while this ran, such as the preview picked right
-      // after a slow target: showing this one would put the older choice back.
-      if (check !== latestGraphCheck) return;
+      if (!isCurrent()) return;
       activeTargetFallback = fallbackOf(inspection);
       const { result } = inspection;
       // The Problems panel and the status bar always show the structural preview, which
@@ -1048,6 +1066,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           diagnosticCollection,
           fileToBundleRoot,
         );
+        if (!isCurrent()) return;
         recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true });
         if (result.ok && diagnosticsGraph) {
           await watchBundle(bundleDir, result.data, diagnosticsGraph);
@@ -1055,6 +1074,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
 
       const cliOutdated = await checkCliVersion(result);
+      if (!isCurrent()) return;
       const cliVersionProperty = cliOutdated === undefined ? {} : { cli_outdated: cliOutdated };
 
       if (!result.ok) {
@@ -1119,6 +1139,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         issue_count: countBucket(inspection.inspectorIssues?.length ?? 0),
       });
 
+      rememberInspection(inspection);
       const bundleMessageData = bundleMessageDataFromInspection(
         inspection,
         requestedTarget,
@@ -1238,15 +1259,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           throw error;
         }
         // Closed while loading: nothing to show it in.
-        if (livePanel() !== created) return;
+        if (!isCurrent() || livePanel() !== created) return;
 
         postBundleData(bundleMessageData);
       }
     } catch (error) {
+      if (!isCurrent()) return;
       logInspect("exception");
       vscode.window.showErrorMessage(
         `Error: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      closeListener?.dispose();
     }
   }
 
@@ -1283,6 +1307,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       vscode.commands.registerCommand("databricksBundleInspector.test.statusBar", () => ({
         view: shownStatusBar,
         folderCount: folderProblemCount(foundBundles, diagnosticCollection),
+        checksPending: checksRunning > 0 || pendingRefreshes.size > 0 || runningRefreshes.size > 0,
       })),
       vscode.commands.registerCommand(
         "databricksBundleInspector.test.chooseProfileFromGraph",

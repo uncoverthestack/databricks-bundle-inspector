@@ -147,6 +147,7 @@
     "test:e2e:issue-codes": "npm run test:e2e -- --suite issueCodes --fixture src/test/e2e/fixtures/issue-codes",
     "test:e2e:resource-files": "npm run test:e2e -- --suite resourceFiles --fixture src/test/e2e/fixtures/resource-files",
     "test:e2e:graph-refresh": "npm run test:e2e -- --suite graphRefresh --fixture src/test/e2e/fixtures/resource-files",
+    "test:e2e:inspection-races": "npm run test:e2e -- --suite inspectionRaces --fixture src/test/e2e/fixtures/resource-files",
     "test:e2e:include:watch": "npm run test:e2e:include -- --pause-ms 10000",
     "test:e2e:always-on": "npm run test:e2e -- --suite alwaysOn --fixture src/test/e2e/fixtures/always-on",
     "test:e2e:always-on:watch": "npm run test:e2e:always-on -- --pause-ms 10000",
