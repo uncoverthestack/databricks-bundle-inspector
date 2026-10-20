@@ -24,7 +24,8 @@ const ALWAYS_SKIPPED = [".git/", ".databricks/"];
 
 function isInside(path: string, dir: string): boolean {
   const rel = relative(dir, path);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  // ".." or "../x" leaves `dir`; a child named "..data" doesn't.
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
 /** The git repository root containing `bundleRoot`, so a parent `.gitignore` applies too. */

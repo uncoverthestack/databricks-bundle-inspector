@@ -198,3 +198,14 @@ describe("classifyChange", () => {
     expect(classifyChange(syncSpec, at("src/dlt/bronze.py"))).toBe("source");
   });
 });
+
+describe("classifyChange: folders whose name starts with ..", () => {
+  test("a new YAML file in a child folder named ..resources is bundle config", async () => {
+    const root = path.resolve("/workspace/dotdot");
+    const minimal: ParsedBundleConfig = { bundle: { name: "dotdot" } } as ParsedBundleConfig;
+    const dotSpec = collectWatchSpec(await extractBundleGraph(minimal, root), minimal, root, ["..resources/*.yml"]);
+    expect(classifyChange(dotSpec, path.join(root, "..resources", "new.yml"))).toBe("config");
+    // A file above the bundle stays outside it.
+    expect(classifyChange(dotSpec, path.join(root, "..", "resources", "new.yml"))).toBeUndefined();
+  });
+});

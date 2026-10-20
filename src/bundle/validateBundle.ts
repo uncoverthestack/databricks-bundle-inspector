@@ -36,9 +36,17 @@ type ExecFileLike = (
   options?: {
     cwd?: string;
     timeout?: number;
+    maxBuffer?: number;
     env?: NodeJS.ProcessEnv;
   },
 ) => Promise<ExecFileResult>;
+
+/**
+ * The most output `bundle validate` may print. Node's default is 1 MiB, which a bundle of
+ * about 1,000 tasks with long descriptions already exceeds (1.3 MB, CLI 1.21.0); a
+ * 10,000-task bundle prints about 13 MB. Bounded, so a runaway CLI can't use up memory.
+ */
+export const MAX_CLI_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 interface ValidateBundleDependencies {
   execFileAsync: ExecFileLike;
@@ -142,6 +150,10 @@ function getErrorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function wasKilled(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { killed?: unknown }).killed === true;
 }
 
 function hasErrorCode(error: unknown, code: string): boolean {
@@ -277,6 +289,7 @@ export async function validateBundleWithDependencies(
     const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {
       cwd: resolvedBundleDir,
       timeout: 30_000,
+      maxBuffer: MAX_CLI_OUTPUT_BYTES,
       // Never let the CLI run scripts or Python that the bundle defines, or write
       // its working files into the bundle folder.
       env: bundleCliEnv(resolvedBundleDir),
@@ -356,7 +369,23 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    if (hasErrorCode(error, "ETIMEDOUT")) {
+    // Node stops the CLI at the output limit; what was read is cut off, so not JSON.
+    if (hasErrorCode(error, "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")) {
+      return {
+        ok: false,
+        error: {
+          bundleDir: resolvedBundleDir,
+          bundleName,
+          error: `The Databricks CLI's output for this bundle is larger than ${MAX_CLI_OUTPUT_BYTES / 1024 / 1024} MB, so the inspector can't read it.`,
+          errorCode: "VALIDATION_OUTPUT_TOO_LARGE",
+          details: getErrorMessage(error),
+        },
+      };
+    }
+
+    // execFile stops the CLI at the time limit by killing it: the error then has
+    // `killed`, not the ETIMEDOUT code. Nothing else kills it.
+    if (hasErrorCode(error, "ETIMEDOUT") || wasKilled(error)) {
       return {
         ok: false,
         error: {

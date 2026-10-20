@@ -26,6 +26,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Large bundles are read.** The Databricks CLI's output was capped at Node's default of 1 MiB, so a bundle of about 1,000 tasks with long descriptions failed with "Failed to validate Databricks bundle" and no reason. The limit is now 64 MB, and output beyond it says so.
+- **A check that runs out of time says it timed out**, instead of "Failed to validate Databricks bundle".
+- **A folder whose name starts with `..`, such as `..data`, is treated as part of the bundle**, so `sync.exclude` and `.gitignore` apply to it and a new YAML file in it is noticed. It was mistaken for a folder above the bundle.
+- **On Windows, an `include` entry written with backslashes (`resources\*.yml`) is matched as the Databricks CLI matches it**, as a folder separator, for the include warnings.
 - **The graph no longer scrolls out of view in a short editor.** With the Problems panel open below a small editor, the Issues list could reach past the bottom of the graph, so scrolling it moved the whole page: the header slid off the top and a light strip showed at the bottom. The Issues list and search results now fit the space and scroll on their own, and the page itself never scrolls.
 - **With a target picked, a path the Databricks CLI rejects is still checked in the right folder** ([#187](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/187)). When one path in a resource file failed the CLI's own check, the CLI left every path relative to the bundle root, and the inspector looked for them next to the resource file: a notebook path without its extension lost its "Did you mean ...?" hint and quick fix, and a missing file was looked for in the wrong folder. Paths are now read back as written, only where both name the same file. A path overridden under `targets` in `databricks.yml` is also read from there.
 - **Saving a file keeps the job you selected in the graph**, including after opening Bundle Issues. Refreshing used to reset that view and switch back to the job it first opened on.

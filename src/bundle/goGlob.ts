@@ -131,8 +131,15 @@ export function matchGoSegment(pattern: string, name: string): boolean | undefin
  * relative to `root`. Walks one segment at a time like Go's `filepath.Glob`.
  * Returns undefined when the pattern is malformed.
  */
-export function globSync(root: string, entry: string): string[] | undefined {
-  const segments = posix.normalize(entry).split("/").filter((segment) => segment !== "" && segment !== ".");
+export function globSync(
+  root: string,
+  entry: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] | undefined {
+  // Go's filepath.Match: "On Windows, escaping is disabled. Instead, '\\' is treated as
+  // path separator." So on Windows `resources\*.yml` means `resources/*.yml`.
+  const pattern = platform === "win32" ? entry.replace(/\\/g, "/") : entry;
+  const segments = posix.normalize(pattern).split("/").filter((segment) => segment !== "" && segment !== ".");
   let folders = [""];
 
   for (const segment of segments) {

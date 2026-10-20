@@ -1,8 +1,11 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, test, expect, jest } from "@jest/globals";
 import path from "node:path";
 import {
   BUNDLE_PROBE_TARGET,
   validateBundleWithDependencies,
+  MAX_CLI_OUTPUT_BYTES,
 } from "../../../bundle/validateBundle.js";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { bundleTempDir } from "../../../databricksCli/restrictedExecution.js";
@@ -443,5 +446,44 @@ describe("validateBundleWithDependencies", () => {
     expect(result.error.errorCode).toBe("VALIDATION_FAILED");
     expect(result.error.error).toBe("Failed to validate Databricks bundle.");
     expect(result.error.details).toBeUndefined();
+  });
+});
+
+describe("validateBundleWithDependencies: large output and time limits", () => {
+  const cli = async () => ({ ok: true as const, candidate: "databricks", versionOutput: undefined });
+
+  test("allows far more than Node's 1 MiB default, but a bounded amount", async () => {
+    let maxBuffer: number | undefined;
+    await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async (_file, _args, options) => {
+        maxBuffer = options?.maxBuffer;
+        return { stdout: JSON.stringify(createBundle()), stderr: "" };
+      },
+      resolveDatabricksCli: cli,
+    });
+    expect(maxBuffer).toBe(MAX_CLI_OUTPUT_BYTES);
+    expect(MAX_CLI_OUTPUT_BYTES).toBeGreaterThanOrEqual(16 * 1024 * 1024);
+  });
+
+  test("says the output was too large, instead of a generic failure", async () => {
+    // A real child that prints more than the limit allows.
+    const run = promisify(execFile);
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: (_file, _args, options) =>
+        run(process.execPath, ["-e", "process.stdout.write('x'.repeat(4096))"], { ...options, cwd: undefined, maxBuffer: 1024 }),
+      resolveDatabricksCli: cli,
+    });
+    expect(result.ok ? undefined : result.error.errorCode).toBe("VALIDATION_OUTPUT_TOO_LARGE");
+  });
+
+  test("a CLI stopped at the time limit is a timeout, not a generic failure", async () => {
+    // execFile kills a child at its timeout: the error has `killed`, not ETIMEDOUT.
+    const run = promisify(execFile);
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: (_file, _args, options) =>
+        run(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { ...options, cwd: undefined, timeout: 100 }),
+      resolveDatabricksCli: cli,
+    });
+    expect(result.ok ? undefined : result.error.errorCode).toBe("VALIDATION_TIMEOUT");
   });
 });

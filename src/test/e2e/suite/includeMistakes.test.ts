@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { codeValue } from "../../../bundle/issueDocs.js";
@@ -208,6 +210,70 @@ export function includeMistakesSuite() {
       const afterLegacy = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
       assert.equal(afterLegacy?.initialJob?.nonce, fromTop?.initialJob?.nonce, "nothing new was sent to the graph");
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
+
+    // Go's filepath.Match, which the CLI uses for include: "On Windows, escaping is
+    // disabled. Instead, '\\' is treated as path separator." Elsewhere `\*` is a literal `*`.
+    it("reads a backslash in an include entry as the CLI does on this platform", async function () {
+      const windows = process.platform === "win32";
+      const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-include-backslash-"));
+      const bundleFile = path.join(dir, "databricks.yml");
+      const writeInclude = (entry: string) =>
+        // Plain YAML: in double quotes `\*` would be an escape sequence.
+        writeFileSync(bundleFile, `bundle:\n  name: include_backslash\ninclude:\n  - ${entry}\n`);
+      try {
+        mkdirSync(path.join(dir, "resources"));
+        writeFileSync(path.join(dir, "resources", "job.yml"), "resources:\n  jobs:\n    j:\n      name: j\n");
+
+        // First, what the CLI itself loads, so the test checks the assumption behind the fix.
+        writeInclude("resources\\*.yml");
+        let stdout: string;
+        try {
+          stdout = execFileSync("databricks", ["bundle", "validate", "-o", "json"], {
+            cwd: dir,
+            encoding: "utf8",
+            timeout: 30_000,
+            env: { ...process.env, DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION: "1" },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch (error) {
+          // Without a workspace login the CLI exits non-zero but still prints the bundle.
+          stdout = String((error as { stdout?: unknown }).stdout ?? "");
+        }
+        const loaded = (JSON.parse(stdout) as { include?: string[] }).include ?? [];
+        assert.equal(loaded.length, windows ? 1 : 0, `the CLI loaded ${JSON.stringify(loaded)}`);
+
+        // Then the inspector, with a .yaml entry for files that end in .yml.
+        writeInclude("resources\\*.yaml");
+        await vscode.window.showTextDocument(vscode.Uri.file(bundleFile));
+        await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+        for (let waited = 0; waited < 30_000; waited += 500) {
+          const data = await vscode.commands.executeCommand<{ parsedBundle?: { bundle?: { name?: string } } }>(
+            "databricksBundleInspector.test.graphData",
+          );
+          if (data?.parsedBundle?.bundle?.name === "include_backslash") break;
+          await sleep(500);
+        }
+        const warnings = vscode.languages
+          .getDiagnostics(vscode.Uri.file(bundleFile))
+          .filter((d) => codeValue(d.code) === "include_matches_nothing");
+        if (!windows) {
+          assert.deepEqual(warnings.map((d) => d.message), [], "an escaped * matches nothing, and so does its .yml twin");
+          return;
+        }
+        assert.equal(warnings.length, 1, "the .yaml entry matches nothing on Windows");
+        assert.match(warnings[0]!.message, /Did you mean "resources\\\*\.yml"\?/);
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider",
+          vscode.Uri.file(bundleFile),
+          warnings[0]!.range,
+          vscode.CodeActionKind.QuickFix.value,
+        );
+        assert.ok(actions.some((action) => action.title === 'Change to "resources\\*.yml"'), "the light bulb offers the fix");
+      } finally {
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 }

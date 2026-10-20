@@ -40,6 +40,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
       "cli_not_found",
       "cli_not_executable",
       "validation_timeout",
+      "validation_output_too_large",
       "invalid_bundle_shape",
       "validation_failed",
       "exception",

@@ -110,3 +110,11 @@ describe("createSyncFilter", () => {
     expect(isSynced(path.join(path.dirname(bundleRoot), "shared", "lib.py"))).toBe(true);
   });
 });
+
+describe("createSyncFilter: folders whose name starts with ..", () => {
+  test("a child folder named ..data is inside the bundle, so sync.exclude applies", async () => {
+    await mkdir(path.join(bundleRoot, "..data"), { recursive: true });
+    await writeFile(path.join(bundleRoot, "..data", "task.py"), "print(1)\n", "utf8");
+    expect(synced(["..data/task.py"], { exclude: ["**/*.py"] })).toEqual({ "..data/task.py": false });
+  });
+});
