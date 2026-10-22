@@ -10,7 +10,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
-- **You can copy a problem's text from the graph** ([#217](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/217)). Selecting the text of a problem in a task's Issue Summary used to open its file and lose the selection; it now opens only on a plain click. The text in the Issues list can now be selected at all. Right-click > Copy used to copy nothing, because of a VS Code bug in webview menus ([microsoft/vscode#141080](https://github.com/microsoft/vscode/issues/141080)). The graph now has its own Copy, which shows when text is selected. Cut, Copy and Paste stay in the task search box.
+- **You can copy a problem's text from the graph** ([#217](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/217), [PR #218](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/218)). Selecting the text of a problem in a task's Issue Summary used to open its file and lose the selection; it now opens only on a plain click. The text in the Issues list can now be selected at all. Right-click > Copy used to copy nothing, because of a VS Code bug in webview menus ([microsoft/vscode#141080](https://github.com/microsoft/vscode/issues/141080)). The graph now has its own Copy, which shows when text is selected. Cut, Copy and Paste stay in the task search box.
 
 ## [0.4.0] - 2026-10-20
 
