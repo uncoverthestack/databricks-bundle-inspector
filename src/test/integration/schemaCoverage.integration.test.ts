@@ -17,6 +17,7 @@ import { TASK_PAYLOAD_KEYS } from "../../bundle/resources/task.js";
 // render as generic nodes. Remove an entry once it is added to MODELLED_RESOURCE_GROUPS.
 const KNOWN_RESOURCE_GAPS = [
   "cluster_policies",
+  "features",
   "genie_spaces",
   "instance_pools",
   "job_runs",
