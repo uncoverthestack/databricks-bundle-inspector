@@ -8,6 +8,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 - **The graph follows your VS Code theme** ([#214](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/214), [PR #215](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/215)): light, dark and High Contrast, and it changes with the theme while the graph is open. It used to be dark whatever the theme. Backgrounds, text, borders, the task boxes, the edges, the zoom buttons and the minimap all take their colours from the theme. On a High Contrast theme, panels and task boxes get the theme's contrast border. Text meets WCAG AA contrast (4.5:1) on all six built-in themes: where VS Code's own colour falls short, such as Light Modern's error red, the graph uses a slightly darker shade of it on light themes and a lighter one on dark themes. The type badges on task boxes (`NB`, `PY`, ...) use a darker shade of their colour on light themes, and task box outlines are easier to see: at least 3:1 against the canvas on every built-in theme.
 
+### Fixed
+
+- **You can copy a problem's text from the graph** ([#217](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/217)). Selecting the text of a problem in a task's Issue Summary used to open its file and lose the selection; it now opens only on a plain click. The text in the Issues list can now be selected at all. Right-click > Copy used to copy nothing, because of a VS Code bug in webview menus ([microsoft/vscode#141080](https://github.com/microsoft/vscode/issues/141080)). The graph now has its own Copy, which shows when text is selected. Cut, Copy and Paste stay in the task search box.
+
 ## [0.4.0] - 2026-10-20
 
 ### Added

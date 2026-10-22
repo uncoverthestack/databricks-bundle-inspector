@@ -586,6 +586,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   );
 
   let activePanel: vscode.WebviewPanel | undefined;
+  // The text selected in the graph when it was last right-clicked, for the menu's Copy.
+  let contextMenuSelection = "";
 
   /**
    * The graph panel if it is still open. A closed panel throws on `.webview`; when its
@@ -1240,6 +1242,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
                   ),
               );
           }
+          if (message?.type === "contextMenuSelection" && typeof message.text === "string") {
+            contextMenuSelection = message.text;
+          }
           if (message?.type === "telemetry") {
             const parsed = parseWebviewTelemetryMessage(message);
             if (parsed) telemetry?.logUsage(parsed.event, parsed.properties);
@@ -1325,6 +1330,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if ((await chooseProfile()) && livePanel() && activeRequestedTarget) {
         await selectTarget(activeRequestedTarget);
       }
+    }),
+    // The graph's own Copy menu item. VS Code's built-in one copies nothing when its
+    // native menu takes focus from the webview (microsoft/vscode#141080).
+    vscode.commands.registerCommand("databricksBundleInspector.copySelection", async () => {
+      if (contextMenuSelection) await vscode.env.clipboard.writeText(contextMenuSelection);
     }),
   );
 
