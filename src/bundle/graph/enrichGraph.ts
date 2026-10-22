@@ -151,6 +151,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
   );
 
   return {
+    ...graph,
     nodes: [...nodeMap.values()],
     edges: [...graph.edges, ...newEdges],
   };
