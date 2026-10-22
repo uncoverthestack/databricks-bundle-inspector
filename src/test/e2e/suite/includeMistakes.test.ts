@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { codeValue } from "../../../bundle/issueDocs.js";
+import { showFileAt } from "./editorState.js";
 
 /** How long to leave the result on screen before the window closes. 0 in normal runs. */
 const PAUSE_MS = Number(process.env.E2E_PAUSE_MS ?? 0);
@@ -130,11 +131,13 @@ export function includeMistakesSuite() {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       assert.ok(root, "the include-mistakes fixture should be the open folder");
       const bundleUri = vscode.Uri.file(path.join(root, "databricks.yml"));
+      const document = await vscode.workspace.openTextDocument(bundleUri);
+      // The test above closed every editor, and Inspect with no file open does nothing.
+      await showFileAt(document);
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
       for (let waited = 0; includeProblems(root).length < 3 && waited < 30_000; waited += 500) await sleep(500);
 
-      const document = await vscode.workspace.openTextDocument(bundleUri);
-      await vscode.window.showTextDocument(document);
+      await showFileAt(document);
       const problem = vscode.languages.getDiagnostics(bundleUri).find((d) => codeValue(d.code) === "include_matches_nothing");
       assert.ok(problem, "the misspelled include should be reported again");
 
@@ -190,15 +193,15 @@ export function includeMistakesSuite() {
       for (let waited = 0; includeProblems(root).length < 3 && waited < 30_000; waited += 500) await sleep(500);
 
       const resourceFile = await vscode.workspace.openTextDocument(path.join(root, "resources", "top.job.yml"));
-      const editor = await vscode.window.showTextDocument(resourceFile);
       const secondJobLine = resourceFile.getText().split(/\r?\n/).findIndex((line) => line.includes("second_job:"));
-      editor.selection = new vscode.Selection(secondJobLine + 2, 0, secondJobLine + 2, 0);
+      await showFileAt(resourceFile, secondJobLine + 2);
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
       const fromSecond = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
       assert.equal(fromSecond?.initialJob?.key, "second_job");
       assert.equal(fromSecond?.parsedBundle?.bundle?.name, "include-mistakes");
 
-      editor.selection = new vscode.Selection(0, 0, 0, 0);
+      // The graph now covers the file: bring it back, as a user would, before inspecting again.
+      await showFileAt(resourceFile, 0);
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
       const fromTop = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
       assert.equal(fromTop?.initialJob?.key, "top_job", "above the jobs, the file's first job");
