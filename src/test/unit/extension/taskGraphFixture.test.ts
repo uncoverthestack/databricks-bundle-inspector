@@ -18,7 +18,8 @@ async function findings(capture: string, target?: string) {
   return buildInspectorIssues(graph, bundle, [], ROOT, target)
     .filter((issue) => KINDS.has(issue.kind))
     .map((issue) => {
-      const file = path.relative(ROOT, issue.file ?? "");
+      // Forward slashes on every OS, so the expected paths read the same on Windows.
+      const file = path.relative(ROOT, issue.file ?? "").split(path.sep).join("/");
       const text = readFileSync(path.join(ROOT, file), "utf8").split(/\r?\n/)[issue.line! - 1]!.trim();
       return { kind: issue.kind, severity: issue.severity, task: issue.taskName, at: `${file}: ${text}`, title: issue.title };
     })
