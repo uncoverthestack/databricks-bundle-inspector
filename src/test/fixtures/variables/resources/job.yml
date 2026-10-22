@@ -1,0 +1,41 @@
+resources:
+  jobs:
+    variables_job:
+      name: variables_job
+      # Job-level references: not listed in the task panel (known limit, see README).
+      tags:
+        owner: ${var.cluster.custom_tags.owner}
+      tasks:
+        - task_key: whole_values
+          notebook_task:
+            notebook_path: ../src/task.py
+            base_parameters:
+              catalog: ${var.catalog}
+              retries: ${var.retries}
+              owner_email: ${var.owner_email}
+              table_prefix: ${var.table_prefix}
+              duplicated: ${var.duplicated}
+              from_include: ${var.from_include}
+
+        - task_key: inside_strings
+          notebook_task:
+            notebook_path: ../src/task.py
+            base_parameters:
+              table: ${var.catalog}.${var.schema}.events
+              note: pre-${var.catalog}-post
+
+        - task_key: complex_fields
+          notebook_task:
+            notebook_path: ../src/task.py
+            base_parameters:
+              node_type: ${var.cluster.node_type_id}
+              tag_owner: ${var.cluster.custom_tags.owner}
+              init_script: ${var.cluster.init_scripts[0].workspace.destination}
+              second_region: ${var.regions[1]}
+              team: ${var.labels.team}
+
+        - task_key: lookup_value
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            query:
+              query_id: 00000000-0000-0000-0000-000000000001
