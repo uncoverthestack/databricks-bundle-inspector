@@ -136,6 +136,18 @@ jobs:
         run: ${{ matrix.display }} npm run test:e2e:resource-files
       - name: E2E, rendered graph
         run: ${{ matrix.display }} npm run test:e2e:graph-refresh
+      - name: E2E, theme colours
+        run: ${{ matrix.display }} npm run test:e2e:themes
+      # What was on screen in each theme, to see why a contrast or pixel check failed.
+      - name: Upload theme screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: theme-screenshots-${{ runner.os }}
+          path: |
+            out/e2e/themes/
+            out/e2e/themes-report.json
+          if-no-files-found: ignore
       - name: E2E, overlapping inspections
         if: runner.os != 'Windows'
         run: ${{ matrix.display }} npm run test:e2e:inspection-races

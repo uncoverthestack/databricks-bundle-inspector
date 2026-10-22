@@ -18,18 +18,18 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
 
   return (
     // Never taller than the space below the header, so it fits a short webview.
-    <div className="absolute right-4 top-14 z-30 flex max-h-[calc(100%-4.5rem)] w-[360px] flex-col overflow-hidden rounded-lg border border-stone-800 bg-stone-950 shadow-2xl">
-      <div className="flex shrink-0 items-center justify-between border-b border-stone-800 px-3 py-2">
+    <div className="absolute right-4 top-14 z-30 flex max-h-[calc(100%-4.5rem)] w-[360px] flex-col overflow-hidden rounded-lg border border-line bg-widget shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between border-b border-line px-3 py-2">
         <div>
-          <div className="text-xs font-semibold text-stone-100">{title}</div>
-          <div className="text-[11px] text-stone-500">
+          <div className="text-xs font-semibold text-fg">{title}</div>
+          <div className="text-[11px] text-muted">
             {items.length} {items.length === 1 ? "item" : "items"}
           </div>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-stone-500 outline-none hover:bg-stone-800 hover:text-stone-200 focus:ring-1 focus:ring-blue-500/40"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted outline-none hover:bg-hover hover:text-fg focus:ring-1 focus:ring-accent"
           aria-label={`Close ${title}`}
         >
           <X size={14} />
@@ -37,7 +37,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
       </div>
       <div className="max-h-[420px] min-h-0 flex-1 overflow-auto overscroll-contain py-1">
         {items.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-stone-500">
+          <div className="px-3 py-6 text-center text-xs text-muted">
             {title === "Bundle Issues"
               ? "No issues found in this bundle."
               : `No ${title.toLowerCase()} found for this job.`}
@@ -45,7 +45,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
         ) : (
           [...groups.entries()].map(([group, groupItems]) => (
             <section key={group} className="py-1">
-              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
                 {group} · {groupItems.length}
               </div>
               {groupItems.map((item) => {
@@ -61,7 +61,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                     className={[
                       "flex w-full items-start gap-2 px-3 py-2 text-left outline-none",
                       clickable
-                        ? "cursor-pointer hover:bg-stone-900 focus:bg-stone-900"
+                        ? "cursor-pointer hover:bg-hover focus:bg-hover"
                         : "cursor-default",
                     ].join(" ")}
                   >
@@ -78,16 +78,16 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                       />
                     )}
                     <span className="min-w-0">
-                      <span title={item.title} className="block line-clamp-2 text-xs text-stone-200">
+                      <span title={item.title} className="block line-clamp-2 text-xs text-fg">
                         {item.title}
                       </span>
                       {item.subtitle && (
-                        <span className="mt-0.5 block truncate text-[11px] text-stone-500">
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">
                           {item.subtitle}
                         </span>
                       )}
                       {item.fixHint && (
-                        <span className="mt-1 block text-[11px] leading-snug text-stone-300">
+                        <span className="mt-1 block text-[11px] leading-snug text-fg-soft">
                           {item.fixHint}
                         </span>
                       )}

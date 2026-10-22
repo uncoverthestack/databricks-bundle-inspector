@@ -10,9 +10,9 @@ export interface SeverityMeta {
 }
 
 const META: Record<IssueSeverity, SeverityMeta> = {
-  error: { label: "Error", colorClass: "text-red-400", rank: 0 },
-  warning: { label: "Warning", colorClass: "text-yellow-400", rank: 1 },
-  info: { label: "Note", colorClass: "text-sky-400", rank: 2 },
+  error: { label: "Error", colorClass: "text-error", rank: 0 },
+  warning: { label: "Warning", colorClass: "text-warning", rank: 1 },
+  info: { label: "Note", colorClass: "text-info", rank: 2 },
 };
 
 /** How a severity looks. Anything unknown is shown as a warning, as VS Code does. */

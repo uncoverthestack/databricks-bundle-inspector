@@ -106,7 +106,7 @@ export default function Bootstrap() {
 
   if (!parsedBundle) {
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-950 text-sm text-stone-300">
+      <div className="flex h-screen items-center justify-center bg-surface text-sm text-fg-soft">
         No bundle data was provided by the extension.
       </div>
     );

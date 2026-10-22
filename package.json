@@ -153,7 +153,8 @@
     "test:e2e:always-on:watch": "npm run test:e2e:always-on -- --pause-ms 10000",
     "test:e2e:saved-file": "npm run test:e2e -- --suite savedFile --fixture src/test/e2e/fixtures/saved-file",
     "test:e2e:saved-file:other-case": "npm run test:e2e:saved-file -- --folder-case other",
-    "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets"
+    "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets",
+    "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes"
   },
   "lint-staged": {
     "*.ts": "eslint --fix"

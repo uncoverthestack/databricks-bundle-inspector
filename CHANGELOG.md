@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Changed
+
+- **The graph follows your VS Code theme** ([#214](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/214), [PR #215](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/215)): light, dark and High Contrast, and it changes with the theme while the graph is open. It used to be dark whatever the theme. Backgrounds, text, borders, the task boxes, the edges, the zoom buttons and the minimap all take their colours from the theme. On a High Contrast theme, panels and task boxes get the theme's contrast border. Text meets WCAG AA contrast (4.5:1) on all six built-in themes: where VS Code's own colour falls short, such as Light Modern's error red, the graph uses a slightly darker shade of it on light themes and a lighter one on dark themes. The type badges on task boxes (`NB`, `PY`, ...) use a darker shade of their colour on light themes, and task box outlines are easier to see: at least 3:1 against the canvas on every built-in theme.
+
 ## [0.4.0] - 2026-10-20
 
 ### Added

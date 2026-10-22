@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import * as vscode from "vscode";
+import { connectBrowser } from "./browser.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const jobSelector = 'header select:not([aria-label="Target"])';
@@ -12,46 +13,6 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
     await sleep(100);
   }
   assert.fail(`Timed out waiting for ${label}`);
-}
-
-/** Minimal CDP client, used only inside the real VS Code test window. */
-class Browser {
-  private next = 0;
-  private pending = new Map<number, {
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-  constructor(private socket: WebSocket) {
-    socket.addEventListener("message", event => {
-      const data = JSON.parse(String(event.data));
-      const pending = this.pending.get(data.id);
-      if (!pending) return;
-      this.pending.delete(data.id);
-      clearTimeout(pending.timer);
-      if (data.error) pending.reject(new Error(JSON.stringify(data.error)));
-      else pending.resolve(data.result);
-    });
-  }
-  call(method: string, params: object = {}, sessionId?: string): Promise<any> {
-    const id = ++this.next;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`CDP timed out: ${method}`));
-      }, 5000);
-      this.pending.set(id, { resolve, reject, timer });
-      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
-  }
-  close(): void {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error("Browser connection closed"));
-    }
-    this.pending.clear();
-    this.socket.close();
-  }
 }
 
 export function graphRefreshSuite() {
@@ -71,13 +32,7 @@ export function graphRefreshSuite() {
       editor.selection = new vscode.Selection(line, 0, line, 0);
       await vscode.commands.executeCommand("databricksBundleInspector.openBundleIssues");
 
-      const info = await (await fetch(`http://127.0.0.1:${process.env.E2E_CDP_PORT}/json/version`)).json() as { webSocketDebuggerUrl: string };
-      const socket = new WebSocket(info.webSocketDebuggerUrl);
-      await new Promise<void>((resolve, reject) => {
-        socket.addEventListener("open", () => resolve(), { once: true });
-        socket.addEventListener("error", () => reject(new Error("Cannot connect to VS Code's browser")), { once: true });
-      });
-      const browser = new Browser(socket);
+      const browser = await connectBrowser(process.env.E2E_CDP_PORT);
       let graph: { sessionId: string; contextId: number } | undefined;
       const select = `document.querySelector(${JSON.stringify(jobSelector)})`;
       const evaluate = async (expression: string, sessionId: string, contextId: number) => {
@@ -164,13 +119,7 @@ export function graphRefreshSuite() {
       await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
       await vscode.commands.executeCommand("databricksBundleInspector.openBundleIssues");
 
-      const info = await (await fetch(`http://127.0.0.1:${process.env.E2E_CDP_PORT}/json/version`)).json() as { webSocketDebuggerUrl: string };
-      const socket = new WebSocket(info.webSocketDebuggerUrl);
-      await new Promise<void>((resolve, reject) => {
-        socket.addEventListener("open", () => resolve(), { once: true });
-        socket.addEventListener("error", () => reject(new Error("Cannot connect to VS Code's browser")), { once: true });
-      });
-      const browser = new Browser(socket);
+      const browser = await connectBrowser(process.env.E2E_CDP_PORT);
       try {
         let graph: { sessionId: string; contextId: number } | undefined;
         const evaluate = async (expression: string) => {

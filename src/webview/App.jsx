@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   ReactFlow,
   Background,
@@ -20,6 +20,7 @@ import {
 import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
+import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
 
 function isPipelineTask(task) {
@@ -62,20 +63,20 @@ function getFileStatus(ref) {
     return {
       key: "template",
       label: "TEMPLATE",
-      color: "#fbbf24",
+      color: UI_COLOR.warning,
       title: "Not checked: this path uses a variable, so the file is only known once a target is resolved. Pick a target to check it.",
     };
   }
   if (isRemotePath(ref.path)) {
-    return { key: "remote", label: "REMOTE", color: "#60a5fa" };
+    return { key: "remote", label: "REMOTE", color: UI_COLOR.link };
   }
   if (ref.resolvedPath && !ref.exists) {
-    return { key: "missing", label: "MISSING", color: "#f87171" };
+    return { key: "missing", label: "MISSING", color: UI_COLOR.error };
   }
   if (ref.exists) {
-    return { key: "found", label: "FOUND", color: "#4ade80" };
+    return { key: "found", label: "FOUND", color: UI_COLOR.ok };
   }
-  return { key: "unknown", label: "UNKNOWN", color: "#a8a29e" };
+  return { key: "unknown", label: "UNKNOWN", color: UI_COLOR.muted };
 }
 
 function getDefinedVariableNames(parsedBundle) {
@@ -258,25 +259,25 @@ function dependencyOutcomeTone(label) {
   const normalized = label?.toLowerCase();
   if (normalized === "true") {
     return {
-      stroke: "rgba(34,197,94,0.9)",
-      labelColor: "#bbf7d0",
-      labelBg: "rgba(20,83,45,0.92)",
-      labelBorder: "rgba(34,197,94,0.45)",
+      stroke: UI_COLOR.ok,
+      labelColor: UI_COLOR.ok,
+      labelBg: UI_COLOR.widget,
+      labelBorder: UI_COLOR.ok,
     };
   }
   if (normalized === "false") {
     return {
-      stroke: "rgba(148,163,184,0.9)",
-      labelColor: "#e2e8f0",
-      labelBg: "rgba(51,65,85,0.92)",
-      labelBorder: "rgba(148,163,184,0.45)",
+      stroke: UI_COLOR.muted,
+      labelColor: UI_COLOR.fg,
+      labelBg: UI_COLOR.widget,
+      labelBorder: UI_COLOR.muted,
     };
   }
   return {
-    stroke: "rgba(96,165,250,0.9)",
-    labelColor: "#dbeafe",
-    labelBg: "rgba(30,58,138,0.92)",
-    labelBorder: "rgba(96,165,250,0.45)",
+    stroke: UI_COLOR.link,
+    labelColor: UI_COLOR.link,
+    labelBg: UI_COLOR.widget,
+    labelBorder: UI_COLOR.link,
   };
 }
 
@@ -930,7 +931,7 @@ function TaskPill({ task, outcome, onSelectTask }) {
     <button
       type="button"
       onClick={() => onSelectTask?.(task.id)}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-0.5 text-[11px] text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
+      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-link outline-none hover:bg-hover focus:ring-1 focus:ring-accent"
       title={task.displayName}
     >
       <span className="truncate">{compactTaskName(task.displayName)}</span>
@@ -956,13 +957,13 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
   const clickable = Boolean(onClick);
   const valueClass =
     tone === "danger"
-      ? "text-red-300"
+      ? "text-error"
       : clickable
-        ? "text-blue-400 underline underline-offset-2 decoration-blue-400/40 group-hover:text-blue-300"
-        : "text-stone-200";
+        ? "text-link underline underline-offset-2 decoration-link/40 group-hover:text-link-active"
+        : "text-fg";
   return (
     <div
-      className="border-b border-stone-800/40 py-2.5 last:border-0"
+      className="border-b border-line-soft py-2.5 last:border-0"
     >
       <div
         role={clickable ? "button" : undefined}
@@ -972,11 +973,11 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
         className={[
           "group flex items-start gap-4",
           clickable
-            ? "cursor-pointer rounded-lg px-2 -mx-2 outline-none hover:bg-stone-800/30 focus:bg-stone-800/30 focus:ring-1 focus:ring-blue-500/40"
+            ? "cursor-pointer rounded-lg px-2 -mx-2 outline-none hover:bg-hover focus:bg-hover focus:ring-1 focus:ring-accent"
             : "",
         ].join(" ")}
       >
-        <span className="w-24 shrink-0 pt-0.5 text-xs text-stone-500">
+        <span className="w-24 shrink-0 pt-0.5 text-xs text-muted">
           {label}
         </span>
         {children ? (
@@ -997,7 +998,7 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setDetailOpen((o) => !o); }}
-            className="shrink-0 rounded p-0.5 text-stone-500 transition hover:bg-stone-800 hover:text-stone-300"
+            className="shrink-0 rounded p-0.5 text-muted transition hover:bg-hover hover:text-fg-soft"
             title="Show description"
           >
             <Info size={12} />
@@ -1005,7 +1006,7 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
         )}
       </div>
       {detail && detailOpen && (
-        <p className="mt-1.5 rounded-lg bg-stone-800/50 px-3 py-2 text-[11px] leading-relaxed text-stone-300">
+        <p className="mt-1.5 rounded-lg bg-widget px-3 py-2 text-[11px] leading-relaxed text-fg-soft">
           {detail}
         </p>
       )}
@@ -1067,8 +1068,8 @@ function ParameterBadge({ label, tone = "source" }) {
   if (!label) return null;
   const className =
     tone === "usage"
-      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-      : "border-blue-500/30 bg-blue-500/10 text-blue-200";
+      ? "border-ok/40 bg-ok/10 text-ok"
+      : "border-accent/40 bg-accent/10 text-link-active";
   return (
     <span
       className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wider ${className}`}
@@ -1102,26 +1103,26 @@ function ParameterRow({
           : undefined
       }
       className={[
-        "border-b border-stone-800/40 py-3 last:border-0",
+        "border-b border-line-soft py-3 last:border-0",
         clickable
-          ? "cursor-pointer rounded-lg px-2 -mx-2 outline-none hover:bg-stone-800/30 focus:bg-stone-800/30 focus:ring-1 focus:ring-blue-500/40"
+          ? "cursor-pointer rounded-lg px-2 -mx-2 outline-none hover:bg-hover focus:bg-hover focus:ring-1 focus:ring-accent"
           : "",
       ].join(" ")}
     >
-      <div className="mb-1.5 flex items-center gap-2 text-xs text-stone-500">
+      <div className="mb-1.5 flex items-center gap-2 text-xs text-muted">
         <span>{name}</span>
         <ParameterBadge label={linkageLabel} />
         <ParameterBadge label={usageLabel} tone="usage" />
       </div>
       <div
         title={title}
-        className="[overflow-wrap:anywhere] text-xs leading-relaxed text-stone-100"
+        className="[overflow-wrap:anywhere] text-xs leading-relaxed text-fg"
       >
         {value}
         {clickable && <span className="ml-1 text-[10px] no-underline">↗</span>}
       </div>
       {linkageDetail && (
-        <div className="mt-1 text-[11px] leading-relaxed text-stone-500">
+        <div className="mt-1 text-[11px] leading-relaxed text-muted">
           {linkageDetail}
         </div>
       )}
@@ -1482,7 +1483,7 @@ function RefItem({
 }) {
   const { color } = kindMeta(kind);
   const clickable = Boolean(resolvedPath && onOpenFile && !missing);
-  const dotColor = status?.color ?? (missing ? "#f87171" : color);
+  const dotColor = status?.color ?? (missing ? UI_COLOR.error : color);
   return (
     <div
       role={clickable ? "button" : undefined}
@@ -1494,8 +1495,8 @@ function RefItem({
           : undefined
       }
       className={[
-        "flex items-center justify-between border-b border-stone-800/40 px-3 py-2 last:border-0",
-        clickable ? "cursor-pointer hover:bg-stone-800/40" : "",
+        "flex items-center justify-between border-b border-line-soft px-3 py-2 last:border-0",
+        clickable ? "cursor-pointer hover:bg-hover" : "",
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -1513,10 +1514,10 @@ function RefItem({
             className={[
               "block truncate text-xs",
               missing
-                ? "text-red-400"
+                ? "text-error"
                 : clickable
-                  ? "text-blue-400 underline underline-offset-2 decoration-blue-400/40"
-                  : "text-stone-200",
+                  ? "text-link underline underline-offset-2 decoration-link/40"
+                  : "text-fg",
             ].join(" ")}
           >
             {name}
@@ -1537,9 +1538,9 @@ function RefItem({
                     : undefined
                 }
                 className={[
-                  "ml-1.5 rounded border border-blue-500/30 bg-blue-500/10 px-1 py-0.5 text-[9px] font-semibold tracking-wider text-blue-200",
+                  "ml-1.5 rounded border border-accent/40 bg-accent/10 px-1 py-0.5 text-[9px] font-semibold tracking-wider text-link-active",
                   onBadgeClick
-                    ? "cursor-pointer hover:border-blue-400/60 hover:bg-blue-500/20"
+                    ? "cursor-pointer hover:border-accent/70 hover:bg-accent/20"
                     : "",
                 ].join(" ")}
               >
@@ -1548,7 +1549,7 @@ function RefItem({
             )}
           </span>
           {detail && detail !== name && (
-            <span className="mt-0.5 block truncate text-[11px] text-stone-600">
+            <span className="mt-0.5 block truncate text-[11px] text-muted">
               {detail}
             </span>
           )}
@@ -1556,7 +1557,7 @@ function RefItem({
       </div>
       <span
         title={line ? undefined : status?.title}
-        className="ml-3 shrink-0 text-[10px] font-semibold tracking-widest text-stone-500"
+        className="ml-3 shrink-0 text-[10px] font-semibold tracking-widest text-muted"
       >
         {line ? `L${line}` : (status?.label ?? edgeKind)}
       </span>
@@ -1568,10 +1569,10 @@ function RefSection({ title, items, onOpenFile }) {
   if (!items?.length) return null;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
         {title} · {items.length}
       </div>
-      <div className="overflow-hidden rounded-xl border border-stone-800">
+      <div className="overflow-hidden rounded-xl border border-line">
         {items.map((item, i) => (
           <RefItem key={i} {...item} onOpenFile={onOpenFile} />
         ))}
@@ -1593,10 +1594,10 @@ function IssueSummarySection({ items, onOpenFile }) {
   const hiddenCount = ordered.length - ISSUE_SUMMARY_LIMIT;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
         Issue Summary · {items.length}
       </div>
-      <div className="overflow-hidden rounded-xl border border-stone-800">
+      <div className="overflow-hidden rounded-xl border border-line">
         {visibleItems.map((item) => {
           const clickable = Boolean(item.file && onOpenFile);
           const severity = severityMeta(item.severity);
@@ -1619,9 +1620,9 @@ function IssueSummarySection({ items, onOpenFile }) {
                   : undefined
               }
               className={[
-                "flex items-start gap-2 border-b border-stone-800 px-3 py-2.5 last:border-0",
+                "flex items-start gap-2 border-b border-line px-3 py-2.5 last:border-0",
                 clickable
-                  ? "cursor-pointer outline-none hover:bg-stone-900 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
+                  ? "cursor-pointer outline-none hover:bg-hover focus:bg-hover focus:ring-1 focus:ring-accent"
                   : "",
               ].join(" ")}
             >
@@ -1633,16 +1634,16 @@ function IssueSummarySection({ items, onOpenFile }) {
                 <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${severity.colorClass}`}>
                   {severity.label}
                 </div>
-                <div className="mt-0.5 break-words text-xs font-medium text-stone-100">
+                <div className="mt-0.5 break-words text-xs font-medium text-fg">
                   {item.title}
                 </div>
                 {item.detail && (
-                  <div className="mt-0.5 break-words text-[11px] text-stone-400">
+                  <div className="mt-0.5 break-words text-[11px] text-fg-soft">
                     {item.detail}
                   </div>
                 )}
                 {item.fixHint && (
-                  <div className="mt-1 text-[11px] leading-snug text-stone-300">
+                  <div className="mt-1 text-[11px] leading-snug text-fg-soft">
                     {item.fixHint}
                   </div>
                 )}
@@ -1650,7 +1651,7 @@ function IssueSummarySection({ items, onOpenFile }) {
               {item.location && (
                 <span
                   title={item.location}
-                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-stone-400"
+                  className="ml-2 max-w-28 shrink-0 truncate text-[10px] font-semibold text-fg-soft"
                 >
                   {/* Every row is usually in the same file, so the line is what tells them apart. */}
                   {item.line ? `Ln ${item.line}` : item.location}
@@ -1664,7 +1665,7 @@ function IssueSummarySection({ items, onOpenFile }) {
           <button
             type="button"
             onClick={() => setExpandedKey(expanded ? null : itemsKey)}
-            className="w-full px-3 py-2 text-left text-[11px] font-medium text-blue-300 outline-none hover:bg-stone-900 hover:text-blue-200 focus:bg-stone-900 focus:ring-1 focus:ring-blue-500/40"
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-link outline-none hover:bg-hover hover:text-link-active focus:bg-hover focus:ring-1 focus:ring-accent"
           >
             {expanded ? "Show fewer" : `Show all ${items.length} issues`}
           </button>
@@ -1709,7 +1710,7 @@ function ParameterFlowSection({ flows, onOpenFile }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
           Parameter Links · {flows.length}
         </div>
         {canToggle && (
@@ -1721,25 +1722,25 @@ function ParameterFlowSection({ flows, onOpenFile }) {
                 expanded: !expanded,
               })
             }
-            className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-blue-300 outline-none hover:bg-stone-800 focus:ring-1 focus:ring-blue-500/40"
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-link outline-none hover:bg-hover focus:ring-1 focus:ring-accent"
           >
             {expanded ? "Hide" : "Show"}
           </button>
         )}
       </div>
-      <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-950/20">
+      <div className="overflow-hidden rounded-xl border border-line">
         {!expanded && visibleFlows.length === 0 && (
-          <div className="px-3 py-2.5 text-[11px] leading-relaxed text-stone-500">
+          <div className="px-3 py-2.5 text-[11px] leading-relaxed text-muted">
             {flows.length} detected link{flows.length === 1 ? "" : "s"} between
             bundle parameters and notebook or SQL inputs.
           </div>
         )}
         {visibleFlows.map((flow) => (
-          <div key={flow.id} className="border-b border-stone-800/40 px-3 py-2.5 last:border-0">
-            <div className="mb-1.5 truncate text-xs font-medium text-stone-300">
+          <div key={flow.id} className="border-b border-line-soft px-3 py-2.5 last:border-0">
+            <div className="mb-1.5 truncate text-xs font-medium text-fg-soft">
               {flow.name}
             </div>
-            <div className="flex flex-wrap items-center gap-1 text-[11px] text-stone-500">
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted">
               {flow.segments.map((segment, index) => {
                 const clickable = Boolean(segment.file && onOpenFile);
                 return (
@@ -1748,7 +1749,7 @@ function ParameterFlowSection({ flows, onOpenFile }) {
                     className="inline-flex items-center gap-1"
                   >
                     {index > 0 && (
-                      <span className="text-stone-700">-&gt;</span>
+                      <span className="text-muted">-&gt;</span>
                     )}
                     <button
                       type="button"
@@ -1771,8 +1772,8 @@ function ParameterFlowSection({ flows, onOpenFile }) {
                       className={[
                         "rounded-sm text-[11px] outline-none",
                         clickable
-                          ? "text-blue-300 underline decoration-blue-500/30 underline-offset-2 hover:text-blue-200 focus:ring-1 focus:ring-blue-500/40"
-                          : "text-stone-500",
+                          ? "text-link underline decoration-link/40 underline-offset-2 hover:text-link-active focus:ring-1 focus:ring-accent"
+                          : "text-muted",
                       ].join(" ")}
                     >
                       {parameterFlowSegmentDisplay(segment)}
@@ -1792,7 +1793,7 @@ function ParameterFlowSection({ flows, onOpenFile }) {
                 expanded: true,
               })
             }
-            className="w-full px-3 py-2 text-left text-[11px] text-stone-500 outline-none hover:bg-stone-900/60 hover:text-stone-300 focus:ring-1 focus:ring-blue-500/30"
+            className="w-full px-3 py-2 text-left text-[11px] text-muted outline-none hover:bg-hover hover:text-fg-soft focus:ring-1 focus:ring-accent"
           >
             Show {hiddenCount} more link{hiddenCount === 1 ? "" : "s"}
           </button>
@@ -1806,24 +1807,24 @@ function ComputeSection({ items }) {
   if (!items?.length) return null;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
         Compute
       </div>
-      <div className="rounded-xl border border-stone-800 px-3">
+      <div className="rounded-xl border border-line px-3">
         {items.map((item, i) => (
           <div
             key={i}
-            className="flex items-baseline gap-3 border-b border-stone-800/40 py-2 last:border-0"
+            className="flex items-baseline gap-3 border-b border-line-soft py-2 last:border-0"
           >
-            <span className="w-20 shrink-0 text-xs text-stone-500">
+            <span className="w-20 shrink-0 text-xs text-muted">
               Runs on
             </span>
-            <span className="min-w-0 text-xs text-stone-200">
+            <span className="min-w-0 text-xs text-fg">
               <span title={item.expression} className="block break-all">
                 {item.name}
               </span>
               {item.expression && item.expression !== item.name && (
-                <span className="mt-0.5 block break-all text-[11px] text-stone-600">
+                <span className="mt-0.5 block break-all text-[11px] text-muted">
                   {item.expression}
                 </span>
               )}
@@ -1834,10 +1835,10 @@ function ComputeSection({ items }) {
                       key={`${detail.label}:${detail.value}`}
                       className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 text-[11px]"
                     >
-                      <span className="text-stone-500">{detail.label}</span>
+                      <span className="text-muted">{detail.label}</span>
                       <span
                         title={detail.expression}
-                        className="[overflow-wrap:anywhere] text-stone-300"
+                        className="[overflow-wrap:anywhere] text-fg-soft"
                       >
                         {detail.value}
                       </span>
@@ -1857,18 +1858,18 @@ function VariablesSection({ items }) {
   if (!items?.length) return null;
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
         Variables · {items.length}
       </div>
-      <div className="overflow-hidden rounded-xl border border-stone-800">
+      <div className="overflow-hidden rounded-xl border border-line">
         {items.map((item, i) => {
           const color = item.unresolved
-            ? "#f87171"
+            ? UI_COLOR.error
             : kindMeta("variable").color;
           return (
             <div
               key={i}
-              className="border-b border-stone-800/40 px-3 py-2 last:border-0"
+              className="border-b border-line-soft px-3 py-2 last:border-0"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
@@ -1879,20 +1880,20 @@ function VariablesSection({ items }) {
                   <span
                     className={[
                       "truncate text-xs font-medium",
-                      item.unresolved ? "text-red-300" : "text-stone-200",
+                      item.unresolved ? "text-error" : "text-fg",
                     ].join(" ")}
                   >
                     {item.name}
                   </span>
                 </div>
-                <span className="shrink-0 text-[10px] font-semibold tracking-widest text-stone-500">
+                <span className="shrink-0 text-[10px] font-semibold tracking-widest text-muted">
                   {variableResolutionLabel(item)}
                 </span>
               </div>
               {item.value && (
                 <p
                   title={item.expression}
-                  className="mt-0.5 truncate pl-4 text-[11px] text-stone-500"
+                  className="mt-0.5 truncate pl-4 text-[11px] text-muted"
                 >
                   {item.value}
                 </p>
@@ -1913,23 +1914,23 @@ function TaskImpactSection({
 }) {
   return (
     <section>
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
         Impact
       </div>
-      <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-stone-800">
-        <div className="border-r border-stone-800/60 px-3 py-2.5">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-stone-500">
+      <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-line">
+        <div className="border-r border-line-soft px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted">
             Upstream
           </div>
-          <div className="mt-1 text-lg font-semibold text-stone-100">
+          <div className="mt-1 text-lg font-semibold text-fg">
             {upstreamCount}
           </div>
         </div>
         <div className="px-3 py-2.5">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-stone-500">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-muted">
             Downstream
           </div>
-          <div className="mt-1 text-lg font-semibold text-stone-100">
+          <div className="mt-1 text-lg font-semibold text-fg">
             {downstreamCount}
           </div>
         </div>
@@ -1937,7 +1938,7 @@ function TaskImpactSection({
       {dependents.length > 0 && (
         <div className="mt-2 space-y-2">
           <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-600">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
               Direct Dependents
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -1960,13 +1961,13 @@ function TaskImpactSection({
 function Breadcrumb({ items }) {
   if (!items.length) return null;
   return (
-    <div className="mt-2 flex min-w-0 items-center gap-1 text-[11px] text-stone-500">
+    <div className="mt-2 flex min-w-0 items-center gap-1 text-[11px] text-muted">
       {items.map((item, index) => (
         <span
           key={`${item}-${index}`}
           className="flex min-w-0 items-center gap-1"
         >
-          {index > 0 && <span className="shrink-0 text-stone-700">/</span>}
+          {index > 0 && <span className="shrink-0 text-muted">/</span>}
           <span className="max-w-32 truncate" title={item}>
             {item}
           </span>
@@ -1978,11 +1979,11 @@ function Breadcrumb({ items }) {
 
 /** Chip colours per severity, for the task's most serious issue. */
 const ISSUE_CHIP_CLASS = {
-  error: "border-red-500/30 bg-red-500/10 text-red-300",
-  warning: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
-  info: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  error: "border-error/40 bg-error/10 text-error",
+  warning: "border-warning/40 bg-warning/10 text-warning",
+  info: "border-info/40 bg-info/10 text-info",
 };
-const PLAIN_CHIP_CLASS = "border-stone-800 bg-stone-900/70 text-stone-300";
+const PLAIN_CHIP_CLASS = "border-line bg-widget text-fg-soft";
 
 function TaskStatusChips({ node, issueItems, computeItems, fileItems }) {
   // Counts the same list as the Issue Summary, so the two never disagree.
@@ -1993,7 +1994,7 @@ function TaskStatusChips({ node, issueItems, computeItems, fileItems }) {
     className:
       issueCount > 0
         ? ISSUE_CHIP_CLASS[worst] ?? ISSUE_CHIP_CLASS.warning
-        : "border-stone-800 bg-stone-900/70 text-stone-400",
+        : "border-line bg-widget text-fg-soft",
   };
   const chips = [
     node.taskTypeLabel && { label: node.taskTypeLabel, className: PLAIN_CHIP_CLASS },
@@ -2289,16 +2290,16 @@ function DetailPanel({
 
   return (
     <aside
-      className="flex w-[400px] shrink-0 flex-col overflow-hidden border-l border-stone-800"
-      style={{ backgroundColor: "#0d0d0d" }}
+      className="flex w-[400px] shrink-0 flex-col overflow-hidden border-l border-line"
+      style={{ backgroundColor: UI_COLOR.panel }}
     >
       {/* Header */}
-      <div className="flex items-start justify-between border-b border-stone-800 px-5 pb-4 pt-5">
+      <div className="flex items-start justify-between border-b border-line px-5 pb-4 pt-5">
         <div className="min-w-0">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
             Task
           </div>
-          <div className="truncate text-[17px] font-semibold leading-tight text-stone-50">
+          <div className="truncate text-[17px] font-semibold leading-tight text-fg">
             {node.displayName}
           </div>
           <Breadcrumb items={breadcrumbItems} />
@@ -2311,7 +2312,7 @@ function DetailPanel({
         </div>
         <button
           onClick={onClose}
-          className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-xs text-stone-500 transition hover:bg-stone-800 hover:text-stone-300"
+          className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-xs text-muted transition hover:bg-hover hover:text-fg-soft"
         >
           ✕
         </button>
@@ -2326,10 +2327,10 @@ function DetailPanel({
 
         {/* Task Configuration */}
         <section>
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
             Task Configuration
           </div>
-          <div className="rounded-xl border border-stone-800 px-3">
+          <div className="rounded-xl border border-line px-3">
             <ConfigRow
               label="Parent job"
               value={displayResolvedValue(
@@ -2408,10 +2409,10 @@ function DetailPanel({
         {/* Parameters */}
         {node.parameters?.length ? (
           <section>
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
               Parameters
             </div>
-            <div className="rounded-xl border border-stone-800 px-3">
+            <div className="rounded-xl border border-line px-3">
               {node.parameters.map((p, i) => (
                 (() => {
                   const linkage = parameterLinkageForName(
@@ -2532,6 +2533,17 @@ function FocusViewportSync({ focusRequest, flowNodes }) {
   return null;
 }
 
+function subscribeToThemeKind(onChange) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.body, { attributes: true, attributeFilter: ["data-vscode-theme-kind"] });
+  return () => observer.disconnect();
+}
+
+/** React Flow's colour mode, kept in step with the VS Code theme while the graph is open. */
+function useVscodeColorMode() {
+  return colorModeForThemeKind(useSyncExternalStore(subscribeToThemeKind, currentThemeKind));
+}
+
 // ── App ───────────────────────────────────────────────────────
 
 export default function App({
@@ -2555,6 +2567,7 @@ export default function App({
   onCopyReviewSummary,
   onTelemetry,
 }) {
+  const colorMode = useVscodeColorMode();
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [userSelectedJobKey, setUserSelectedJobKey] = useState(undefined);
   const [searchValue, setSearchValue] = useState("");
@@ -2769,7 +2782,7 @@ export default function App({
           style: {
             ...edge.style,
             opacity: dimmed ? 0.18 : 1,
-            stroke: highlighted ? "#60a5fa" : edge.style?.stroke,
+            stroke: highlighted ? UI_COLOR.accent : edge.style?.stroke,
             strokeDasharray: highlighted
               ? undefined
               : edge.style?.strokeDasharray,
@@ -2777,7 +2790,7 @@ export default function App({
           },
           markerEnd: {
             ...edge.markerEnd,
-            color: highlighted ? "#60a5fa" : edge.markerEnd?.color,
+            color: highlighted ? UI_COLOR.accent : edge.markerEnd?.color,
           },
         };
       }),
@@ -2796,13 +2809,13 @@ export default function App({
   if (!graph) {
     return (
       <div
-        className="flex h-screen items-center justify-center text-sm text-stone-400"
-        style={{ backgroundColor: "#111" }}
+        className="flex h-screen items-center justify-center text-sm text-fg-soft"
+        style={{ backgroundColor: UI_COLOR.surface }}
       >
         Graph not available — close this panel and run{" "}
         <span
-          className="mx-1 rounded px-1.5 py-0.5 font-mono text-stone-200"
-          style={{ backgroundColor: "#1c1917" }}
+          className="mx-1 rounded px-1.5 py-0.5 font-mono text-fg"
+          style={{ backgroundColor: UI_COLOR.widget }}
         >
           Inspect Databricks Bundle
         </span>{" "}
@@ -2812,9 +2825,8 @@ export default function App({
   }
 
   const rfStyle = {
-    backgroundColor: "#111111",
-    backgroundImage:
-      "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)",
+    backgroundColor: UI_COLOR.surface,
+    backgroundImage: `radial-gradient(circle at 1px 1px, color-mix(in srgb, ${UI_COLOR.fg} 6%, transparent) 1px, transparent 0)`,
     backgroundSize: "16px 16px",
   };
 
@@ -2881,7 +2893,7 @@ export default function App({
     // open below it) must not make the page scroll, which would push the header out of view.
     <div
       className="relative flex h-screen flex-col overflow-hidden"
-      style={{ backgroundColor: "#111111" }}
+      style={{ backgroundColor: UI_COLOR.surface }}
     >
       <AppHeader
         bundleName={parsedBundle?.bundle?.name}
@@ -2913,7 +2925,7 @@ export default function App({
         <div
           role="status"
           title={`Databricks CLI: ${targetFallbackMessage}`}
-          className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-100"
+          className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-fg"
         >
           Target "{requestedTarget}" couldn't be checked
           {targetFallbackReason ? `: ${targetFallbackReason}` : ""}. Showing the structural preview.
@@ -2924,7 +2936,7 @@ export default function App({
       {profileChoice && (
         <div
           role="status"
-          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-100"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-fg"
         >
           <span>
             Several Databricks login profiles match this workspace
@@ -2934,7 +2946,7 @@ export default function App({
           <button
             type="button"
             onClick={onChooseProfile}
-            className="rounded-md border border-amber-400/40 px-2 py-0.5 font-medium text-amber-50 hover:bg-amber-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+            className="rounded-md border border-warning/60 px-2 py-0.5 font-medium text-fg hover:bg-warning/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             Choose profile
           </button>
@@ -2958,7 +2970,7 @@ export default function App({
               className="flex h-full flex-col items-center justify-center gap-2 text-center"
               style={rfStyle}
             >
-              <span className="text-sm text-stone-500">
+              <span className="text-sm text-muted">
                 {jobNode
                   ? "This job has no tasks."
                   : jobKeys.length === 0
@@ -2966,7 +2978,7 @@ export default function App({
                     : "No tasks found for the selected job."}
               </span>
               {jobKeys.length === 0 && (
-                <span className="text-xs text-stone-600">
+                <span className="text-xs text-muted">
                   {nonJobResourceTypes.length > 0
                     ? `Contains: ${nonJobResourceTypes.join(", ")}.`
                     : "This bundle may only contain pipelines or other non-job resources."}
@@ -2978,7 +2990,7 @@ export default function App({
               nodes={displayFlowNodes}
               edges={displayFlowEdges}
               nodeTypes={nodeTypes}
-              colorMode="dark"
+              colorMode={colorMode}
               className="bundle-flow"
               onNodeClick={(_, node) =>
                 selectedNodeId === node.id
@@ -2997,7 +3009,7 @@ export default function App({
                 focusRequest={focusRequest}
                 flowNodes={flowNodes}
               />
-              <Background color="rgba(255,255,255,0)" gap={16} />
+              <Background color="transparent" bgColor={UI_COLOR.surface} gap={16} />
               <Controls
                 position="bottom-left"
                 showFitView={false}
@@ -3009,23 +3021,23 @@ export default function App({
                 position="bottom-right"
                 className="shadow-lg"
                 style={{
-                  backgroundColor: "#0f0f10",
-                  border: "1px solid rgba(120,113,108,0.55)",
+                  backgroundColor: UI_COLOR.widget,
+                  border: `1px solid ${UI_COLOR.line}`,
                   borderRadius: 8,
-                  boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+                  boxShadow: `0 10px 30px ${UI_COLOR.shadow}`,
                 }}
-                bgColor="#0f0f10"
-                maskColor="rgba(120,113,108,0.22)"
+                bgColor={UI_COLOR.widget}
+                maskColor={`color-mix(in srgb, ${UI_COLOR.muted} 22%, transparent)`}
                 nodeBorderRadius={4}
                 nodeStrokeWidth={2}
                 nodeStrokeColor={(node) =>
                   node.data?.issueCounts?.total > 0
-                    ? "#fecaca"
+                    ? UI_COLOR.error
                     : kindMeta(node.data?.kind).color
                 }
                 nodeColor={(node) =>
                   node.data?.issueCounts?.total > 0
-                    ? "#f87171"
+                    ? UI_COLOR.error
                     : kindMeta(node.data?.kind).color
                 }
                 pannable

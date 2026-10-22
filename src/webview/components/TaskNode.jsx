@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import { kindMeta } from "../lib/kindMeta";
+import { UI_COLOR } from "../lib/vscodeTheme";
 
 export default function TaskNode({ data, selected }) {
   const meta = kindMeta(data.kind);
@@ -14,20 +15,21 @@ export default function TaskNode({ data, selected }) {
       style={{
         width: 260,
         borderColor: missing
-          ? "rgba(248,113,113,0.6)"
+          ? UI_COLOR.error
           : selected
-            ? "#3b82f6"
+            ? UI_COLOR.accent
             : data.focusState === "related"
-              ? "rgba(96,165,250,0.55)"
-              : "rgba(120,113,108,0.35)",
+              ? `color-mix(in srgb, ${UI_COLOR.accent} 60%, transparent)`
+              : UI_COLOR.boxLine,
+        // Tints over the widget colour, so a box never shows the canvas dots through it.
         backgroundColor: missing
-          ? "rgba(248,113,113,0.06)"
+          ? `color-mix(in srgb, ${UI_COLOR.error} 8%, ${UI_COLOR.widget})`
           : selected
-            ? "rgba(59,130,246,0.08)"
-            : "rgba(20,18,16,0.97)",
+            ? `color-mix(in srgb, ${UI_COLOR.accent} 10%, ${UI_COLOR.widget})`
+            : UI_COLOR.widget,
         opacity: dimmed ? 0.48 : 1,
       }}
-      className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-stone-500"
+      className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-fg-soft"
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <span
@@ -37,11 +39,11 @@ export default function TaskNode({ data, selected }) {
         {data.badge ?? meta.code}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-stone-100 truncate leading-none mb-0.5">
+        <div className="text-[13px] font-medium text-fg truncate leading-none mb-0.5">
           <span title={data.fullName ?? data.name}>{data.name}</span>
         </div>
         {data.subtitle && (
-          <div className="text-[11px] text-stone-500 truncate leading-none">
+          <div className="text-[11px] text-muted truncate leading-none">
             {data.subtitle}
           </div>
         )}
@@ -49,7 +51,7 @@ export default function TaskNode({ data, selected }) {
       {issueCount > 0 && (
         <span
           title={`${issueCount} issue${issueCount === 1 ? "" : "s"}`}
-          className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-red-500/15 px-1.5 text-[10px] font-semibold text-red-300"
+          className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-error/15 px-1.5 text-[10px] font-semibold text-fg-strong"
         >
           {issueCount}
         </span>
@@ -60,10 +62,10 @@ export default function TaskNode({ data, selected }) {
             const normalized = String(outcome).toLowerCase();
             const className =
               normalized === "true"
-                ? "border-green-500/35 bg-green-500/15 text-green-200"
+                ? "border-ok/40 bg-ok/15 text-ok"
                 : normalized === "false"
-                  ? "border-slate-500/35 bg-slate-500/15 text-slate-200"
-                  : "border-blue-500/35 bg-blue-500/15 text-blue-200";
+                  ? "border-line bg-hover text-fg-soft"
+                  : "border-accent/40 bg-accent/15 text-link-active";
             return (
               <span
                 key={outcome}

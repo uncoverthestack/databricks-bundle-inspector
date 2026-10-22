@@ -36,9 +36,9 @@ async function main() {
   // and a clean profile means no leftover cliPath setting.
   const userData = await mkdtemp(path.join(os.tmpdir(), "dbi-e2e-"));
   const suite = options.suite;
-  // Only the rendered-graph suite needs Chromium's loopback debugging interface.
+  // Only the suites that read the rendered graph need Chromium's loopback debugging interface.
   let debuggingPort: number | undefined;
-  if (suite === "graphRefresh") {
+  if (suite === "graphRefresh" || suite === "themes") {
     const server = net.createServer();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
