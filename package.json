@@ -71,6 +71,10 @@
       {
         "command": "databricksBundleInspector.chooseProfile",
         "title": "Choose Databricks Login Profile"
+      },
+      {
+        "command": "databricksBundleInspector.copySelection",
+        "title": "Copy"
       }
     ],
     "configuration": {
@@ -113,6 +117,19 @@
           "command": "databricksBundleInspector.inspectBundle",
           "group": "navigation",
           "when": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "databricksBundleInspector.copySelection",
+          "group": "5_cutcopypaste",
+          "when": "webviewId == 'bundleInspector' && bundleInspectorHasSelection"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "databricksBundleInspector.copySelection",
+          "when": "false"
         }
       ]
     }
