@@ -20,6 +20,7 @@ import {
 import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
+import { hasTextSelection } from "./lib/textSelection";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
 
@@ -1609,7 +1610,10 @@ function IssueSummarySection({ items, onOpenFile }) {
               tabIndex={clickable ? 0 : undefined}
               onClick={
                 clickable
-                  ? () => onOpenFile(item.file, item.line, item.column)
+                  ? () => {
+                      if (hasTextSelection()) return;
+                      onOpenFile(item.file, item.line, item.column);
+                    }
                   : undefined
               }
               onKeyDown={

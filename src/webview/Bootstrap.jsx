@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import App from "./App";
+import { contextMenuContext } from "./lib/textSelection";
 
 // acquireVsCodeApi is injected by VS Code into webview scripts at runtime.
 // It is declared as a global in eslint.config.js so the linter doesn't flag it.
@@ -100,8 +101,25 @@ export default function Bootstrap() {
       }
     }
 
+    // Runs before VS Code's own listener on the window, which reads the context
+    // set here to build the menu. The text is sent now, while it is still selected.
+    function handleContextMenu(event) {
+      const inTextBox =
+        event.target instanceof Element &&
+        Boolean(event.target.closest("input, textarea, [contenteditable='true']"));
+      const text = window.getSelection()?.toString() ?? "";
+      document.body.dataset.vscodeContext = JSON.stringify(
+        contextMenuContext(inTextBox, text),
+      );
+      if (!inTextBox) vscodeApi?.postMessage({ type: "contextMenuSelection", text });
+    }
+
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    document.addEventListener("contextmenu", handleContextMenu);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
   }, []);
 
   if (!parsedBundle) {

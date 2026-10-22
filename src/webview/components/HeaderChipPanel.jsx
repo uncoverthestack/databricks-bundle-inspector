@@ -1,6 +1,7 @@
 import { AlertTriangle, Info, X } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
 import { severityMeta } from "../lib/issueSeverity";
+import { hasTextSelection } from "../lib/textSelection";
 
 /** Notes get the info icon, as in the task panel; errors and warnings the triangle. */
 function SeverityIcon({ severity, ...props }) {
@@ -52,12 +53,25 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                 const clickable = Boolean(item.taskId || item.file);
                 const meta = kindMeta(item.kind);
                 return (
-                  <button
+                  // A div, not a button: text inside a button cannot be selected and copied.
+                  <div
                     key={item.id}
-                    type="button"
-                    disabled={!clickable}
+                    role={clickable ? "button" : undefined}
+                    tabIndex={clickable ? 0 : undefined}
                     title={clickable ? "Open source location" : undefined}
-                    onClick={clickable ? () => onSelectItem(item) : undefined}
+                    onClick={
+                      clickable
+                        ? () => {
+                            if (hasTextSelection()) return;
+                            onSelectItem(item);
+                          }
+                        : undefined
+                    }
+                    onKeyDown={
+                      clickable
+                        ? (event) => event.key === "Enter" && onSelectItem(item)
+                        : undefined
+                    }
                     className={[
                       "flex w-full items-start gap-2 px-3 py-2 text-left outline-none",
                       clickable
@@ -92,7 +106,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
                         </span>
                       )}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
             </section>
