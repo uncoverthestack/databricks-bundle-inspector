@@ -4,6 +4,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **Task dependency mistakes and duplicate keys in jobs are reported** ([#135](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/135)). `bundle validate` accepts all of these. Two the Jobs service rejects at `bundle deploy`: a task depending on a task key the job doesn't have (`unknown_task_dependency`, with a close match suggested, or the other job named when the key belongs to one), and tasks depending on each other in a loop or a task depending on itself (`task_dependency_loop`, on every task in the loop). Two deploy, but not as written: a task key listed twice in one `tasks:` list (`duplicate_task_key`) and a job parameter declared twice (`duplicate_job_parameter`), which the CLI silently merges into one, the later settings winning. A target listing a job's task or parameter again is an override, as intended, and isn't reported. Each finding is at the line that causes it, in the structural preview and with a target picked, with no login needed. See [docs/checks.md](docs/checks.md#jobs).
+
 ### Changed
 
 - **The graph follows your VS Code theme** ([#214](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/214), [PR #215](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/215)): light, dark and High Contrast, and it changes with the theme while the graph is open. It used to be dark whatever the theme. Backgrounds, text, borders, the task boxes, the edges, the zoom buttons and the minimap all take their colours from the theme. On a High Contrast theme, panels and task boxes get the theme's contrast border. Text meets WCAG AA contrast (4.5:1) on all six built-in themes: where VS Code's own colour falls short, such as Light Modern's error red, the graph uses a slightly darker shade of it on light themes and a lighter one on dark themes. The type badges on task boxes (`NB`, `PY`, ...) use a darker shade of their colour on light themes, and task box outlines are easier to see: at least 3:1 against the canvas on every built-in theme.

@@ -18,6 +18,7 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
+import { findDependencyProblems, findDuplicateKeys, type JobStructureFinding } from "../jobStructure.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -336,6 +337,8 @@ export interface BundleGraphEdge extends BundleEdge {}
 export interface BundleGraph {
   nodes: BundleGraphNode[];
   edges: BundleEdge[];
+  /** Task graph and duplicate key mistakes in jobs (#135), for the issue list. */
+  jobStructureFindings?: JobStructureFinding[];
 }
 
 // --- helpers ---
@@ -1307,7 +1310,18 @@ export async function extractBundleGraph(
 
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
 
-  return { nodes: [...nodeMap.values()], edges };
+  const sourceFiles = sourceIndex.sourceDocuments.map(({ file, doc }) => ({
+    doc,
+    locations: yamlLocationMaps.get(file),
+  }));
+  return {
+    nodes: [...nodeMap.values()],
+    edges,
+    jobStructureFindings: [
+      ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles),
+      ...findDuplicateKeys(sourceFiles),
+    ],
+  };
 }
 
 /** The bundle's `secret_scopes` resources, with the scope name Databricks uses. */

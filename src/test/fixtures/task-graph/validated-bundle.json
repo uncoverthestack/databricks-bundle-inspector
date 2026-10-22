@@ -1,0 +1,282 @@
+{
+  "bundle": {
+    "name": "task-graph"
+  },
+  "include": [
+    "resources/mistakes.yml",
+    "resources/override.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "control": {
+        "name": "control",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "first"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "first"
+              },
+              {
+                "task_key": "first"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "second"
+          }
+        ]
+      },
+      "duplicate_in_target": {
+        "name": "duplicate_in_target",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "twice"
+          }
+        ]
+      },
+      "duplicate_parameter": {
+        "name": "duplicate_parameter",
+        "parameters": [
+          {
+            "default": "1",
+            "name": "env"
+          },
+          {
+            "default": "2",
+            "name": "env"
+          }
+        ],
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "duplicate_task_key": {
+        "name": "duplicate_task_key",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "same",
+            "timeout_seconds": 111
+          },
+          {
+            "max_retries": 2,
+            "notebook_task": {
+              "notebook_path": "../src/other.py"
+            },
+            "task_key": "same"
+          }
+        ]
+      },
+      "first_job": {
+        "name": "first_job",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "only_in_first_job"
+          }
+        ]
+      },
+      "other_job_dependency": {
+        "name": "other_job_dependency",
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "only_in_first_job"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "wait"
+          }
+        ]
+      },
+      "self_dependency": {
+        "name": "self_dependency",
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "alone"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "alone"
+          }
+        ]
+      },
+      "target_override": {
+        "name": "target_override",
+        "parameters": [
+          {
+            "default": "base",
+            "name": "env"
+          }
+        ],
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "load"
+          }
+        ]
+      },
+      "three_task_loop": {
+        "name": "three_task_loop",
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "c"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "a"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "a"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "b"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "b"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "c"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "c"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "after_loop"
+          }
+        ]
+      },
+      "two_task_loop": {
+        "name": "two_task_loop",
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "y"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "x"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "x"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "y"
+          }
+        ]
+      },
+      "unknown_dependency": {
+        "name": "unknown_dependency",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "load"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "laod"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "report"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "resources": {
+        "jobs": {
+          "duplicate_in_target": {
+            "tasks": [
+              {
+                "max_retries": 1,
+                "task_key": "twice"
+              },
+              {
+                "max_retries": 2,
+                "task_key": "twice"
+              }
+            ]
+          },
+          "target_override": {
+            "parameters": [
+              {
+                "default": "dev",
+                "name": "env"
+              }
+            ],
+            "tasks": [
+              {
+                "max_retries": 3,
+                "task_key": "load"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

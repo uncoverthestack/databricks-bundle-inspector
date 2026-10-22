@@ -1,0 +1,120 @@
+resources:
+  jobs:
+    unknown_dependency:
+      name: unknown_dependency
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: report
+          depends_on:
+            - task_key: laod
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    self_dependency:
+      name: self_dependency
+      tasks:
+        - task_key: alone
+          depends_on:
+            - task_key: alone
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    two_task_loop:
+      name: two_task_loop
+      tasks:
+        - task_key: x
+          depends_on:
+            - task_key: y
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: y
+          depends_on:
+            - task_key: x
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    three_task_loop:
+      name: three_task_loop
+      tasks:
+        - task_key: a
+          depends_on:
+            - task_key: c
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: b
+          depends_on:
+            - task_key: a
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: c
+          depends_on:
+            - task_key: b
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: after_loop
+          depends_on:
+            - task_key: c
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    other_job_dependency:
+      name: other_job_dependency
+      tasks:
+        - task_key: wait
+          depends_on:
+            - task_key: only_in_first_job
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    first_job:
+      name: first_job
+      tasks:
+        - task_key: only_in_first_job
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    duplicate_task_key:
+      name: duplicate_task_key
+      tasks:
+        - task_key: same
+          timeout_seconds: 111
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: same
+          max_retries: 2
+          notebook_task:
+            notebook_path: ../src/other.py
+
+    duplicate_parameter:
+      name: duplicate_parameter
+      parameters:
+        - name: env
+          default: "1"
+        - name: env
+          default: "2"
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    duplicate_in_target:
+      name: duplicate_in_target
+      tasks:
+        - task_key: twice
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    control:
+      name: control
+      tasks:
+        - task_key: first
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: second
+          depends_on:
+            - task_key: first
+            - task_key: first
+          notebook_task:
+            notebook_path: ../src/task.py

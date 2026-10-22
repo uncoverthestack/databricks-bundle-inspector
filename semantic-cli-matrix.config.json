@@ -61,6 +61,11 @@
       "name": "include-mistakes",
       "fixture": "src/test/fixtures/include-mistakes",
       "baseline": "src/test/fixtures/baselines/include-mistakes.semantic.json"
+    },
+    {
+      "name": "task-graph",
+      "fixture": "src/test/fixtures/task-graph",
+      "baseline": "src/test/fixtures/baselines/task-graph.semantic.json"
     }
   ]
 }

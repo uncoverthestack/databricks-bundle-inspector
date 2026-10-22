@@ -12,6 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
 - [Bundle configuration](#bundle-configuration): `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
@@ -108,6 +109,46 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 - **Example:** `resources/jobs/nightly.yml` with `include: [resources/*.yml]`, as `*` doesn't go into subfolders.
 - **Fix:** add a pattern that covers the file, such as `resources/**/*.yml`, or delete the file if it's unused.
 - **Limits:** a file named in `databricks.yml`, even in a comment, is taken as left out on purpose.
+
+## Jobs
+
+`bundle validate` accepts these. The Databricks Jobs service rejects the first two at `bundle deploy`; the last two deploy, but as a different job from the one written.
+
+### `unknown_task_dependency`
+
+A task's `depends_on` names a task key the job doesn't have.
+
+- **Severity:** error.
+- **Example:** `depends_on: [{task_key: laod}]` in a job whose task is `load`. Deploy fails with `Invalid dependency graph for task 'report', job specification does not contain task with key 'laod'`.
+- **Fix:** use the `task_key` of a task in the same job. The finding suggests a close match, or names the other job when the key belongs to one: a task can only wait on tasks of its own job.
+- **Limits:** checks the job as the CLI resolved it, so with a target picked, tasks the target adds count.
+
+### `task_dependency_loop`
+
+Tasks depend on each other in a loop, or a task depends on itself, so none of them can start.
+
+- **Severity:** error.
+- **Example:** `x` depends on `y` and `y` on `x`. Deploy fails with `Invalid dependency graph, circular dependencies are not allowed`; a task that depends on itself fails with `task 'a' can not reference itself`.
+- **Fix:** remove one of the `depends_on` entries that close the loop. The finding names every task in it and appears on each.
+- **Limits:** none known.
+
+### `duplicate_task_key`
+
+One `tasks:` list has two tasks with the same `task_key`. The CLI merges them into one task, later settings overriding earlier ones, so fewer tasks run than are listed.
+
+- **Severity:** warning.
+- **Example:** two `- task_key: same` entries, the first with `timeout_seconds: 111`, the second with another notebook. The deployed job has one task `same`, with the timeout from the first and the notebook from the second.
+- **Fix:** give each task its own key, or merge them by hand. The finding gives the line of the first.
+- **Limits:** a target listing a job's task key again is how a target overrides that task, so only repeats within one list are reported.
+
+### `duplicate_job_parameter`
+
+A job declares the same parameter name twice. The CLI keeps one, with the later default.
+
+- **Severity:** warning.
+- **Example:** `parameters: [{name: env, default: "1"}, {name: env, default: "2"}]` deploys one parameter `env` with default `"2"`.
+- **Fix:** remove one of them.
+- **Limits:** as for `duplicate_task_key`, a target declaring a job's parameter again is an override, not reported.
 
 ## Code in notebooks and files
 
