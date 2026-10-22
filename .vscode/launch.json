@@ -6,12 +6,28 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
+			// src/sample-data is git-ignored, so it exists only where someone created it.
+			// Without it, VS Code opens the missing path as a new empty file.
 			"name": "Run Extension",
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"${workspaceFolder}/src/sample-data"
+			],
+			"outFiles": [
+				"${workspaceFolder}/dist/**/*.js"
+			],
+			"preLaunchTask": "npm: build"
+		},
+		{
+			// The test fixtures are in git, so this works on any machine straight after cloning.
+			"name": "Run Extension (test fixtures)",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"${workspaceFolder}/src/test/fixtures"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
