@@ -1,0 +1,28 @@
+# Task graph mistakes from #135. Each job has one; README.md lists what the
+# Databricks CLI and the Jobs service do with each.
+bundle:
+  name: task-graph
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    default: true
+    resources:
+      jobs:
+        # Same key as in resources/override.yml: this is a target override, not a mistake.
+        target_override:
+          tasks:
+            - task_key: load
+              max_retries: 3
+          parameters:
+            - name: env
+              default: dev
+        # A key repeated inside one target's list is a mistake.
+        duplicate_in_target:
+          tasks:
+            - task_key: twice
+              max_retries: 1
+            - task_key: twice
+              max_retries: 2
