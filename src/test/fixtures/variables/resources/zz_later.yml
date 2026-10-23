@@ -1,0 +1,4 @@
+# Loaded after databricks.yml and resources/shared_vars.yml, so its value wins.
+variables:
+  duplicated:
+    default: from_the_last_included_file

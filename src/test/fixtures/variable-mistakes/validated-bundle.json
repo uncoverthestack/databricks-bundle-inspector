@@ -1,0 +1,81 @@
+{
+  "bundle": {
+    "name": "variable-mistakes"
+  },
+  "resources": {
+    "jobs": {
+      "mistakes_job": {
+        "name": "mistakes_job",
+        "tasks": [
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "node": "${var.cluster.nope}"
+              },
+              "notebook_path": "./src/task.py"
+            },
+            "task_key": "missing_field"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "value": "${var.not_defined}"
+              },
+              "notebook_path": "./src/task.py"
+            },
+            "task_key": "undefined_variable"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "node": "${var.clustr.node_type_id}"
+              },
+              "notebook_path": "./src/task.py"
+            },
+            "task_key": "misspelled_variable"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "value": "${var.needs_value}"
+              },
+              "notebook_path": "./src/task.py"
+            },
+            "task_key": "required_never_set"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "value": "${var.loop_a}"
+              },
+              "notebook_path": "./src/task.py"
+            },
+            "task_key": "cycle"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true
+    }
+  },
+  "variables": {
+    "cluster": {
+      "default": {
+        "node_type_id": "i3.xlarge"
+      },
+      "type": "complex"
+    },
+    "loop_a": {
+      "default": "${var.loop_b}"
+    },
+    "loop_b": {
+      "default": "${var.loop_a}"
+    },
+    "needs_value": {
+      "description": "No default, and no target sets it."
+    }
+  }
+}
