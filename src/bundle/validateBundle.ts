@@ -64,6 +64,8 @@ interface ValidateBundleDependencies {
   resolveDatabricksCli: () => Promise<
     VerifiedDatabricksCli | CliResolutionFailure
   >;
+  /** Tests only: a shorter limit, so a real hung CLI can be waited out quickly. */
+  realTargetTimeoutMs?: number;
 }
 
 export interface BundleError {
@@ -297,7 +299,9 @@ export async function validateBundleWithDependencies(
   }
 
   const timeout =
-    target && target !== BUNDLE_PROBE_TARGET ? REAL_TARGET_TIMEOUT_MS : PREVIEW_TIMEOUT_MS;
+    target && target !== BUNDLE_PROBE_TARGET
+      ? dependencies.realTargetTimeoutMs ?? REAL_TARGET_TIMEOUT_MS
+      : PREVIEW_TIMEOUT_MS;
 
   try {
     const { stdout, stderr } = await dependencies.execFileAsync(cliPath, args, {

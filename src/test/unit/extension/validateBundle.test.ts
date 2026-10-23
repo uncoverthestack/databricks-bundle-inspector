@@ -577,6 +577,8 @@ describe("validateBundleWithDependencies: time limit per mode", () => {
     expect(REAL_TARGET_TIMEOUT_MS).toBeLessThan(PREVIEW_TIMEOUT_MS);
   });
 
+  // A short limit keeps the next test quick; the test above checks the extension uses 15 s.
+  const LIMIT_MS = 1_500;
   test("a real target that hangs stops at its limit and says how long it waited", async () => {
     // A real child that never answers, stopped by the real limit passed to execFile.
     const run = promisify(execFile);
@@ -585,13 +587,14 @@ describe("validateBundleWithDependencies: time limit per mode", () => {
       execFileAsync: (_file, _args, options) =>
         run(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { ...options, cwd: undefined }),
       resolveDatabricksCli: cli,
+      realTargetTimeoutMs: LIMIT_MS,
     });
     const waited = Date.now() - started;
     expect(result.ok ? undefined : result.error.errorCode).toBe("VALIDATION_TIMEOUT");
     expect(result.ok ? undefined : result.error.error).toBe(
-      `Databricks bundle validation timed out after ${REAL_TARGET_TIMEOUT_MS / 1000} seconds.`,
+      `Databricks bundle validation timed out after ${LIMIT_MS / 1000} seconds.`,
     );
-    expect(waited).toBeGreaterThanOrEqual(REAL_TARGET_TIMEOUT_MS - 500);
-    expect(waited).toBeLessThan(REAL_TARGET_TIMEOUT_MS + 5_000);
-  }, REAL_TARGET_TIMEOUT_MS + 10_000);
+    expect(waited).toBeGreaterThanOrEqual(LIMIT_MS - 500);
+    expect(waited).toBeLessThan(LIMIT_MS + 5_000);
+  }, LIMIT_MS + 10_000);
 });
