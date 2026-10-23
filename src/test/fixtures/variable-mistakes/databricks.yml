@@ -1,0 +1,51 @@
+# Variable mistakes. Every one fails `bundle validate -t dev` (CLI 1.21.0);
+# README.md lists the CLI's message for each and what the inspector shows.
+bundle:
+  name: variable-mistakes
+
+variables:
+  cluster:
+    type: complex
+    default:
+      node_type_id: i3.xlarge
+  needs_value:
+    description: No default, and no target sets it.
+  loop_a:
+    default: ${var.loop_b}
+  loop_b:
+    default: ${var.loop_a}
+
+targets:
+  dev:
+    default: true
+
+resources:
+  jobs:
+    mistakes_job:
+      name: mistakes_job
+      tasks:
+        - task_key: missing_field
+          notebook_task:
+            notebook_path: ./src/task.py
+            base_parameters:
+              node: ${var.cluster.nope}
+        - task_key: undefined_variable
+          notebook_task:
+            notebook_path: ./src/task.py
+            base_parameters:
+              value: ${var.not_defined}
+        - task_key: misspelled_variable
+          notebook_task:
+            notebook_path: ./src/task.py
+            base_parameters:
+              node: ${var.clustr.node_type_id}
+        - task_key: required_never_set
+          notebook_task:
+            notebook_path: ./src/task.py
+            base_parameters:
+              value: ${var.needs_value}
+        - task_key: cycle
+          notebook_task:
+            notebook_path: ./src/task.py
+            base_parameters:
+              value: ${var.loop_a}

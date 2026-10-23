@@ -72,5 +72,9 @@ jobs:
       - name: Semantic fixtures
         run: npm run test:semantic:cli:matrix
 
+      # Against a fake workspace on 127.0.0.1: no login, and no real workspace is contacted.
+      - name: Variables, values the CLI deploys
+        run: npm run test:variables:cli
+
       - name: Bundle schema coverage
         run: npm run test:schema-coverage
