@@ -4,6 +4,8 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### Added
 
 - **Click a variable to open the line that sets its value** ([#227](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/227), [PR #231](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/231)). In a task's **Variables** list, a variable opens its `default:` (or `lookup:`) in the file that defines it, or, with a target picked, that target's override when the CLI used it. It follows what the Databricks CLI does: included files load after `databricks.yml` and the last one to set a variable wins, YAML anchors and `<<` merge keys are followed (the later anchor wins), and a repeated key keeps its last value. A field such as `${var.cluster.node_type_id}` opens its variable. Rows that can be opened show ↗.
@@ -334,6 +336,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.5.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.2.2...v0.3.0
