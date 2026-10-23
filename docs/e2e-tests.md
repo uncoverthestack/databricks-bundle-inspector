@@ -41,3 +41,17 @@ Quote values containing spaces. Arguments override the corresponding legacy
 variables: `E2E_SUITE`, `E2E_FIXTURE`, `E2E_FOLDER_CASE`, `E2E_PAUSE_MS`, and
 `INSPECTOR_TEST_PROFILE`. Without a suite, the runner uses `cliNotFound`; an
 unknown suite fails and lists the valid names.
+
+The variables test checks that the graph shows, for each target, the value the
+CLI deploys. It runs against a fake workspace on 127.0.0.1 unless a profile is
+set, so CI never contacts a real one:
+
+```sh
+npm run test:variables:cli                                  # fake workspace
+INSPECTOR_TEST_PROFILE=DEFAULT npm run test:variables:cli   # your workspace
+```
+
+With a profile it validates four targets, one at a time, and leaves an empty
+`.bundle/dbi-variables-it/<target>/files` folder for each. Set
+`INSPECTOR_TEST_WAREHOUSE` to the name or ID of a SQL warehouse to include the lookup.
+See `src/test/fixtures/variables/README.md`.

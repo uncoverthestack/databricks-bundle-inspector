@@ -150,6 +150,7 @@
     "test:unit": "jest --testPathIgnorePatterns semanticGraph.test.ts",
     "test:semantic": "jest src/test/unit/extension/semanticGraph.test.ts",
     "test:semantic:cli": "jest --config jest.semantic-cli.config.cjs",
+    "test:variables:cli": "jest --config jest.variables-cli.config.cjs",
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
     "test:schema-coverage": "jest --config jest.schema-coverage.config.cjs",
     "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint",

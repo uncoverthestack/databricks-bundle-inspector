@@ -1,0 +1,9 @@
+# A variable defined in an included file, and a target override set here.
+variables:
+  from_include:
+    default: defined_in_an_include
+
+targets:
+  staging:
+    variables:
+      schema: staging_schema_from_include

@@ -18,6 +18,7 @@ import {
 } from "../sourceLocations.js";
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
+import { findVariableSources, type VariableSources } from "../variableSources.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -336,6 +337,8 @@ export interface BundleGraphEdge extends BundleEdge {}
 export interface BundleGraph {
   nodes: BundleGraphNode[];
   edges: BundleEdge[];
+  /** Per variable name, the lines that set its value, for the task panel to open. */
+  variableSources?: Record<string, VariableSources>;
 }
 
 // --- helpers ---
@@ -953,6 +956,8 @@ interface SourceIndex {
   taskPositions: Map<string, Map<string, number>>;
   /** Every YAML file read, as written: the anchors for mapping a real target's workspace paths back. */
   sourceDocuments: SourceDocument[];
+  /** Every YAML file read, as text. */
+  sourceTexts: Map<string, string>;
 }
 
 /** Positions in a `tasks:` list by key. A repeated key keeps its first position, which is where the CLI merges the copies. */
@@ -973,10 +978,12 @@ async function buildSourceIndex(
   const yamlLocationMaps = new Map<string, YamlLocationMap>();
   const taskPositions = new Map<string, Map<string, number>>();
   const sourceDocuments: SourceDocument[] = [];
+  const sourceTexts = new Map<string, string>();
 
   async function parseResourceFile(filePath: string): Promise<void> {
     try {
       const content = await readFile(filePath, "utf-8");
+      sourceTexts.set(filePath, content);
       yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content));
       const yaml = parseYaml(content) as Record<string, unknown> | null;
       // With `<<` merge keys resolved, as the CLI does, so jobs built from YAML anchors are found.
@@ -1019,7 +1026,7 @@ async function buildSourceIndex(
     await parseResourceFile(p);
   }
 
-  return { resourceSourceMap, yamlLocationMaps, taskPositions, sourceDocuments };
+  return { resourceSourceMap, yamlLocationMaps, taskPositions, sourceDocuments, sourceTexts };
 }
 
 /**
@@ -1059,6 +1066,20 @@ export function extractResourceNodes(parsedBundle: ParsedBundleConfig): Resource
  * `cluster`, and `warehouse` nodes plus `references` and `uses` edges derived
  * from each task's local path and expression analysis.
  */
+/**
+ * The bundle's files in the order the CLI loads them: its databricks.yml, then the
+ * files `include` loaded. The CLI's `include` output is that file list, in that order.
+ */
+function loadOrder(bundleRoot: string | undefined, include: unknown): string[] {
+  if (!bundleRoot) return [];
+  const included = Array.isArray(include) ? include.filter((p): p is string => typeof p === "string") : [];
+  return [
+    join(bundleRoot, "databricks.yml"),
+    join(bundleRoot, "databricks.yaml"),
+    ...included.map((file) => join(bundleRoot, file)),
+  ];
+}
+
 export async function extractBundleGraph(
   cliOutput: ParsedBundleConfig,
   bundleRoot?: string,
@@ -1088,6 +1109,7 @@ export async function extractBundleGraph(
         yamlLocationMaps: new Map<string, YamlLocationMap>(),
         taskPositions: new Map<string, Map<string, number>>(),
         sourceDocuments: [],
+        sourceTexts: new Map<string, string>(),
       };
   const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
 
@@ -1307,7 +1329,16 @@ export async function extractBundleGraph(
 
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
 
-  return { nodes: [...nodeMap.values()], edges };
+  return {
+    nodes: [...nodeMap.values()],
+    edges,
+    variableSources: findVariableSources(
+      loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
+        const text = sourceIndex.sourceTexts.get(file);
+        return text === undefined ? [] : [{ file, text }];
+      }),
+    ),
+  };
 }
 
 /** The bundle's `secret_scopes` resources, with the scope name Databricks uses. */

@@ -21,6 +21,7 @@ import { kindMeta } from "./lib/kindMeta";
 import { resolveSelectedJobKey } from "./lib/jobSelection";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
+import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
 
@@ -696,6 +697,8 @@ function variableResolutionLabel(item) {
   if (source === "cli_resolved") return "RESOLVED";
   if (source === "global_default") return "DEFAULT";
   if (source === "lookup") return "LOOKUP";
+  if (source === "no_default") return "NO DEFAULT";
+  if (source === "outside_files") return "ENV / FILE";
   return "BUNDLE";
 }
 
@@ -1858,7 +1861,7 @@ function ComputeSection({ items }) {
   );
 }
 
-function VariablesSection({ items }) {
+function VariablesSection({ items, onOpenFile, targetName }) {
   if (!items?.length) return null;
   return (
     <section>
@@ -1870,10 +1873,38 @@ function VariablesSection({ items }) {
           const color = item.unresolved
             ? UI_COLOR.error
             : kindMeta("variable").color;
+          const { location } = item;
+          const clickable = Boolean(location && onOpenFile);
+          const open = () => onOpenFile(location.file, location.line, location.column);
           return (
             <div
               key={i}
-              className="border-b border-line-soft px-3 py-2 last:border-0"
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              title={
+                !clickable
+                  ? undefined
+                  : item.source === "outside_files"
+                    ? `Open where ${item.name} is defined. In this target its value is set outside the bundle files, by a BUNDLE_VAR_${item.name} environment variable or .databricks/bundle/${targetName}/variable-overrides.json.`
+                    : `Open where ${item.name} is set`
+              }
+              onClick={
+                clickable
+                  ? () => {
+                      if (hasTextSelection()) return;
+                      open();
+                    }
+                  : undefined
+              }
+              onKeyDown={
+                clickable ? (event) => event.key === "Enter" && open() : undefined
+              }
+              className={[
+                "border-b border-line-soft px-3 py-2 last:border-0",
+                clickable
+                  ? "cursor-pointer outline-none hover:bg-hover focus:bg-hover focus:ring-1 focus:ring-accent"
+                  : "",
+              ].join(" ")}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
@@ -1892,6 +1923,7 @@ function VariablesSection({ items }) {
                 </div>
                 <span className="shrink-0 text-[10px] font-semibold tracking-widest text-muted">
                   {variableResolutionLabel(item)}
+                  {clickable && <span className="ml-1">↗</span>}
                 </span>
               </div>
               {item.value && (
@@ -2184,6 +2216,12 @@ function DetailPanel({
             value: resolution.value,
             source: resolution.source,
             unresolved: resolution.status === "unresolved",
+            // The line the badge names: a target's override only when the CLI used it.
+            location: variableSourceLocation(
+              graph.variableSources,
+              ref.variableName,
+              resolution.source === "target_override" ? targetName : null,
+            ),
           },
         ];
       }),
@@ -2477,7 +2515,7 @@ function DetailPanel({
         ) : null}
 
         <ComputeSection items={computeItems} />
-        <VariablesSection items={variableItems} />
+        <VariablesSection items={variableItems} onOpenFile={onOpenFile} targetName={targetName} />
         <RefSection
           title="File References"
           items={fileItems}
