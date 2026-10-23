@@ -1,0 +1,453 @@
+{
+  "bundle": {
+    "environment": "dev",
+    "name": "task-graph",
+    "target": "dev"
+  },
+  "include": [
+    "resources/mistakes.yml",
+    "resources/override.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "case_dependency": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "case_dependency",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "LOAD"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "after"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "load"
+          }
+        ]
+      },
+      "case_keys": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "case_keys",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "Load"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "load"
+          }
+        ]
+      },
+      "control": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "control",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "first"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "first"
+              },
+              {
+                "task_key": "first"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "second"
+          }
+        ]
+      },
+      "duplicate_in_target": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "duplicate_in_target",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "max_retries": 2,
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "twice"
+          }
+        ]
+      },
+      "duplicate_parameter": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "duplicate_parameter",
+        "parameters": [
+          {
+            "default": "2",
+            "name": "env"
+          }
+        ],
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "duplicate_task_key": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "duplicate_task_key",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "max_retries": 2,
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/other"
+            },
+            "task_key": "same",
+            "timeout_seconds": 111
+          }
+        ]
+      },
+      "first_job": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "first_job",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "only_in_first_job"
+          }
+        ]
+      },
+      "numeric_task_key": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "numeric_task_key",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "max_retries": 1,
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "1",
+            "timeout_seconds": 222
+          }
+        ]
+      },
+      "other_job_dependency": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "other_job_dependency",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "only_in_first_job"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "wait"
+          }
+        ]
+      },
+      "self_dependency": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "self_dependency",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "alone"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "alone"
+          }
+        ]
+      },
+      "target_override": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "target_override",
+        "parameters": [
+          {
+            "default": "dev",
+            "name": "env"
+          }
+        ],
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "max_retries": 3,
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "load"
+          }
+        ]
+      },
+      "three_task_loop": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "three_task_loop",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "c"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "a"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "c"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "after_loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "a"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "b"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "b"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "c"
+          }
+        ]
+      },
+      "two_task_loop": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "two_task_loop",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "depends_on": [
+              {
+                "task_key": "y"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "x"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "x"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "y"
+          }
+        ]
+      },
+      "unknown_dependency": {
+        "deployment": {
+          "kind": "BUNDLE",
+          "metadata_file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state/metadata.json"
+        },
+        "edit_mode": "UI_LOCKED",
+        "format": "MULTI_TASK",
+        "max_concurrent_runs": 1,
+        "name": "unknown_dependency",
+        "queue": {
+          "enabled": true
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "load"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "laod"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files/src/task"
+            },
+            "task_key": "report"
+          }
+        ]
+      }
+    }
+  },
+  "sync": {
+    "paths": [
+      "."
+    ]
+  },
+  "workspace": {
+    "artifact_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/artifacts",
+    "current_user": {
+      "active": true,
+      "displayName": "Tester",
+      "domain_friendly_name": "tester",
+      "id": "1",
+      "short_name": "tester",
+      "userName": "tester@example.com"
+    },
+    "file_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/files",
+    "resource_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/resources",
+    "root_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev",
+    "state_path": "/Workspace/Users/tester@example.com/.bundle/task-graph/dev/state"
+  }
+}
