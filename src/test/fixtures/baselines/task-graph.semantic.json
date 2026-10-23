@@ -633,7 +633,7 @@
     {
       "severity": "warning",
       "kind": "duplicate_task_key",
-      "title": "Job \"duplicate_in_target\" lists the task key \"twice\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
+      "title": "In target \"dev\", job \"duplicate_in_target\" lists the task key \"twice\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
       "taskKey": "twice",
       "file": "databricks.yml",
       "line": 27,

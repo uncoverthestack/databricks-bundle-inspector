@@ -20,6 +20,8 @@ import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
 import { findVariableSources, type VariableSources } from "../variableSources.js";
 import { findDependencyProblems, findDuplicateKeys, type JobStructureFinding } from "../jobStructure.js";
+import { resolveExpressionForTarget } from "../targetResolution.js";
+import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -1333,9 +1335,20 @@ export async function extractBundleGraph(
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
 
   const sourceFiles = sourceIndex.sourceDocuments.map(({ file, doc }) => ({
+    file,
     doc,
+    text: sourceIndex.sourceTexts.get(file),
     locations: yamlLocationMaps.get(file),
   }));
+  // The CLI's output names the target it resolved; the structural preview's names none.
+  const activeTarget =
+    typeof parsedBundle.bundle?.target === "string" && parsedBundle.bundle.target !== BUNDLE_PROBE_TARGET
+      ? parsedBundle.bundle.target
+      : undefined;
+  const jobStructureOptions = {
+    ...(activeTarget ? { activeTarget } : {}),
+    resolve: (value: string, target: string | undefined) => resolveExpressionForTarget(value, parsedBundle, target).value,
+  };
   return {
     nodes: [...nodeMap.values()],
     edges,
@@ -1346,8 +1359,8 @@ export async function extractBundleGraph(
       }),
     ),
     jobStructureFindings: [
-      ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles),
-      ...findDuplicateKeys(sourceFiles),
+      ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, jobStructureOptions),
+      ...findDuplicateKeys(sourceFiles, jobStructureOptions),
     ],
   };
 }

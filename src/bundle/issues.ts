@@ -756,7 +756,7 @@ function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
     const jobId = `resources.jobs.${finding.jobKey}`;
     const { file, line, column } = finding.location ?? {};
     return {
-      id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${file ?? ""}:${line ?? ""}`,
+      id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
       severity:
         finding.kind === "unknown_task_dependency" || finding.kind === "task_dependency_loop" ? "error" : "warning",
       kind: finding.kind,

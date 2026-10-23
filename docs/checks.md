@@ -121,7 +121,7 @@ A task's `depends_on` names a task key the job doesn't have.
 - **Severity:** error.
 - **Example:** `depends_on: [{task_key: laod}]` in a job whose task is `load`. Deploy fails with `Invalid dependency graph for task 'report', job specification does not contain task with key 'laod'`.
 - **Fix:** use the `task_key` of a task in the same job. The finding suggests a close match, or names the other job when the key belongs to one: a task can only wait on tasks of its own job.
-- **Limits:** checks the job as the CLI resolved it, so with a target picked, tasks the target adds count.
+- **Limits:** checks the job as the CLI resolved it, so with a target picked, tasks the target adds count. A key written with `${var...}` is compared as its value; when a task key can't be resolved offline (for example `${resources...}`), the job's dependencies aren't judged.
 
 ### `task_dependency_loop`
 
@@ -139,7 +139,7 @@ One `tasks:` list has two tasks with the same `task_key`. The CLI merges them in
 - **Severity:** warning.
 - **Example:** two `- task_key: same` entries, the first with `timeout_seconds: 111`, the second with another notebook. The deployed job has one task `same`, with the timeout from the first and the notebook from the second.
 - **Fix:** give each task its own key, or merge them by hand. The finding gives the line of the first.
-- **Limits:** a target listing a job's task key again is how a target overrides that task, so only repeats within one list are reported.
+- **Limits:** a target listing a job's task key again is how a target overrides that task, so only repeats within one list are reported. Keys are compared as the CLI reads them, with `${var...}` resolved, since the CLI merges after resolving. A repeat inside a target's own list names that target.
 
 ### `duplicate_job_parameter`
 

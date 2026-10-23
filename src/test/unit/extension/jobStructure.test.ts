@@ -82,7 +82,9 @@ describe("dependency loops", () => {
 });
 
 describe("duplicate task keys and job parameters", () => {
-  const files = (text: string) => [{ doc: parse(text), locations: parseYamlLocations("/b/databricks.yml", text) }];
+  const files = (text: string) => [
+    { file: "/b/databricks.yml", doc: parse(text), text, locations: parseYamlLocations("/b/databricks.yml", text) },
+  ];
 
   test("a key repeated in one list, at the second copy, naming the first's line", () => {
     const [finding] = findDuplicateKeys(
@@ -134,5 +136,70 @@ describe("duplicate task keys and job parameters", () => {
     expect(
       findDuplicateKeys(files(["resources:", "  jobs:", "    a: {tasks: [{task_key: load}]}", "    b: {tasks: [{task_key: load}]}"].join("\n"))),
     ).toEqual([]);
+  });
+});
+
+// Review findings on PR #240, each reproduced with the Databricks CLI before the fix.
+describe("review findings", () => {
+  const sourceFile = (text: string, file = "/b/databricks.yml") => ({ file, doc: parse(text, { merge: true }), text, locations: parseYamlLocations(file, text) });
+  // As the inspector resolves `${var...}` with the bundle's defaults; `${resources...}` stays unknown.
+  const resolve = (value: string) => (value.includes("${var.") ? value.replace(/\$\{var\.(\w+)\}/g, (_m, name: string) => ({ k: "same", p: "env", up: "a" })[name] ?? `\${var.${name}}`) : value);
+
+  test("keys that resolve to the same value are duplicates, as the CLI merges them after resolving", () => {
+    const findings = findDuplicateKeys(
+      [sourceFile(["resources:", "  jobs:", "    j:", "      parameters: [{name: env}, {name: '${var.p}'}]", "      tasks: [{task_key: same}, {task_key: '${var.k}'}]"].join("\n"))],
+      { resolve },
+    );
+    expect(kinds(findings).sort()).toEqual(["duplicate_job_parameter:", "duplicate_task_key:same"]);
+    expect(findings.find((f) => f.kind === "duplicate_task_key")!.title).toContain('("${var.k}" resolves to "same")');
+  });
+
+  test("a dependency written with a variable is read as its value, and an unresolvable task key makes no guess", () => {
+    expect(findDependencyProblems({ j: job(task("a"), task("b", "${var.up}")) }, [], { resolve })).toEqual([]);
+    expect(findDependencyProblems({ j: job(task("${resources.jobs.x.name}"), task("b", "a")) }, [], { resolve })).toEqual([]);
+  });
+
+  test("with a target picked, a dependency opens in that target, not another one", () => {
+    const text = [
+      "resources:", "  jobs:", "    j:", "      tasks: [{task_key: a}]",
+      "targets:",
+      "  prod:", "    resources:", "      jobs:", "        j:", "          tasks:", "            - task_key: a", "              depends_on: [{task_key: gone}]",
+      "  dev:", "    resources:", "      jobs:", "        j:", "          tasks:", "            - task_key: a", "              depends_on: [{task_key: gone}]",
+    ].join("\n");
+    const jobs = { j: job(task("a", "gone")) };
+    expect(findDependencyProblems(jobs, [sourceFile(text)], { activeTarget: "dev" })[0]!.location?.line).toBe(19);
+    expect(findDependencyProblems(jobs, [sourceFile(text)], { activeTarget: "prod" })[0]!.location?.line).toBe(12);
+  });
+
+  test("a task written through a YAML anchor still has a location: where the anchor writes it", () => {
+    const text = [
+      "definitions:", "  t: &t", "    task_key: x", "    depends_on: [{task_key: missing}]",
+      "resources:", "  jobs:", "    j:", "      tasks:", "        - *t",
+    ].join("\n");
+    expect(findDependencyProblems({ j: job(task("x", "missing")) }, [sourceFile(text)])[0]!.location).toEqual({ file: "/b/databricks.yml", line: 4, column: 29 });
+  });
+
+  test("a dependency in the second copy of a repeated task key opens the second copy", () => {
+    const text = ["resources:", "  jobs:", "    j:", "      tasks:", "        - task_key: r", "        - task_key: r", "          depends_on: [{task_key: only_here}]"].join("\n");
+    expect(findDependencyProblems({ j: job(task("r"), task("r", "only_here")) }, [sourceFile(text)])[0]!.location?.line).toBe(7);
+  });
+
+  test("two missing dependencies on one line are told apart by their subject", () => {
+    const text = ["resources:", "  jobs:", "    j:", "      tasks: [{task_key: f, depends_on: [{task_key: m1}, {task_key: m2}]}]"].join("\n");
+    const findings = findDependencyProblems({ j: job(task("f", "m1", "m2")) }, [sourceFile(text)]);
+    expect(findings.map((f) => f.subject)).toEqual(["m1", "m2"]);
+    expect(new Set(findings.map((f) => `${f.location?.line}:${f.location?.column}`)).size).toBe(2);
+  });
+
+  test("a duplicate in a target's own list names that target", () => {
+    const text = ["targets:", "  prod:", "    resources:", "      jobs:", "        j:", "          tasks: [{task_key: d}, {task_key: d}]"].join("\n");
+    expect(findDuplicateKeys([sourceFile(text)])[0]!.title).toMatch(/^In target "prod", job "j" lists the task key "d" twice/);
+  });
+
+  test("a 1000-task loop names its first tasks only, so the findings stay small", () => {
+    const loop = Array.from({ length: 1000 }, (_, i) => task(`t${i}`, `t${(i + 999) % 1000}`));
+    const findings = findDependencyProblems({ loop: job(...loop) }, []);
+    expect(findings[0]!.title).toBe('Tasks "t0", "t1", "t2" and 997 others depend on each other in a loop, so none of them can start.');
+    expect(JSON.stringify(findings).length).toBeLessThan(400_000);
   });
 });
