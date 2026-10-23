@@ -1,0 +1,800 @@
+{
+  "bundle": "task-graph",
+  "jobs": [
+    {
+      "key": "case_dependency",
+      "name": "case_dependency",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "after",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "case_keys",
+      "name": "case_keys",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "Load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "control",
+      "name": "control",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "first",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [
+            "second"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "second",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "first"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "first",
+          "second"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "duplicate_in_target",
+      "name": "duplicate_in_target",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "twice",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 1
+      }
+    },
+    {
+      "key": "duplicate_parameter",
+      "name": "duplicate_parameter",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "t",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 1
+      }
+    },
+    {
+      "key": "duplicate_task_key",
+      "name": "duplicate_task_key",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "same",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 1
+      }
+    },
+    {
+      "key": "first_job",
+      "name": "first_job",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "only_in_first_job",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "numeric_task_key",
+      "name": "numeric_task_key",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "1",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 1
+      }
+    },
+    {
+      "key": "other_job_dependency",
+      "name": "other_job_dependency",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "wait",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "self_dependency",
+      "name": "self_dependency",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "alone",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "alone"
+          ],
+          "dependents": [
+            "alone"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "alone",
+          "alone"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "target_override",
+      "name": "target_override",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "three_task_loop",
+      "name": "three_task_loop",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "a",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "c"
+          ],
+          "dependents": [
+            "b"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "after_loop",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "c"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "b",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "a"
+          ],
+          "dependents": [
+            "c"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "c",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "b"
+          ],
+          "dependents": [
+            "a",
+            "after_loop"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "a",
+          "b"
+        ],
+        [
+          "b",
+          "c"
+        ],
+        [
+          "c",
+          "a"
+        ],
+        [
+          "c",
+          "after_loop"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 3,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "two_task_loop",
+      "name": "two_task_loop",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "x",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "y"
+          ],
+          "dependents": [
+            "y"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "y",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [
+            "x"
+          ],
+          "dependents": [
+            "x"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "x",
+          "y"
+        ],
+        [
+          "y",
+          "x"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 2,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "unknown_dependency",
+      "name": "unknown_dependency",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "report",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Tasks \"a\", \"b\" and \"c\" depend on each other in a loop, so none of them can start.",
+      "taskKey": "a",
+      "file": "resources/mistakes.yml",
+      "line": 43,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Task \"alone\" depends on itself, so it can never start.",
+      "taskKey": "alone",
+      "file": "resources/mistakes.yml",
+      "line": 20,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Tasks \"a\", \"b\" and \"c\" depend on each other in a loop, so none of them can start.",
+      "taskKey": "b",
+      "file": "resources/mistakes.yml",
+      "line": 48,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Tasks \"a\", \"b\" and \"c\" depend on each other in a loop, so none of them can start.",
+      "taskKey": "c",
+      "file": "resources/mistakes.yml",
+      "line": 53,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Tasks \"x\" and \"y\" depend on each other in a loop, so none of them can start.",
+      "taskKey": "x",
+      "file": "resources/mistakes.yml",
+      "line": 29,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "task_dependency_loop",
+      "title": "Tasks \"x\" and \"y\" depend on each other in a loop, so none of them can start.",
+      "taskKey": "y",
+      "file": "resources/mistakes.yml",
+      "line": 34,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_task_dependency",
+      "title": "Task \"after\" depends on \"LOAD\", but job \"case_dependency\" has no task with that key. Did you mean \"load\"?",
+      "taskKey": "after",
+      "file": "resources/mistakes.yml",
+      "line": 129,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_task_dependency",
+      "title": "Task \"report\" depends on \"laod\", but job \"unknown_dependency\" has no task with that key. Did you mean \"load\"?",
+      "taskKey": "report",
+      "file": "resources/mistakes.yml",
+      "line": 11,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_task_dependency",
+      "title": "Task \"wait\" depends on \"only_in_first_job\", which is a task of job \"first_job\", not of job \"other_job_dependency\".",
+      "taskKey": "wait",
+      "file": "resources/mistakes.yml",
+      "line": 67,
+      "column": 25
+    },
+    {
+      "severity": "warning",
+      "kind": "duplicate_job_parameter",
+      "title": "Job \"duplicate_parameter\" declares the parameter \"env\" twice. The CLI keeps one, with the later default.",
+      "file": "resources/mistakes.yml",
+      "line": 95,
+      "column": 17
+    },
+    {
+      "severity": "warning",
+      "kind": "duplicate_task_key",
+      "title": "Job \"numeric_task_key\" lists the task key \"1\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
+      "taskKey": "1",
+      "file": "resources/mistakes.yml",
+      "line": 116,
+      "column": 21
+    },
+    {
+      "severity": "warning",
+      "kind": "duplicate_task_key",
+      "title": "Job \"duplicate_task_key\" lists the task key \"same\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
+      "taskKey": "same",
+      "file": "resources/mistakes.yml",
+      "line": 85,
+      "column": 21
+    },
+    {
+      "severity": "warning",
+      "kind": "duplicate_task_key",
+      "title": "In target \"dev\", job \"duplicate_in_target\" lists the task key \"twice\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
+      "taskKey": "twice",
+      "file": "databricks.yml",
+      "line": 27,
+      "column": 25
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

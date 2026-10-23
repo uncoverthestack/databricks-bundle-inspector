@@ -13,6 +13,7 @@ import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
 import { isRemotePath } from "./resources/task.js";
+import { closestName } from "./closestName.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -33,6 +34,10 @@ export const INSPECTOR_ISSUE_KINDS = [
   "path_not_checked",
   "include_matches_nothing",
   "resource_not_included",
+  "unknown_task_dependency",
+  "task_dependency_loop",
+  "duplicate_task_key",
+  "duplicate_job_parameter",
   "widget_not_set",
   "unused_parameter",
   "task_value_unknown_task",
@@ -244,35 +249,6 @@ function notebookProblemIssue(
         ? "It is not a valid Jupyter notebook: it needs cells and metadata, at nbformat 4 or later."
         : "Notebooks need a .py, .r, .scala, .sql or .ipynb extension.",
   };
-}
-
-function editDistance(a: string, b: string): number {
-  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let diagonal = row[0]!;
-    row[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const above = row[j]!;
-      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
-      diagonal = above;
-    }
-  }
-  return row[b.length]!;
-}
-
-/** The passed parameter a widget name was most likely meant to be, if one is close. */
-function closestName(name: string, candidates: string[]): string | undefined {
-  const normalise = (value: string) => value.toLowerCase().replace(/[-_\s]/g, "");
-  let best: { candidate: string; distance: number } | undefined;
-  for (const candidate of candidates) {
-    const [n, c] = [normalise(name), normalise(candidate)];
-    // Same name up to case and separators, or one extends the other (schema, schema_name).
-    const distance = n === c ? 0 : n.includes(c) || c.includes(n) ? 1 : editDistance(name, candidate);
-    if (distance <= Math.max(2, Math.floor(name.length / 3)) && (!best || distance < best.distance)) {
-      best = { candidate, distance };
-    }
-  }
-  return best?.candidate;
 }
 
 /**
@@ -769,8 +745,29 @@ export function buildInspectorIssues(
   issues.push(...secretScopeNameIssues(graph));
   issues.push(...taskValueIssues(graph));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
+  issues.push(...jobStructureIssues(graph));
 
   return issues;
+}
+
+/** Task graph and duplicate key mistakes in jobs (#135). Deploy rejects the first two. */
+function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
+  return (graph.jobStructureFindings ?? []).map((finding) => {
+    const jobId = `resources.jobs.${finding.jobKey}`;
+    const { file, line, column } = finding.location ?? {};
+    return {
+      id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
+      severity:
+        finding.kind === "unknown_task_dependency" || finding.kind === "task_dependency_loop" ? "error" : "warning",
+      kind: finding.kind,
+      title: finding.title,
+      ...(finding.taskKey
+        ? { taskId: `${jobId}.tasks.${finding.taskKey}`, taskName: finding.taskKey }
+        : { resourceId: jobId }),
+      fixHint: finding.fixHint,
+      ...issueLocation(file, line, column),
+    };
+  });
 }
 
 /** What the CLI does with `**` and `{a,b}` in `include`, which its documentation does not say. */

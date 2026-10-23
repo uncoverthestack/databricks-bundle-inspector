@@ -1,0 +1,11 @@
+resources:
+  jobs:
+    target_override:
+      name: target_override
+      parameters:
+        - name: env
+          default: base
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ../src/task.py
