@@ -9,6 +9,8 @@ import { writeUninstallState } from "./uninstallState.js";
 
 export interface Telemetry {
   logUsage(event: string, properties?: TelemetryProperties): void;
+  /** Whether usage data may be collected now: VS Code's setting and the extension's both allow it. */
+  isEnabled(): boolean;
   /** Flushes pending events (bounded by the send timeout) and stops timers. */
   shutdown(): Promise<void>;
 }
@@ -27,6 +29,7 @@ const FLUSH_THRESHOLD = 20;
 
 const noopTelemetry: Telemetry = {
   logUsage: () => {},
+  isEnabled: () => false,
   shutdown: async () => {},
 };
 
@@ -191,6 +194,7 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
       }
       logger.logUsage(event, properties);
     },
+    isEnabled,
     async shutdown() {
       clearInterval(timer);
       for (const listener of consentListeners) listener.dispose();
