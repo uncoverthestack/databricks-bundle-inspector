@@ -38,6 +38,9 @@ const EXPECTED = [
   { kind: "unknown_task_dependency", severity: "error", task: "wait", at: "resources/mistakes.yml: - task_key: only_in_first_job" },
   { kind: "duplicate_job_parameter", severity: "warning", task: undefined, at: "resources/mistakes.yml: - name: env" },
   { kind: "duplicate_task_key", severity: "warning", task: "same", at: "resources/mistakes.yml: - task_key: same" },
+  // Deployed on 2026-10-23: 1 and "1" became one task; LOAD was rejected; load and Load are two tasks.
+  { kind: "duplicate_task_key", severity: "warning", task: "1", at: 'resources/mistakes.yml: - task_key: "1"' },
+  { kind: "unknown_task_dependency", severity: "error", task: "after", at: "resources/mistakes.yml: - task_key: LOAD" },
 ];
 const sorted = (rows: typeof EXPECTED) => [...rows].sort((a, b) => `${a.at}${a.task}`.localeCompare(`${b.at}${b.task}`));
 
@@ -57,5 +60,6 @@ describe("task-graph fixture", () => {
     expect(titles).toContain('Task "wait" depends on "only_in_first_job", which is a task of job "first_job", not of job "other_job_dependency".');
     expect(titles).toContain('Tasks "a", "b" and "c" depend on each other in a loop, so none of them can start.');
     expect(titles).toContain('Task "alone" depends on itself, so it can never start.');
+    expect(titles).toContain('Task "after" depends on "LOAD", but job "case_dependency" has no task with that key. Did you mean "load"?');
   });
 });

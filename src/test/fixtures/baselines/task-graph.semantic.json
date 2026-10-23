@@ -2,6 +2,108 @@
   "bundle": "task-graph",
   "jobs": [
     {
+      "key": "case_dependency",
+      "name": "case_dependency",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "after",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "case_keys",
+      "name": "case_keys",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "Load",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
       "key": "control",
       "name": "control",
       "trigger": "Not specified",
@@ -191,6 +293,39 @@
         "decision": "allow",
         "blockingIssueCount": 0,
         "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "numeric_task_key",
+      "name": "numeric_task_key",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "1",
+          "type": "Notebook",
+          "source": "../src/task.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/task.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "warn",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 1
       }
     },
     {
@@ -598,6 +733,15 @@
     {
       "severity": "error",
       "kind": "unknown_task_dependency",
+      "title": "Task \"after\" depends on \"LOAD\", but job \"case_dependency\" has no task with that key. Did you mean \"load\"?",
+      "taskKey": "after",
+      "file": "resources/mistakes.yml",
+      "line": 129,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_task_dependency",
       "title": "Task \"report\" depends on \"laod\", but job \"unknown_dependency\" has no task with that key. Did you mean \"load\"?",
       "taskKey": "report",
       "file": "resources/mistakes.yml",
@@ -620,6 +764,15 @@
       "file": "resources/mistakes.yml",
       "line": 95,
       "column": 17
+    },
+    {
+      "severity": "warning",
+      "kind": "duplicate_task_key",
+      "title": "Job \"numeric_task_key\" lists the task key \"1\" twice. The CLI merges tasks that share a key into one, later settings overriding earlier ones, so fewer tasks run than listed.",
+      "taskKey": "1",
+      "file": "resources/mistakes.yml",
+      "line": 116,
+      "column": 21
     },
     {
       "severity": "warning",

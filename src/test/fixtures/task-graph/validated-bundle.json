@@ -8,6 +8,45 @@
   ],
   "resources": {
     "jobs": {
+      "case_dependency": {
+        "name": "case_dependency",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "load"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "LOAD"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "case_keys": {
+        "name": "case_keys",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "load"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "Load"
+          }
+        ]
+      },
       "control": {
         "name": "control",
         "tasks": [
@@ -92,6 +131,25 @@
               "notebook_path": "../src/task.py"
             },
             "task_key": "only_in_first_job"
+          }
+        ]
+      },
+      "numeric_task_key": {
+        "name": "numeric_task_key",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "1",
+            "timeout_seconds": 222
+          },
+          {
+            "max_retries": 1,
+            "notebook_task": {
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "1"
           }
         ]
       },

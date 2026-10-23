@@ -106,6 +106,40 @@ resources:
           notebook_task:
             notebook_path: ../src/task.py
 
+    numeric_task_key:
+      name: numeric_task_key
+      tasks:
+        - task_key: 1
+          timeout_seconds: 222
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: "1"
+          max_retries: 1
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    case_dependency:
+      name: case_dependency
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: after
+          depends_on:
+            - task_key: LOAD
+          notebook_task:
+            notebook_path: ../src/task.py
+
+    case_keys:
+      name: case_keys
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ../src/task.py
+        - task_key: Load
+          notebook_task:
+            notebook_path: ../src/task.py
+
     control:
       name: control
       tasks:

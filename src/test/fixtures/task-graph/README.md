@@ -1,6 +1,6 @@
 # task-graph
 
-Fixture for the job checks from #135. One job per case. `bundle validate` accepts every one of them (Databricks CLI 0.299.0 to 1.21.0); the deploy results are from CLI 1.21.0 against a serverless workspace.
+Fixture for the job checks from #135. One job per case. `bundle validate` accepts every one of them (Databricks CLI 0.299.0 to 1.21.0); the deploy results are from CLI 1.21.0 against a serverless workspace, read back with `databricks jobs get` (2026-10-23).
 
 | Job | Case | Deploy | Inspector |
 |---|---|---|---|
@@ -12,6 +12,9 @@ Fixture for the job checks from #135. One job per case. `bundle validate` accept
 | `duplicate_task_key` | two tasks `same` in one list | deploys one merged task (timeout from the first, notebook from the second) | `duplicate_task_key` |
 | `duplicate_parameter` | parameter `env` twice | deploys one, default `"2"` | `duplicate_job_parameter` |
 | `duplicate_in_target` | `dev` lists `twice` twice | deploys one merged task | `duplicate_task_key`, in `databricks.yml` |
+| `numeric_task_key` | `task_key: 1` and `task_key: "1"` | deploys one task `1` (timeout from the first, retries from the second): the CLI reads the number as text | `duplicate_task_key` |
+| `case_dependency` | `after` depends on `LOAD`; the task is `load` | fails: `does not contain task with key 'LOAD'`; keys are case-sensitive | `unknown_task_dependency`, suggests `load` |
+| `case_keys` | tasks `load` and `Load` | deploys two tasks | nothing |
 | `target_override` | `dev` overrides task `load` and parameter `env` | deploys the override, as intended | nothing |
 | `control` | `second` lists `first` twice in `depends_on` | deploys | nothing |
 
