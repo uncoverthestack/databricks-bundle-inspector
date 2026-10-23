@@ -61,6 +61,8 @@ const quoteList = (names: string[]) => {
 
 /** A key as the CLI reads it: as written, or with its `${...}` resolved; undefined when unknown. */
 function keyOf(raw: unknown, target: string | undefined, options: JobStructureOptions): string | undefined {
+  // The CLI reads `task_key: 1` as "1", and merges it with a task written `task_key: "1"`.
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
   if (typeof raw !== "string") return undefined;
   if (!raw.includes("${")) return raw;
   const resolved = options.resolve?.(raw, target);
@@ -331,9 +333,10 @@ export function findDuplicateKeys(files: SourceFile[], options: JobStructureOpti
         const first = new Map<string, { position: number; raw: string }>();
         const where = target ? `In target "${target}", job "${jobKey}"` : `Job "${jobKey}"`;
         items.forEach((item, position) => {
-          const raw = record(item)[keyField];
-          const key = keyOf(raw, target ?? options.activeTarget, options);
-          if (key === undefined || typeof raw !== "string") return;
+          const value = record(item)[keyField];
+          const key = keyOf(value, target ?? options.activeTarget, options);
+          if (key === undefined) return;
+          const raw = String(value);
           const earlier = first.get(key);
           if (!earlier) {
             first.set(key, { position, raw });

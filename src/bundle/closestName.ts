@@ -15,13 +15,21 @@ export function editDistance(a: string, b: string): number {
 /** The candidate a name was most likely meant to be, if one is close: a widget, a task key. */
 export function closestName(name: string, candidates: string[]): string | undefined {
   const normalise = (value: string) => value.toLowerCase().replace(/[-_\s]/g, "");
-  let best: { candidate: string; distance: number } | undefined;
+  let best: { candidate: string; distance: number; exact: number } | undefined;
   for (const candidate of candidates) {
     const [n, c] = [normalise(name), normalise(candidate)];
     // Same name up to case and separators, or one extends the other (schema, schema_name).
     const distance = n === c ? 0 : n.includes(c) || c.includes(n) ? 1 : editDistance(name, candidate);
-    if (distance <= Math.max(2, Math.floor(name.length / 3)) && (!best || distance < best.distance)) {
-      best = { candidate, distance };
+    if (distance > Math.max(2, Math.floor(name.length / 3))) continue;
+    // A tie goes to the closer spelling, then the first alphabetically, so the order the
+    // candidates come in (a real target sorts tasks) never changes the suggestion.
+    const exact = editDistance(name, candidate);
+    if (
+      !best ||
+      distance < best.distance ||
+      (distance === best.distance && (exact < best.exact || (exact === best.exact && candidate < best.candidate)))
+    ) {
+      best = { candidate, distance, exact };
     }
   }
   return best?.candidate;

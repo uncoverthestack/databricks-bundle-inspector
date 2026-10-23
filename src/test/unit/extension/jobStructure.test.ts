@@ -196,6 +196,22 @@ describe("review findings", () => {
     expect(findDuplicateKeys([sourceFile(text)])[0]!.title).toMatch(/^In target "prod", job "j" lists the task key "d" twice/);
   });
 
+  test("a key written as a number is the same key as the string, as the CLI merges them", () => {
+    const findings = findDuplicateKeys([sourceFile(["resources:", "  jobs:", "    j:", "      tasks:", "        - task_key: 1", '        - task_key: "1"'].join("\n"))]);
+    expect(kinds(findings)).toEqual(["duplicate_task_key:1"]);
+  });
+
+  test("the suggestion for a near miss doesn't depend on the order of the tasks", () => {
+    const suggest = (keys: string[]) => findDependencyProblems({ j: job(...keys.map((k) => task(k)), task("after", "LOAD")) }, [])[0]!.title;
+    expect(suggest(["load", "Load"])).toContain('Did you mean "Load"?');
+    expect(suggest(["Load", "load"])).toContain('Did you mean "Load"?');
+  });
+
+  test("keys differing in case or a trailing space are different tasks, as the CLI keeps them", () => {
+    const text = ["resources:", "  jobs:", "    j:", "      tasks: [{task_key: load}, {task_key: Load}, {task_key: 'load '}]"].join("\n");
+    expect(findDuplicateKeys([sourceFile(text)])).toEqual([]);
+  });
+
   test("a 1000-task loop names its first tasks only, so the findings stay small", () => {
     const loop = Array.from({ length: 1000 }, (_, i) => task(`t${i}`, `t${(i + 999) % 1000}`));
     const findings = findDependencyProblems({ loop: job(...loop) }, []);
