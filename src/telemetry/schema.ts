@@ -68,6 +68,11 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   search_result_selected: {},
   issue_item_selected: {},
   quick_fix_applied: { kind: oneOf("notebook_missing_extension", "include_matches_nothing") },
+  bundle_progress: {
+    comparison: oneOf("compared", "not_comparable", "check_incomplete"),
+    resolved: bucket,
+    new: bucket,
+  },
   extension_uninstalled: {},
 };
 

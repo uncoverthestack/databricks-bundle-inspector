@@ -49,6 +49,14 @@
       "description": "A suggested fix was applied from the Quick Fix menu.",
       "properties": { "kind": "notebook_missing_extension | include_matches_nothing" }
     },
+    "bundle_progress": {
+      "description": "Once a day, for the previous day the extension checked bundles: whether findings were resolved. Each bundle's errors and warnings at the start of the day are compared with its last complete check, on this machine. Checks on another branch, extension version or Databricks CLI version are not compared. Never sends which bundle or which findings.",
+      "properties": {
+        "comparison": "compared (two complete checks of the same bundle under the same conditions) | not_comparable (only first checks or checks after a change of branch or version) | check_incomplete (only checks that failed or could not read every finding)",
+        "resolved": "compared only: findings gone while their task, resource or file is still in the bundle, as a range.",
+        "new": "compared only: findings that were not there at the start, as a range."
+      }
+    },
     "extension_uninstalled": {
       "description": "Sent once by the vscode:uninstall hook, only if the extension last recorded that usage telemetry was enabled.",
       "properties": {}

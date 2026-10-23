@@ -48,6 +48,13 @@ import {
   type BundleWatchSpec,
 } from "./bundle/watchedFiles.js";
 import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
+import {
+  BundleProgressTracker,
+  checkOwners,
+  gitHead,
+  progressFindings,
+  type CheckObservation,
+} from "./telemetry/bundleProgress.js";
 import { InspectorQuickFixProvider, QUICK_FIX_APPLIED_COMMAND } from "./extension/quickFixes.js";
 import {
   countBucket,
@@ -67,6 +74,7 @@ import {
   updateBundleDiagnostics,
   setIssueDocsVersion,
   bundleLoadedFiles,
+  completeCheckFindings,
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
@@ -260,7 +268,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   function recordCheck(
     bundleRoot: string,
     result: BundleValidationResult,
-    graph: Parameters<typeof bundleContents>[0] | undefined,
+    graph: BundleGraph | undefined,
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
@@ -279,10 +287,52 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     } else {
       cliIssues.delete(bundleRoot);
     }
+    observeProgress(bundleRoot, result, graph);
     foundBundles.add(bundleRoot);
     // The bundle whose graph was just opened is the one the user is looking at.
     if (options.inspected) lastStatusBarBundle = bundleRoot;
     renderStatusBar();
+  }
+  // Whether findings get resolved, compared between complete checks of the same bundle on
+  // this machine. Only a daily summary, in ranges, is sent; see telemetry/bundleProgress.ts.
+  const PROGRESS_STORAGE_KEY = "telemetry.bundleProgress";
+  const progress = new BundleProgressTracker({
+    get: () => extensionContext.globalState.get(PROGRESS_STORAGE_KEY),
+    set: (state) => extensionContext.globalState.update(PROGRESS_STORAGE_KEY, state),
+  });
+  const extensionVersion = String(extensionContext.extension.packageJSON.version ?? "");
+  let progressUpdates: Promise<void> = Promise.resolve();
+  function observeProgress(
+    bundleRoot: string,
+    result: BundleValidationResult,
+    graph: BundleGraph | undefined,
+  ): void {
+    // Read now, before the next check replaces them.
+    const issues = result.ok && graph ? completeCheckFindings(bundleRoot) : undefined;
+    const nodeIds = graph?.nodes.map((node) => node.id) ?? [];
+    const loadedFiles = [...(bundleLoadedFiles().get(bundleRoot) ?? [])];
+    // One at a time, so two checks never read and write the stored state at once.
+    progressUpdates = progressUpdates
+      .then(async () => {
+        if (!telemetry?.isEnabled()) {
+          progress.clear();
+          return;
+        }
+        let observation: CheckObservation = { complete: false };
+        if (issues) {
+          // Cached from the check, so this doesn't start the CLI again.
+          const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+          observation = {
+            complete: true,
+            conditions: [extensionVersion, cli.ok ? (cli.versionOutput ?? "") : "", gitHead(bundleRoot)].join("\n"),
+            findings: progressFindings(issues),
+            owners: checkOwners(nodeIds, loadedFiles, issues),
+          };
+        }
+        const event = progress.observe(bundleRoot, observation);
+        if (event) telemetry.logUsage("bundle_progress", event);
+      })
+      .catch((error) => console.warn("[BundleInspector] recording bundle progress failed:", error));
   }
   // With several bundles in the folder, the item follows the file in front.
   extensionContext.subscriptions.push(
@@ -1394,6 +1444,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     statusBarDisposable,
   );
 
+  // A day the extension checked bundles is reported on the next day it starts, even before a check.
+  if (telemetry?.isEnabled()) {
+    const event = progress.rollOverDay();
+    if (event) telemetry.logUsage("bundle_progress", event);
+  } else {
+    progress.clear();
+  }
   void checkBundlesIn(vscode.workspace.workspaceFolders ?? []).then((check) =>
     telemetry?.logUsage("extension_activated", {
       bundle_count: countBucket(check.bundleCount),
