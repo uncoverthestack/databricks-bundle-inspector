@@ -261,16 +261,31 @@ export class BundleProgressTracker {
 }
 
 /**
- * The errors and warnings to compare. A finding from `bundle validate` is numbered by its
- * place in the CLI's output, so it is matched by what it says instead.
+ * The errors and warnings to compare. Some ids move when nothing was fixed: a finding from
+ * `bundle validate` is numbered by its place in the CLI's output, and a task graph finding
+ * holds its line and its place in the task list. Those are matched by what they say instead.
+ * Findings that say the same are counted, so two of them stay two.
  */
 export function progressFindings(issues: readonly InspectorIssue[]): ProgressFinding[] {
+  const seen = new Map<string, number>();
   return issues
     .filter((issue) => issue.severity === "error" || issue.severity === "warning")
     .map((issue) => {
-      const fingerprint = issue.id.startsWith("validation:")
-        ? ["validation", issue.kind, issue.file ?? "", issue.yamlPath ?? "", issue.title, issue.detail ?? ""].join("\n")
-        : issue.id;
+      const base =
+        issue.id.startsWith("validation:") || issue.id.startsWith("job-structure:")
+          ? [
+              issue.id.slice(0, issue.id.indexOf(":")),
+              issue.kind,
+              issue.taskId ?? issue.resourceId ?? "",
+              issue.file ?? "",
+              issue.yamlPath ?? "",
+              issue.title,
+              issue.detail ?? "",
+            ].join("\n")
+          : issue.id;
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      const fingerprint = count === 1 ? base : `${base}\n#${count}`;
       const owner = issue.taskId ?? issue.resourceId ?? issue.file;
       return owner === undefined ? { fingerprint } : { fingerprint, owner };
     });

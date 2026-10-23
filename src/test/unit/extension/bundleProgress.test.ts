@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
@@ -13,7 +13,9 @@ import {
   type ProgressState,
 } from "../../../telemetry/bundleProgress.js";
 import { validateProperties } from "../../../telemetry/schema.js";
-import type { InspectorIssue } from "../../../bundle/issues.js";
+import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
+import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
+import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 
 const ROOT = "/Users/someone/work/sales_etl";
 const MAIN = "ext 0.3.2\ncli 0.299.0\nref: refs/heads/main";
@@ -303,11 +305,52 @@ describe("progressFindings", () => {
     expect(after[0]?.fingerprint).toBe(before[1]?.fingerprint);
   });
 
+  it("matches task graph findings by what they say, not by their line or place in the list", () => {
+    const duplicate = (position: number, line: number) =>
+      issue({
+        id: `job-structure:duplicate_task_key:resources.jobs.nightly:load:load#${position}:/bundle/resources/nightly.yml:${line}:11`,
+        kind: "duplicate_task_key",
+        severity: "warning",
+        title: 'Job "nightly" lists the task key "load" twice.',
+        taskId: "resources.jobs.nightly.tasks.load",
+        line,
+      });
+    expect(progressFindings([duplicate(3, 20)])).toEqual(progressFindings([duplicate(4, 31)]));
+  });
+
+  it("keeps two findings that say the same as two", () => {
+    const same = issue({ id: "validation:0:0", kind: "cli_diagnostic", title: "unknown field: retries" });
+    const findings = progressFindings([same, { ...same, id: "validation:0:1" }]);
+    expect(new Set(findings.map((f) => f.fingerprint)).size).toBe(2);
+  });
+
   it("belongs to its task first, then its resource, then its file", () => {
     expect(ownerOf({})).toBe("resources.jobs.nightly.tasks.load");
     expect(ownerOf({ taskId: undefined })).toBe("resources.jobs.nightly");
     expect(ownerOf({ taskId: undefined, resourceId: undefined })).toBe("/bundle/resources/nightly.yml");
     expect(ownerOf({ taskId: undefined, resourceId: undefined, file: undefined })).toBeUndefined();
+  });
+
+  // A new check whose id holds a line would count every edit above it as a fix.
+  it("keeps every finding of the task-graph fixture the same when its lines move", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "bundle-progress-graph-"));
+    try {
+      await cp(path.resolve("src/test/fixtures/task-graph"), root, { recursive: true });
+      const bundle = JSON.parse(await readFile(path.join(root, "validated-bundle.json"), "utf8")) as ParsedBundleConfig;
+      const fingerprints = async () => {
+        const graph = await enrichGraphWithFileContent(await extractBundleGraph(bundle, root));
+        return progressFindings(buildInspectorIssues(graph, bundle, [], root)).map((f) => f.fingerprint).sort();
+      };
+      const before = await fingerprints();
+      for (const file of ["databricks.yml", "resources/mistakes.yml", "resources/override.yml"]) {
+        const text = await readFile(path.join(root, file), "utf8");
+        await writeFile(path.join(root, file), `# moved\n# down\n${text}`);
+      }
+      expect(before.length).toBeGreaterThanOrEqual(13);
+      expect(await fingerprints()).toEqual(before);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("collects owners from the graph, the loaded files and the findings' files", () => {
