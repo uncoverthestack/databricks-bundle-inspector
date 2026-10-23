@@ -1,0 +1,90 @@
+# Every rule the inspector follows for bundle variables, checked against
+# Databricks CLI 1.21.0. README.md lists each case and what the inspector shows.
+bundle:
+  name: variables
+
+include:
+  - resources/*.yml
+
+# Values that targets take through YAML anchors and merge keys.
+definitions:
+  qa_catalog: &qa_catalog
+    catalog: catalog_from_first_anchor
+  qa_catalog_later: &qa_catalog_later
+    catalog: catalog_from_later_anchor
+
+variables:
+  catalog:
+    description: A plain string with a default.
+    default: main
+  schema:
+    default: raw
+  retries:
+    default: 3
+  cluster:
+    description: A complex map. Tasks read its fields.
+    type: complex
+    default:
+      node_type_id: i3.xlarge
+      custom_tags:
+        owner: data-platform
+      init_scripts:
+        - workspace:
+            destination: /Shared/init.sh
+  regions:
+    description: A complex list. Tasks read its items.
+    type: complex
+    default:
+      - us-east-1
+      - us-west-2
+  labels:
+    type: complex
+    default:
+      team: data
+  owner_email:
+    description: No default. Every target sets it.
+  warehouse_id:
+    lookup:
+      warehouse: shared-warehouse
+  table_prefix:
+    description: A default built from another variable.
+    default: ${var.catalog}_tbl
+  duplicated:
+    description: Also set in resources/zz_later.yml, which the CLI loads later, so that one wins.
+    default: from_databricks_yml
+
+targets:
+  dev:
+    default: true
+    variables:
+      owner_email: dev-team@example.com
+
+  staging:
+    variables:
+      owner_email: staging-team@example.com
+      # Full form: every key is a variable setting.
+      catalog:
+        default: staging_catalog
+      # Shorthand: the whole map is the new value of the complex variable.
+      cluster:
+        node_type_id: i3.2xlarge
+        custom_tags:
+          owner: staging-team
+        init_scripts:
+          - workspace:
+              destination: /Shared/staging-init.sh
+
+  qa:
+    variables:
+      # The later anchor wins, and keys written here win over merged ones.
+      <<: [*qa_catalog, *qa_catalog_later]
+      owner_email: qa-team@example.com
+
+  prod:
+    variables:
+      owner_email: prod-team@example.com
+      # A key that is not a variable setting makes the whole map the value.
+      labels: {default: kept_as_a_field, team: prod-team}
+      # A repeated key: the CLI keeps the last one.
+      retries: 1
+      retries: 5

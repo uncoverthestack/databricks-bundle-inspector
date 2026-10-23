@@ -1,0 +1,204 @@
+{
+  "bundle": {
+    "name": "variables"
+  },
+  "definitions": {
+    "qa_catalog": {
+      "catalog": "catalog_from_first_anchor"
+    },
+    "qa_catalog_later": {
+      "catalog": "catalog_from_later_anchor"
+    }
+  },
+  "include": [
+    "resources/job.yml",
+    "resources/shared_vars.yml",
+    "resources/zz_later.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "variables_job": {
+        "name": "variables_job",
+        "tags": {
+          "owner": "${var.cluster.custom_tags.owner}"
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "catalog": "${var.catalog}",
+                "duplicated": "${var.duplicated}",
+                "from_include": "${var.from_include}",
+                "owner_email": "${var.owner_email}",
+                "retries": "${var.retries}",
+                "table_prefix": "${var.table_prefix}"
+              },
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "whole_values"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "note": "pre-${var.catalog}-post",
+                "table": "${var.catalog}.${var.schema}.events"
+              },
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "inside_strings"
+          },
+          {
+            "notebook_task": {
+              "base_parameters": {
+                "init_script": "${var.cluster.init_scripts[0].workspace.destination}",
+                "node_type": "${var.cluster.node_type_id}",
+                "second_region": "${var.regions[1]}",
+                "tag_owner": "${var.cluster.custom_tags.owner}",
+                "team": "${var.labels.team}"
+              },
+              "notebook_path": "../src/task.py"
+            },
+            "task_key": "complex_fields"
+          },
+          {
+            "sql_task": {
+              "query": {
+                "query_id": "00000000-0000-0000-0000-000000000001"
+              },
+              "warehouse_id": "${var.warehouse_id}"
+            },
+            "task_key": "lookup_value"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "variables": {
+        "owner_email": {
+          "default": "dev-team@example.com"
+        }
+      }
+    },
+    "prod": {
+      "variables": {
+        "labels": {
+          "default": {
+            "default": "kept_as_a_field",
+            "team": "prod-team"
+          },
+          "type": "complex"
+        },
+        "owner_email": {
+          "default": "prod-team@example.com"
+        },
+        "retries": {
+          "default": 5
+        }
+      }
+    },
+    "qa": {
+      "variables": {
+        "catalog": {
+          "default": "catalog_from_later_anchor"
+        },
+        "owner_email": {
+          "default": "qa-team@example.com"
+        }
+      }
+    },
+    "staging": {
+      "variables": {
+        "catalog": {
+          "default": "staging_catalog"
+        },
+        "cluster": {
+          "default": {
+            "custom_tags": {
+              "owner": "staging-team"
+            },
+            "init_scripts": [
+              {
+                "workspace": {
+                  "destination": "/Shared/staging-init.sh"
+                }
+              }
+            ],
+            "node_type_id": "i3.2xlarge"
+          },
+          "type": "complex"
+        },
+        "owner_email": {
+          "default": "staging-team@example.com"
+        },
+        "schema": {
+          "default": "staging_schema_from_include"
+        }
+      }
+    }
+  },
+  "variables": {
+    "catalog": {
+      "default": "main",
+      "description": "A plain string with a default."
+    },
+    "cluster": {
+      "default": {
+        "custom_tags": {
+          "owner": "data-platform"
+        },
+        "init_scripts": [
+          {
+            "workspace": {
+              "destination": "/Shared/init.sh"
+            }
+          }
+        ],
+        "node_type_id": "i3.xlarge"
+      },
+      "description": "A complex map. Tasks read its fields.",
+      "type": "complex"
+    },
+    "duplicated": {
+      "default": "from_the_last_included_file",
+      "description": "Also set in resources/zz_later.yml, which the CLI loads later, so that one wins."
+    },
+    "from_include": {
+      "default": "defined_in_an_include"
+    },
+    "labels": {
+      "default": {
+        "team": "data"
+      },
+      "type": "complex"
+    },
+    "owner_email": {
+      "description": "No default. Every target sets it."
+    },
+    "regions": {
+      "default": [
+        "us-east-1",
+        "us-west-2"
+      ],
+      "description": "A complex list. Tasks read its items.",
+      "type": "complex"
+    },
+    "retries": {
+      "default": 3
+    },
+    "schema": {
+      "default": "raw"
+    },
+    "table_prefix": {
+      "default": "${var.catalog}_tbl",
+      "description": "A default built from another variable."
+    },
+    "warehouse_id": {
+      "lookup": {
+        "warehouse": "shared-warehouse"
+      }
+    }
+  }
+}
