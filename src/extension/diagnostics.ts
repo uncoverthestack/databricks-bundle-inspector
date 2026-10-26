@@ -119,6 +119,16 @@ export function bundleLoadedFiles(): ReadonlyMap<string, ReadonlySet<string>> {
 // as a whole). They cannot go in the Problems panel and show only in the graph.
 const graphOnlyByBundle = new Map<string, { problems: number; notes: number }>();
 
+// Every finding of each bundle's last check, only when the check was complete: the CLI
+// ran and the inspector read all of its findings. A check that failed part way has none,
+// so it is never taken for a bundle with no problems.
+const completeFindingsByBundle = new Map<string, InspectorIssue[]>();
+
+/** The findings of a bundle's last check, or undefined when that check was not complete. */
+export function completeCheckFindings(bundleRoot: string): readonly InspectorIssue[] | undefined {
+  return completeFindingsByBundle.get(bundleRoot);
+}
+
 /**
  * What the last check of one bundle found: errors and warnings (`problems`), and
  * information-level entries (`notes`). `graphOnly` says how many of them have no file
@@ -160,6 +170,7 @@ export function forgetBundleDiagnostics(
   diagnosticFilesByBundle.delete(bundleRoot);
   graphOnlyByBundle.delete(bundleRoot);
   loadedFilesByBundle.delete(bundleRoot);
+  completeFindingsByBundle.delete(bundleRoot);
   forgetBundleFixes(bundleRoot);
 }
 
@@ -210,6 +221,7 @@ export async function updateBundleDiagnostics(
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
 ): Promise<BundleGraph | undefined> {
+  completeFindingsByBundle.delete(bundleRoot);
   // Update the include map with CLI-resolved paths
   if (result.ok) {
     const loaded = new Set<string>();
@@ -251,6 +263,7 @@ export async function updateBundleDiagnostics(
         result.issues ?? [],
         bundleRoot,
       );
+      completeFindingsByBundle.set(bundleRoot, inspectorIssues);
       const inspectorDiagnostics = inspectorIssuesToVsCodeDiagnostics(
         inspectorIssues,
         bundleRoot,
