@@ -31,6 +31,21 @@ To see the graph:
 
 The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
 
+## Sidebar
+
+The **Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
+
+**Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar: `2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used. Problems themselves stay where they are: in your YAML and the **Problems** panel. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for its file, what the check covered, and two buttons:
+
+- **Inspect Bundle** opens its graph, as the editor title bar button does.
+- **Check Again** checks it again now. **Check All Databricks Bundles Again**, at the top of the section, checks every bundle, one at a time.
+
+Under each bundle, **Check against** says what its graph checks the bundle against, and lists the choices: the **structural preview** (the bundle's shared settings, checked without signing in) and each target its last check listed, by name. Clicking a target opens where it is defined, in the bundle file or a file its `include` loads. A target picked in the graph shows as **in use**; one the CLI couldn't check shows as `structural preview · <target> couldn't be checked`. The Problems panel and the status bar always use the structural preview.
+
+**Settings** shows the Databricks CLI the checks use and its version (with a warning when it is older than `v0.299.0`), and the sign-in profile for targets (`CLI default` unless you chose one). The pencil next to each changes it: the CLI path setting, or **Choose Databricks Login Profile**. When no CLI can be used, a line above the bundles says so, and the CLI row offers **Locate the Databricks CLI…** and the install guide.
+
+The `...` menu of the Bundles section opens this guide or a new issue on GitHub. With no bundle in the open folders, the section says so and links here.
+
 ## Understanding and fixing problems
 
 Click a finding's code in the **Problems** panel to open its explanation in [the checks guide](checks.md). Each code has its own example, severity, fix and limits. The graph's task details also list problems as **Error**, **Warning** or **Note**.
@@ -71,6 +86,12 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 | `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is `databricks.yml` or `databricks.yaml`, or a file the bundle's `include` loads |
 | `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
 | `databricksBundleInspector.chooseProfile` | Choose Databricks Login Profile | Command Palette; lists the profiles in `~/.databrickscfg` and saves the one used when you pick a target |
+| `databricksBundleInspector.checkAllBundles` | Check All Databricks Bundles Again | Command Palette and the sidebar's Bundles section; checks every bundle in the open folders, one at a time |
+| `databricksBundleInspector.locateCli` | Locate the Databricks CLI… | Command Palette and the sidebar; pick the CLI file, saved to `databricksBundleInspector.cliPath` |
+| `databricksBundleInspector.openCliInstallGuide` | Open the Databricks CLI Install Guide | Command Palette and the sidebar; the install steps for your OS |
+| `databricksBundleInspector.openCliSetting` | Change the Databricks CLI Path | Command Palette and the sidebar; opens the `cliPath` setting |
+| `databricksBundleInspector.openGuide` | Open the Bundle Inspector Guide | Command Palette and the sidebar's `...` menu; this page, for your version |
+| `databricksBundleInspector.reportIssue` | Report a Bundle Inspector Issue | Command Palette and the sidebar's `...` menu; a new GitHub issue |
 
 ## How it works
 

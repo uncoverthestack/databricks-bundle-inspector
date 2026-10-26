@@ -1,0 +1,206 @@
+import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
+import {
+  bundleSummary,
+  describeContents,
+  type BundleCheckState,
+  type BundleContents,
+  type BundleCount,
+  type CliIssue,
+} from "./statusBar.js";
+
+/**
+ * What the sidebar shows, worked out from what the checks found. No VS Code types here,
+ * so the wording and the states can be tested; `sidebarView.ts` turns rows into tree items.
+ */
+
+/** A row's status icon. The view maps each one to a VS Code icon and theme colour. */
+export type SidebarStatus = "checking" | "pending" | "passed" | "problems" | "failed" | "cli_missing";
+
+/** One bundle, as the status bar sees it, plus what only the sidebar shows. */
+export interface SidebarBundle {
+  root: string;
+  name: string;
+  /** Where the bundle is, from its workspace folder, for the tooltip. */
+  displayPath: string;
+  state: BundleCheckState | undefined;
+  count: BundleCount;
+  contents: BundleContents | undefined;
+  cliIssue: CliIssue | undefined;
+  /** A check of this bundle is running now. */
+  checking: boolean;
+  /** The targets the bundle's last check listed. Empty before its first check. */
+  targets: readonly string[];
+  /** Set when this bundle is the one open in the graph with a real target picked. */
+  graphTarget?: { target: string; fellBack: boolean };
+}
+
+export interface BundleRow {
+  label: string;
+  description: string;
+  tooltip: string;
+  status: SidebarStatus;
+}
+
+export function bundleStatus(bundle: SidebarBundle): SidebarStatus {
+  if (bundle.checking) return "checking";
+  if (!bundle.state || bundle.state === "pending") return "pending";
+  if (bundle.state === "cli_missing") return "cli_missing";
+  if (bundle.count.problems > 0) return "problems";
+  return bundle.state === "failed" ? "failed" : "passed";
+}
+
+export function bundleRow(bundle: SidebarBundle): BundleRow {
+  const summary = bundleSummary(bundle.state, bundle.count, bundle.cliIssue);
+  const contents = bundle.contents ? describeContents(bundle.contents) : "";
+  const tooltip = [
+    bundle.displayPath,
+    bundle.checking ? "Checking now." : `${capitalize(summary)}.`,
+    contents ? `${capitalize(contents)}.` : undefined,
+    "Problems come from the structural preview.",
+  ].filter((line): line is string => Boolean(line));
+  return {
+    label: bundle.name,
+    description: bundle.checking ? "checking…" : summary,
+    tooltip: tooltip.join("\n"),
+    status: bundleStatus(bundle),
+  };
+}
+
+/** One choice under "Check against": the structural preview (`target` undefined) or a target. */
+export interface CheckOption {
+  target: string | undefined;
+  label: string;
+  description: string;
+  inUse: boolean;
+}
+
+export interface CheckAgainstRow {
+  description: string;
+  tooltip: string;
+  options: CheckOption[];
+}
+
+/**
+ * What the graph checks the bundle against, and the choices. The structural preview is
+ * not a target, so it is listed next to the targets rather than as one of them.
+ */
+export function checkAgainst(bundle: SidebarBundle): CheckAgainstRow {
+  const picked = bundle.graphTarget;
+  const inUse = picked && !picked.fellBack ? picked.target : undefined;
+  const description = inUse
+    ? inUse
+    : picked
+      ? `structural preview · ${picked.target} couldn't be checked`
+      : "structural preview";
+  return {
+    description,
+    tooltip:
+      "What the graph checks this bundle against. The Problems panel and the status bar always use the structural preview.",
+    options: [
+      {
+        target: undefined,
+        label: "Structural preview",
+        description: inUse === undefined ? "shared settings · in use" : "shared settings",
+        inUse: inUse === undefined,
+      },
+      // By name: the CLI lists targets in a different order from one run to the next.
+      ...[...bundle.targets].sort((a, b) => a.localeCompare(b)).map((target) => ({
+        target,
+        label: target,
+        description: target === inUse ? "in use" : "",
+        inUse: target === inUse,
+      })),
+    ],
+  };
+}
+
+/** What the Settings view knows about the Databricks CLI. `undefined` while it is looked up. */
+export type SidebarCli =
+  | { ok: true; path: string; version: string | undefined }
+  | { ok: false; issue: CliIssue }
+  | undefined;
+
+export interface SettingRow {
+  label: string;
+  description: string;
+  tooltip: string;
+  warning: boolean;
+}
+
+export function cliRow(cli: SidebarCli): SettingRow {
+  const label = "Databricks CLI";
+  if (!cli) return { label, description: "looking…", tooltip: "Looking for the Databricks CLI.", warning: false };
+  if (cli.ok) {
+    const old = isOlderThanSupported(cli.version);
+    return {
+      label,
+      description: old
+        ? `${cli.version} · older than ${MIN_SUPPORTED_CLI_VERSION}`
+        : (cli.version ?? "version unknown"),
+      tooltip: `${cli.path}\nChange it with the databricksBundleInspector.cliPath setting.`,
+      warning: old,
+    };
+  }
+  return {
+    label,
+    description: cliProblemWords(cli.issue),
+    tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Locate it, or open the install guide.",
+    warning: true,
+  };
+}
+
+function cliProblemWords(issue: CliIssue): string {
+  if (issue.problem === "configured_path_invalid") return "the cliPath setting doesn't point to it";
+  if (issue.problem === "not_databricks_cli") {
+    const legacy = legacyCliVersion(issue.versionOutput ?? "");
+    return legacy ? `found the legacy pip CLI (${legacy})` : `"databricks" is another program`;
+  }
+  return "not found";
+}
+
+export function profileRow(profile: string | undefined): SettingRow {
+  return {
+    label: "Sign-in profile",
+    description: profile ?? "CLI default",
+    tooltip: profile
+      ? `Targets are checked with the ${profile} profile from ~/.databrickscfg. The structural preview needs no sign-in.`
+      : "Targets are checked with the profile the Databricks CLI picks. The structural preview needs no sign-in.",
+    warning: false,
+  };
+}
+
+/** A line above the bundles when none of them could be checked for want of a CLI. */
+export function bundlesMessage(bundles: readonly SidebarBundle[]): string | undefined {
+  if (bundles.length === 0 || !bundles.every((bundle) => bundle.state === "cli_missing")) return undefined;
+  const notInstalled = bundles.every((bundle) => !bundle.cliIssue || bundle.cliIssue.problem === "not_installed");
+  return notInstalled
+    ? "Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below."
+    : "Bundle Inspector checks bundles with the Databricks CLI, and couldn't use the one it found. See Settings below.";
+}
+
+/**
+ * The line of `target` under the top-level `targets:` mapping of a bundle file, 0-based,
+ * so a target row can open its definition. Undefined when the file doesn't define it
+ * there (a file `include` loads may).
+ */
+export function targetLine(yaml: string, target: string): number | undefined {
+  const lines = yaml.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^targets\s*:\s*(#.*)?$/.test(line));
+  if (start === -1) return undefined;
+  let childIndent: number | undefined;
+  for (let index = start + 1; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (/^\s*(#.*)?$/.test(line)) continue;
+    const indent = line.length - line.trimStart().length;
+    if (indent === 0) return undefined;
+    childIndent ??= indent;
+    if (indent !== childIndent) continue;
+    const key = /^\s*(["']?)(.+?)\1\s*:(\s|$)/.exec(line)?.[2];
+    if (key === target) return index;
+  }
+  return undefined;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

@@ -10,6 +10,7 @@ import { resourceFilesSuite } from "./resourceFiles.test.js";
 import { graphRefreshSuite } from "./graphRefresh.test.js";
 import { inspectionRacesSuite } from "./inspectionRaces.test.js";
 import { themesSuite } from "./themes.test.js";
+import { sidebarSuite } from "./sidebar.test.js";
 
 /** Entry point VS Code calls from the extension host. */
 export function run(): Promise<void> {
@@ -25,6 +26,7 @@ export function run(): Promise<void> {
   else if (suite === "savedFile") savedFileSuite();
   else if (suite === "targets") targetsSuite();
   else if (suite === "themes") themesSuite();
+  else if (suite === "sidebar") sidebarSuite();
   else cliNotFoundSuite();
   return new Promise((resolve, reject) => {
     mocha.run((failures) =>

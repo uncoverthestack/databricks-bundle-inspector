@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import path from "path";
+import { existsSync, readFileSync } from "fs";
 import {
   BUNDLE_PROBE_TARGET,
   validateBundle,
@@ -91,6 +92,25 @@ import {
   type CliIssue,
   type StatusBarView,
 } from "./extension/statusBar.js";
+import {
+  bundleRow,
+  bundlesMessage,
+  checkAgainst,
+  cliRow,
+  profileRow,
+  targetLine,
+  type SidebarBundle,
+  type SidebarCli,
+} from "./extension/sidebar.js";
+import {
+  BUNDLES_VIEW,
+  BundlesTreeProvider,
+  OPEN_TARGET_COMMAND,
+  SETTINGS_VIEW,
+  SettingsTreeProvider,
+  type BundlesElement,
+} from "./extension/sidebarView.js";
+import { NEW_ISSUE_URL, usageDocsUrl } from "./bundle/issueDocs.js";
 
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
@@ -136,11 +156,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   const cliIssues = new Map<string, CliIssue>();
   /** What the last check of each bundle covered, when it built a graph. */
   const bundleContentsByRoot = new Map<string, BundleContents>();
+  /** The targets each bundle's last check listed, for the sidebar. */
+  const targetsByRoot = new Map<string, string[]>();
+  /** The Databricks CLI the checks use, for the sidebar's Settings. */
+  let sidebarCli: SidebarCli;
   /** Checks running now. The item turns only when one runs longer than a moment. */
   let checksRunning = 0;
   let showChecking = false;
   let checkingTimer: ReturnType<typeof setTimeout> | undefined;
   const CHECKING_DELAY_MS = 500;
+
+  // Set once the sidebar's views exist, at the end of activation.
+  let refreshSidebar: (() => void) | undefined;
+  // Ends the progress bar on the Bundles view when the last check finishes.
+  let endViewProgress: (() => void) | undefined;
 
   async function whileChecking<T>(run: () => Promise<T>): Promise<T> {
     checksRunning++;
@@ -148,6 +177,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       showChecking = true;
       renderStatusBar();
     }, CHECKING_DELAY_MS);
+    if (!endViewProgress) {
+      // Made before withProgress runs its task, so a second check never starts a second bar.
+      const finished = new Promise<void>((resolve) => (endViewProgress = resolve));
+      void vscode.window.withProgress({ location: { viewId: BUNDLES_VIEW } }, () => finished);
+    }
     try {
       return await run();
     } finally {
@@ -156,6 +190,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         clearTimeout(checkingTimer);
         checkingTimer = undefined;
         showChecking = false;
+        endViewProgress?.();
+        endViewProgress = undefined;
         renderStatusBar();
       }
     }
@@ -215,6 +251,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   function renderStatusBar(): void {
     // Runs after every check and editor change, which is when the active file's bundle can change.
     updateActiveFileContext();
+    refreshSidebar?.();
     const roots = [...foundBundles];
     const baseView = statusBarView(
       roots.map((root) => ({
@@ -272,6 +309,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     options: { inspected?: boolean } = {},
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
+    // A failed check lists no targets; keep the last ones rather than show none.
+    if (result.ok) targetsByRoot.set(bundleRoot, result.targetOptions ?? []);
+    if (!result.ok && result.error.cliProblem) {
+      // The check already says why; a lookup of a missing CLI isn't cached and would run again.
+      sidebarCli = {
+        ok: false,
+        issue: {
+          problem: result.error.cliProblem,
+          ...(result.error.cliVersionOutput !== undefined ? { versionOutput: result.error.cliVersionOutput } : {}),
+        },
+      };
+    } else {
+      void updateSidebarCli();
+    }
     if (result.ok && graph) {
       bundleContentsByRoot.set(bundleRoot, bundleContents(graph));
     } else {
@@ -343,6 +394,23 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return getConfiguredDatabricksCliPath(getConfiguration());
   }
 
+  /** Finds the CLI the checks use, for the sidebar's Settings. Cached once found, so this runs nothing again. */
+  async function updateSidebarCli(): Promise<void> {
+    try {
+      const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+      sidebarCli = cli.ok
+        ? { ok: true, path: cli.candidate, version: cli.versionOutput }
+        : {
+            ok: false,
+            issue: { problem: cli.problem, ...(cli.versionOutput !== undefined ? { versionOutput: cli.versionOutput } : {}) },
+          };
+    } catch (error) {
+      console.warn("[BundleInspector] looking up the CLI for the sidebar failed:", error);
+      sidebarCli = undefined;
+    }
+    refreshSidebar?.();
+  }
+
   // Maps inspected bundle-related files (databricks.yml + its includes) to their bundle root.
   // Populated lazily for the active bundle, then kept up-to-date after each CLI run.
   const fileToBundleRoot = new Map<string, string>();
@@ -351,7 +419,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("databricksBundleInspector.cliPath")) {
         invalidateDatabricksCliCache();
+        void updateSidebarCli();
       }
+      if (event.affectsConfiguration("databricksBundleInspector.profile")) refreshSidebar?.();
     }),
   );
 
@@ -407,6 +477,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return undefined;
     }
     runningRefreshes.add(bundleRoot);
+    refreshSidebar?.();
     try {
       const { result, graph } = await whileChecking(() =>
         runBundleDiagnostics(
@@ -433,6 +504,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return result;
     } finally {
       runningRefreshes.delete(bundleRoot);
+      refreshSidebar?.();
     }
   }
 
@@ -518,6 +590,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     checkStates.delete(bundleRoot);
     cliIssues.delete(bundleRoot);
     bundleContentsByRoot.delete(bundleRoot);
+    targetsByRoot.delete(bundleRoot);
     if (lastStatusBarBundle === bundleRoot) lastStatusBarBundle = undefined;
     renderStatusBar();
   }
@@ -592,6 +665,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
       check.bundleCount = allRoots.length;
       for (const bundleRoot of allRoots) foundBundles.add(bundleRoot);
+      // The sidebar says "no bundle found" only after looking, not while it looks.
+      void vscode.commands.executeCommand("setContext", "databricksBundleInspector.bundlesSearched", true);
       renderStatusBar();
       check.bundleAtRoot = localFolders.some((folder) => allRoots.includes(folder.uri.fsPath));
       // One at a time, so a folder with several bundles does not start several CLI runs at once.
@@ -1222,6 +1297,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         // Only this panel's own close clears it, not an older panel's late one.
         created.onDidDispose(() => {
           if (activePanel === created) activePanel = undefined;
+          // A target picked in a closed graph no longer applies to its bundle's row.
+          refreshSidebar?.();
         });
 
         created.webview.onDidReceiveMessage((message) => {
@@ -1359,6 +1436,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         "databricksBundleInspector.test.graphData",
         () => activeBundleData,
       ),
+      // What the sidebar shows: its rows' text, as the views are built from it.
+      vscode.commands.registerCommand("databricksBundleInspector.test.sidebar", () => {
+        const bundles = sidebarBundles();
+        return {
+          message: bundlesMessage(bundles),
+          bundles: bundles.map((bundle) => ({ root: bundle.root, ...bundleRow(bundle), checkAgainst: checkAgainst(bundle) })),
+          settings: { cli: cliRow(sidebarCli), profile: profileRow(getConfiguredProfile(getConfiguration())) },
+        };
+      }),
       vscode.commands.registerCommand("databricksBundleInspector.test.statusBar", () => ({
         view: shownStatusBar,
         folderCount: folderProblemCount(foundBundles, diagnosticCollection),
@@ -1387,6 +1473,122 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (contextMenuSelection) await vscode.env.clipboard.writeText(contextMenuSelection);
     }),
   );
+
+  // The sidebar: every bundle found, what the graph checks each against, and the CLI and
+  // profile the checks use. Rows are things; their actions are icons (see package.json).
+  function bundleFilePath(root: string): string {
+    const yml = path.join(root, "databricks.yml");
+    return existsSync(yml) ? yml : path.join(root, "databricks.yaml");
+  }
+  function sidebarBundles(): SidebarBundle[] {
+    const graphOpen = livePanel() !== undefined;
+    return [...foundBundles].map((root) => {
+      const target = graphOpen && activeBundleDir === root ? activeRequestedTarget : undefined;
+      return {
+        root,
+        name: path.basename(root),
+        displayPath: vscode.workspace.asRelativePath(bundleFilePath(root), true),
+        state: checkStates.get(root),
+        count: bundleProblemCount(root, diagnosticCollection),
+        contents: bundleContentsByRoot.get(root),
+        cliIssue: cliIssues.get(root),
+        checking: runningRefreshes.has(root),
+        targets: targetsByRoot.get(root) ?? [],
+        ...(target ? { graphTarget: { target, fellBack: activeTargetFallback !== undefined } } : {}),
+      };
+    });
+  }
+  const bundlesTree = new BundlesTreeProvider(sidebarBundles);
+  const settingsTree = new SettingsTreeProvider(() => ({
+    cli: sidebarCli,
+    profile: getConfiguredProfile(getConfiguration()),
+  }));
+  const bundlesView = vscode.window.createTreeView(BUNDLES_VIEW, { treeDataProvider: bundlesTree });
+  const settingsView = vscode.window.createTreeView(SETTINGS_VIEW, { treeDataProvider: settingsTree });
+  refreshSidebar = () => {
+    bundlesTree.refresh();
+    settingsTree.refresh();
+    // An empty message shows nothing above the rows.
+    bundlesView.message = bundlesMessage(sidebarBundles()) ?? "";
+  };
+
+  /** Selects the open file's bundle, as the Explorer selects the open file. Never takes focus. */
+  function revealOpenFileBundle(): void {
+    if (!bundlesView.visible) return;
+    const editor = vscode.window.activeTextEditor;
+    const root =
+      bundleOfEditor(editor) ?? bundleForFile([...foundBundles], editor?.document.uri.fsPath, path.sep);
+    if (!root || !foundBundles.has(root)) return;
+    bundlesView.reveal(bundlesTree.element("bundle", root), { select: true, focus: false }).then(
+      undefined,
+      (error: unknown) => console.warn("[BundleInspector] revealing the bundle in the sidebar failed:", error),
+    );
+  }
+
+  /** Opens where a target is defined: the bundle file, or a file its `include` loads. */
+  async function openTarget(root: string, target: string): Promise<void> {
+    const files = [bundleFilePath(root), ...(bundleLoadedFiles().get(root) ?? [])];
+    for (const file of files) {
+      let text: string;
+      try {
+        text = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      const line = targetLine(text, target);
+      if (line === undefined) continue;
+      const position = new vscode.Position(line, 0);
+      await vscode.window.showTextDocument(vscode.Uri.file(file), { selection: new vscode.Range(position, position) });
+      return;
+    }
+    await vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(root)));
+  }
+
+  const checkAgainFlags = { config: true, saved: false, bundleFileSaved: false };
+  extensionContext.subscriptions.push(
+    bundlesTree,
+    settingsTree,
+    bundlesView,
+    settingsView,
+    vscode.window.onDidChangeActiveTextEditor(() => revealOpenFileBundle()),
+    bundlesView.onDidChangeVisibility((event) => {
+      if (event.visible) revealOpenFileBundle();
+    }),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.inspect", (element?: BundlesElement) =>
+      element ? inspectBundle(undefined, undefined, element.root) : undefined,
+    ),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAgain", (element?: BundlesElement) =>
+      element ? refreshBundle(element.root, checkAgainFlags) : undefined,
+    ),
+    // One at a time, as on open, so many bundles never start many CLI runs at once.
+    vscode.commands.registerCommand("databricksBundleInspector.checkAllBundles", async () => {
+      for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
+    }),
+    vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => openTarget(root, target)),
+    vscode.commands.registerCommand("databricksBundleInspector.openGuide", () =>
+      vscode.env.openExternal(vscode.Uri.parse(usageDocsUrl(extensionVersion))),
+    ),
+    vscode.commands.registerCommand("databricksBundleInspector.reportIssue", () =>
+      vscode.env.openExternal(vscode.Uri.parse(NEW_ISSUE_URL)),
+    ),
+    vscode.commands.registerCommand("databricksBundleInspector.locateCli", () =>
+      // locateCli re-checks every bundle that waited for the CLI, except the graph's,
+      // which is the one it hands back here.
+      locateCli(async () => {
+        if (activeBundleDir && checkStates.get(activeBundleDir) === "cli_missing") {
+          scheduleRefresh(activeBundleDir, "config");
+        }
+      }),
+    ),
+    vscode.commands.registerCommand("databricksBundleInspector.openCliInstallGuide", () =>
+      vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform))),
+    ),
+    vscode.commands.registerCommand("databricksBundleInspector.openCliSetting", () =>
+      vscode.commands.executeCommand("workbench.action.openSettings", "databricksBundleInspector.cliPath"),
+    ),
+  );
+  refreshSidebar();
+  void updateSidebarCli();
 
   const disposable = vscode.commands.registerCommand(
     "databricksBundleInspector.inspectBundle",

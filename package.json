@@ -62,7 +62,11 @@
       {
         "command": "databricksBundleInspector.inspectBundle",
         "title": "Inspect Databricks Bundle",
-        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle"
+        "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle",
+        "icon": {
+          "light": "resources/inspect-light.svg",
+          "dark": "resources/inspect-dark.svg"
+        }
       },
       {
         "command": "databricksBundleInspector.openBundleIssues",
@@ -70,11 +74,101 @@
       },
       {
         "command": "databricksBundleInspector.chooseProfile",
-        "title": "Choose Databricks Login Profile"
+        "title": "Choose Databricks Login Profile",
+        "icon": "$(edit)"
       },
       {
         "command": "databricksBundleInspector.copySelection",
         "title": "Copy"
+      },
+      {
+        "command": "databricksBundleInspector.sidebar.inspect",
+        "title": "Inspect Bundle",
+        "icon": {
+          "light": "resources/inspect-light.svg",
+          "dark": "resources/inspect-dark.svg"
+        }
+      },
+      {
+        "command": "databricksBundleInspector.sidebar.checkAgain",
+        "title": "Check Again",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "databricksBundleInspector.sidebar.openTarget",
+        "title": "Open Target"
+      },
+      {
+        "command": "databricksBundleInspector.checkAllBundles",
+        "title": "Check All Databricks Bundles Again",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "databricksBundleInspector.openGuide",
+        "title": "Open the Bundle Inspector Guide",
+        "icon": "$(book)"
+      },
+      {
+        "command": "databricksBundleInspector.reportIssue",
+        "title": "Report a Bundle Inspector Issue",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "databricksBundleInspector.locateCli",
+        "title": "Locate the Databricks CLI…",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "databricksBundleInspector.openCliInstallGuide",
+        "title": "Open the Databricks CLI Install Guide",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "databricksBundleInspector.openCliSetting",
+        "title": "Change the Databricks CLI Path",
+        "icon": "$(edit)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "databricksBundleInspector",
+          "title": "Bundle Inspector",
+          "icon": "resources/sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "databricksBundleInspector": [
+        {
+          "id": "databricksBundleInspector.bundles",
+          "name": "Bundles",
+          "icon": "resources/sidebar.svg",
+          "contextualTitle": "Bundle Inspector"
+        },
+        {
+          "id": "databricksBundleInspector.settings",
+          "name": "Settings",
+          "icon": "resources/sidebar.svg",
+          "contextualTitle": "Bundle Inspector"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "databricksBundleInspector.bundles",
+        "contents": "Open the folder that holds your databricks.yml to check it here. Checks run without signing in.\n[Open Folder](command:vscode.openFolder)",
+        "when": "workspaceFolderCount == 0"
+      },
+      {
+        "view": "databricksBundleInspector.bundles",
+        "contents": "Looking for bundles…",
+        "when": "workspaceFolderCount > 0 && !databricksBundleInspector.bundlesSearched"
+      },
+      {
+        "view": "databricksBundleInspector.bundles",
+        "contents": "No bundle found in the open folders. Bundle Inspector checks folders that hold a databricks.yml or databricks.yaml file. [Read the usage guide](command:databricksBundleInspector.openGuide)",
+        "when": "workspaceFolderCount > 0 && databricksBundleInspector.bundlesSearched"
       }
     ],
     "configuration": {
@@ -130,6 +224,67 @@
         {
           "command": "databricksBundleInspector.copySelection",
           "when": "false"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.inspect",
+          "when": "false"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.checkAgain",
+          "when": "false"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.openTarget",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "databricksBundleInspector.checkAllBundles",
+          "when": "view == databricksBundleInspector.bundles",
+          "group": "navigation"
+        },
+        {
+          "command": "databricksBundleInspector.openGuide",
+          "when": "view == databricksBundleInspector.bundles",
+          "group": "help@1"
+        },
+        {
+          "command": "databricksBundleInspector.reportIssue",
+          "when": "view == databricksBundleInspector.bundles",
+          "group": "help@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "databricksBundleInspector.sidebar.inspect",
+          "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
+          "group": "inline@1"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.checkAgain",
+          "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
+          "group": "inline@2"
+        },
+        {
+          "command": "databricksBundleInspector.locateCli",
+          "when": "view == databricksBundleInspector.settings && viewItem == cli.missing",
+          "group": "inline@1"
+        },
+        {
+          "command": "databricksBundleInspector.openCliInstallGuide",
+          "when": "view == databricksBundleInspector.settings && viewItem == cli.missing",
+          "group": "inline@2"
+        },
+        {
+          "command": "databricksBundleInspector.openCliSetting",
+          "when": "view == databricksBundleInspector.settings && viewItem == cli",
+          "group": "inline"
+        },
+        {
+          "command": "databricksBundleInspector.chooseProfile",
+          "when": "view == databricksBundleInspector.settings && viewItem == profile",
+          "group": "inline"
         }
       ]
     }
@@ -172,6 +327,7 @@
     "test:e2e:saved-file": "npm run test:e2e -- --suite savedFile --fixture src/test/e2e/fixtures/saved-file",
     "test:e2e:saved-file:other-case": "npm run test:e2e:saved-file -- --folder-case other",
     "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets",
+    "test:e2e:sidebar": "npm run test:e2e -- --suite sidebar --fixture src/test/e2e/fixtures/targets",
     "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes"
   },
   "lint-staged": {
