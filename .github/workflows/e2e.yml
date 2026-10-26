@@ -162,3 +162,5 @@ jobs:
         run: ${{ matrix.display }} npm run test:e2e:targets
       - name: E2E, sidebar
         run: ${{ matrix.display }} npm run test:e2e:sidebar
+      - name: E2E, workspace changes (shared files, removed and new bundles)
+        run: ${{ matrix.display }} npm run test:e2e:workspace-changes

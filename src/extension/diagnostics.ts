@@ -55,15 +55,11 @@ function findingOwner(issue: InspectorIssue): string | undefined {
   return issue.taskName ?? issue.resourceId?.split(".").at(-1);
 }
 
-function ownerKey(file: string, line: number, message: string): string {
-  return `${file}\n${line}\n${message}`;
-}
-
 function inspectorIssuesToVsCodeDiagnostics(
   issues: InspectorIssue[],
   bundleDir: string,
   fixes: Map<string, StoredFix[]>,
-  owners: Map<string, string>,
+  owners: Map<vscode.Diagnostic, string>,
 ): Map<string, vscode.Diagnostic[]> {
   const map = new Map<string, vscode.Diagnostic[]>();
   const bundleLabel = path.basename(bundleDir);
@@ -86,7 +82,7 @@ function inspectorIssuesToVsCodeDiagnostics(
     diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;
     diagnostic.code = linkedCode(issue.kind);
     const owner = findingOwner(issue);
-    if (owner) owners.set(ownerKey(issue.file, line, diagnostic.message), owner);
+    if (owner) owners.set(diagnostic, owner);
     if (issue.fix) {
       const key = vscode.Uri.file(issue.file).toString();
       const fileFixes = fixes.get(key) ?? [];
@@ -113,9 +109,67 @@ function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>):
 
 export type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
 
-// Files that got diagnostics on the last run, per bundle root, so they are cleared
-// once fixed. Issues found in code land on notebooks and files, not only bundle YAML.
-const diagnosticFilesByBundle = new Map<string, Set<string>>();
+/** A problem one bundle's last check found in a file, and the task or resource it is about. */
+interface StoredDiagnostic {
+  diagnostic: vscode.Diagnostic;
+  owner: string | undefined;
+}
+
+// What each bundle's last check found, by file. Issues found in code land on notebooks
+// and files, not only bundle YAML. A file several bundles load (a shared include) shows
+// what all of them found, so removing or fixing one bundle leaves the others' findings
+// (see publishFiles). Each bundle's counts come from its own findings here.
+const diagnosticsByBundle = new Map<string, Map<string, StoredDiagnostic[]>>();
+
+function codeValue(code: vscode.Diagnostic["code"]): string {
+  return typeof code === "object" ? String(code.value) : String(code ?? "");
+}
+
+/**
+ * Puts in the Problems panel what every bundle found in each of these files. A finding
+ * that several bundles report is listed once, naming each bundle in its source; one
+ * bundle's repeated findings (tasks sharing an anchor) all stay.
+ */
+function publishFiles(files: Iterable<string>, collection: vscode.DiagnosticCollection): void {
+  for (const file of new Set(files)) {
+    const shown = new Map<string, { diagnostic: vscode.Diagnostic; labels: string[] }>();
+    for (const [root, byFile] of diagnosticsByBundle) {
+      const seen = new Map<string, number>();
+      for (const { diagnostic } of byFile.get(file) ?? []) {
+        const { start } = diagnostic.range;
+        const same = [start.line, start.character, diagnostic.severity, diagnostic.message, codeValue(diagnostic.code)].join("\n");
+        const nth = seen.get(same) ?? 0;
+        seen.set(same, nth + 1);
+        const key = `${same}\n${nth}`;
+        const label = path.basename(root);
+        const existing = shown.get(key);
+        if (!existing) shown.set(key, { diagnostic, labels: [label] });
+        else if (!existing.labels.includes(label)) existing.labels.push(label);
+      }
+    }
+    const uri = vscode.Uri.file(file);
+    if (shown.size === 0) {
+      collection.delete(uri);
+      continue;
+    }
+    collection.set(
+      uri,
+      [...shown.values()].map(({ diagnostic, labels }) => {
+        if (labels.length === 1) return diagnostic;
+        const merged = new vscode.Diagnostic(diagnostic.range, diagnostic.message, diagnostic.severity);
+        if (diagnostic.code !== undefined) merged.code = diagnostic.code;
+        if (diagnostic.source) merged.source = diagnostic.source.replace(/\([^()]*\)$/, `(${labels.join(", ")})`);
+        if (diagnostic.tags) merged.tags = diagnostic.tags;
+        if (diagnostic.relatedInformation) merged.relatedInformation = diagnostic.relatedInformation;
+        return merged;
+      }),
+    );
+  }
+}
+
+function isProblem(severity: vscode.DiagnosticSeverity): boolean {
+  return severity === vscode.DiagnosticSeverity.Error || severity === vscode.DiagnosticSeverity.Warning;
+}
 
 // The files each bundle's last successful check loaded, from the CLI's own list: the
 // bundle file and every file `include` selected. Not VS Code's file search, which follows
@@ -130,8 +184,6 @@ export function bundleLoadedFiles(): ReadonlyMap<string, ReadonlySet<string>> {
 // Issues with no file to point at (an unresolved variable, a CLI error about the bundle
 // as a whole). They cannot go in the Problems panel and show only in the graph.
 const graphOnlyByBundle = new Map<string, { problems: number; errors: number; notes: number }>();
-// What each problem of a bundle is about (its task or resource), by file, line and message.
-const ownersByBundle = new Map<string, Map<string, string>>();
 
 // Every finding of each bundle's last check, only when the check was complete: the CLI
 // ran and the inspector read all of its findings. A check that failed part way has none,
@@ -150,7 +202,6 @@ export function completeCheckFindings(bundleRoot: string): readonly InspectorIss
  */
 export function bundleProblemCount(
   bundleRoot: string,
-  collection: vscode.DiagnosticCollection,
 ): { problems: number; errors: number; notes: number; graphOnly: number } {
   const graphOnly = graphOnlyByBundle.get(bundleRoot) ?? { problems: 0, errors: 0, notes: 0 };
   const count = {
@@ -159,17 +210,11 @@ export function bundleProblemCount(
     notes: graphOnly.notes,
     graphOnly: graphOnly.problems + graphOnly.notes,
   };
-  for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
-    for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
+  for (const stored of diagnosticsByBundle.get(bundleRoot)?.values() ?? []) {
+    for (const { diagnostic } of stored) {
       if (diagnostic.severity === vscode.DiagnosticSeverity.Error) count.errors++;
-      if (
-        diagnostic.severity === vscode.DiagnosticSeverity.Error ||
-        diagnostic.severity === vscode.DiagnosticSeverity.Warning
-      ) {
-        count.problems++;
-      } else {
-        count.notes++;
-      }
+      if (isProblem(diagnostic.severity)) count.problems++;
+      else count.notes++;
     }
   }
   return count;
@@ -190,25 +235,14 @@ export interface BundleProblem {
  * panel lists them, and how many more have no file to point at (the graph shows those).
  * Together they make up the count the sidebar and the status bar show.
  */
-export function bundleProblems(
-  bundleRoot: string,
-  collection: vscode.DiagnosticCollection,
-): { inFiles: BundleProblem[]; graphOnly: number } {
+export function bundleProblems(bundleRoot: string): { inFiles: BundleProblem[]; graphOnly: number } {
   const inFiles: BundleProblem[] = [];
-  const owners = ownersByBundle.get(bundleRoot);
-  for (const file of [...(diagnosticFilesByBundle.get(bundleRoot) ?? [])].sort()) {
+  const byFile = diagnosticsByBundle.get(bundleRoot) ?? new Map<string, StoredDiagnostic[]>();
+  for (const file of [...byFile.keys()].sort()) {
     const uri = vscode.Uri.file(file);
-    const problems = (collection.get(uri) ?? [])
-      .filter(
-        ({ severity }) => severity === vscode.DiagnosticSeverity.Error || severity === vscode.DiagnosticSeverity.Warning,
-      )
-      .map(({ range, severity, message }) => ({
-        uri,
-        range,
-        severity,
-        message,
-        owner: owners?.get(ownerKey(file, range.start.line, message)),
-      }))
+    const problems = (byFile.get(file) ?? [])
+      .filter(({ diagnostic }) => isProblem(diagnostic.severity))
+      .map(({ diagnostic: { range, severity, message }, owner }) => ({ uri, range, severity, message, owner }))
       .sort((a, b) => a.range.start.compareTo(b.range.start));
     inFiles.push(...problems);
   }
@@ -220,12 +254,10 @@ export function forgetBundleDiagnostics(
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
 ): void {
-  for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
-    collection.delete(vscode.Uri.file(file));
-  }
-  diagnosticFilesByBundle.delete(bundleRoot);
+  const files = [...(diagnosticsByBundle.get(bundleRoot)?.keys() ?? [])];
+  diagnosticsByBundle.delete(bundleRoot);
+  publishFiles(files, collection);
   graphOnlyByBundle.delete(bundleRoot);
-  ownersByBundle.delete(bundleRoot);
   loadedFilesByBundle.delete(bundleRoot);
   completeFindingsByBundle.delete(bundleRoot);
   forgetBundleFixes(bundleRoot);
@@ -247,7 +279,7 @@ export function folderProblemCount(
     count.problems += graphOnly.problems;
     count.notes += graphOnly.notes;
     count.graphOnly += graphOnly.problems + graphOnly.notes;
-    for (const file of diagnosticFilesByBundle.get(root) ?? []) files.add(file);
+    for (const file of diagnosticsByBundle.get(root)?.keys() ?? []) files.add(file);
   }
   for (const file of files) {
     for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
@@ -296,7 +328,7 @@ export async function updateBundleDiagnostics(
     ...[...fileToBundleRoot.entries()]
       .filter(([, root]) => root === bundleRoot)
       .map(([f]) => f),
-    ...(diagnosticFilesByBundle.get(bundleRoot) ?? []),
+    ...(diagnosticsByBundle.get(bundleRoot)?.keys() ?? []),
   ]);
 
   const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
@@ -309,7 +341,7 @@ export async function updateBundleDiagnostics(
     errors: cliGraphOnly.filter((d) => d.severity === "error").length,
     notes: 0,
   };
-  const owners = new Map<string, string>();
+  const owners = new Map<vscode.Diagnostic, string>();
   if (result.ok) {
     try {
       // Read file contents as the inspector panel does, so issues found in code
@@ -350,20 +382,18 @@ export async function updateBundleDiagnostics(
     }
   }
 
-  // Clear stale diagnostics for files that are clean now
-  for (const f of prevFiles) {
-    if (!fresh.has(f)) {
-      collection.delete(vscode.Uri.file(f));
-    }
-  }
-
-  // Set new diagnostics
-  for (const [absPath, diags] of fresh) {
-    collection.set(vscode.Uri.file(absPath), diags);
-  }
-  diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
+  // Files that are clean now lose this bundle's old findings; other bundles' stay.
+  diagnosticsByBundle.set(
+    bundleRoot,
+    new Map(
+      [...fresh].map(([file, diagnostics]) => [
+        file,
+        diagnostics.map((diagnostic) => ({ diagnostic, owner: owners.get(diagnostic) })),
+      ]),
+    ),
+  );
+  publishFiles([...prevFiles, ...fresh.keys()], collection);
   graphOnlyByBundle.set(bundleRoot, graphOnly);
-  ownersByBundle.set(bundleRoot, owners);
   setBundleFixes(bundleRoot, fixes);
   return graph;
 }

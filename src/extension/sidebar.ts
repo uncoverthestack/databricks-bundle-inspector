@@ -1,4 +1,5 @@
-import { isAlias, isMap, isScalar, LineCounter, parseDocument } from "yaml";
+import { LineCounter, parseDocument } from "yaml";
+import { anchorsOf, entries } from "../bundle/variableSources.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
 import {
   bundleSummary,
@@ -369,24 +370,16 @@ export function bundlesMessage(bundles: readonly SidebarBundle[]): string | unde
 /**
  * The line of `target` under the top-level `targets:` mapping of a bundle file, 0-based,
  * so a target row can open its definition. Undefined when the file doesn't define it
- * there (a file `include` loads may). Read with the YAML parser, so any key style works
- * (`"targets":`, `targets: &all`, `targets: *all`, flow mappings); a repeated key counts
- * where it last appears, as the CLI keeps the last one.
+ * there (a file `include` loads may). Keys are read as the CLI reads them (see
+ * `entries`): any key style, aliases, `<<` merges (the line where the merged anchor
+ * writes the target), and a repeated key where it last appears.
  */
 export function targetLine(yaml: string, target: string): number | undefined {
   const lineCounter = new LineCounter();
   const document = parseDocument(yaml, { lineCounter, uniqueKeys: false });
-  const keyOffset = (map: unknown, key: string): number | undefined => {
-    if (!isMap(map)) return undefined;
-    const pair = map.items.findLast((item) => isScalar(item.key) && String(item.key.value) === key);
-    return isScalar(pair?.key) ? pair.key.range?.[0] : undefined;
-  };
-  const root = document.contents;
-  if (!isMap(root)) return undefined;
-  const targetsPair = root.items.findLast((item) => isScalar(item.key) && item.key.value === "targets");
-  let targets: unknown = targetsPair?.value;
-  if (isAlias(targets)) targets = targets.resolve(document);
-  const offset = keyOffset(targets, target);
+  const anchors = anchorsOf(document);
+  const targets = entries(anchors, document.contents).get("targets")?.value;
+  const offset = entries(anchors, targets).get(target)?.key?.range?.[0];
   return offset === undefined ? undefined : lineCounter.linePos(offset).line - 1;
 }
 

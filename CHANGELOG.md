@@ -12,6 +12,12 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 - **The Inspect button in the editor title bar is an icon** ([PR #246](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/246)): the extension's cube and magnifier, as in the Activity Bar. It was the words "Inspect Databricks Bundle".
 
+### Fixed
+
+- **A file several bundles include shows what each of them found.** Each bundle's check used to replace the others' findings in that file, and removing one bundle cleared them for all. A finding several bundles report is listed once in the Problems panel, its source naming each bundle (`Databricks Bundle Inspector (alpha, gamma)`), and counts for each of them.
+- **A bundle made while the folder is open is found and checked**, as on open: `databricks bundle init` in a terminal, a checkout or a copy. It used to need the folder opened again.
+- **A removed folder's bundle stays gone** when a check of it was still running. It used to come back, with its problems, when that check finished.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

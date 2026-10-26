@@ -61,6 +61,9 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
   readonly onDidChangeTreeData = this.changed.event;
   // The same object for the same row, so `reveal` finds a row the view already shows.
   private readonly elements = new Map<string, BundlesElement>();
+  // The bundles as they were when the view last asked for its top rows. Every row of one
+  // render reads this, so a render works them out once, not once per row.
+  private snapshot: { list: SidebarBundle[]; byRoot: Map<string, SidebarBundle> } | undefined;
 
   /** `inspectIcon`: the extension's logo, the same icon as the editor title's Inspect button. */
   constructor(
@@ -69,11 +72,20 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
   ) {}
 
   refresh(): void {
+    this.snapshot = undefined;
     this.changed.fire();
   }
 
   dispose(): void {
     this.changed.dispose();
+  }
+
+  private current(): { list: SidebarBundle[]; byRoot: Map<string, SidebarBundle> } {
+    if (!this.snapshot) {
+      const list = this.bundles();
+      this.snapshot = { list, byRoot: new Map(list.map((bundle) => [bundle.root, bundle])) };
+    }
+    return this.snapshot;
   }
 
   element(kind: RowKind, root: string): BundlesElement;
@@ -88,7 +100,11 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
   }
 
   getChildren(element?: BundlesElement): BundlesElement[] {
-    if (!element) return this.bundles().map((bundle) => this.element("bundle", bundle.root));
+    if (!element) {
+      // A render starts here: read the bundles afresh.
+      this.snapshot = undefined;
+      return this.current().list.map((bundle) => this.element("bundle", bundle.root));
+    }
     if (element.kind === "bundle") {
       return [this.element("graph", element.root), this.element("problems", element.root), this.element("targets", element.root)];
     }
@@ -122,7 +138,7 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
         const row = bundleRow(bundle);
         // A sole bundle starts open, so its graph and problems are in view. VS Code then
         // remembers what the user opens or closes.
-        const only = this.bundles().length === 1;
+        const only = this.current().list.length === 1;
         const created = item(row.label, only ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
         created.description = row.description;
         created.tooltip = row.tooltip;
@@ -174,7 +190,7 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
   }
 
   private find(root: string): SidebarBundle | undefined {
-    return this.bundles().find((bundle) => bundle.root === root);
+    return this.current().byRoot.get(root);
   }
 }
 

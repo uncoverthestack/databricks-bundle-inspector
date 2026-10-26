@@ -299,6 +299,29 @@ describe("targetLine", () => {
     expect(targetLine("targets:\n  dev: {}\n  dev:\n    mode: development\n", "dev")).toBe(2);
   });
 
+  // The CLI lists merged targets (`Available targets: prod, dev, staging`) on 0.299.0 and
+  // 1.21.0; the row opens where the anchor writes each one.
+  test("finds a target a `<<` merge brings in, where the anchor writes it", () => {
+    const merged = "x-base: &base\n  dev:\n    default: true\n  staging: {}\ntargets:\n  <<: *base\n  prod: {}\n";
+    expect(targetLine(merged, "dev")).toBe(1);
+    expect(targetLine(merged, "staging")).toBe(3);
+    expect(targetLine(merged, "prod")).toBe(6);
+  });
+
+  test("a target written directly beats a merged one, and a later merged anchor beats an earlier one", () => {
+    const yaml = "a: &a\n  dev: {}\nb: &b\n  dev: {}\n  qa: {}\ntargets:\n  <<: [*a, *b]\n  qa: {}\n";
+    expect(targetLine(yaml, "dev")).toBe(3);
+    expect(targetLine(yaml, "qa")).toBe(7);
+  });
+
+  // The CLI names a key YAML reads as null as it is written (`Available targets: ~`, `null`, `Null`).
+  test("finds targets named ~, null and Null", () => {
+    expect(targetLine("targets:\n  ~: {}\n", "~")).toBe(1);
+    expect(targetLine("targets:\n  dev: {}\n  null: {}\n", "null")).toBe(2);
+    expect(targetLine("targets:\n  Null: {}\n", "Null")).toBe(1);
+    expect(targetLine("targets:\n  ~: {}\n", "null")).toBeUndefined();
+  });
+
   test("reads Windows line endings and a missing targets mapping", () => {
     expect(targetLine(yaml.replace(/\n/g, "\r\n"), "prod")).toBe(9);
     expect(targetLine("bundle:\n  name: x\n", "dev")).toBeUndefined();
