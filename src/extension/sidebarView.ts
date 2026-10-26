@@ -13,6 +13,7 @@ import {
 export const BUNDLES_VIEW = "databricksBundleInspector.bundles";
 export const SETTINGS_VIEW = "databricksBundleInspector.settings";
 export const OPEN_TARGET_COMMAND = "databricksBundleInspector.sidebar.openTarget";
+export const CHOOSE_CLI_COMMAND = "databricksBundleInspector.chooseCli";
 
 /** A row of the Bundles view. Rows are things (bundles, targets); actions are icons on them. */
 export type BundlesElement =
@@ -153,15 +154,17 @@ export class SettingsTreeProvider implements vscode.TreeDataProvider<SettingsEle
 
   getTreeItem(element: SettingsElement): vscode.TreeItem {
     const { cli, profile } = this.state();
+    // A setting opens its choices, as a file opens from the Explorer.
     if (element === "cli") {
-      return settingItem(cliRow(cli), "terminal", cli && !cli.ok ? "cli.missing" : "cli");
+      return settingItem(cliRow(cli), "terminal", cli && !cli.ok ? "cli.missing" : "cli", CHOOSE_CLI_COMMAND);
     }
-    return settingItem(profileRow(profile), "account", "profile");
+    return settingItem(profileRow(profile), "account", "profile", "databricksBundleInspector.chooseProfile");
   }
 }
 
-function settingItem(row: SettingRow, icon: string, contextValue: string): vscode.TreeItem {
+function settingItem(row: SettingRow, icon: string, contextValue: string, command: string): vscode.TreeItem {
   const item = new vscode.TreeItem(row.label);
+  item.command = { command, title: row.label };
   item.description = row.description;
   item.tooltip = row.tooltip;
   item.iconPath = row.warning

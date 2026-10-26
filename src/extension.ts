@@ -64,7 +64,13 @@ import {
   taskKinds,
 } from "./telemetry/events.js";
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
-import { cliFileName, configureCliLookup } from "./databricksCli/cliCandidates.js";
+import {
+  cliFileName,
+  cliFilesOnPath,
+  configureCliLookup,
+  realLookupEnvironment,
+  storedWindowsPath,
+} from "./databricksCli/cliCandidates.js";
 import {
   bundleProblemCount,
   folderProblemCount,
@@ -96,15 +102,19 @@ import {
   bundleRow,
   bundlesMessage,
   checkAgainst,
+  cliCandidates,
+  cliChoices,
   cliRow,
   profileRow,
   targetLine,
+  type CliCandidate,
   type SidebarBundle,
   type SidebarCli,
 } from "./extension/sidebar.js";
 import {
   BUNDLES_VIEW,
   BundlesTreeProvider,
+  CHOOSE_CLI_COMMAND,
   OPEN_TARGET_COMMAND,
   SETTINGS_VIEW,
   SettingsTreeProvider,
@@ -394,16 +404,42 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return getConfiguredDatabricksCliPath(getConfiguration());
   }
 
+  /**
+   * Every place a CLI could come from, in the order the lookup tries them. With
+   * `withWindowsPath`, also the Path Windows has stored, which runs `reg query`.
+   */
+  async function cliCandidateList(withWindowsPath: boolean): Promise<CliCandidate[]> {
+    const lookup = realLookupEnvironment();
+    return cliCandidates({
+      setting: currentConfiguredCliPath(),
+      onPath: cliFilesOnPath(lookup.pathValue, lookup.platform, lookup.isFile),
+      windowsPath:
+        withWindowsPath && lookup.platform === "win32"
+          ? cliFilesOnPath(await storedWindowsPath(lookup), lookup.platform, lookup.isFile)
+          : [],
+      databricksExtension: lookup.extraCandidates().filter((file) => lookup.isFile(file)),
+      ignoreCase: lookup.platform === "win32",
+    });
+  }
+
   /** Finds the CLI the checks use, for the sidebar's Settings. Cached once found, so this runs nothing again. */
   async function updateSidebarCli(): Promise<void> {
     try {
       const cli = await resolveDatabricksCli(currentConfiguredCliPath());
-      sidebarCli = cli.ok
-        ? { ok: true, path: cli.candidate, version: cli.versionOutput }
-        : {
-            ok: false,
-            issue: { problem: cli.problem, ...(cli.versionOutput !== undefined ? { versionOutput: cli.versionOutput } : {}) },
-          };
+      if (cli.ok) {
+        // The lookup runs `databricks` by name first; say which file that is, and where it is from.
+        const candidates = await cliCandidateList(false);
+        const byName = !cli.candidate.includes("/") && !cli.candidate.includes("\\");
+        const file = byName ? (candidates.find((candidate) => candidate.source === "path")?.path ?? cli.candidate) : cli.candidate;
+        const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+        const source = candidates.find((candidate) => same(candidate.path, file))?.source ?? (byName ? "path" : "windowsPath");
+        sidebarCli = { ok: true, path: file, version: cli.versionOutput, source };
+      } else {
+        sidebarCli = {
+          ok: false,
+          issue: { problem: cli.problem, ...(cli.versionOutput !== undefined ? { versionOutput: cli.versionOutput } : {}) },
+        };
+      }
     } catch (error) {
       console.warn("[BundleInspector] looking up the CLI for the sidebar failed:", error);
       sidebarCli = undefined;
@@ -1544,6 +1580,65 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     await vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(root)));
   }
 
+  /** Checks every bundle again, after the CLI changed. */
+  function recheckAllBundles(): Promise<void> {
+    for (const root of foundBundles) scheduleRefresh(root, "config");
+    return Promise.resolve();
+  }
+
+  /**
+   * The Settings CLI row: every Databricks CLI found, with its version and where it is from,
+   * the one in use ticked. Picking one saves it to the cliPath setting.
+   */
+  async function chooseCli(): Promise<void> {
+    const candidates = await cliCandidateList(true);
+    const checked = await Promise.all(
+      candidates.map(async (candidate) => {
+        const result = await verifyCliPath(candidate.path);
+        return { ...candidate, isDatabricksCli: result.ok, version: result.ok ? result.versionOutput : undefined };
+      }),
+    );
+    const inUse = sidebarCli?.ok ? sidebarCli.path : undefined;
+    const choices = cliChoices(checked, inUse);
+    type Item = vscode.QuickPickItem & { path?: string; action?: "browse" | "clear" | "install" };
+    const items: Item[] = [
+      ...choices.map((choice) => ({
+        label: choice.inUse ? `$(check) ${choice.label}` : choice.label,
+        description: choice.description,
+        detail: choice.path,
+        path: choice.path,
+      })),
+      { label: "", kind: vscode.QuickPickItemKind.Separator },
+      { label: "$(folder-opened) Browse for the Databricks CLI…", description: "saves to the cliPath setting", action: "browse" },
+      ...(currentConfiguredCliPath()
+        ? [{ label: "$(discard) Use the one on PATH", description: "clears the cliPath setting", action: "clear" as const }]
+        : []),
+      ...(choices.length === 0
+        ? [{ label: "$(link-external) Open the Databricks CLI Install Guide", action: "install" as const }]
+        : []),
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: "Choose the Databricks CLI",
+      placeHolder: choices.length > 0 ? "Pick a CLI, or browse for one" : "No Databricks CLI found. Browse for one, or install it",
+      matchOnDetail: true,
+    });
+    if (!picked) return;
+    if (picked.action === "browse") return locateCli(recheckAllBundles);
+    if (picked.action === "install") {
+      void vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform)));
+      return;
+    }
+    if (picked.action === "clear") {
+      await getConfiguration().update("cliPath", undefined, vscode.ConfigurationTarget.Global);
+    } else if (picked.path && picked.path !== inUse) {
+      await getConfiguration().update("cliPath", picked.path, vscode.ConfigurationTarget.Global);
+    } else {
+      return;
+    }
+    invalidateDatabricksCliCache();
+    await recheckAllBundles();
+  }
+
   const checkAgainFlags = { config: true, saved: false, bundleFileSaved: false };
   extensionContext.subscriptions.push(
     bundlesTree,
@@ -1583,8 +1678,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     vscode.commands.registerCommand("databricksBundleInspector.openCliInstallGuide", () =>
       vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform))),
     ),
-    vscode.commands.registerCommand("databricksBundleInspector.openCliSetting", () =>
-      vscode.commands.executeCommand("workbench.action.openSettings", "databricksBundleInspector.cliPath"),
+    vscode.commands.registerCommand(CHOOSE_CLI_COMMAND, () => chooseCli()),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.openBundleFile", (element?: BundlesElement) =>
+      element ? vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(element.root))) : undefined,
     ),
   );
   refreshSidebar();

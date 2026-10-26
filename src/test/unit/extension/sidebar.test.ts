@@ -4,6 +4,8 @@ import {
   bundlesMessage,
   bundleStatus,
   checkAgainst,
+  cliCandidates,
+  cliChoices,
   cliRow,
   profileRow,
   targetLine,
@@ -114,16 +116,19 @@ describe("checkAgainst", () => {
 });
 
 describe("cliRow", () => {
-  test("shows the version in use and where it is", () => {
-    const row = cliRow({ ok: true, path: "/opt/homebrew/bin/databricks", version: "v1.21.0" });
-    expect(row.description).toBe("v1.21.0");
+  test("shows the version in use, where it is from, and its file", () => {
+    const row = cliRow({ ok: true, path: "/opt/homebrew/bin/databricks", version: "v1.21.0", source: "path" });
+    expect(row.description).toBe("v1.21.0 · on PATH");
     expect(row.tooltip).toContain("/opt/homebrew/bin/databricks");
     expect(row.warning).toBe(false);
+    expect(cliRow({ ok: true, path: "/x/databricks", version: "v1.21.0", source: "setting" }).description).toBe(
+      "v1.21.0 · cliPath setting",
+    );
   });
 
   test("warns about a version older than the oldest tested one", () => {
-    const row = cliRow({ ok: true, path: "/usr/local/bin/databricks", version: "v0.240.0" });
-    expect(row.description).toBe("v0.240.0 · older than v0.299.0");
+    const row = cliRow({ ok: true, path: "/usr/local/bin/databricks", version: "v0.240.0", source: "databricksExtension" });
+    expect(row.description).toBe("v0.240.0 · Databricks extension · older than v0.299.0");
     expect(row.warning).toBe(true);
   });
 
@@ -201,5 +206,54 @@ describe("targetLine", () => {
   test("reads Windows line endings and a missing targets mapping", () => {
     expect(targetLine(yaml.replace(/\n/g, "\r\n"), "prod")).toBe(9);
     expect(targetLine("bundle:\n  name: x\n", "dev")).toBeUndefined();
+  });
+});
+
+describe("cliCandidates", () => {
+  test("lists each place once, in the order the lookup tries them", () => {
+    expect(
+      cliCandidates({
+        setting: "/custom/databricks",
+        onPath: ["/opt/homebrew/bin/databricks", "/custom/databricks", "/usr/local/bin/databricks"],
+        windowsPath: [],
+        databricksExtension: ["/ext/bin/databricks"],
+        ignoreCase: false,
+      }),
+    ).toEqual([
+      { path: "/custom/databricks", source: "setting" },
+      { path: "/opt/homebrew/bin/databricks", source: "path" },
+      { path: "/usr/local/bin/databricks", source: "path" },
+      { path: "/ext/bin/databricks", source: "databricksExtension" },
+    ]);
+  });
+
+  test("on Windows, the same file in another letter case counts once", () => {
+    const found = cliCandidates({
+      setting: undefined,
+      onPath: ["C:\\Tools\\databricks.exe"],
+      windowsPath: ["c:\\tools\\DATABRICKS.EXE", "C:\\Other\\databricks.exe"],
+      databricksExtension: [],
+      ignoreCase: true,
+    });
+    expect(found.map((candidate) => candidate.source)).toEqual(["path", "windowsPath"]);
+  });
+});
+
+describe("cliChoices", () => {
+  test("only Databricks CLIs, the one in use first, with where each is from", () => {
+    const choices = cliChoices(
+      [
+        { path: "/opt/homebrew/bin/databricks", source: "path", isDatabricksCli: true, version: "v1.22.0" },
+        { path: "/usr/local/bin/databricks", source: "path", isDatabricksCli: false, version: undefined },
+        { path: "/old/databricks", source: "setting", isDatabricksCli: true, version: "v0.240.0" },
+        { path: "/ext/bin/databricks", source: "databricksExtension", isDatabricksCli: true, version: "v1.21.0" },
+      ],
+      "/ext/bin/databricks",
+    );
+    expect(choices).toEqual([
+      { path: "/ext/bin/databricks", label: "v1.21.0", description: "Databricks extension · in use", inUse: true },
+      { path: "/opt/homebrew/bin/databricks", label: "v1.22.0", description: "on PATH", inUse: false },
+      { path: "/old/databricks", label: "v0.240.0", description: "cliPath setting · older than v0.299.0", inUse: false },
+    ]);
   });
 });

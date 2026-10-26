@@ -35,14 +35,15 @@ The graph opens in a new editor panel. From a resource file, it opens on the job
 
 The **Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
 
-**Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar: `2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used. Problems themselves stay where they are: in your YAML and the **Problems** panel. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for its file, what the check covered, and two buttons:
+**Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar: `2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used. Problems themselves stay where they are: in your YAML and the **Problems** panel. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for its file, what the check covered, and three buttons:
 
 - **Inspect Bundle** opens its graph, as the editor title bar button does.
+- **Open Bundle File** opens its `databricks.yml`.
 - **Check Again** checks it again now. **Check All Databricks Bundles Again**, at the top of the section, checks every bundle, one at a time.
 
 Under each bundle, **Check against** says what its graph checks the bundle against, and lists the choices: the **structural preview** (the bundle's shared settings, checked without signing in) and each target its last check listed, by name. Clicking a target opens where it is defined, in the bundle file or a file its `include` loads. A target picked in the graph shows as **in use**; one the CLI couldn't check shows as `structural preview · <target> couldn't be checked`. The Problems panel and the status bar always use the structural preview.
 
-**Settings** shows the Databricks CLI the checks use and its version (with a warning when it is older than `v0.299.0`), and the sign-in profile for targets (`CLI default` unless you chose one). The pencil next to each changes it: the CLI path setting, or **Choose Databricks Login Profile**. When no CLI can be used, a line above the bundles says so, and the CLI row offers **Locate the Databricks CLI…** and the install guide.
+**Settings** shows the Databricks CLI the checks use, its version and where it is from (`on PATH`, the `cliPath` setting, the Databricks extension, or on Windows the Path Windows has stored), with a warning when it is older than `v0.299.0`. Click it to see every Databricks CLI found, each with its version, where it is from and its file, the one in use ticked. Pick one to use it (it is saved to `databricksBundleInspector.cliPath` and every bundle is checked again), browse for one, or go back to the one on your PATH. Below it is the sign-in profile for targets (`CLI default` unless you chose one); click it to choose a profile from `~/.databrickscfg`. When no CLI can be used, a line above the bundles says so, and the CLI row also offers **Locate the Databricks CLI…** and the install guide.
 
 The `...` menu of the Bundles section opens this guide or a new issue on GitHub. With no bundle in the open folders, the section says so and links here.
 
@@ -89,7 +90,7 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 | `databricksBundleInspector.checkAllBundles` | Check All Databricks Bundles Again | Command Palette and the sidebar's Bundles section; checks every bundle in the open folders, one at a time |
 | `databricksBundleInspector.locateCli` | Locate the Databricks CLI… | Command Palette and the sidebar; pick the CLI file, saved to `databricksBundleInspector.cliPath` |
 | `databricksBundleInspector.openCliInstallGuide` | Open the Databricks CLI Install Guide | Command Palette and the sidebar; the install steps for your OS |
-| `databricksBundleInspector.openCliSetting` | Change the Databricks CLI Path | Command Palette and the sidebar; opens the `cliPath` setting |
+| `databricksBundleInspector.chooseCli` | Choose the Databricks CLI… | Command Palette and the sidebar's CLI row; every Databricks CLI found, with its version and where it is from |
 | `databricksBundleInspector.openGuide` | Open the Bundle Inspector Guide | Command Palette and the sidebar's `...` menu; this page, for your version |
 | `databricksBundleInspector.reportIssue` | Report a Bundle Inspector Issue | Command Palette and the sidebar's `...` menu; a new GitHub issue |
 

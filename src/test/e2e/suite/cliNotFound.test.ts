@@ -216,7 +216,7 @@ export function cliNotFoundSuite() {
       assert.deepEqual(shown?.settings.cli, {
         label: "Databricks CLI",
         description: "not found",
-        tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Locate it, or open the install guide.",
+        tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
         warning: true,
       });
     });

@@ -114,9 +114,83 @@ export function checkAgainst(bundle: SidebarBundle): CheckAgainstRow {
   };
 }
 
+/** Where a Databricks CLI was found, as the CLI picker and Settings say it. */
+export type CliSource = "setting" | "path" | "windowsPath" | "databricksExtension";
+
+export const CLI_SOURCE_LABELS: Record<CliSource, string> = {
+  setting: "cliPath setting",
+  path: "on PATH",
+  windowsPath: "Windows Path",
+  databricksExtension: "Databricks extension",
+};
+
+export interface CliCandidate {
+  path: string;
+  source: CliSource;
+}
+
+/**
+ * Every place a CLI could come from, in the order the extension tries them, each file once:
+ * the setting, then VS Code's PATH, the Path Windows has stored, the Databricks extension's.
+ */
+export function cliCandidates(found: {
+  setting: string | undefined;
+  onPath: readonly string[];
+  windowsPath: readonly string[];
+  databricksExtension: readonly string[];
+  ignoreCase: boolean;
+}): CliCandidate[] {
+  const seen = new Set<string>();
+  const candidates: CliCandidate[] = [];
+  const add = (files: readonly string[], source: CliSource) => {
+    for (const file of files) {
+      const key = found.ignoreCase ? file.toLowerCase() : file;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ path: file, source });
+    }
+  };
+  add(found.setting ? [found.setting] : [], "setting");
+  add(found.onPath, "path");
+  add(found.windowsPath, "windowsPath");
+  add(found.databricksExtension, "databricksExtension");
+  return candidates;
+}
+
+/** A candidate after `--version`: undefined `version` when it isn't the Databricks CLI. */
+export interface CheckedCli extends CliCandidate {
+  isDatabricksCli: boolean;
+  version: string | undefined;
+}
+
+export interface CliChoice {
+  path: string;
+  label: string;
+  description: string;
+  inUse: boolean;
+}
+
+/** The CLI picker's rows: Databricks CLIs only, the one in use first and ticked. */
+export function cliChoices(checked: readonly CheckedCli[], inUsePath: string | undefined): CliChoice[] {
+  return checked
+    .filter((cli) => cli.isDatabricksCli)
+    .map((cli) => {
+      const inUse = cli.path === inUsePath;
+      const tooOld = isOlderThanSupported(cli.version);
+      const parts = [CLI_SOURCE_LABELS[cli.source], inUse ? "in use" : undefined, tooOld ? `older than ${MIN_SUPPORTED_CLI_VERSION}` : undefined];
+      return {
+        path: cli.path,
+        label: cli.version ?? "version unknown",
+        description: parts.filter(Boolean).join(" · "),
+        inUse,
+      };
+    })
+    .sort((a, b) => Number(b.inUse) - Number(a.inUse));
+}
+
 /** What the Settings view knows about the Databricks CLI. `undefined` while it is looked up. */
 export type SidebarCli =
-  | { ok: true; path: string; version: string | undefined }
+  | { ok: true; path: string; version: string | undefined; source: CliSource | undefined }
   | { ok: false; issue: CliIssue }
   | undefined;
 
@@ -132,19 +206,22 @@ export function cliRow(cli: SidebarCli): SettingRow {
   if (!cli) return { label, description: "looking…", tooltip: "Looking for the Databricks CLI.", warning: false };
   if (cli.ok) {
     const old = isOlderThanSupported(cli.version);
+    const parts = [
+      cli.version ?? "version unknown",
+      cli.source ? CLI_SOURCE_LABELS[cli.source] : undefined,
+      old ? `older than ${MIN_SUPPORTED_CLI_VERSION}` : undefined,
+    ];
     return {
       label,
-      description: old
-        ? `${cli.version} · older than ${MIN_SUPPORTED_CLI_VERSION}`
-        : (cli.version ?? "version unknown"),
-      tooltip: `${cli.path}\nChange it with the databricksBundleInspector.cliPath setting.`,
+      description: parts.filter(Boolean).join(" · "),
+      tooltip: `${cli.path}\nClick to see every Databricks CLI found and choose one.`,
       warning: old,
     };
   }
   return {
     label,
     description: cliProblemWords(cli.issue),
-    tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Locate it, or open the install guide.",
+    tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
     warning: true,
   };
 }
@@ -163,8 +240,8 @@ export function profileRow(profile: string | undefined): SettingRow {
     label: "Sign-in profile",
     description: profile ?? "CLI default",
     tooltip: profile
-      ? `Targets are checked with the ${profile} profile from ~/.databrickscfg. The structural preview needs no sign-in.`
-      : "Targets are checked with the profile the Databricks CLI picks. The structural preview needs no sign-in.",
+      ? `Targets are checked with the ${profile} profile from ~/.databrickscfg. The structural preview needs no sign-in. Click to choose another.`
+      : "Targets are checked with the profile the Databricks CLI picks. The structural preview needs no sign-in. Click to choose one.",
     warning: false,
   };
 }

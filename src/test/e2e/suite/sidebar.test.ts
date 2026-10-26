@@ -152,5 +152,36 @@ export function sidebarSuite() {
       const back = await sidebarWhen((shown) => shown.bundles[0]!.checkAgainst.description === "structural preview");
       assert.equal(back.bundles[0]!.checkAgainst.description, "structural preview");
     });
+
+    it("Open Bundle File opens the bundle's databricks.yml", async () => {
+      const root = (await sidebarWhen(checked)).bundles[0]!.root;
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      await vscode.commands.executeCommand("databricksBundleInspector.sidebar.openBundleFile", { kind: "bundle", root });
+      assert.equal(vscode.window.activeTextEditor?.document.fileName, path.join(root, "databricks.yml"));
+    });
+
+    it("clicking the CLI row lists each CLI found with where it is from, the one in use ticked", async () => {
+      const shown = await sidebarWhen(checked);
+      const window = vscode.window as { showQuickPick: typeof vscode.window.showQuickPick };
+      const original = window.showQuickPick;
+      let offered: Array<vscode.QuickPickItem & { path?: string }> = [];
+      window.showQuickPick = (async (items: readonly vscode.QuickPickItem[]) => {
+        offered = [...items];
+        return undefined;
+      }) as unknown as typeof vscode.window.showQuickPick;
+      try {
+        await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
+      } finally {
+        window.showQuickPick = original;
+      }
+      const inUse = offered.filter((item) => item.label.startsWith("$(check) "));
+      assert.equal(inUse.length, 1, JSON.stringify(offered));
+      assert.equal(inUse[0]!.label, `$(check) ${shown.settings.cli.description.split(" · ")[0]}`);
+      assert.match(inUse[0]!.description ?? "", /^(on PATH|cliPath setting|Windows Path|Databricks extension) · in use/);
+      assert.ok(inUse[0]!.detail && path.isAbsolute(inUse[0]!.detail), `the file in use should be shown: ${inUse[0]!.detail}`);
+      assert.ok(offered.some((item) => item.label.includes("Browse for the Databricks CLI")));
+      // Nothing was picked, so the setting is unchanged.
+      assert.equal(vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath") || undefined, undefined);
+    });
   });
 }
