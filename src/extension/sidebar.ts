@@ -1,3 +1,4 @@
+import { isAlias, isMap, isScalar, LineCounter, parseDocument } from "yaml";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
 import {
   bundleSummary,
@@ -258,24 +259,25 @@ export function bundlesMessage(bundles: readonly SidebarBundle[]): string | unde
 /**
  * The line of `target` under the top-level `targets:` mapping of a bundle file, 0-based,
  * so a target row can open its definition. Undefined when the file doesn't define it
- * there (a file `include` loads may).
+ * there (a file `include` loads may). Read with the YAML parser, so any key style works
+ * (`"targets":`, `targets: &all`, `targets: *all`, flow mappings); a repeated key counts
+ * where it last appears, as the CLI keeps the last one.
  */
 export function targetLine(yaml: string, target: string): number | undefined {
-  const lines = yaml.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^targets\s*:\s*(#.*)?$/.test(line));
-  if (start === -1) return undefined;
-  let childIndent: number | undefined;
-  for (let index = start + 1; index < lines.length; index++) {
-    const line = lines[index]!;
-    if (/^\s*(#.*)?$/.test(line)) continue;
-    const indent = line.length - line.trimStart().length;
-    if (indent === 0) return undefined;
-    childIndent ??= indent;
-    if (indent !== childIndent) continue;
-    const key = /^\s*(["']?)(.+?)\1\s*:(\s|$)/.exec(line)?.[2];
-    if (key === target) return index;
-  }
-  return undefined;
+  const lineCounter = new LineCounter();
+  const document = parseDocument(yaml, { lineCounter, uniqueKeys: false });
+  const keyOffset = (map: unknown, key: string): number | undefined => {
+    if (!isMap(map)) return undefined;
+    const pair = map.items.findLast((item) => isScalar(item.key) && String(item.key.value) === key);
+    return isScalar(pair?.key) ? pair.key.range?.[0] : undefined;
+  };
+  const root = document.contents;
+  if (!isMap(root)) return undefined;
+  const targetsPair = root.items.findLast((item) => isScalar(item.key) && item.key.value === "targets");
+  let targets: unknown = targetsPair?.value;
+  if (isAlias(targets)) targets = targets.resolve(document);
+  const offset = keyOffset(targets, target);
+  return offset === undefined ? undefined : lineCounter.linePos(offset).line - 1;
 }
 
 function capitalize(text: string): string {

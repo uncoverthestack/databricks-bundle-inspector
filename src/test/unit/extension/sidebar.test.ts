@@ -203,6 +203,18 @@ describe("targetLine", () => {
     expect(targetLine("resources:\n  jobs:\n    dev:\n", "dev")).toBeUndefined();
   });
 
+  test("reads a quoted targets key, anchors, aliases and flow mappings", () => {
+    expect(targetLine('bundle:\n  name: x\n"targets":\n  dev:\n    default: true\n', "dev")).toBe(3);
+    expect(targetLine("targets: &all\n  dev: {}\n  prod: {}\n", "prod")).toBe(2);
+    expect(targetLine("shared: &all\n  dev: {}\ntargets: *all\n", "dev")).toBe(1);
+    expect(targetLine("targets: { dev: {}, prod: {} }\n", "prod")).toBe(0);
+    expect(targetLine("targets:\n  dev: &base\n    mode: development\n  qa: *base\n", "qa")).toBe(3);
+  });
+
+  test("a repeated target counts where it last appears, as the CLI keeps the last one", () => {
+    expect(targetLine("targets:\n  dev: {}\n  dev:\n    mode: development\n", "dev")).toBe(2);
+  });
+
   test("reads Windows line endings and a missing targets mapping", () => {
     expect(targetLine(yaml.replace(/\n/g, "\r\n"), "prod")).toBe(9);
     expect(targetLine("bundle:\n  name: x\n", "dev")).toBeUndefined();

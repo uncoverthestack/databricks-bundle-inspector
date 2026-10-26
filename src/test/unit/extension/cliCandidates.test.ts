@@ -1,7 +1,11 @@
 import { describe, expect, test } from "@jest/globals";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   cliFilesOnPath,
   expandWindowsVariables,
+  fileRunByName,
   moreCliCandidates,
   parseRegQueryPath,
   pathEntries,
@@ -161,5 +165,34 @@ describe("moreCliCandidates", () => {
       readRegistryPath: async () => "    Path    REG_SZ    C:\\tool.exe",
     });
     expect(await moreCliCandidates(lookup)).toEqual([]);
+  });
+});
+
+describe("fileRunByName", () => {
+  test("skips a file the OS can't run, as running by name does", () => {
+    const files = ["/first/databricks", "/second/databricks"];
+    expect(fileRunByName(files, "darwin", (file) => file === "/second/databricks")).toBe("/second/databricks");
+    expect(fileRunByName(files, "linux", () => true)).toBe("/first/databricks");
+    expect(fileRunByName(files, "linux", () => false)).toBeUndefined();
+  });
+
+  test("on Windows, the first file runs: there is no execute permission", () => {
+    expect(fileRunByName(["C:\\a\\databricks.exe", "C:\\b\\databricks.exe"], "win32", () => false)).toBe(
+      "C:\\a\\databricks.exe",
+    );
+  });
+
+  test("reads the real execute permission by default", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bundle-inspector-run-"));
+    try {
+      const plain = path.join(dir, "plain");
+      const runnable = path.join(dir, "runnable");
+      writeFileSync(plain, "");
+      writeFileSync(runnable, "", { mode: 0o755 });
+      chmodSync(plain, 0o644);
+      expect(fileRunByName([plain, runnable], "linux")).toBe(runnable);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

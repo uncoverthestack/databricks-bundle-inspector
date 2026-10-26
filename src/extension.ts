@@ -68,6 +68,7 @@ import {
   cliFileName,
   cliFilesOnPath,
   configureCliLookup,
+  fileRunByName,
   realLookupEnvironment,
   storedWindowsPath,
 } from "./databricksCli/cliCandidates.js";
@@ -121,6 +122,7 @@ import {
   type BundlesElement,
 } from "./extension/sidebarView.js";
 import { NEW_ISSUE_URL, usageDocsUrl } from "./bundle/issueDocs.js";
+import { createCheckLimiter } from "./extension/checkLimiter.js";
 
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
@@ -170,6 +172,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   const targetsByRoot = new Map<string, string[]>();
   /** The Databricks CLI the checks use, for the sidebar's Settings. */
   let sidebarCli: SidebarCli;
+  /** Counts each write of {@link sidebarCli}, so a lookup that a newer one overtook doesn't overwrite it. */
+  let sidebarCliWrites = 0;
   /** Checks running now. The item turns only when one runs longer than a moment. */
   let checksRunning = 0;
   let showChecking = false;
@@ -316,13 +320,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundleRoot: string,
     result: BundleValidationResult,
     graph: BundleGraph | undefined,
-    options: { inspected?: boolean } = {},
+    options: { inspected?: boolean; cliPath: string | undefined },
   ): void {
     checkStates.set(bundleRoot, checkStateOf(result));
     // A failed check lists no targets; keep the last ones rather than show none.
     if (result.ok) targetsByRoot.set(bundleRoot, result.targetOptions ?? []);
-    if (!result.ok && result.error.cliProblem) {
+    if (!result.ok && result.error.cliProblem && options.cliPath === currentConfiguredCliPath()) {
       // The check already says why; a lookup of a missing CLI isn't cached and would run again.
+      // Not when the cliPath setting changed while it ran: its CLI is no longer the one in use.
+      sidebarCliWrites++;
       sidebarCli = {
         ok: false,
         issue: {
@@ -424,26 +430,34 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
   /** Finds the CLI the checks use, for the sidebar's Settings. Cached once found, so this runs nothing again. */
   async function updateSidebarCli(): Promise<void> {
+    const write = ++sidebarCliWrites;
+    let found: SidebarCli;
     try {
       const cli = await resolveDatabricksCli(currentConfiguredCliPath());
       if (cli.ok) {
         // The lookup runs `databricks` by name first; say which file that is, and where it is from.
         const candidates = await cliCandidateList(false);
         const byName = !cli.candidate.includes("/") && !cli.candidate.includes("\\");
-        const file = byName ? (candidates.find((candidate) => candidate.source === "path")?.path ?? cli.candidate) : cli.candidate;
+        const lookup = realLookupEnvironment();
+        const file = byName
+          ? (fileRunByName(cliFilesOnPath(lookup.pathValue, lookup.platform, lookup.isFile), lookup.platform) ?? cli.candidate)
+          : cli.candidate;
         const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
-        const source = candidates.find((candidate) => same(candidate.path, file))?.source ?? (byName ? "path" : "windowsPath");
-        sidebarCli = { ok: true, path: file, version: cli.versionOutput, source };
+        const source = candidates.find((candidate) => same(candidate.path, file))?.source ?? (byName || process.platform !== "win32" ? "path" : "windowsPath");
+        found = { ok: true, path: file, version: cli.versionOutput, source };
       } else {
-        sidebarCli = {
+        found = {
           ok: false,
           issue: { problem: cli.problem, ...(cli.versionOutput !== undefined ? { versionOutput: cli.versionOutput } : {}) },
         };
       }
     } catch (error) {
       console.warn("[BundleInspector] looking up the CLI for the sidebar failed:", error);
-      sidebarCli = undefined;
+      found = undefined;
     }
+    // A lookup started later, or a check that said why the CLI can't be used, wins.
+    if (write !== sidebarCliWrites) return;
+    sidebarCli = found;
     refreshSidebar?.();
   }
 
@@ -473,6 +487,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
   const pendingRefreshes = new Map<string, PendingRefresh>();
   const runningRefreshes = new Set<string>();
+  /** Of those, the ones still waiting for a free slot: the sidebar doesn't show them as checking yet. */
+  const waitingRefreshes = new Set<string>();
+  // At most two checks run the CLI at once; the others wait their turn, in order.
+  const checkSlots = createCheckLimiter(2);
 
   function scheduleRefresh(
     bundleRoot: string,
@@ -513,17 +531,26 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return undefined;
     }
     runningRefreshes.add(bundleRoot);
+    waitingRefreshes.add(bundleRoot);
+    await checkSlots.acquire();
+    waitingRefreshes.delete(bundleRoot);
     refreshSidebar?.();
     try {
+      // Deleted while it waited for its turn.
+      if (!hasBundleFile(bundleRoot)) {
+        forgetBundle(bundleRoot);
+        return undefined;
+      }
+      const cliPath = currentConfiguredCliPath();
       const { result, graph } = await whileChecking(() =>
         runBundleDiagnostics(
           bundleRoot,
-          currentConfiguredCliPath(),
+          cliPath,
           diagnosticCollection,
           fileToBundleRoot,
         ),
       );
-      recordCheck(bundleRoot, result, graph);
+      recordCheck(bundleRoot, result, graph, { cliPath });
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
@@ -539,6 +566,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
       return result;
     } finally {
+      checkSlots.release();
       runningRefreshes.delete(bundleRoot);
       refreshSidebar?.();
     }
@@ -1212,6 +1240,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       activeTargetFallback = undefined;
       await trackBundleFiles(bundleDir, fileToBundleRoot);
       if (!isCurrent()) return;
+      const cliPath = currentConfiguredCliPath();
       const inspection = await whileChecking(() =>
         inspectBundleAtTarget(bundleDir, requestedTarget),
       );
@@ -1230,7 +1259,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           fileToBundleRoot,
         );
         if (!isCurrent()) return;
-        recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true });
+        recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true, cliPath });
         if (result.ok && diagnosticsGraph) {
           await watchBundle(bundleDir, result.data, diagnosticsGraph);
         }
@@ -1528,7 +1557,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         count: bundleProblemCount(root, diagnosticCollection),
         contents: bundleContentsByRoot.get(root),
         cliIssue: cliIssues.get(root),
-        checking: runningRefreshes.has(root),
+        checking: runningRefreshes.has(root) && !waitingRefreshes.has(root),
         targets: targetsByRoot.get(root) ?? [],
         ...(target ? { graphTarget: { target, fellBack: activeTargetFallback !== undefined } } : {}),
       };

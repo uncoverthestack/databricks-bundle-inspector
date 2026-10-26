@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
@@ -19,7 +20,7 @@ interface ShownSidebar {
       options: Array<{ target: string | undefined; label: string; description: string; inUse: boolean }>;
     };
   }>;
-  settings: { cli: { description: string; warning: boolean }; profile: { description: string } };
+  settings: { cli: { description: string; tooltip: string; warning: boolean }; profile: { description: string } };
 }
 
 async function sidebar(): Promise<ShownSidebar> {
@@ -182,6 +183,30 @@ export function sidebarSuite() {
       assert.ok(offered.some((item) => item.label.includes("Browse for the Databricks CLI")));
       // Nothing was picked, so the setting is unchanged.
       assert.equal(vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath") || undefined, undefined);
+    });
+
+    it("switching from a slow CLI to a quicker one shows the quicker one, even when the slow lookup ends last", async function () {
+      // A shell script stands in for the slow CLI, so not on Windows.
+      if (process.platform === "win32") this.skip();
+      this.timeout(60_000);
+      const realCli = execFileSync("which", ["databricks"], { encoding: "utf8" }).trim();
+      const dir = await mkdtemp(path.join(tmpdir(), "bundle-inspector-slow-cli-"));
+      const slowCli = path.join(dir, "databricks");
+      await writeFile(slowCli, '#!/bin/sh\nsleep 3\necho "Databricks CLI v9.9.9"\n');
+      await chmod(slowCli, 0o755);
+      const settings = vscode.workspace.getConfiguration("databricksBundleInspector");
+      try {
+        await settings.update("cliPath", slowCli, vscode.ConfigurationTarget.Global);
+        await settings.update("cliPath", realCli, vscode.ConfigurationTarget.Global);
+        // Long enough for the slow lookup to end.
+        await sleep(5_000);
+        const shown = await sidebarWhen((current) => current.settings.cli.tooltip.includes(realCli), 10_000);
+        assert.ok(shown.settings.cli.tooltip.includes(realCli), JSON.stringify(shown.settings.cli));
+        assert.doesNotMatch(shown.settings.cli.description, /v9\.9\.9/);
+      } finally {
+        await settings.update("cliPath", undefined, vscode.ConfigurationTarget.Global);
+        await rm(dir, { recursive: true, force: true });
+      }
     });
   });
 }
