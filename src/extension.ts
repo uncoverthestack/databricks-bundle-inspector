@@ -83,6 +83,8 @@ import {
   setIssueDocsVersion,
   bundleLoadedFiles,
   completeCheckFindings,
+  bundleProblems,
+  type BundleProblem,
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
@@ -102,12 +104,15 @@ import {
 import {
   bundleRow,
   bundlesMessage,
-  checkAgainst,
   cliCandidates,
   cliChoices,
   cliRow,
+  graphRow,
+  pathHints,
+  problemsRow,
   profileRow,
   targetLine,
+  targetsRow,
   type CliCandidate,
   type SidebarBundle,
   type SidebarCli,
@@ -116,6 +121,7 @@ import {
   BUNDLES_VIEW,
   BundlesTreeProvider,
   CHOOSE_CLI_COMMAND,
+  OPEN_PROBLEMS_COMMAND,
   OPEN_TARGET_COMMAND,
   SETTINGS_VIEW,
   SettingsTreeProvider,
@@ -1506,7 +1512,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         const bundles = sidebarBundles();
         return {
           message: bundlesMessage(bundles),
-          bundles: bundles.map((bundle) => ({ root: bundle.root, ...bundleRow(bundle), checkAgainst: checkAgainst(bundle) })),
+          bundles: bundles.map((bundle) => ({
+            root: bundle.root,
+            ...bundleRow(bundle),
+            graph: graphRow(bundle),
+            problems: problemsRow(bundle),
+            targets: targetsRow(bundle),
+          })),
           settings: { cli: cliRow(sidebarCli), profile: profileRow(getConfiguredProfile(getConfiguration())) },
         };
       }),
@@ -1547,12 +1559,20 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
   function sidebarBundles(): SidebarBundle[] {
     const graphOpen = livePanel() !== undefined;
-    return [...foundBundles].map((root) => {
+    const places = [...foundBundles].map((root) => ({
+      root,
+      name: path.basename(root),
+      displayPath: vscode.workspace.asRelativePath(bundleFilePath(root), true),
+    }));
+    const hints = pathHints(places);
+    return places.map(({ root, name, displayPath }) => {
       const target = graphOpen && activeBundleDir === root ? activeRequestedTarget : undefined;
+      const pathHint = hints.get(root);
       return {
         root,
-        name: path.basename(root),
-        displayPath: vscode.workspace.asRelativePath(bundleFilePath(root), true),
+        name,
+        displayPath,
+        ...(pathHint ? { pathHint } : {}),
         state: checkStates.get(root),
         count: bundleProblemCount(root, diagnosticCollection),
         contents: bundleContentsByRoot.get(root),
@@ -1563,7 +1583,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       };
     });
   }
-  const bundlesTree = new BundlesTreeProvider(sidebarBundles);
+  const bundlesTree = new BundlesTreeProvider(sidebarBundles, {
+    light: vscode.Uri.joinPath(extensionContext.extensionUri, "resources", "inspect-light.svg"),
+    dark: vscode.Uri.joinPath(extensionContext.extensionUri, "resources", "inspect-dark.svg"),
+  });
   const settingsTree = new SettingsTreeProvider(() => ({
     cli: sidebarCli,
     profile: getConfiguredProfile(getConfiguration()),
@@ -1607,6 +1630,93 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return;
     }
     await vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(root)));
+  }
+
+  /**
+   * The sidebar's Graph row. A graph already open on this bundle comes to the front as it
+   * is, with the target it shows, as the row says; otherwise it opens on the structural preview.
+   */
+  async function openGraph(root: string): Promise<void> {
+    const panel = livePanel();
+    if (panel && activeBundleDir === root) {
+      panel.reveal();
+      return;
+    }
+    await inspectBundle(undefined, undefined, root);
+  }
+
+  /** Opens a problem where it is, with its explanation below the line, as F8 does. */
+  async function openProblem(problem: BundleProblem): Promise<void> {
+    const start = problem.range.start;
+    await vscode.window.showTextDocument(problem.uri, { selection: new vscode.Range(start, start) });
+    // From a cursor on the problem, VS Code's own "next problem" opens that one.
+    await vscode.commands.executeCommand("editor.action.marker.next");
+  }
+
+  /**
+   * The Problems row: one problem opens where it is. Several, often in several files, are
+   * listed first, by file, so the count matches what can be picked; moving through the
+   * list shows each one in the editor. Problems with no line in a file are in the graph.
+   */
+  async function openBundleProblems(root: string): Promise<void> {
+    const { inFiles, graphOnly } = bundleProblems(root, diagnosticCollection);
+    if (inFiles.length === 1 && graphOnly === 0) return openProblem(inFiles[0]!);
+    if (inFiles.length === 0) {
+      if (graphOnly > 0) await openGraph(root);
+      return;
+    }
+    type Item = vscode.QuickPickItem & { problem?: BundleProblem; graph?: true };
+    const items: Item[] = [];
+    // Headings name the file only, so the messages keep their room; two files with the
+    // same name get their folder too.
+    const files = [...new Set(inFiles.map((problem) => problem.uri.fsPath))];
+    const sameName = (file: string) => files.filter((other) => path.basename(other) === path.basename(file)).length > 1;
+    let file: string | undefined;
+    for (const problem of inFiles) {
+      if (problem.uri.fsPath !== file) {
+        file = problem.uri.fsPath;
+        const name = path.basename(file);
+        items.push({
+          label: sameName(file) ? `${name} (${path.basename(path.dirname(file))})` : name,
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+      }
+      // The task first: several tasks often share one message, such as the same missing file.
+      const icon = problem.severity === vscode.DiagnosticSeverity.Error ? "$(error)" : "$(warning)";
+      items.push({
+        label: `${icon} ${problem.owner ? `${problem.owner} · ` : ""}${problem.message}`,
+        description: `Ln ${problem.range.start.line + 1}`,
+        problem,
+      });
+    }
+    if (graphOnly > 0) {
+      items.push(
+        { label: "Only in the graph", kind: vscode.QuickPickItemKind.Separator },
+        {
+          label: `$(type-hierarchy) ${graphOnly === 1 ? "1 problem has" : `${graphOnly} problems have`} no line in a file`,
+          description: "opens the graph",
+          graph: true,
+        },
+      );
+    }
+    const total = inFiles.length + graphOnly;
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `${path.basename(root)}: ${total} problems · structural preview`,
+      placeHolder: "Go to a problem…",
+      matchOnDescription: true,
+      onDidSelectItem: (item) => {
+        const problem = (item as Item).problem;
+        if (!problem) return;
+        const start = problem.range.start;
+        void vscode.window.showTextDocument(problem.uri, {
+          preview: true,
+          preserveFocus: true,
+          selection: new vscode.Range(start, start),
+        });
+      },
+    });
+    if (picked?.problem) await openProblem(picked.problem);
+    else if (picked?.graph) await openGraph(root);
   }
 
   /** Checks every bundle again, after the CLI changed. */
@@ -1679,7 +1789,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (event.visible) revealOpenFileBundle();
     }),
     vscode.commands.registerCommand("databricksBundleInspector.sidebar.inspect", (element?: BundlesElement) =>
-      element ? inspectBundle(undefined, undefined, element.root) : undefined,
+      element ? openGraph(element.root) : undefined,
     ),
     vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAgain", (element?: BundlesElement) =>
       element ? refreshBundle(element.root, checkAgainFlags) : undefined,
@@ -1689,6 +1799,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
     }),
     vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => openTarget(root, target)),
+    vscode.commands.registerCommand(OPEN_PROBLEMS_COMMAND, (element?: BundlesElement) =>
+      element ? openBundleProblems(element.root) : undefined,
+    ),
     vscode.commands.registerCommand("databricksBundleInspector.openGuide", () =>
       vscode.env.openExternal(vscode.Uri.parse(usageDocsUrl(extensionVersion))),
     ),

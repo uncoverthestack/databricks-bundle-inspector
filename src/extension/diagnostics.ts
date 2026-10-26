@@ -50,10 +50,20 @@ function toVsCodeDiagnostics(
   return map;
 }
 
+/** What a finding is about, for the sidebar's list of problems: its task, else its resource's key. */
+function findingOwner(issue: InspectorIssue): string | undefined {
+  return issue.taskName ?? issue.resourceId?.split(".").at(-1);
+}
+
+function ownerKey(file: string, line: number, message: string): string {
+  return `${file}\n${line}\n${message}`;
+}
+
 function inspectorIssuesToVsCodeDiagnostics(
   issues: InspectorIssue[],
   bundleDir: string,
   fixes: Map<string, StoredFix[]>,
+  owners: Map<string, string>,
 ): Map<string, vscode.Diagnostic[]> {
   const map = new Map<string, vscode.Diagnostic[]>();
   const bundleLabel = path.basename(bundleDir);
@@ -75,6 +85,8 @@ function inspectorIssuesToVsCodeDiagnostics(
     );
     diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;
     diagnostic.code = linkedCode(issue.kind);
+    const owner = findingOwner(issue);
+    if (owner) owners.set(ownerKey(issue.file, line, diagnostic.message), owner);
     if (issue.fix) {
       const key = vscode.Uri.file(issue.file).toString();
       const fileFixes = fixes.get(key) ?? [];
@@ -117,7 +129,9 @@ export function bundleLoadedFiles(): ReadonlyMap<string, ReadonlySet<string>> {
 
 // Issues with no file to point at (an unresolved variable, a CLI error about the bundle
 // as a whole). They cannot go in the Problems panel and show only in the graph.
-const graphOnlyByBundle = new Map<string, { problems: number; notes: number }>();
+const graphOnlyByBundle = new Map<string, { problems: number; errors: number; notes: number }>();
+// What each problem of a bundle is about (its task or resource), by file, line and message.
+const ownersByBundle = new Map<string, Map<string, string>>();
 
 // Every finding of each bundle's last check, only when the check was complete: the CLI
 // ran and the inspector read all of its findings. A check that failed part way has none,
@@ -137,15 +151,17 @@ export function completeCheckFindings(bundleRoot: string): readonly InspectorIss
 export function bundleProblemCount(
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
-): { problems: number; notes: number; graphOnly: number } {
-  const graphOnly = graphOnlyByBundle.get(bundleRoot) ?? { problems: 0, notes: 0 };
+): { problems: number; errors: number; notes: number; graphOnly: number } {
+  const graphOnly = graphOnlyByBundle.get(bundleRoot) ?? { problems: 0, errors: 0, notes: 0 };
   const count = {
     problems: graphOnly.problems,
+    errors: graphOnly.errors,
     notes: graphOnly.notes,
     graphOnly: graphOnly.problems + graphOnly.notes,
   };
   for (const file of diagnosticFilesByBundle.get(bundleRoot) ?? []) {
     for (const diagnostic of collection.get(vscode.Uri.file(file)) ?? []) {
+      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) count.errors++;
       if (
         diagnostic.severity === vscode.DiagnosticSeverity.Error ||
         diagnostic.severity === vscode.DiagnosticSeverity.Warning
@@ -159,6 +175,46 @@ export function bundleProblemCount(
   return count;
 }
 
+/** One problem of a bundle, where it is. */
+export interface BundleProblem {
+  uri: vscode.Uri;
+  range: vscode.Range;
+  severity: vscode.DiagnosticSeverity;
+  message: string;
+  /** The task or resource it is about, when the finding names one. */
+  owner: string | undefined;
+}
+
+/**
+ * The errors and warnings of a bundle's last check, by file then line, as the Problems
+ * panel lists them, and how many more have no file to point at (the graph shows those).
+ * Together they make up the count the sidebar and the status bar show.
+ */
+export function bundleProblems(
+  bundleRoot: string,
+  collection: vscode.DiagnosticCollection,
+): { inFiles: BundleProblem[]; graphOnly: number } {
+  const inFiles: BundleProblem[] = [];
+  const owners = ownersByBundle.get(bundleRoot);
+  for (const file of [...(diagnosticFilesByBundle.get(bundleRoot) ?? [])].sort()) {
+    const uri = vscode.Uri.file(file);
+    const problems = (collection.get(uri) ?? [])
+      .filter(
+        ({ severity }) => severity === vscode.DiagnosticSeverity.Error || severity === vscode.DiagnosticSeverity.Warning,
+      )
+      .map(({ range, severity, message }) => ({
+        uri,
+        range,
+        severity,
+        message,
+        owner: owners?.get(ownerKey(file, range.start.line, message)),
+      }))
+      .sort((a, b) => a.range.start.compareTo(b.range.start));
+    inFiles.push(...problems);
+  }
+  return { inFiles, graphOnly: graphOnlyByBundle.get(bundleRoot)?.problems ?? 0 };
+}
+
 /** Clears what a bundle put in the Problems panel, for a bundle that is gone. */
 export function forgetBundleDiagnostics(
   bundleRoot: string,
@@ -169,6 +225,7 @@ export function forgetBundleDiagnostics(
   }
   diagnosticFilesByBundle.delete(bundleRoot);
   graphOnlyByBundle.delete(bundleRoot);
+  ownersByBundle.delete(bundleRoot);
   loadedFilesByBundle.delete(bundleRoot);
   completeFindingsByBundle.delete(bundleRoot);
   forgetBundleFixes(bundleRoot);
@@ -246,10 +303,13 @@ export async function updateBundleDiagnostics(
   let graph: BundleGraph | undefined;
   const fixes = new Map<string, StoredFix[]>();
   // When validation failed, what the CLI reported without a file is all there is.
+  const cliGraphOnly = result.ok ? [] : extractDiagnostics(result).filter((d) => !d.path);
   const graphOnly = {
-    problems: result.ok ? 0 : extractDiagnostics(result).filter((d) => !d.path).length,
+    problems: cliGraphOnly.length,
+    errors: cliGraphOnly.filter((d) => d.severity === "error").length,
     notes: 0,
   };
+  const owners = new Map<string, string>();
   if (result.ok) {
     try {
       // Read file contents as the inspector panel does, so issues found in code
@@ -268,6 +328,7 @@ export async function updateBundleDiagnostics(
         inspectorIssues,
         bundleRoot,
         fixes,
+        owners,
       );
       // The inspector's issues already hold every CLI diagnostic, with its code, so
       // the CLI's own copies would show each message twice.
@@ -277,6 +338,7 @@ export async function updateBundleDiagnostics(
       }
       for (const issue of inspectorIssues) {
         if (issue.file) continue;
+        if (issue.severity === "error") graphOnly.errors++;
         if (issue.severity === "error" || issue.severity === "warning") graphOnly.problems++;
         else graphOnly.notes++;
       }
@@ -301,6 +363,7 @@ export async function updateBundleDiagnostics(
   }
   diagnosticFilesByBundle.set(bundleRoot, new Set(fresh.keys()));
   graphOnlyByBundle.set(bundleRoot, graphOnly);
+  ownersByBundle.set(bundleRoot, owners);
   setBundleFixes(bundleRoot, fixes);
   return graph;
 }
