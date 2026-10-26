@@ -6,11 +6,11 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Added
 
-- **A sidebar** ([#245](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/245)). The Bundle Inspector icon in the Activity Bar opens two sections, built from VS Code's own tree views. **Bundles** lists every bundle in the open folders with the status bar's result, selects the bundle of the open file, and has **Inspect Bundle** and **Check Again** on each bundle and **Check All Databricks Bundles Again** at the top. Under each bundle, **Check against** lists the structural preview and the bundle's targets, by name, and says which one the graph uses; a target opens where it is defined. **Settings** shows the Databricks CLI in use and its version, and the sign-in profile, each with a button to change it; with no usable CLI, it offers Locate and the install guide. Problems stay in the YAML and the Problems panel. Switching targets from the sidebar, signing in and choosing between several CLIs come in later releases. See [docs/usage.md](docs/usage.md#sidebar).
+- **A sidebar** ([#245](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/245), [PR #246](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/246)). The Bundle Inspector icon in the Activity Bar opens two sections, built from VS Code's own tree views. **Bundles** lists every bundle in the open folders with the status bar's result, selects the bundle of the open file, and has **Inspect Bundle** and **Check Again** on each bundle and **Check All Databricks Bundles Again** at the top. Under each bundle, **Check against** lists the structural preview and the bundle's targets, by name, and says which one the graph uses; a target opens where it is defined. **Settings** shows the Databricks CLI in use and its version, and the sign-in profile, each with a button to change it; with no usable CLI, it offers Locate and the install guide. Problems stay in the YAML and the Problems panel. Switching targets from the sidebar, signing in and choosing between several CLIs come in later releases. See [docs/usage.md](docs/usage.md#sidebar).
 
 ### Changed
 
-- **The Inspect button in the editor title bar is an icon**: the extension's cube and magnifier, as in the Activity Bar. It was the words "Inspect Databricks Bundle".
+- **The Inspect button in the editor title bar is an icon** ([PR #246](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/246)): the extension's cube and magnifier, as in the Activity Bar. It was the words "Inspect Databricks Bundle".
 
 ## [0.5.0] - 2026-10-23
 
