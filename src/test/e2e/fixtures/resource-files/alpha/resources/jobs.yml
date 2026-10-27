@@ -12,6 +12,20 @@ resources:
         - task_key: second
           notebook_task:
             notebook_path: ../src/task.py
+        - task_key: refresh
+          depends_on:
+            - task_key: second
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.alpha_pipeline.id}
+  pipelines:
+    alpha_pipeline:
+      name: alpha_pipeline
+      serverless: true
+      catalog: main
+      schema: alpha
+      libraries:
+        - notebook:
+            path: ../src/task.py
 variables:
   label:
     default: alpha

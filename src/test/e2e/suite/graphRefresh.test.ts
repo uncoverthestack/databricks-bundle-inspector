@@ -51,7 +51,7 @@ export function graphRefreshSuite() {
             visit(frameTree);
             for (const frame of frames) {
               const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-graph-test" }, sessionId);
-              if (await evaluate(`${select}?.value`, sessionId, executionContextId) === "alpha_second") {
+              if (await evaluate(`${select}?.value`, sessionId, executionContextId) === "jobs:alpha_second") {
                 graph = { sessionId, contextId: executionContextId };
                 return true;
               }
@@ -63,8 +63,8 @@ export function graphRefreshSuite() {
         assert.ok(graph);
         const issuesOpen = `Boolean(document.querySelector('button[aria-label="Close Issues in This Job"]'))`;
         assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true);
-        await evaluate(`(()=>{const s=${select};s.value='alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`, graph.sessionId, graph.contextId);
-        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "alpha_first", "the user's job selection");
+        await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`, graph.sessionId, graph.contextId);
+        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "jobs:alpha_first", "the user's job selection");
         // Choosing a job closes the panel. Reopen it through the actual Issues button.
         await evaluate(`[...document.querySelectorAll('header button')].find(button => button.textContent.trim().startsWith('Issues'))?.click()`, graph.sessionId, graph.contextId);
         await waitFor(async () => await evaluate(issuesOpen, graph!.sessionId, graph!.contextId) === true, "the reopened Issues panel");
@@ -81,17 +81,17 @@ export function graphRefreshSuite() {
           }, "the saved data reaching the graph");
           // Let React commit the posted refresh before reading the actual dropdown.
           await sleep(200);
-          assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "alpha_first", `selection after save ${round + 1}`);
+          assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "jobs:alpha_first", `selection after save ${round + 1}`);
           assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true, "save keeps the Issues panel open");
         }
         await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", undefined);
         await sleep(200);
-        assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "alpha_first", "selection after refreshing the structural preview");
+        assert.equal(await evaluate(`${select}?.value`, graph.sessionId, graph.contextId), "jobs:alpha_first", "selection after refreshing the structural preview");
 
         const reopened = await vscode.window.showTextDocument(document);
         reopened.selection = new vscode.Selection(line, 0, line, 0);
         await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
-        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "alpha_second", "a fresh Inspect request selecting the job under the cursor");
+        await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "jobs:alpha_second", "a fresh Inspect request selecting the job under the cursor");
         const requested = await vscode.commands.executeCommand<any>("databricksBundleInspector.test.graphData");
         assert.equal(requested.preserveView, false, "a new inspection is distinct from a refresh");
         assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), false, "a fresh Inspect request returns to the normal view");
@@ -101,6 +101,88 @@ export function graphRefreshSuite() {
         restore.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), original);
         await vscode.workspace.applyEdit(restore);
         await document.save();
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+
+    it("opens on the pipeline under the cursor, and the picker switches between it and a job", async function () {
+      assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      // As in the next test: the previous test's close must not close the graph this one opens.
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      await waitFor(
+        async () => !vscode.window.tabGroups.all.some((group) => group.tabs.some((tab) => tab.input instanceof vscode.TabInputWebview)),
+        "the previous graph to close",
+      );
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, "alpha/resources/jobs.yml")));
+      const line = document.getText().split(/\r?\n/).findIndex(text => text.includes("name: alpha_pipeline"));
+      const editor = await vscode.window.showTextDocument(document);
+      editor.selection = new vscode.Selection(line, 0, line, 0);
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+
+      const browser = await connectBrowser(process.env.E2E_CDP_PORT);
+      try {
+        let graph: { sessionId: string; contextId: number } | undefined;
+        const evaluate = async (expression: string) => {
+          const result = await browser.call("Runtime.evaluate", { expression, contextId: graph!.contextId, returnByValue: true }, graph!.sessionId);
+          assert.ok(!result.exceptionDetails, "graph script must execute");
+          return result.result?.value;
+        };
+        const select = `document.querySelector(${JSON.stringify(jobSelector)})`;
+        const details = `document.querySelector('[aria-label="Pipeline details"]')`;
+        await waitFor(async () => {
+          const { targetInfos } = await browser.call("Target.getTargets");
+          for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {
+            const { sessionId } = await browser.call("Target.attachToTarget", { targetId: target.targetId, flatten: true });
+            const { frameTree } = await browser.call("Page.getFrameTree", {}, sessionId);
+            const frames: any[] = [];
+            const visit = (node: any) => { frames.push(node.frame); for (const child of node.childFrames ?? []) visit(child); };
+            visit(frameTree);
+            for (const frame of frames) {
+              const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-pipeline-test" }, sessionId);
+              graph = { sessionId, contextId: executionContextId };
+              if (await evaluate(`${select}?.value`) === "pipelines:alpha_pipeline" && await evaluate(`Boolean(${details})`)) return true;
+            }
+            await browser.call("Target.detachFromTarget", { sessionId });
+          }
+          return false;
+        }, "the pipeline view");
+
+        const shown = await evaluate(`({
+          groups: [...${select}.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]),
+          name: ${details}.querySelector('.text-lg')?.textContent,
+          sources: [...document.querySelectorAll('[aria-label="Sources"] li')].map(li => li.textContent),
+          defaultSchema: document.querySelector('[aria-label="Default catalog and schema"]')?.textContent,
+          search: Boolean(document.querySelector('header input')),
+          taskGraph: Boolean(document.querySelector('.react-flow')),
+        })`);
+        assert.deepEqual(shown.groups, [
+          // alpha also includes the sales team's resource file.
+          ["Jobs", ["jobs:alpha_first", "jobs:alpha_second", "jobs:sales_first", "jobs:sales_second"]],
+          ["Pipelines", ["pipelines:alpha_pipeline"]],
+        ]);
+        assert.equal(shown.name, "alpha_pipeline");
+        assert.equal(shown.sources.length, 1);
+        assert.match(shown.sources[0], /notebook\.\.\/src\/task\.pyjobs\.yml:\d+Found/);
+        assert.match(shown.defaultSchema, /main\.alpha/);
+        assert.equal(shown.search, false, "search works on tasks, so it stands aside for a pipeline");
+        assert.equal(shown.taskGraph, false);
+
+        await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => await evaluate(`Boolean(document.querySelector('.react-flow')) && !${details}`) === true, "the job's task graph");
+        assert.equal(await evaluate(`Boolean(document.querySelector('header input'))`), true, "search is back for a job");
+
+        // A pipeline task's Pipeline row leads back to its pipeline.
+        await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => await evaluate(`[...document.querySelectorAll('.react-flow__node')].some(n => n.textContent.includes('refresh'))`) === true, "the pipeline task");
+        await evaluate(`[...document.querySelectorAll('.react-flow__node')].find(n => n.textContent.includes('refresh')).click()`);
+        const pipelineRow = `[...document.querySelectorAll('[title$="Click to show the pipeline."]')]`;
+        await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the task's Pipeline row");
+        await evaluate(`${pipelineRow}[0].click()`);
+        await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view again");
+        assert.match(await evaluate(`document.querySelector('[aria-label="Run by"]').textContent`), /alpha_second.*task refresh/);
+      } finally {
+        browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       }
     });
