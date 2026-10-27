@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import path from "path";
+import os from "os";
 import { existsSync, readFileSync } from "fs";
 import {
   BUNDLE_PROBE_TARGET,
@@ -114,6 +115,7 @@ import {
   profileRow,
   targetLine,
   targetsRow,
+  typedCliPath,
   type CliCandidate,
   type SidebarBundle,
   type SidebarCli,
@@ -1248,16 +1250,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     });
     const file = picked?.[0]?.fsPath;
     if (!file) return;
+    await useCliFile(file, inspectAgain);
+  }
 
-    const cli = await verifyCliPath(file);
-    if (!cli.ok) {
+  /**
+   * Saves `file` to the cliPath user setting once it answers `--version` as the Databricks
+   * CLI. Otherwise says why and offers the file picker.
+   */
+  async function useCliFile(file: string, inspectAgain: () => Promise<void>): Promise<void> {
+    const cli = existsSync(file) ? await verifyCliPath(file) : undefined;
+    if (!cli?.ok) {
       const name = path.basename(file);
-      const printed = cli.otherProgramOutput?.trim().slice(0, 60);
+      const printed = cli?.otherProgramOutput?.trim().slice(0, 60);
       const expected = process.platform === "win32" ? "databricks.exe" : "databricks";
       const choice = await vscode.window.showErrorMessage(
-        printed
-          ? `${name} is not the Databricks CLI (it printed "${printed}"). Pick ${expected}.`
-          : `${name} could not be run as the Databricks CLI. Pick ${expected}.`,
+        !cli
+          ? `There is no file at ${file}. Pick ${expected}.`
+          : printed
+            ? `${name} is not the Databricks CLI (it printed "${printed}"). Pick ${expected}.`
+            : `${name} could not be run as the Databricks CLI. Pick ${expected}.`,
         LOCATE_CLI,
       );
       if (choice === LOCATE_CLI) await locateCli(inspectAgain);
@@ -1933,7 +1944,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     );
     const inUse = sidebarCli?.ok ? sidebarCli.path : undefined;
     const choices = cliChoices(checked, inUse);
-    type Item = vscode.QuickPickItem & { path?: string; action?: "browse" | "clear" | "install" };
+    type Item = vscode.QuickPickItem & { path?: string; action?: "browse" | "clear" | "install" | "typed" };
     const items: Item[] = [
       ...choices.map((choice) => ({
         label: choice.inUse ? `$(check) ${choice.label}` : choice.label,
@@ -1950,13 +1961,33 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ? [{ label: "$(link-external) Open the Databricks CLI Install Guide", action: "install" as const }]
         : []),
     ];
-    const picked = await vscode.window.showQuickPick(items, {
-      title: "Choose the Databricks CLI",
-      placeHolder: choices.length > 0 ? "Pick a CLI, or browse for one" : "No Databricks CLI found. Browse for one, or install it",
-      matchOnDetail: true,
+    const picker = vscode.window.createQuickPick<Item>();
+    picker.title = "Choose the Databricks CLI";
+    picker.placeholder =
+      choices.length > 0
+        ? "Pick a CLI, type its full path, or browse for one"
+        : "No Databricks CLI found. Type its full path, browse for one, or install it";
+    picker.matchOnDetail = true;
+    picker.items = items;
+    // A full path typed in becomes the first row, so Enter uses it.
+    picker.onDidChangeValue((value) => {
+      const typed = typedCliPath(value, process.platform, os.homedir());
+      picker.items = typed
+        ? [{ label: `$(file) Use ${typed}`, description: "saves to the cliPath setting", path: typed, action: "typed", alwaysShow: true }, ...items]
+        : items;
     });
+    const picked = await new Promise<Item | undefined>((resolve) => {
+      picker.onDidAccept(() => {
+        resolve(picker.selectedItems[0]);
+        picker.hide();
+      });
+      picker.onDidHide(() => resolve(undefined));
+      picker.show();
+    });
+    picker.dispose();
     if (!picked) return;
     if (picked.action === "browse") return locateCli(recheckAllBundles);
+    if (picked.action === "typed" && picked.path) return useCliFile(picked.path, recheckAllBundles);
     if (picked.action === "install") {
       void vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform)));
       return;

@@ -1,3 +1,4 @@
+import path from "path";
 import { LineCounter, parseDocument } from "yaml";
 import { anchorsOf, entries } from "../bundle/variableSources.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
@@ -329,6 +330,20 @@ export function cliChoices(checked: readonly CheckedCli[], inUsePath: string | u
       };
     })
     .sort((a, b) => Number(b.inUse) - Number(a.inUse));
+}
+
+/**
+ * A full path typed into the CLI picker, or undefined for anything else, which the picker
+ * only uses to filter its rows. Quotes from Windows' "Copy as path" are dropped, and `~/`
+ * is the home folder.
+ */
+export function typedCliPath(value: string, platform: NodeJS.Platform, home: string): string | undefined {
+  let typed = value.trim();
+  if (/^"[^"]+"$/.test(typed)) typed = typed.slice(1, -1).trim();
+  if (/^~[\\/]/.test(typed)) typed = home + typed.slice(1);
+  // On Windows a full path starts with a drive or `\\server`: `\foo` alone has no drive.
+  const full = platform === "win32" ? /^([a-zA-Z]:[\\/]|\\\\[^\\])/.test(typed) : path.posix.isAbsolute(typed);
+  return full ? typed : undefined;
 }
 
 /** What the Settings view knows about the Databricks CLI. `undefined` while it is looked up. */

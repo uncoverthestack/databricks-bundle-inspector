@@ -5,6 +5,7 @@ import {
   bundleStatus,
   cliCandidates,
   cliChoices,
+  typedCliPath,
   cliRow,
   compactContents,
   graphRow,
@@ -394,5 +395,44 @@ describe("cliChoices", () => {
       { path: "/opt/homebrew/bin/databricks", label: "v1.22.0", description: "on PATH", inUse: false },
       { path: "/old/databricks", label: "v0.240.0", description: "cliPath setting · older than v0.299.0", inUse: false },
     ]);
+  });
+});
+
+describe("typedCliPath", () => {
+  const home = "/Users/me";
+
+  test("a full path is offered as typed, on each OS", () => {
+    expect(typedCliPath("C:\\dbi-check\\databricks-custom.exe", "win32", "C:\\Users\\me")).toBe("C:\\dbi-check\\databricks-custom.exe");
+    expect(typedCliPath("c:/tools/databricks.exe", "win32", "C:\\Users\\me")).toBe("c:/tools/databricks.exe");
+    expect(typedCliPath("\\\\server\\share\\databricks.exe", "win32", "C:\\Users\\me")).toBe("\\\\server\\share\\databricks.exe");
+    expect(typedCliPath("/opt/tools/databricks", "darwin", home)).toBe("/opt/tools/databricks");
+    expect(typedCliPath("/opt/tools/databricks", "linux", home)).toBe("/opt/tools/databricks");
+  });
+
+  test("quotes from Copy as path and spaces around it are dropped", () => {
+    expect(typedCliPath('  "C:\\Program Files\\Databricks\\databricks.exe" ', "win32", "C:\\Users\\me")).toBe(
+      "C:\\Program Files\\Databricks\\databricks.exe",
+    );
+  });
+
+  test("~/ is the home folder", () => {
+    expect(typedCliPath("~/bin/databricks", "darwin", home)).toBe("/Users/me/bin/databricks");
+    expect(typedCliPath("~\\bin\\databricks.exe", "win32", "C:\\Users\\me")).toBe("C:\\Users\\me\\bin\\databricks.exe");
+  });
+
+  test("anything else only filters the list", () => {
+    for (const [value, platform] of [
+      ["", "darwin"],
+      ["1.2", "darwin"],
+      ["databricks", "darwin"],
+      ["bin/databricks", "linux"],
+      ["databricks.exe", "win32"],
+      ["\\databricks.exe", "win32"],
+      ["/opt/databricks", "win32"],
+      ["C:\\dbi-check\\databricks.exe", "darwin"],
+      ['"', "win32"],
+    ] as const) {
+      expect(typedCliPath(value, platform, home)).toBeUndefined();
+    }
   });
 });

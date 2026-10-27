@@ -1,11 +1,62 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type PickerItem = vscode.QuickPickItem & { path?: string };
+interface FakePicker {
+  items: readonly PickerItem[];
+  /** Types into the picker's box, as a user would. */
+  type(value: string): void;
+}
+
+/**
+ * Stands in for `createQuickPick` (the CLI picker) until the returned function restores it.
+ * `answer` sees the picker once it is shown and returns the row to accept, or undefined to close it.
+ */
+function stubCreateQuickPick(answer: (picker: FakePicker) => PickerItem | undefined): () => void {
+  const window = vscode.window as { createQuickPick: typeof vscode.window.createQuickPick };
+  const original = window.createQuickPick;
+  window.createQuickPick = (() => {
+    const listeners = { value: [] as Array<(value: string) => void>, accept: [] as Array<() => void>, hide: [] as Array<() => void> };
+    const on = <T>(list: T[]) => (listener: T) => {
+      list.push(listener);
+      return { dispose() {} };
+    };
+    const picker = {
+      items: [] as readonly PickerItem[],
+      selectedItems: [] as readonly PickerItem[],
+      value: "",
+      onDidChangeValue: on(listeners.value),
+      onDidAccept: on(listeners.accept),
+      onDidHide: on(listeners.hide),
+      type(value: string) {
+        picker.value = value;
+        for (const listener of listeners.value) listener(value);
+      },
+      show() {
+        setTimeout(() => {
+          const item = answer(picker);
+          if (!item) return picker.hide();
+          picker.selectedItems = [item];
+          for (const listener of listeners.accept) listener();
+        });
+      },
+      hide() {
+        for (const listener of listeners.hide) listener();
+      },
+      dispose() {},
+    };
+    return picker;
+  }) as unknown as typeof vscode.window.createQuickPick;
+  return () => {
+    window.createQuickPick = original;
+  };
+}
 
 /** What the sidebar shows (a test-only command; the API can't read a tree view's rows). */
 interface ShownSidebar {
@@ -232,17 +283,15 @@ export function sidebarSuite() {
 
     it("clicking the CLI row lists each CLI found with where it is from, the one in use ticked", async () => {
       const shown = await sidebarWhen(checked);
-      const window = vscode.window as { showQuickPick: typeof vscode.window.showQuickPick };
-      const original = window.showQuickPick;
-      let offered: Array<vscode.QuickPickItem & { path?: string }> = [];
-      window.showQuickPick = (async (items: readonly vscode.QuickPickItem[]) => {
-        offered = [...items];
+      let offered: PickerItem[] = [];
+      const restore = stubCreateQuickPick((picker) => {
+        offered = [...picker.items];
         return undefined;
-      }) as unknown as typeof vscode.window.showQuickPick;
+      });
       try {
         await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
       } finally {
-        window.showQuickPick = original;
+        restore();
       }
       const inUse = offered.filter((item) => item.label.startsWith("$(check) "));
       assert.equal(inUse.length, 1, JSON.stringify(offered));
@@ -251,6 +300,70 @@ export function sidebarSuite() {
       assert.ok(inUse[0]!.detail && path.isAbsolute(inUse[0]!.detail), `the file in use should be shown: ${inUse[0]!.detail}`);
       assert.ok(offered.some((item) => item.label.includes("Browse for the Databricks CLI")));
       // Nothing was picked, so the setting is unchanged.
+      assert.equal(vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath") || undefined, undefined);
+    });
+
+    it("a full path typed into the CLI picker is offered first, and saved once it answers as the Databricks CLI", async function () {
+      this.timeout(120_000);
+      await sidebarWhen(checked);
+      let inUse: string | undefined;
+      let restore = stubCreateQuickPick((picker) => {
+        inUse = picker.items.find((item) => item.label.startsWith("$(check) "))?.path;
+        return undefined;
+      });
+      try {
+        await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
+      } finally {
+        restore();
+      }
+      assert.ok(inUse, "a CLI should be in use");
+
+      // The same CLI under another name, so it is found only by typing its path.
+      const dir = await mkdtemp(path.join(tmpdir(), "dbi-typed-cli-"));
+      const custom = path.join(dir, process.platform === "win32" ? "databricks-custom.exe" : "databricks-custom");
+      await copyFile(inUse, custom);
+      await chmod(custom, 0o755);
+      const settings = () => vscode.workspace.getConfiguration("databricksBundleInspector");
+      let offered: PickerItem[] = [];
+      restore = stubCreateQuickPick((picker) => {
+        picker.type(`"${custom}"`);
+        offered = [...picker.items];
+        return offered[0];
+      });
+      try {
+        await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
+        assert.equal(offered[0]?.label, `$(file) Use ${custom}`, JSON.stringify(offered));
+        for (let waited = 0; settings().get("cliPath") !== custom && waited < 30_000; waited += 250) await sleep(250);
+        assert.equal(settings().get("cliPath"), custom);
+      } finally {
+        restore();
+        await settings().update("cliPath", undefined, vscode.ConfigurationTarget.Global);
+        await sidebarWhen(checked);
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("a typed path with no file there is not saved, and says so", async () => {
+      await sidebarWhen(checked);
+      const missing = path.join(tmpdir(), "dbi-no-such-folder", process.platform === "win32" ? "databricks.exe" : "databricks");
+      const window = vscode.window as { showErrorMessage: typeof vscode.window.showErrorMessage };
+      const showErrorMessage = window.showErrorMessage;
+      const errors: string[] = [];
+      window.showErrorMessage = (async (message: string) => {
+        errors.push(message);
+        return undefined;
+      }) as unknown as typeof vscode.window.showErrorMessage;
+      const restore = stubCreateQuickPick((picker) => {
+        picker.type(missing);
+        return picker.items[0];
+      });
+      try {
+        await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
+      } finally {
+        restore();
+        window.showErrorMessage = showErrorMessage;
+      }
+      assert.deepEqual(errors, [`There is no file at ${missing}. Pick ${path.basename(missing)}.`]);
       assert.equal(vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath") || undefined, undefined);
     });
 
@@ -265,6 +378,7 @@ export function sidebarSuite() {
       const window = vscode.window as { showQuickPick: typeof vscode.window.showQuickPick };
       const original = window.showQuickPick;
       window.showQuickPick = (async () => undefined) as unknown as typeof vscode.window.showQuickPick;
+      const restorePicker = stubCreateQuickPick(() => undefined);
       try {
         // From the Command Palette: not sidebar use.
         await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
@@ -288,6 +402,7 @@ export function sidebarSuite() {
         assert.match(String(inspect?.properties.cli_version), /^\d+\.\d+$/);
       } finally {
         window.showQuickPick = original;
+        restorePicker();
       }
       const counted = await actions();
       for (const action of ["open_bundle_file", "open_target", "check_again", "check_all", "choose_cli", "open_graph"]) {
