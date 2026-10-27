@@ -339,7 +339,8 @@ export function sidebarSuite() {
         restore();
         await settings().update("cliPath", undefined, vscode.ConfigurationTarget.Global);
         await sidebarWhen(checked);
-        await rm(dir, { recursive: true, force: true });
+        // Windows won't delete a program just checked, until the check's process has fully exited.
+        await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
       }
     });
 
