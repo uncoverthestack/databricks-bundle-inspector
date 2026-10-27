@@ -3,6 +3,7 @@ import {
   bundleRow,
   cliRow,
   graphRow,
+  graphRowOffersSignIn,
   problemsRow,
   profileRow,
   targetsRow,
@@ -20,6 +21,7 @@ export const CHOOSE_CLI_COMMAND = "databricksBundleInspector.chooseCli";
 
 export const OPEN_PROBLEMS_COMMAND = "databricksBundleInspector.sidebar.openProblems";
 export const INSPECT_COMMAND = "databricksBundleInspector.sidebar.inspect";
+export const SIGN_IN_COMMAND = "databricksBundleInspector.sidebar.openSignInTerminal";
 
 /** A row of the Bundles view. Rows are things (a bundle, its graph, its problems, its targets); actions are icons on them. */
 export type BundlesElement =
@@ -148,6 +150,8 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
       case "graph": {
         const row = graphRow(bundle);
         const created = item("Open Graph");
+        // The key icon shows only while signing in can fix the target the graph fell back from.
+        if (graphRowOffersSignIn(bundle)) created.contextValue = "graph.signIn";
         created.description = row.description;
         created.tooltip = row.tooltip;
         created.iconPath = this.inspectIcon;

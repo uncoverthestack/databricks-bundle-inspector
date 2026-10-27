@@ -109,6 +109,11 @@
         "title": "Open Bundle Problems"
       },
       {
+        "command": "databricksBundleInspector.sidebar.openSignInTerminal",
+        "title": "Open Sign-in Terminal",
+        "icon": "$(key)"
+      },
+      {
         "command": "databricksBundleInspector.checkAllBundles",
         "title": "Check All Databricks Bundles Again",
         "icon": "$(refresh)"
@@ -257,6 +262,10 @@
           "when": "false"
         },
         {
+          "command": "databricksBundleInspector.sidebar.openSignInTerminal",
+          "when": "false"
+        },
+        {
           "command": "databricksBundleInspector.sidebar.checkAll",
           "when": "false"
         },
@@ -307,6 +316,11 @@
           "command": "databricksBundleInspector.sidebar.checkAgain",
           "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
           "group": "navigation@3"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.openSignInTerminal",
+          "when": "view == databricksBundleInspector.bundles && viewItem == graph.signIn",
+          "group": "inline"
         },
         {
           "command": "databricksBundleInspector.chooseCli",

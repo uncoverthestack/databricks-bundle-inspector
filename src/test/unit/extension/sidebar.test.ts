@@ -8,6 +8,7 @@ import {
   cliRow,
   compactContents,
   graphRow,
+  graphRowOffersSignIn,
   pathHints,
   problemsRow,
   profileRow,
@@ -138,6 +139,25 @@ describe("graphRow", () => {
     const row = graphRow(bundle({ graphTarget: { target: "prod", fellBack: true } }));
     expect(row.description).toBe("prod couldn't be checked");
     expect(row.tooltip).toContain("the graph shows the structural preview");
+  });
+
+  test("a target waiting on a sign-in follows the graph's banner, and offers the key icon only while it does", () => {
+    const at = (signIn: { stage: "needed" | "terminal" | "updated" | "checking"; blockedReason?: string }) =>
+      bundle({ graphTarget: { target: "dev", fellBack: true, signIn } });
+    expect(graphRow(at({ stage: "needed" })).description).toBe("dev needs sign-in");
+    expect(graphRow(at({ stage: "needed" })).tooltip).toContain("typed, not run");
+    expect(graphRow(at({ stage: "terminal" })).description).toBe("dev: press Enter in the terminal");
+    expect(graphRow(at({ stage: "updated" })).description).toBe("sign-in profile updated");
+    expect(graphRow(at({ stage: "checking" })).description).toBe("checking dev…");
+    const blocked = at({ stage: "needed", blockedReason: "the \"tok\" profile signs in another way" });
+    expect(graphRow(blocked).tooltip).toContain('Couldn\'t check dev: the "tok" profile signs in another way.');
+
+    expect(graphRowOffersSignIn(at({ stage: "needed" }))).toBe(true);
+    for (const signIn of [{ stage: "terminal" as const }, { stage: "updated" as const }, { stage: "checking" as const }]) {
+      expect(graphRowOffersSignIn(at(signIn))).toBe(false);
+    }
+    expect(graphRowOffersSignIn(blocked)).toBe(false);
+    expect(graphRowOffersSignIn(bundle({ graphTarget: { target: "dev", fellBack: true } }))).toBe(false);
   });
 });
 

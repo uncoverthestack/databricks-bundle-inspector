@@ -142,13 +142,15 @@ export function sidebarSuite() {
       await vscode.commands.executeCommand("databricksBundleInspector.sidebar.inspect", { kind: "bundle", root });
       await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", "ambiguous");
 
+      // With no credentials at all (as on CI) it needs a sign-in; with some, the CLI rejects them.
+      const notChecked = /^ambiguous (couldn't be checked|needs sign-in)$/;
       const fellBack = await sidebarWhen((shown) => shown.bundles[0]!.graph.description.includes("ambiguous"));
-      assert.equal(fellBack.bundles[0]!.graph.description, "ambiguous couldn't be checked");
+      assert.match(fellBack.bundles[0]!.graph.description, notChecked);
 
       // Clicking Graph shows the graph as it is: it doesn't go back to the structural preview.
       await vscode.commands.executeCommand("databricksBundleInspector.sidebar.inspect", { kind: "graph", root });
       await sleep(2_000);
-      assert.equal((await sidebar()).bundles[0]!.graph.description, "ambiguous couldn't be checked");
+      assert.equal((await sidebar()).bundles[0]!.graph.description, fellBack.bundles[0]!.graph.description);
       assert.ok(fellBack.bundles[0]!.targets.targets.every((item) => item.description === ""));
 
       await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", undefined);

@@ -74,9 +74,10 @@ async function main() {
       E2E_SUITE: suite,
       ...(debuggingPort ? { E2E_CDP_PORT: String(debuggingPort) } : {}),
       // A ~/.databrickscfg profile for the cases that need a login (see the targets fixture).
-      ...(options.profile
-        ? { INSPECTOR_TEST_PROFILE: options.profile }
-        : {}),
+      // Always set, empty without one: VS Code can pick the variable up from the user's
+      // environment otherwise (macOS passes `launchctl setenv` values to every app), and
+      // the login cases would then use a real workspace nobody asked for.
+      INSPECTOR_TEST_PROFILE: options.profile ?? "",
       // The extension checks the open bundle as soon as VS Code starts. A real CLI found
       // then stays cached for the session, so this suite starts with none on the PATH.
       ...(suite === "cliNotFound"

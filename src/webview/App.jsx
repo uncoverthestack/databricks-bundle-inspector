@@ -2588,6 +2588,70 @@ function useVscodeColorMode() {
 
 // ── App ───────────────────────────────────────────────────────
 
+const BANNER_BUTTON =
+  "rounded-md border border-accent/60 px-2 py-0.5 font-medium text-fg hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const BANNER_LINK =
+  "underline decoration-dotted underline-offset-2 text-fg-soft hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+/**
+ * The banner for a target that fell back for want of a sign-in. One state at a time, each
+ * replacing the one before: needs sign-in, press Enter in the terminal, profile updated,
+ * checking. The graph below stays usable throughout: it shows the structural preview.
+ */
+function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, onOpenGuide }) {
+  const { target, stage, blockedReason } = signIn;
+  const warning = stage === "needed";
+  const guide = (
+    <button type="button" onClick={onOpenGuide} className={BANNER_LINK}>
+      What does this do?
+    </button>
+  );
+  let content;
+  if (blockedReason) {
+    content = <span>Couldn't check {target}: you need to sign in, and {blockedReason}.</span>;
+  } else if (stage === "needed") {
+    content = (
+      <>
+        <span>Couldn't check {target}. Sign in to try again.</span>
+        <button type="button" onClick={onOpenTerminal} className={BANNER_BUTTON}>
+          Open Sign-in Terminal
+        </button>
+        {guide}
+      </>
+    );
+  } else if (stage === "terminal") {
+    content = (
+      <>
+        <span>Press Enter in the terminal to start sign-in.</span>
+        {guide}
+      </>
+    );
+  } else if (stage === "updated") {
+    content = (
+      <>
+        <span>Sign-in profile updated.</span>
+        <button type="button" onClick={onCheckAgain} className={BANNER_BUTTON}>
+          Check {target} again
+        </button>
+      </>
+    );
+  } else {
+    content = <span>Checking {target}…</span>;
+  }
+  return (
+    <div
+      role="status"
+      data-sign-in-stage={blockedReason ? "blocked" : stage}
+      title={fallbackMessage ? `Databricks CLI: ${fallbackMessage}` : undefined}
+      className={`flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-2 text-xs text-fg ${
+        warning || blockedReason ? "border-warning/40 bg-warning/10" : "border-accent/40 bg-accent/10"
+      }`}
+    >
+      {content}
+    </div>
+  );
+}
+
 export default function App({
   parsedBundle,
   resolutionBundle,
@@ -2602,6 +2666,10 @@ export default function App({
   targetFallbackReason,
   profileChoice,
   onChooseProfile,
+  signIn,
+  onOpenSignInTerminal,
+  onCheckTargetAgain,
+  onOpenSignInGuide,
   focusIssuesNonce,
   initialJobKey,
   onSelectTarget,
@@ -2962,17 +3030,27 @@ export default function App({
         }
       />
 
-      {/* With several matching profiles, the profile note below says why and offers the fix. */}
-      {inspectedTargetMode === "probe" && requestedTarget && targetFallbackMessage && !profileChoice && (
+      {/* With several matching profiles, the profile note below says why and offers the fix.
+          A fallback signing in can fix gets the sign-in banner instead. */}
+      {inspectedTargetMode === "probe" && requestedTarget && targetFallbackMessage && !profileChoice && !signIn && (
         <div
           role="status"
           title={`Databricks CLI: ${targetFallbackMessage}`}
           className="shrink-0 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-fg"
         >
-          Target "{requestedTarget}" couldn't be checked
-          {targetFallbackReason ? `: ${targetFallbackReason}` : ""}. Showing the structural preview.
-          Pick the target again to retry.
+          Couldn't check {requestedTarget}
+          {targetFallbackReason ? `: ${targetFallbackReason}` : ""}. Pick it again to try again.
         </div>
+      )}
+
+      {signIn && (
+        <SignInBanner
+          signIn={signIn}
+          fallbackMessage={targetFallbackMessage}
+          onOpenTerminal={() => onOpenSignInTerminal?.(signIn.target)}
+          onCheckAgain={() => onCheckTargetAgain?.(signIn.target)}
+          onOpenGuide={onOpenSignInGuide}
+        />
       )}
 
       {profileChoice && (
@@ -2981,7 +3059,7 @@ export default function App({
           className="flex shrink-0 flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-fg"
         >
           <span>
-            Several Databricks login profiles match this workspace
+            Several Databricks sign-in profiles match this workspace
             {profileChoice.names.length > 0 ? ` (${profileChoice.names.join(", ")})` : ""}.
             Choose the one to use for this target.
           </span>

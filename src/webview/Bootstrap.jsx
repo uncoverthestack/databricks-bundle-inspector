@@ -7,6 +7,19 @@ import { contextMenuContext } from "./lib/textSelection";
 const vscodeApi =
   typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 
+const SIGN_IN_STAGES = ["needed", "terminal", "updated", "checking"];
+
+/** The sign-in banner's state from the extension, or null. */
+function validSignIn(value) {
+  return value && typeof value.target === "string" && SIGN_IN_STAGES.includes(value.stage)
+    ? {
+        target: value.target,
+        stage: value.stage,
+        blockedReason: typeof value.blockedReason === "string" ? value.blockedReason : null,
+      }
+    : null;
+}
+
 export default function Bootstrap() {
   const [parsedBundle, setParsedBundle] = useState(null);
   const [resolutionBundle, setResolutionBundle] = useState(null);
@@ -20,6 +33,7 @@ export default function Bootstrap() {
   const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
   const [targetFallbackReason, setTargetFallbackReason] = useState(null);
   const [profileChoice, setProfileChoice] = useState(null);
+  const [signIn, setSignIn] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
   const [initialJob, setInitialJob] = useState(null);
 
@@ -81,6 +95,7 @@ export default function Bootstrap() {
             ? data.profileChoice
             : null,
         );
+        setSignIn(validSignIn(data.signIn));
         // Data refreshes keep the view; explicit Inspect or Issues requests can reset it.
         if (typeof data.focusIssuesNonce === "number") {
           setFocusIssuesNonce(data.focusIssuesNonce);
@@ -95,6 +110,10 @@ export default function Bootstrap() {
         ) {
           setInitialJob(data.initialJob);
         }
+      }
+      // The sign-in banner moves on without new bundle data: terminal opened, profile saved, checking.
+      if (data.type === "signIn") {
+        setSignIn(validSignIn(data.signIn));
       }
       if (data.type === "focusIssues") {
         setFocusIssuesNonce(Date.now());
@@ -143,6 +162,18 @@ export default function Bootstrap() {
     vscodeApi?.postMessage({ type: "chooseProfile" });
   }
 
+  function handleOpenSignInTerminal(target) {
+    vscodeApi?.postMessage({ type: "openSignInTerminal", target });
+  }
+
+  function handleCheckTargetAgain(target) {
+    vscodeApi?.postMessage({ type: "checkTargetAgain", target });
+  }
+
+  function handleOpenSignInGuide() {
+    vscodeApi?.postMessage({ type: "openSignInGuide" });
+  }
+
   function handleSelectTarget(target) {
     vscodeApi?.postMessage({
       type: "selectTarget",
@@ -178,6 +209,10 @@ export default function Bootstrap() {
       targetFallbackReason={targetFallbackReason}
       profileChoice={profileChoice}
       onChooseProfile={handleChooseProfile}
+      signIn={signIn}
+      onOpenSignInTerminal={handleOpenSignInTerminal}
+      onCheckTargetAgain={handleCheckTargetAgain}
+      onOpenSignInGuide={handleOpenSignInGuide}
       focusIssuesNonce={focusIssuesNonce}
       initialJobKey={initialJob?.key}
       onSelectTarget={handleSelectTarget}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
@@ -125,7 +125,7 @@ async function withEmptyCliConfig<T>(body: () => Promise<T>): Promise<T> {
   }
 }
 
-const MISSING_PROFILE_REASON = 'there\'s no login profile named "NO_SUCH_PROFILE_E2E"';
+const MISSING_PROFILE_REASON = 'there\'s no sign-in profile named "NO_SUCH_PROFILE_E2E"';
 
 async function setProfile(value: string | undefined): Promise<void> {
   // The test VS Code has its own throwaway user settings; nothing is written to the fixture.
@@ -216,6 +216,118 @@ export function targetsSuite() {
       assert.deepEqual(graphWidgets(data), ["run_date"], "the preview's warning, labelled as the preview");
       assert.deepEqual(problemsWidgets(), ["run_date"], "the Problems panel keeps the preview");
       noDatabricksFolder();
+    });
+
+    describe("signing in for a target (no account used)", function () {
+      type Banner = { target: string; stage: string; blockedReason?: string } | null;
+      const banner = () => vscode.commands.executeCommand<Banner>("databricksBundleInspector.test.signIn");
+      const HOST = "https://signin-e2e.example.invalid";
+      let dir: string;
+      let config: string;
+      let typed: Array<{ text: string; addNewLine: boolean | undefined }>;
+      const saved: Record<string, string | undefined> = {};
+      const window = vscode.window as {
+        createTerminal: typeof vscode.window.createTerminal;
+        showInputBox: typeof vscode.window.showInputBox;
+      };
+      const originals = { createTerminal: window.createTerminal, showInputBox: window.showInputBox };
+
+      beforeEach(async function () {
+        this.timeout(60_000);
+        dir = await mkdtemp(path.join(os.tmpdir(), "bdi-e2e-signin-"));
+        config = path.join(dir, "databrickscfg");
+        await writeFile(config, "");
+        for (const key of ["DATABRICKS_CONFIG_FILE", "DATABRICKS_AUTH_STORAGE"]) saved[key] = process.env[key];
+        process.env.DATABRICKS_CONFIG_FILE = config;
+        // The CLI reads a file token cache, never the OS keychain.
+        process.env.DATABRICKS_AUTH_STORAGE = "plaintext";
+        typed = [];
+        // A stand-in terminal records what would be typed; no shell is started.
+        window.createTerminal = (() => ({
+          show: () => {},
+          sendText: (text: string, addNewLine?: boolean) => void typed.push({ text, addNewLine }),
+          dispose: () => {},
+        })) as unknown as typeof vscode.window.createTerminal;
+        window.showInputBox = (async () => HOST) as typeof vscode.window.showInputBox;
+        await setProfile("NO_SUCH_PROFILE_E2E");
+      });
+
+      afterEach(async function () {
+        window.createTerminal = originals.createTerminal;
+        window.showInputBox = originals.showInputBox;
+        for (const [key, value] of Object.entries(saved)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+        await pickTarget(undefined);
+        await rm(dir, { recursive: true, force: true });
+      });
+
+      const openTerminal = () =>
+        vscode.commands.executeCommand("databricksBundleInspector.sidebar.openSignInTerminal", { kind: "graph", root });
+
+      it("a missing sign-in offers the terminal, which gets the command typed and not run", async function () {
+        this.timeout(120_000);
+        const data = (await pickTarget("dev")) as GraphData & { signIn?: Banner };
+        assert.equal(data?.inspectedTargetMode, "probe", "the graph shows the structural preview");
+        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed" });
+
+        await openTerminal();
+        // dev has no workspace host, so the URL was asked for.
+        assert.deepEqual(typed, [
+          { text: `databricks auth login --host "${HOST}" --profile "NO_SUCH_PROFILE_E2E"`, addNewLine: false },
+        ]);
+        assert.equal((await banner())?.stage, "terminal");
+
+        // Another profile changing is not this sign-in.
+        await writeFile(config, "[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n");
+        await sleep(1_500);
+        assert.equal((await banner())?.stage, "terminal");
+
+        // What `auth login` writes: the profile with browser sign-in, and a copy of the old file.
+        await writeFile(`${config}.bak`, "[someone-else]\n");
+        await writeFile(
+          config,
+          `[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n\n[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\nauth_type = databricks-cli\n`,
+        );
+        await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
+
+        // Checking again: no token was ever saved, so dev falls back, and the banner starts over.
+        const again = (await vscode.commands.executeCommand("databricksBundleInspector.test.checkTargetAgain", "dev")) as GraphData & {
+          signIn?: Banner;
+        };
+        assert.equal(again?.inspectedTargetMode, "probe");
+        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed" });
+        assert.equal(typed.length, 1, "nothing typed again by itself");
+        noDatabricksFolder();
+      });
+
+      it("picking the preview while the terminal waits clears the banner, and a later sign-in changes nothing", async function () {
+        this.timeout(120_000);
+        await pickTarget("dev");
+        await openTerminal();
+        assert.equal((await banner())?.stage, "terminal");
+
+        const preview = (await pickTarget(undefined)) as GraphData & { signIn?: Banner };
+        assert.equal(preview?.signIn ?? null, null);
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await sleep(1_500);
+        assert.equal(await banner(), null);
+      });
+
+      it("a config file that can't be written: nothing is typed, and the banner says why", async function () {
+        if (process.platform === "win32") this.skip();
+        this.timeout(60_000);
+        await pickTarget("dev");
+        await chmod(dir, 0o500);
+        try {
+          await openTerminal();
+          assert.deepEqual(typed, []);
+          assert.match((await banner())?.blockedReason ?? "", /can't be written/);
+        } finally {
+          await chmod(dir, 0o700);
+        }
+      });
     });
 
     it("after a fallback, saves refresh the preview without running the target again", async function () {
