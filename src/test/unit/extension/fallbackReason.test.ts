@@ -54,6 +54,45 @@ describe("targetFallback: the short reason in the graph's note", () => {
       "the bundle has no such target",
     ],
     [
+      "an expired login that couldn't be renewed: no answer from Databricks",
+      {
+        error: "Failed to validate Databricks bundle.",
+        errorCode: "VALIDATION_FAILED",
+        details:
+          'error: failed during request visitor: error getting token: token refresh: Post "https://adb-1.azuredatabricks.net/oidc/v1/token": dial tcp: lookup adb-1.azuredatabricks.net: no such host',
+      },
+      "your Databricks login needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)",
+    ],
+    [
+      "an expired login Databricks turned down",
+      {
+        error: "Failed to validate Databricks bundle.",
+        errorCode: "VALIDATION_FAILED",
+        details:
+          "error: failed during request visitor: error getting token: token refresh: Refresh token is invalid (error code: invalid_grant)",
+      },
+      'your Databricks login has expired. Run "databricks auth login" to log in again',
+    ],
+    [
+      "no saved login for this workspace",
+      {
+        error: "Failed to validate Databricks bundle.",
+        errorCode: "VALIDATION_FAILED",
+        details:
+          "error: failed during request visitor: error getting token: cache: no cached credentials; run `databricks auth login` to sign in",
+      },
+      'you\'re not logged in to this workspace. Run "databricks auth login" to log in',
+    ],
+    [
+      "any other login failure",
+      {
+        error: "Failed to validate Databricks bundle.",
+        errorCode: "VALIDATION_FAILED",
+        details: "error: failed during request visitor: error getting token: something new",
+      },
+      "your Databricks login couldn't be used",
+    ],
+    [
       "anything else: the CLI's first line",
       { error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED", details: "error: job undefined-job is not defined\nwarning: more" },
       "job undefined-job is not defined",

@@ -32,8 +32,35 @@ function shortReason(errorCode: string | undefined, message: string): string {
     return "the login profile is for a different workspace";
   }
   if (/: no such target\b/.test(message)) return "the bundle has no such target";
+  const login = loginReason(message);
+  if (login) return login;
   const line = firstLine(message);
   return line.length > MAX_REASON_LENGTH ? `${line.slice(0, MAX_REASON_LENGTH - 1).trimEnd()}…` : line;
+}
+
+/**
+ * A saved Databricks login the CLI couldn't use, as the Go SDK words it (checked in
+ * databricks-sdk-go 0.128.0 and 0.188.0, used by CLI 0.299.0 and 1.21.0):
+ *
+ * - `error getting token: ...` wraps every OAuth login failure.
+ * - `token refresh: Post "https://.../oidc/v1/token": ...` means the login had expired
+ *   and the request to renew it got no answer: no network, a VPN, a proxy or a firewall.
+ *   When Databricks answers and turns the renewal down, the SDK says why instead
+ *   ("Refresh token is invalid", "(error code: invalid_grant)").
+ * - `no cached credentials` (CLI 1.x): no saved login for that workspace at all.
+ */
+function loginReason(message: string): string | undefined {
+  if (!/error getting token:/.test(message)) return undefined;
+  if (/token refresh: Post "/.test(message)) {
+    return "your Databricks login needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)";
+  }
+  if (/no cached credentials/.test(message)) {
+    return 'you\'re not logged in to this workspace. Run "databricks auth login" to log in';
+  }
+  if (/Refresh token is invalid|invalid_grant|cached token has no refresh token/.test(message)) {
+    return 'your Databricks login has expired. Run "databricks auth login" to log in again';
+  }
+  return "your Databricks login couldn't be used";
 }
 
 /**
