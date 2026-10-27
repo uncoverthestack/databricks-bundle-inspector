@@ -2909,12 +2909,12 @@ export default function App({
         className="flex h-screen items-center justify-center text-sm text-fg-soft"
         style={{ backgroundColor: UI_COLOR.surface }}
       >
-        Graph not available — close this panel and run{" "}
+        Graph not available. Close this panel and use{" "}
         <span
           className="mx-1 rounded px-1.5 py-0.5 font-mono text-fg"
           style={{ backgroundColor: UI_COLOR.widget }}
         >
-          Inspect Databricks Bundle
+          Open Graph
         </span>{" "}
         again.
       </div>

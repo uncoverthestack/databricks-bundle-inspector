@@ -33,6 +33,15 @@ export function legacyCliVersion(output: string): string | undefined {
   return minor <= 18 ? match[1] : undefined;
 }
 
+/**
+ * A CLI version as telemetry sends it: `major.minor` only (`v1.21.0` is `1.21`), and
+ * nothing for anything that isn't a plain version, so no other text is ever sent.
+ */
+export function telemetryCliVersion(version: string | undefined): string | undefined {
+  const match = /^v?(\d{1,3})\.(\d{1,4})\.\d+$/.exec(version?.trim() ?? "");
+  return match ? `${Number(match[1])}.${Number(match[2])}` : undefined;
+}
+
 /** The oldest Databricks CLI the inspector is tested with (see .github/workflows/cli-compat.yml). */
 export const MIN_SUPPORTED_CLI_VERSION = "v0.299.0";
 

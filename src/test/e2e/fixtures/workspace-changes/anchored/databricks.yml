@@ -1,0 +1,24 @@
+bundle:
+  name: anchored
+
+# Three tasks take their notebook from one anchor, so their findings have no line of their own.
+x-task: &task
+  notebook_task:
+    notebook_path: ./missing_notebook.py
+
+resources:
+  jobs:
+    nightly:
+      name: nightly
+      tasks:
+        - task_key: load_a
+          <<: *task
+        - task_key: load_b
+          <<: *task
+        - task_key: load_c
+          <<: *task
+
+targets:
+  dev:
+    default: true
+    mode: development

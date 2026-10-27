@@ -98,6 +98,26 @@ async function install(state = new Map<string, unknown>()) {
 const sentEvents = () => sentBodies.flatMap((body) => body.batch.map((e) => e.event));
 
 describe("telemetry consent", () => {
+  it("deletes events queued by an earlier start when telemetry was turned off while VS Code was closed", async () => {
+    const { start, state } = await install();
+    const first = start();
+    first.logUsage("extension_activated");
+    await notices[0]!.answer(undefined);
+    first.logUsage("inspect_bundle");
+    // VS Code closes before the next start could send them.
+    expect(state.get("telemetry.queue")).toHaveLength(2);
+
+    // Turned off in settings.json while VS Code was closed, then on again later.
+    settings.set("telemetry.enabled", false);
+    const off = start();
+    await off.shutdown();
+    settings.set("telemetry.enabled", true);
+    const on = start();
+    await on.shutdown();
+
+    expect(sentEvents()).toEqual([]);
+  });
+
   it("sends nothing while the notice is unanswered, even when VS Code closes", async () => {
     const { start } = await install();
     const telemetry = start();

@@ -8,7 +8,10 @@ import { extname } from "node:path";
  * - `.py`, `.r`, `.scala` and `.sql` files are notebooks only when their first line is
  *   exactly the Databricks notebook header. The CLI reads the first 32 bytes.
  * - `.ipynb` files are notebooks when they are Jupyter JSON with `cells` and `metadata`,
- *   at nbformat 4 or later.
+ *   at nbformat 4 or later (`libs/notebook/detect_jupyter.go`). The CLI reads the JSON
+ *   into typed fields, so a field of the wrong type also makes it no notebook:
+ *   `cells` must be a list, `metadata` an object, `nbformat` and `nbformat_minor` whole
+ *   numbers (`nbformat_minor` may be missing or null).
  * - Local notebook paths must include the extension; a notebook path without one is
  *   not found, even when `name.py` exists.
  * - A path the CLI expects to be a plain file must not be a notebook.
@@ -52,15 +55,25 @@ function readFirstLine(filePath: string): string {
   }
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Checked against CLI 0.299.0 and 1.21.0 (src/test/jupyterCases.ts). Still different:
+ * the CLI also takes text after the JSON and keys in other letter cases (`"Cells"`),
+ * and turns down `"nbformat": 4.0`, which JSON.parse can't tell from `4`.
+ */
 function isJupyterNotebook(filePath: string): boolean {
   try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
+    if (!isObject(parsed)) return false;
+    const { cells, metadata, nbformat, nbformat_minor: minor } = parsed;
     return (
-      Array.isArray(parsed.cells) &&
-      typeof parsed.metadata === "object" &&
-      parsed.metadata !== null &&
-      typeof parsed.nbformat === "number" &&
-      parsed.nbformat >= 4
+      Array.isArray(cells) &&
+      isObject(metadata) &&
+      Number.isSafeInteger(nbformat) &&
+      (nbformat as number) >= 4 &&
+      (minor === undefined || minor === null || Number.isSafeInteger(minor))
     );
   } catch {
     return false;

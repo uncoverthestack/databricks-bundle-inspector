@@ -21,6 +21,7 @@ module.exports = {
     "<rootDir>/src/test/integration/realTargetFallback.integration.test.ts",
     "<rootDir>/src/test/integration/verifyCliPath.integration.test.ts",
     "<rootDir>/src/test/integration/quickFix.integration.test.ts",
+    "<rootDir>/src/test/integration/pathSuggestion.integration.test.ts",
     "<rootDir>/src/test/integration/pathNotChecked.integration.test.ts",
     "<rootDir>/src/test/integration/pipelineView.integration.test.ts",
   ],
