@@ -394,6 +394,9 @@
     },
     "babel-plugin-istanbul": {
       "test-exclude": "^8.0.0"
+    },
+    "@azure/identity": {
+      "@azure/msal-node": "^7.1.0"
     }
   }
 }
