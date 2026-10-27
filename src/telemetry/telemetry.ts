@@ -144,6 +144,9 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
   });
 
   const isEnabled = () => logger.isUsageEnabled && extensionSettingEnabled();
+  // Turned off while VS Code was closed: what an earlier start queued is deleted now, as
+  // turning it off while running does, so it is never sent if telemetry is turned on again.
+  if (!isEnabled()) queue.clear();
 
   // Until then, events wait on this machine (bounded by the queue's size and age limits).
   function sendingAllowed(): boolean {

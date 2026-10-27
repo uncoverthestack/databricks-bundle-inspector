@@ -64,6 +64,8 @@ export function checkStateOf(
 export interface BundleCount {
   /** Errors and warnings. */
   problems: number;
+  /** Of those, the errors. */
+  errors?: number;
   /** Information-level entries: suggestions, not faults. */
   notes: number;
   /** How many of those have no file to point at, so they show in the graph only. */

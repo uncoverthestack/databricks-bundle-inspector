@@ -198,6 +198,29 @@ export function cliNotFoundSuite() {
       assert.deepEqual(opened, [INSTALL_DOCS + (INSTALL_SECTION[process.platform] ?? "")]);
     });
 
+    it("CLI not installed: the sidebar says so above the bundles and in Settings", async () => {
+      await inspectWithPath(SYSTEM_PATH, undefined);
+      const shown = await vscode.commands.executeCommand<{
+        message: string | undefined;
+        bundles: Array<{ description: string; status: string }>;
+        settings: { cli: { description: string; warning: boolean } };
+      }>("databricksBundleInspector.test.sidebar");
+
+      assert.equal(
+        shown?.message,
+        "Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below.",
+      );
+      assert.deepEqual(shown?.bundles.map((bundle) => [bundle.description, bundle.status]), [
+        ["Databricks CLI not found", "cli_missing"],
+      ]);
+      assert.deepEqual(shown?.settings.cli, {
+        label: "Databricks CLI",
+        description: "not found",
+        tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
+        warning: true,
+      });
+    });
+
     it("bad cliPath setting: names the setting and Open Settings goes to it", async () => {
       await setCliPath("/nonexistent/databricks");
 

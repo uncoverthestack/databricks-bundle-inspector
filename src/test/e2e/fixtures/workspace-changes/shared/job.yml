@@ -1,0 +1,9 @@
+# Loaded by alpha, beta and gamma: one finding three bundles share.
+resources:
+  jobs:
+    shared_job:
+      name: shared-job
+      tasks:
+        - task_key: missing
+          notebook_task:
+            notebook_path: ./missing_notebook.py

@@ -100,7 +100,7 @@
     {
       "severity": "error",
       "kind": "missing_file",
-      "title": "Missing local file reference",
+      "title": "File not found",
       "detail": "../../src/tasks/missing_process_item.py",
       "taskKey": "process_each_item",
       "file": "resources/jobs/yaml_edge_job.job.yml",
