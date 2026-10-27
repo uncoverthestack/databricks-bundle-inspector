@@ -256,6 +256,26 @@ export function profileUpdated(options: {
   return others(before) === others(after);
 }
 
+/**
+ * A profile other than `profile` that a sign-in just saved for the same workspace: new, or
+ * its settings changed, and signing in through the browser. For a sign-in in another
+ * terminal under the user's own name. Undefined when there is none.
+ */
+export function otherProfileSignedIn(options: {
+  before: ConfigSections;
+  after: ConfigSections;
+  profile: string;
+  host: string;
+}): string | undefined {
+  const workspace = workspaceOf(options.host);
+  for (const [name, now] of options.after) {
+    if (name === options.profile || !isBrowserSignIn(now) || workspaceOf(now.host) !== workspace) continue;
+    const was = options.before.get(name);
+    if (!was || text(was) !== text(now)) return name;
+  }
+  return undefined;
+}
+
 function text(section: ConfigSection): string {
   return JSON.stringify(Object.entries(section).sort(([a], [b]) => a.localeCompare(b)));
 }

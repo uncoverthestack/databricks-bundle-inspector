@@ -2,6 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import {
   isSafeHost,
   newProfileName,
+  otherProfileSignedIn,
   parseConfigSections,
   planSignIn,
   profileUpdated,
@@ -267,5 +268,35 @@ describe("profileUpdated: only the profile being signed in", () => {
     expect(updated(sections({}), sections({}), true)).toBe(false);
     expect(updated(sections({}), sections({ web: { host, token: "x" } }), true)).toBe(false);
     expect(updated(sections({}), sections({ web: { ...browser, host: "https://other.example.com" } }), true)).toBe(false);
+  });
+});
+
+describe("otherProfileSignedIn: a sign-in for the workspace under another name", () => {
+  const host = "https://adb-1234.azuredatabricks.net";
+  const browser = { host, auth_type: "databricks-cli" };
+  const sections = (entries: Record<string, Record<string, string>>): ConfigSections => new Map(Object.entries(entries));
+  const other = (before: ConfigSections, after: ConfigSections) => otherProfileSignedIn({ before, after, profile: "adb-1234", host });
+
+  test("a new browser profile for the workspace, under the user's own name", () => {
+    expect(other(sections({}), sections({ example: browser }))).toBe("example");
+  });
+
+  test("the same workspace written another way still counts", () => {
+    expect(other(sections({}), sections({ example: { host: "ADB-1234.azuredatabricks.net/", auth_type: "databricks-cli" } }))).toBe("example");
+  });
+
+  test("an existing profile whose settings changed", () => {
+    const before = sections({ example: { host, auth_type: "pat" } });
+    expect(other(before, sections({ example: browser }))).toBe("example");
+  });
+
+  test("not the profile that was typed, which profileUpdated checks", () => {
+    expect(other(sections({}), sections({ "adb-1234": browser }))).toBeUndefined();
+  });
+
+  test("not another workspace, a token profile, or a profile left as it was", () => {
+    expect(other(sections({}), sections({ example: { host: "https://other.example.com", auth_type: "databricks-cli" } }))).toBeUndefined();
+    expect(other(sections({}), sections({ example: { host, token: "x" } }))).toBeUndefined();
+    expect(other(sections({ example: browser }), sections({ example: browser }))).toBeUndefined();
   });
 });

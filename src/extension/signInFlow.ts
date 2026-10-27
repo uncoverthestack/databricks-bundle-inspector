@@ -5,6 +5,7 @@ import path from "node:path";
 import { SIGN_IN_CODES, type FallbackCode } from "../bundle/fallbackReason.js";
 import {
   isSafeHost,
+  otherProfileSignedIn,
   parseConfigSections,
   planSignIn,
   profileUpdated,
@@ -166,7 +167,7 @@ export class SignInFlow implements vscode.Disposable {
     terminal.show();
     // Typed, not run: the user reads it and presses Enter.
     terminal.sendText(signInCommand(plan.host, plan.profile, cli.command), false);
-    this.watchProfile(flow, configFile, plan);
+    this.watchProfile(flow, configFile, plan, this.picksProfileByHost(root, target));
     flow.stage = "terminal";
     this.deps.telemetry("terminal_opened", from);
     this.deps.changed(root, this.banner());
@@ -187,7 +188,7 @@ export class SignInFlow implements vscode.Disposable {
     else delete flow.blockedReason;
   }
 
-  private plan(root: string, target: string, askedHost?: string): SignInPlan {
+  private workspace(root: string, target: string) {
     const texts = this.deps.bundleFiles(root).flatMap((file) => {
       try {
         return [readFileSync(file, "utf8")];
@@ -195,7 +196,21 @@ export class SignInFlow implements vscode.Disposable {
         return [];
       }
     });
-    const workspace = targetWorkspace(texts, target);
+    return targetWorkspace(texts, target);
+  }
+
+  /**
+   * Whether the checks leave the profile to the CLI, which then picks it by the target's
+   * host: no profile in Settings or the bundle, and a host in the bundle. With no host the
+   * CLI uses DEFAULT only (seen on CLI 1.21.0), so a profile under another name isn't used.
+   */
+  private picksProfileByHost(root: string, target: string): boolean {
+    const workspace = this.workspace(root, target);
+    return this.deps.configuredProfile() === undefined && workspace.profile === undefined && typeof workspace.host === "string";
+  }
+
+  private plan(root: string, target: string, askedHost?: string): SignInPlan {
+    const workspace = this.workspace(root, target);
     const config = readConfig(configFilePath());
     if ("reason" in config) return { kind: "blocked", reason: config.reason };
     return planSignIn({
@@ -205,8 +220,12 @@ export class SignInFlow implements vscode.Disposable {
     });
   }
 
-  /** Watches the folder of the config file: the CLI replaces the file, which a watch on the file itself can miss. */
-  private watchProfile(flow: Flow, configFile: string, plan: Extract<SignInPlan, { kind: "ready" }>): void {
+  /**
+   * Watches the folder of the config file: the CLI replaces the file, which a watch on the file itself can miss.
+   * With `anyName`, a sign-in for the workspace under another name counts too, as when the
+   * user signs in from their own terminal and the CLI picks the profile by host.
+   */
+  private watchProfile(flow: Flow, configFile: string, plan: Extract<SignInPlan, { kind: "ready" }>, anyName: boolean): void {
     flow.watch?.watcher.close();
     const backup = `${configFile}.bak`;
     const read = () => {
@@ -228,7 +247,10 @@ export class SignInFlow implements vscode.Disposable {
         const after = read();
         const time = modifiedTime(backup);
         if (!after) return;
-        if (!profileUpdated({ before, after, profile: plan.profile, host: plan.host, backupChanged: time !== backupTime })) {
+        const signedIn =
+          profileUpdated({ before, after, profile: plan.profile, host: plan.host, backupChanged: time !== backupTime }) ||
+          (anyName && otherProfileSignedIn({ before, after, profile: plan.profile, host: plan.host }) !== undefined);
+        if (!signedIn) {
           before = after;
           backupTime = time;
           return;

@@ -426,6 +426,41 @@ export function targetsSuite() {
         await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
       });
 
+      it("a sign-in from another terminal under another name counts when the CLI picks the profile by host", async function () {
+        this.timeout(120_000);
+        // No profile in Settings or the bundle, and ambiguous has a host: the CLI picks the profile by host.
+        await setProfile(undefined);
+        const data = (await pickTarget("ambiguous")) as GraphData & { signIn?: Banner };
+        assert.deepEqual(data?.signIn, { target: "ambiguous", stage: "needed" });
+        await openTerminal();
+        assert.deepEqual(typed.map((entry) => entry.text), ['databricks auth login --host "https://ambiguous.example.invalid" --profile "ambiguous"']);
+
+        // Another workspace under another name is still not this sign-in.
+        await writeFile(config, "[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n");
+        await sleep(1_500);
+        assert.equal((await banner())?.stage, "terminal");
+
+        // What `databricks auth login` in another terminal writes when the user names it `example`.
+        await writeFile(`${config}.bak`, await readFile(config, "utf8"));
+        await writeFile(
+          config,
+          "[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n\n[example]\nhost = https://ambiguous.example.invalid\nauth_type = databricks-cli\n",
+        );
+        await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
+      });
+
+      it("a sign-in under another name doesn't count when the checks use a named profile", async function () {
+        this.timeout(120_000);
+        // The profile setting names NO_SUCH_PROFILE_E2E, which the checks pass to the CLI.
+        await pickTarget("dev");
+        await openTerminal();
+        assert.equal((await banner())?.stage, "terminal");
+        await writeFile(`${config}.bak`, "");
+        await writeFile(config, `[example]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await sleep(1_500);
+        assert.equal((await banner())?.stage, "terminal");
+      });
+
       it("a CLI file in Settings with another name is typed as its path", async function () {
         if (process.platform === "win32") this.skip();
         this.timeout(120_000);
