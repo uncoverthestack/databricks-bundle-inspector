@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
-import { firstLine, targetFallback } from "../../../bundle/fallbackReason.js";
+import { firstLine, targetFallback, type FallbackCode } from "../../../bundle/fallbackReason.js";
+import { validateProperties } from "../../../telemetry/schema.js";
 
 // The messages are the Databricks CLI's (1.21.0), as validateBundle passes them on.
 describe("targetFallback: the short reason in the graph's note", () => {
@@ -101,6 +102,24 @@ describe("targetFallback: the short reason in the graph's note", () => {
     expect(targetFallback(error).reason).toBe(reason);
   });
 
+  test.each<[string, string, string | undefined, FallbackCode]>([
+    ["timeout", "after 15 seconds", "VALIDATION_TIMEOUT", "timeout"],
+    ["no login", "x", "AUTH_NOT_CONFIGURED", "not_logged_in"],
+    ["no profile", "has no dev profile configured", undefined, "no_profile"],
+    ["several profiles", "multiple profiles matched: a, b", undefined, "several_profiles"],
+    ["another workspace", "the host in the profile (a) doesn't match the host configured in the bundle (b)", undefined, "other_workspace"],
+    ["no target", "error: x: no such target", undefined, "no_such_target"],
+    ["unreachable", 'error getting token: token refresh: Post "https://h/oidc/v1/token": dial tcp', undefined, "login_unreachable"],
+    ["expired", "error getting token: token refresh: Refresh token is invalid", undefined, "login_expired"],
+    ["no saved login", "error getting token: cache: no cached credentials", undefined, "not_logged_in"],
+    ["other login", "error getting token: something", undefined, "login_other"],
+    ["anything else", "error: job x is not defined", undefined, "other"],
+  ])("%s has the telemetry code the schema takes", (_name, details, errorCode, code) => {
+    const fallback = targetFallback({ error: "Failed", ...(errorCode ? { errorCode } : {}), details });
+    expect(fallback.code).toBe(code);
+    expect(validateProperties("inspect_bundle", { fallback_reason: fallback.code })).toEqual({ fallback_reason: code });
+  });
+
   test("a timeout says how long it waited, not Node's command text", () => {
     const fallback = targetFallback({
       error: "Databricks bundle validation timed out after 15 seconds.",
@@ -110,6 +129,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
     expect(fallback).toEqual({
       message: "Databricks bundle validation timed out after 15 seconds.",
       reason: "the workspace didn't answer within 15 seconds",
+      code: "timeout",
     });
   });
 

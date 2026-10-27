@@ -7,7 +7,7 @@ import {
   extractBundleGraph,
 } from "./bundle/validateBundle.js";
 import type { BundleResult } from "./bundle/validateBundle.js";
-import { targetFallback, type TargetFallback } from "./bundle/fallbackReason.js";
+import { targetFallback, type FallbackCode, type TargetFallback } from "./bundle/fallbackReason.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
 import { buildInspectorIssues } from "./bundle/issues.js";
 import {
@@ -29,7 +29,7 @@ import {
   profilesForHost,
   type DatabricksProfile,
 } from "./databricksCli/profiles.js";
-import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION } from "./databricksCli/parsing.js";
+import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION, telemetryCliVersion } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
 import { bundleThatLoaded, jobKeyAtLine } from "./bundle/resourceFiles.js";
 import { folderIgnoresCase } from "./bundle/pathCase.js";
@@ -48,6 +48,7 @@ import {
   type BundleChange,
   type BundleWatchSpec,
 } from "./bundle/watchedFiles.js";
+import { QUICK_FIX_KINDS, type SidebarAction, type TelemetryProperties } from "./telemetry/schema.js";
 import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
 import {
   BundleProgressTracker,
@@ -124,6 +125,7 @@ import {
   OPEN_PROBLEMS_COMMAND,
   OPEN_TARGET_COMMAND,
   SETTINGS_VIEW,
+  SIDEBAR_ORIGIN,
   SettingsTreeProvider,
   type BundlesElement,
 } from "./extension/sidebarView.js";
@@ -133,13 +135,37 @@ import { createCheckLimiter } from "./extension/checkLimiter.js";
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
 
-type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar";
+/** A sidebar shown this soon after the extension started counts as reopened by VS Code. */
+const SIDEBAR_AT_START_MS = 5_000;
+
+type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar" | "sidebar";
 
 let telemetry: Telemetry | undefined;
 
 export function activate(extensionContext: vscode.ExtensionContext) {
   console.log('Extension "databricks-bundle-inspector" is now active!');
+  const activatedAt = Date.now();
+  // Each sidebar action once per window: whether it is used, not how often or in what order.
+  const sidebarActionsLogged = new Set<SidebarAction>();
+  function logSidebarAction(action: SidebarAction): void {
+    if (sidebarActionsLogged.has(action)) return;
+    sidebarActionsLogged.add(action);
+    telemetry?.logUsage("sidebar_action", { action });
+  }
   telemetry = createTelemetry(extensionContext);
+  // Under test, every event the extension logs, so the e2e can check what is counted.
+  const loggedEvents: Array<{ event: string; properties: TelemetryProperties }> = [];
+  if (extensionContext.extensionMode === vscode.ExtensionMode.Test) {
+    const inner = telemetry;
+    telemetry = {
+      logUsage: (event, properties) => {
+        loggedEvents.push({ event, properties: properties ?? {} });
+        inner?.logUsage(event, properties);
+      },
+      isEnabled: () => inner?.isEnabled() ?? false,
+      shutdown: () => inner?.shutdown() ?? Promise.resolve(),
+    };
+  }
   setIssueDocsVersion(String(extensionContext.extension.packageJSON.version ?? ""));
   configureCliLookup({
     // The Databricks extension ships its own CLI in `bin`, so users of it often have one
@@ -733,6 +759,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundleAtRoot: boolean;
     /** Undefined when no bundle was checked. */
     cliFound: boolean | undefined;
+    /** The CLI's `major.minor`, when one was found and its version could be read. */
+    cliVersion: string | undefined;
     /** Errors and warnings the checks put in the Problems panel. Undefined when nothing was checked. */
     issueCount: number | undefined;
   }
@@ -748,6 +776,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundleCount: 0,
       bundleAtRoot: false,
       cliFound: undefined,
+      cliVersion: undefined,
       issueCount: undefined,
     };
     try {
@@ -782,6 +811,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         }
       }
       if (check.cliFound) {
+        // Cached from the checks above, so this doesn't start the CLI again.
+        const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+        check.cliVersion = cli.ok ? telemetryCliVersion(cli.versionOutput) : undefined;
         let issueCount = 0;
         diagnosticCollection.forEach((_uri, diagnostics) => {
           issueCount += diagnostics.filter(
@@ -859,10 +891,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   // The latest user navigation owns the panel, even if an older CLI finishes later.
   let activeInspectionId = 0;
 
-  function fallbackOf(inspection: { fallbackMessage?: string | undefined; fallbackReason?: string | undefined }): TargetFallback | undefined {
+  function fallbackOf(inspection: {
+    fallbackMessage?: string | undefined;
+    fallbackReason?: string | undefined;
+    fallbackCode?: FallbackCode | undefined;
+  }): TargetFallback | undefined {
     return inspection.fallbackMessage === undefined
       ? undefined
-      : { message: inspection.fallbackMessage, reason: inspection.fallbackReason ?? inspection.fallbackMessage };
+      : {
+          message: inspection.fallbackMessage,
+          reason: inspection.fallbackReason ?? inspection.fallbackMessage,
+          code: inspection.fallbackCode ?? "other",
+        };
   }
 
   async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
@@ -881,10 +921,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       requestedTarget ? "target" : "probe";
     let fallbackMessage: string | undefined;
     let fallbackReason: string | undefined;
+    let fallbackCode: FallbackCode | undefined;
     let fallbackErrorCode: string | undefined;
 
     if (!result.ok && requestedTarget) {
-      ({ message: fallbackMessage, reason: fallbackReason } = targetFallback(result.error));
+      ({ message: fallbackMessage, reason: fallbackReason, code: fallbackCode } = targetFallback(result.error));
       fallbackErrorCode = result.error.errorCode;
       result = await validateBundle(bundleDir, undefined, configuredPath);
       inspectedTarget = BUNDLE_PROBE_TARGET;
@@ -893,7 +934,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     if (!result.ok) {
-      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackReason, fallbackErrorCode };
+      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackReason, fallbackCode, fallbackErrorCode };
     }
 
     const bundleData = result.data;
@@ -943,6 +984,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       inspectedTargetMode,
       fallbackMessage,
       fallbackReason,
+      fallbackCode,
       fallbackErrorCode,
     };
   }
@@ -1117,7 +1159,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (!isCurrent()) return;
       rememberInspection(inspected);
       const inspection = fellBack
-        ? { ...inspected, fallbackMessage: activeTargetFallback?.message, fallbackReason: activeTargetFallback?.reason }
+        ? { ...inspected, fallbackMessage: activeTargetFallback?.message, fallbackReason: activeTargetFallback?.reason, fallbackCode: activeTargetFallback?.code }
         : inspected;
       if (!fellBack) activeTargetFallback = fallbackOf(inspected);
       const messageData = bundleMessageDataFromInspection(
@@ -1214,6 +1256,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * Warns once per session when the CLI in use is older than the oldest tested version.
    * Returns whether it is, or undefined when no CLI was found.
    */
+  /** The CLI's version as `major.minor` for telemetry, or nothing when it can't be read. */
+  async function cliVersionForTelemetry(result: BundleResult): Promise<string | undefined> {
+    if (!result.ok && result.error.errorCode === "CLI_NOT_FOUND") return undefined;
+    // Cached from the validate run, so this doesn't start the CLI again.
+    const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+    return cli.ok ? telemetryCliVersion(cli.versionOutput) : undefined;
+  }
+
   async function checkCliVersion(result: BundleResult): Promise<boolean | undefined> {
     if (!result.ok && result.error.errorCode === "CLI_NOT_FOUND") return undefined;
     // Cached from the validate run, so this doesn't start the CLI again.
@@ -1329,7 +1379,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
       const cliOutdated = await checkCliVersion(result);
       if (!isCurrent()) return;
-      const cliVersionProperty = cliOutdated === undefined ? {} : { cli_outdated: cliOutdated };
+      const cliVersion = await cliVersionForTelemetry(result);
+      const cliVersionProperty = {
+        ...(cliOutdated === undefined ? {} : { cli_outdated: cliOutdated }),
+        ...(cliVersion ? { cli_version: cliVersion } : {}),
+        ...(inspection.fallbackCode ? { fallback_reason: inspection.fallbackCode } : {}),
+      };
 
       if (!result.ok) {
         logInspect(result.error.errorCode?.toLowerCase() ?? "validation_failed", {
@@ -1565,6 +1620,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         () => activeBundleData,
       ),
       // What the sidebar shows: its rows' text, as the views are built from it.
+      vscode.commands.registerCommand("databricksBundleInspector.test.telemetryEvents", () => [...loggedEvents]),
       vscode.commands.registerCommand("databricksBundleInspector.test.sidebar", () => {
         const bundles = sidebarBundles();
         return {
@@ -1595,7 +1651,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   extensionContext.subscriptions.push(
-    vscode.commands.registerCommand("databricksBundleInspector.chooseProfile", async () => {
+    vscode.commands.registerCommand("databricksBundleInspector.chooseProfile", async (origin?: unknown) => {
+      if (origin === SIDEBAR_ORIGIN) logSidebarAction("choose_profile");
       // A graph showing a real target checks it again with the new profile.
       if ((await chooseProfile()) && livePanel() && activeRequestedTarget) {
         await selectTarget(activeRequestedTarget);
@@ -1651,6 +1708,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }));
   const bundlesView = vscode.window.createTreeView(BUNDLES_VIEW, { treeDataProvider: bundlesTree });
   const settingsView = vscode.window.createTreeView(SETTINGS_VIEW, { treeDataProvider: settingsTree });
+
+  // Once per window, the first time either view shows. Showing within a few seconds of
+  // the start, it was most likely left open and reopened by VS Code, not opened by hand.
+  let sidebarShown = false;
+  const noteSidebarShown = (visible: boolean) => {
+    if (!visible || sidebarShown) return;
+    sidebarShown = true;
+    telemetry?.logUsage("sidebar_opened", { at_start: Date.now() - activatedAt < SIDEBAR_AT_START_MS });
+  };
+  noteSidebarShown(bundlesView.visible || settingsView.visible);
+
+  // One at a time, as on open, so many bundles never start many CLI runs at once.
+  async function checkAllBundles(): Promise<void> {
+    for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
+  }
   refreshSidebar = () => {
     bundlesTree.refresh();
     settingsTree.refresh();
@@ -1696,6 +1768,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * The sidebar's Graph row. A graph already open on this bundle comes to the front as it
    * is, with the target it shows, as the row says; otherwise it opens on the structural preview.
    */
+  /** The graph of a bundle, from the sidebar. */
   async function openGraph(root: string): Promise<void> {
     const panel = livePanel();
     // Only a graph that shows this bundle: a failed check of it leaves the one before on screen.
@@ -1703,7 +1776,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       panel.reveal();
       return;
     }
-    await inspectBundle(undefined, undefined, root);
+    await inspectBundle(undefined, { trigger: "sidebar" }, root);
   }
 
   /** Opens a problem where it is, with its explanation below the line, as F8 does. */
@@ -1776,7 +1849,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         });
       },
     });
-    if (picked?.problem) await openProblem(picked.problem);
+    if (picked?.problem) {
+      logSidebarAction("pick_problem");
+      await openProblem(picked.problem);
+    }
     else if (picked?.graph) await openGraph(root);
   }
 
@@ -1849,20 +1925,33 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     bundlesView.onDidChangeVisibility((event) => {
       if (event.visible) revealOpenFileBundle();
     }),
-    vscode.commands.registerCommand("databricksBundleInspector.sidebar.inspect", (element?: BundlesElement) =>
-      element ? openGraph(element.root) : undefined,
-    ),
-    vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAgain", (element?: BundlesElement) =>
-      element ? refreshBundle(element.root, checkAgainFlags) : undefined,
-    ),
-    // One at a time, as on open, so many bundles never start many CLI runs at once.
-    vscode.commands.registerCommand("databricksBundleInspector.checkAllBundles", async () => {
-      for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
+    bundlesView.onDidChangeVisibility((event) => noteSidebarShown(event.visible)),
+    settingsView.onDidChangeVisibility((event) => noteSidebarShown(event.visible)),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.inspect", (element?: BundlesElement) => {
+      if (!element) return undefined;
+      logSidebarAction("open_graph");
+      return openGraph(element.root);
     }),
-    vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => openTarget(root, target)),
-    vscode.commands.registerCommand(OPEN_PROBLEMS_COMMAND, (element?: BundlesElement) =>
-      element ? openBundleProblems(element.root) : undefined,
-    ),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAgain", (element?: BundlesElement) => {
+      if (!element) return undefined;
+      logSidebarAction("check_again");
+      return refreshBundle(element.root, checkAgainFlags);
+    }),
+    vscode.commands.registerCommand("databricksBundleInspector.checkAllBundles", () => checkAllBundles()),
+    // The same, from the button at the top of the sidebar.
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAll", () => {
+      logSidebarAction("check_all");
+      return checkAllBundles();
+    }),
+    vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => {
+      logSidebarAction("open_target");
+      return openTarget(root, target);
+    }),
+    vscode.commands.registerCommand(OPEN_PROBLEMS_COMMAND, (element?: BundlesElement) => {
+      if (!element) return undefined;
+      logSidebarAction("open_problems");
+      return openBundleProblems(element.root);
+    }),
     vscode.commands.registerCommand("databricksBundleInspector.openGuide", () =>
       vscode.env.openExternal(vscode.Uri.parse(usageDocsUrl(extensionVersion))),
     ),
@@ -1881,10 +1970,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     vscode.commands.registerCommand("databricksBundleInspector.openCliInstallGuide", () =>
       vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform))),
     ),
-    vscode.commands.registerCommand(CHOOSE_CLI_COMMAND, () => chooseCli()),
-    vscode.commands.registerCommand("databricksBundleInspector.sidebar.openBundleFile", (element?: BundlesElement) =>
-      element ? vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(element.root))) : undefined,
-    ),
+    vscode.commands.registerCommand(CHOOSE_CLI_COMMAND, (origin?: unknown) => {
+      if (origin === SIDEBAR_ORIGIN) logSidebarAction("choose_cli");
+      return chooseCli();
+    }),
+    vscode.commands.registerCommand("databricksBundleInspector.sidebar.openBundleFile", (element?: BundlesElement) => {
+      if (!element) return undefined;
+      logSidebarAction("open_bundle_file");
+      return vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(element.root)));
+    }),
   );
   refreshSidebar();
   void updateSidebarCli();
@@ -1908,7 +2002,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     ),
     // Runs after a quick fix is applied: counts which kind of fix, never the values.
     vscode.commands.registerCommand(QUICK_FIX_APPLIED_COMMAND, (kind: unknown) => {
-      if (kind === "notebook_missing_extension" || kind === "include_matches_nothing") {
+      if (typeof kind === "string" && QUICK_FIX_KINDS.includes(kind)) {
         telemetry?.logUsage("quick_fix_applied", { kind });
       }
     }),
@@ -1957,6 +2051,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundle_count: countBucket(check.bundleCount),
       bundle_at_root: check.bundleAtRoot,
       ...(check.cliFound === undefined ? {} : { cli_found: check.cliFound }),
+      ...(check.cliVersion ? { cli_version: check.cliVersion } : {}),
       ...(check.issueCount === undefined ? {} : { issue_count: countBucket(check.issueCount) }),
     }),
   );

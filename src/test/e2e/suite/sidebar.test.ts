@@ -252,6 +252,57 @@ export function sidebarSuite() {
       assert.equal(vscode.workspace.getConfiguration("databricksBundleInspector").get("cliPath") || undefined, undefined);
     });
 
+    it("counts each sidebar action once per window, and not the same commands from the Command Palette", async function () {
+      this.timeout(120_000);
+      const root = (await sidebarWhen(checked)).bundles[0]!.root;
+      type Logged = { event: string; properties: Record<string, unknown> };
+      const logged = async () =>
+        (await vscode.commands.executeCommand<Logged[]>("databricksBundleInspector.test.telemetryEvents"))!;
+      const actions = async () =>
+        (await logged()).filter((event) => event.event === "sidebar_action").map((event) => event.properties.action);
+      const window = vscode.window as { showQuickPick: typeof vscode.window.showQuickPick };
+      const original = window.showQuickPick;
+      window.showQuickPick = (async () => undefined) as unknown as typeof vscode.window.showQuickPick;
+      try {
+        // From the Command Palette: not sidebar use.
+        await vscode.commands.executeCommand("databricksBundleInspector.chooseCli");
+        await vscode.commands.executeCommand("databricksBundleInspector.checkAllBundles");
+        assert.ok(!(await actions()).includes("choose_cli"), JSON.stringify(await actions()));
+        assert.ok(!(await actions()).includes("check_all"), JSON.stringify(await actions()));
+
+        // From the sidebar, twice each: counted once.
+        for (let round = 0; round < 2; round++) {
+          await vscode.commands.executeCommand("databricksBundleInspector.sidebar.openBundleFile", { kind: "bundle", root });
+          await vscode.commands.executeCommand("databricksBundleInspector.sidebar.openTarget", root, "dev");
+          await vscode.commands.executeCommand("databricksBundleInspector.sidebar.checkAgain", { kind: "bundle", root });
+          await vscode.commands.executeCommand("databricksBundleInspector.sidebar.checkAll");
+          await vscode.commands.executeCommand("databricksBundleInspector.chooseCli", "sidebar");
+        }
+        const before = (await logged()).length;
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+        await vscode.commands.executeCommand("databricksBundleInspector.sidebar.inspect", { kind: "graph", root });
+        const inspect = (await logged()).slice(before).find((event) => event.event === "inspect_bundle");
+        assert.equal(inspect?.properties.trigger, "sidebar");
+        assert.match(String(inspect?.properties.cli_version), /^\d+\.\d+$/);
+      } finally {
+        window.showQuickPick = original;
+      }
+      const counted = await actions();
+      for (const action of ["open_bundle_file", "open_target", "check_again", "check_all", "choose_cli", "open_graph"]) {
+        assert.equal(counted.filter((each) => each === action).length, 1, `${action}: ${JSON.stringify(counted)}`);
+      }
+      assert.equal(new Set(counted).size, counted.length, JSON.stringify(counted));
+      // The extension started with this window, so the start event is there too.
+      const all = await logged();
+      const started = all.find((event) => event.event === "extension_activated");
+      assert.match(String(started?.properties.cli_version), /^\d+\.\d+$/, JSON.stringify(started));
+      // An earlier test focused the view: counted once. Whether that was within 5 seconds of
+      // the start depends on how fast this machine runs the tests, so only its type is checked.
+      const opened = all.filter((event) => event.event === "sidebar_opened");
+      assert.equal(opened.length, 1, JSON.stringify(opened));
+      assert.equal(typeof opened[0]!.properties.at_start, "boolean");
+    });
+
     it("switching from a slow CLI to a quicker one shows the quicker one, even when the slow lookup ends last", async function () {
       // A shell script stands in for the slow CLI, so not on Windows.
       if (process.platform === "win32") this.skip();
