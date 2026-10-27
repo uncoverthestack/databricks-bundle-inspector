@@ -17,6 +17,7 @@
         "auth_configured": "Whether Databricks authentication was configured.",
         "target_count": "Number of targets, as a range (0, 1, 2-5, 6-20, 21-50, 51+).",
         "job_count": "Number of jobs, as a range.",
+        "pipeline_count": "Number of pipelines, as a range.",
         "task_count": "Number of tasks, as a range.",
         "task_kinds": "Databricks task type keys present, e.g. notebook_task,sql_task.",
         "issue_count": "Number of inspector issues, as a range."
@@ -46,6 +47,7 @@
       "properties": { "mode": "all | issues" }
     },
     "job_selected": { "description": "A different job was picked in the header." },
+    "pipeline_selected": { "description": "A pipeline was picked in the header, or opened from a job's pipeline task." },
     "search_result_selected": { "description": "A task was picked from search results." },
     "issue_item_selected": { "description": "An item in the issues panel was clicked." },
     "quick_fix_applied": {

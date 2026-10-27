@@ -38,6 +38,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 
 - **Job graph**: tasks and what they depend on, with pan, zoom and search.
 - **Task details**: type, source file, parameters, compute, linked pipelines and problems labelled **Error**, **Warning** or **Note**.
+- **Pipelines**: pick a pipeline in the graph's dropdown to see the jobs in the bundle that run it, its default catalog and schema, each source in `libraries` with whether it was found, and its problems, all from the YAML. It doesn't show the tables inside a pipeline. A bundle with only pipelines opens on its first one.
 - **Secrets and widgets** found in each task's code.
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.

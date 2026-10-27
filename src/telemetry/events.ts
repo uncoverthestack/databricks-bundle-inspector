@@ -5,6 +5,7 @@ import { validateProperties, type TelemetryProperties } from "./schema.js";
 export const WEBVIEW_EVENTS: readonly string[] = [
   "graph_mode_changed",
   "job_selected",
+  "pipeline_selected",
   "search_result_selected",
   "issue_item_selected",
 ];

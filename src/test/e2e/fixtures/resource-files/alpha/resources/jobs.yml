@@ -12,6 +12,32 @@ resources:
         - task_key: second
           notebook_task:
             notebook_path: ../src/task.py
+        - task_key: refresh
+          depends_on:
+            - task_key: second
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.alpha_pipeline.id}
+        - task_key: refresh_each
+          depends_on:
+            - task_key: refresh
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: refresh_each_inner
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.alpha_pipeline.id}
+  pipelines:
+    alpha_pipeline:
+      name: alpha_pipeline
+      serverless: true
+      catalog: main
+      schema: alpha
+      libraries:
+        - notebook:
+            path: ../src/task.py
+        # A notebook listed as a file: the pipeline view must say so, not "Not a notebook".
+        - file:
+            path: ../src/task.py
 variables:
   label:
     default: alpha
