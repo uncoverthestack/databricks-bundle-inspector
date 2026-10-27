@@ -317,6 +317,9 @@ export interface BundleGraphNode {
   taskTypeBadge?: string;
   /** Local sources in a pipeline's `libraries` (pipeline nodes only, when bundleRoot is known). */
   pipelineLibraries?: PipelineLibraryReference[];
+  /** Where a pipeline is defined: its YAML file and the line of its key (pipeline nodes only). */
+  sourceFile?: string;
+  sourceLine?: number;
   subtitle?: string;
   status?: string;
   trigger?: string;
@@ -1173,6 +1176,10 @@ export async function extractBundleGraph(
                   ?.get(`resources.pipelines.${resourceNode.resourceKey}.${yamlPath}`),
             )
           : undefined;
+      const definedAt =
+        resourceNode.resourceGroup === "pipelines" && sourceFilePath
+          ? yamlLocationMaps.get(sourceFilePath)?.get(`resources.pipelines.${resourceNode.resourceKey}`)
+          : undefined;
       addNode({
         id: resourceNode.id,
         kind: resourceKind(resourceNode.resourceGroup),
@@ -1182,6 +1189,8 @@ export async function extractBundleGraph(
         resourceKey: resourceNode.resourceKey,
         data: resourceNode.data,
         ...(pipelineLibraries?.length ? { pipelineLibraries } : {}),
+        ...(resourceNode.resourceGroup === "pipelines" && sourceFilePath ? { sourceFile: sourceFilePath } : {}),
+        ...(definedAt ? { sourceLine: definedAt.line } : {}),
       });
       return;
     }

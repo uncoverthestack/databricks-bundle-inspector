@@ -30,7 +30,7 @@ export function inspectionRacesSuite() {
     const inspect = () => vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
     const graphData = () => vscode.commands.executeCommand<{
       parsedBundle?: { bundle?: { name?: string } };
-      initialJob?: { key: string };
+      initialResource?: { group: string; key: string };
     }>(
         "databricksBundleInspector.test.graphData",
       );
@@ -158,10 +158,10 @@ exec ${shellQuote(cli)} "$@"
         await waitFor(() => existsSync(file("started")), "the earlier job inspection");
         editor.selection = new vscode.Selection(second, 0, second, 0);
         await inspect();
-        assert.equal((await graphData())?.initialJob?.key, "alpha_second");
+        assert.equal((await graphData())?.initialResource?.key, "alpha_second");
         await release();
         await earlier;
-        assert.equal((await graphData())?.initialJob?.key, "alpha_second", "an earlier job request must not undo the newer one");
+        assert.equal((await graphData())?.initialResource?.key, "alpha_second", "an earlier job request must not undo the newer one");
       } finally {
         await release();
         await earlier;

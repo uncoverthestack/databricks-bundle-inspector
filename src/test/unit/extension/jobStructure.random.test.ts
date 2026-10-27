@@ -6,7 +6,8 @@ import { parseYamlLocations } from "../../../bundle/sourceLocations.js";
 // Random jobs checked against a reference written from the definitions, sharing no code
 // with the detection: a task is in a loop if and only if it reaches itself; two tasks are
 // in one loop if and only if each reaches the other. Seeded, so a failure replays exactly:
-// RANDOM_SEED=<seed> RANDOM_RUNS=1 reproduces one job. RANDOM_RUNS raises the count locally.
+// RANDOM_SEED=<seed> RANDOM_RUNS=1 reproduces one job. RANDOM_RUNS raises the count; the weekly
+// CLI compatibility run uses 20,000.
 const RUNS = Number(process.env.RANDOM_RUNS ?? 400);
 const FIRST_SEED = Number(process.env.RANDOM_SEED ?? 1);
 

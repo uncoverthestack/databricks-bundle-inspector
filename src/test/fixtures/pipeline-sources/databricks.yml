@@ -1,6 +1,7 @@
 # Pipeline library checks. broken_pipeline points at sources that don't exist;
 # workspace_pipeline uses a workspace path, which must not be flagged; the
-# unknown field on ok_pipeline must be attributed to the pipeline, not the job.
+# unknown field on ok_pipeline must be attributed to the pipeline, not the job;
+# looped_pipeline lists a notebook as a file and runs inside a for_each_task.
 bundle:
   name: pipeline-sources
 include:

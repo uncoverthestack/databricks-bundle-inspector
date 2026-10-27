@@ -31,7 +31,7 @@ import {
 } from "./databricksCli/profiles.js";
 import { isOlderThanSupported, MIN_SUPPORTED_CLI_VERSION, telemetryCliVersion } from "./databricksCli/parsing.js";
 import { getBundleDirFromEditor } from "./bundle/bundleContext.js";
-import { bundleThatLoaded, jobKeyAtLine } from "./bundle/resourceFiles.js";
+import { bundleThatLoaded, resourceAtLine, type GraphResource } from "./bundle/resourceFiles.js";
 import { folderIgnoresCase } from "./bundle/pathCase.js";
 import {
   BUNDLE_FILE_GLOB,
@@ -1036,7 +1036,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     root: string,
     inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
     requestedTarget?: string,
-    options?: { focusIssues?: boolean; initialJobKey?: string | undefined; preserveView?: boolean },
+    options?: { focusIssues?: boolean; initialResource?: GraphResource | undefined; preserveView?: boolean },
   ): object | undefined {
     const { result } = inspection;
     if (!result.ok) return undefined;
@@ -1067,9 +1067,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
       preserveView: options?.preserveView === true,
-      // The job a resource file defines, so the graph opens on it. A nonce, as the same job
-      // may be asked for again after the user picked another.
-      initialJob: options?.initialJobKey ? { key: options.initialJobKey, nonce: Date.now() } : null,
+      // The job or pipeline a resource file defines, so the graph opens on it. A nonce, as
+      // the same one may be asked for again after the user picked another.
+      initialResource: options?.initialResource ? { ...options.initialResource, nonce: Date.now() } : null,
     };
   }
 
@@ -1341,9 +1341,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     // Started from a resource file `include` loads, not from the bundle file.
     const fromResourceFile =
       !bundleDirOverride && bundleDir !== undefined && !getBundleDirFromEditor(editor);
-    const initialJobKey =
+    const initialResource =
       fromResourceFile && editor
-        ? jobKeyAtLine(editor.document.getText(), editor.selection.active.line)
+        ? resourceAtLine(editor.document.getText(), editor.selection.active.line)
         : undefined;
 
     if (!bundleDir) {
@@ -1472,6 +1472,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           !(result.issues ?? []).some((issue) => issue.code === "AUTH_NOT_CONFIGURED"),
         target_count: countBucket(inspection.targetOptions?.length ?? 0),
         job_count: countBucket(graphNodes.filter((n) => n.nodeType === "job").length),
+        pipeline_count: countBucket(graphNodes.filter((n) => n.resourceGroup === "pipelines").length),
         task_count: countBucket(graphNodes.filter((n) => n.nodeType === "task").length),
         task_kinds: taskKinds(graphNodes),
         issue_count: countBucket(inspection.inspectorIssues?.length ?? 0),
@@ -1482,7 +1483,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         bundleDir,
         inspection,
         requestedTarget,
-        { ...options, initialJobKey, preserveView: options?.trigger === "target_switch" },
+        { ...options, initialResource, preserveView: options?.trigger === "target_switch" },
       );
       if (!bundleMessageData) return;
 

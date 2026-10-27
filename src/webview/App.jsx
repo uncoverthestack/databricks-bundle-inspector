@@ -11,6 +11,7 @@ import {
 import { AlertTriangle, Info, LocateFixed } from "lucide-react";
 import AppHeader from "./components/AppHeader";
 import HeaderChipPanel from "./components/HeaderChipPanel";
+import PipelineView from "./components/PipelineView";
 import TaskNode from "./components/TaskNode";
 import {
   isVariableResolvedForTarget,
@@ -18,7 +19,8 @@ import {
   resolveVariableForTarget,
 } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
-import { resolveSelectedJobKey } from "./lib/jobSelection";
+import { parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
+import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { variableSourceLocation } from "./lib/variableSource";
@@ -2082,6 +2084,8 @@ function DetailPanel({
   targetName,
   inspectorIssues,
   onSelectTask,
+  pipelineKeys = [],
+  onSelectPipeline,
   onClose,
   onOpenFile,
 }) {
@@ -2144,6 +2148,15 @@ function DetailPanel({
   const primaryFileStatus = primaryFileRef
     ? getFileStatus(primaryFileRef)
     : undefined;
+  // A pipeline task of this bundle's own pipeline can open the pipeline view.
+  const runsPipelineKey = (() => {
+    const key = taskPipelineKey(node.data);
+    return key && pipelineKeys.includes(key) ? key : undefined;
+  })();
+  const linkedPipelineKey = onSelectPipeline ? runsPipelineKey : undefined;
+  // A loop's own row shows its inputs, so the pipeline it runs gets a row of its own.
+  const loopPipelineKey = node.data?.pipeline_task ? undefined : linkedPipelineKey;
+  const targetPipelineKey = loopPipelineKey ? undefined : linkedPipelineKey;
   const targetRows = getTaskTargetRows(node, primaryFileRef, primaryFileStatus)
     .map((row) => ({
       ...row,
@@ -2409,16 +2422,31 @@ function DetailPanel({
               <ConfigRow
                 key={row.key}
                 label={row.label}
-                value={row.value}
-                title={row.title}
+                // The pipeline's key, not its `${resources.pipelines.<key>.id}` reference.
+                value={row.key === "task-target" && targetPipelineKey ? targetPipelineKey : row.value}
+                title={
+                  row.key === "task-target" && targetPipelineKey
+                    ? `${row.title}. Click to show the pipeline.`
+                    : row.title
+                }
                 tone={row.tone}
                 onClick={
-                  row.resolvedPath && onOpenFile
-                    ? () => onOpenFile(row.resolvedPath)
-                    : undefined
+                  row.key === "task-target" && targetPipelineKey
+                    ? () => onSelectPipeline(targetPipelineKey)
+                    : row.resolvedPath && onOpenFile
+                      ? () => onOpenFile(row.resolvedPath)
+                      : undefined
                 }
               />
             ))}
+            {loopPipelineKey && (
+              <ConfigRow
+                label="Pipeline"
+                value={loopPipelineKey}
+                title="Run inside the loop. Click to show the pipeline."
+                onClick={() => onSelectPipeline(loopPipelineKey)}
+              />
+            )}
             {dependencyItems.length > 0 && (
               <ConfigRow label="Depends on">
                 <div className="flex flex-wrap gap-1.5">
@@ -2680,7 +2708,7 @@ export default function App({
   onCheckTargetAgain,
   onOpenSignInGuide,
   focusIssuesNonce,
-  initialJobKey,
+  initialResource,
   onSelectTarget,
   onOpenFile,
   onCopyReviewSummary,
@@ -2688,7 +2716,7 @@ export default function App({
 }) {
   const colorMode = useVscodeColorMode();
   const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [userSelectedJobKey, setUserSelectedJobKey] = useState(undefined);
+  const [userSelection, setUserSelection] = useState(undefined);
   const [searchValue, setSearchValue] = useState("");
   const [focusRequest, setFocusRequest] = useState(null);
   const [activeHeaderPanel, setActiveHeaderPanel] = useState(() =>
@@ -2703,11 +2731,15 @@ export default function App({
     [parsedBundle],
   );
   const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
+  const pipelineKeys = useMemo(() => pipelineKeysOf(parsedBundle), [parsedBundle]);
 
-  const selectedJobKey = useMemo(
-    () => resolveSelectedJobKey(jobKeys, userSelectedJobKey, initialJobKey),
-    [jobKeys, userSelectedJobKey, initialJobKey],
+  const selection = useMemo(
+    () => resolveSelection(jobKeys, pipelineKeys, userSelection, initialResource),
+    [jobKeys, pipelineKeys, userSelection, initialResource],
   );
+  // Empty while a pipeline is shown, so everything about tasks stands aside.
+  const selectedJobKey = selection?.group === "jobs" ? selection.key : "";
+  const selectedPipelineKey = selection?.group === "pipelines" ? selection.key : undefined;
 
   const targetOptions = useMemo(
     () =>
@@ -2748,16 +2780,51 @@ export default function App({
               )
             : "";
         return {
-          value: key,
-          label: displayName ? `${key} — ${displayName}` : key,
+          value: selectionValue({ group: "jobs", key }),
+          key,
+          label: displayName && displayName !== key ? `${key} (${displayName})` : key,
         };
       }),
     [jobKeys, jobsByKey, effectiveResolutionBundle, effectiveTargetName],
   );
+  const pickerGroups = useMemo(() => {
+    const pipelinesByKey = parsedBundle?.resources?.pipelines ?? {};
+    const pipelineOptions = pipelineKeys.map((key) => {
+      const name = pipelinesByKey[key]?.name;
+      const displayName =
+        typeof name === "string" && name.trim() && name !== key
+          ? displayResolvedValue(name, effectiveResolutionBundle, effectiveTargetName)
+          : "";
+      return {
+        value: selectionValue({ group: "pipelines", key }),
+        key,
+        label: displayName && displayName !== key ? `${key} (${displayName})` : key,
+      };
+    });
+    return [
+      ...(jobOptions.length > 0 ? [{ label: "Jobs", options: jobOptions }] : []),
+      ...(pipelineOptions.length > 0 ? [{ label: "Pipelines", options: pipelineOptions }] : []),
+    ];
+  }, [jobOptions, pipelineKeys, parsedBundle, effectiveResolutionBundle, effectiveTargetName]);
+
+  const pipelineView = useMemo(
+    () =>
+      graph && selectedPipelineKey !== undefined
+        ? buildPipelineView(graph, parsedBundle, selectedPipelineKey, inspectorIssues)
+        : undefined,
+    [graph, parsedBundle, selectedPipelineKey, inspectorIssues],
+  );
+  const otherPipelines = useMemo(() => {
+    if (!pipelineView) return [];
+    const counts = pipelineIssueCounts(pipelineKeys, inspectorIssues);
+    return pipelineKeys
+      .filter((key) => key !== pipelineView.key)
+      .map((key) => ({ key, issueCount: counts.get(key) ?? 0 }));
+  }, [pipelineView, pipelineKeys, inspectorIssues]);
 
   const { flowNodes, flowEdges, jobNode } = useMemo(
     () =>
-      graph
+      graph && selectedJobKey
         ? buildDagFlow(
             graph,
             selectedJobKey,
@@ -2978,9 +3045,10 @@ export default function App({
     selectTaskNode(item.taskId);
   }
 
-  function handleJobChange(value) {
-    onTelemetry?.("job_selected");
-    setUserSelectedJobKey(value);
+  function handleSelectionChange(next) {
+    if (!next) return;
+    onTelemetry?.(next.group === "pipelines" ? "pipeline_selected" : "job_selected");
+    setUserSelection(next);
     setSelectedNodeId(null);
     setSearchValue("");
     setActiveHeaderPanel(null);
@@ -2995,6 +3063,16 @@ export default function App({
 
   function handleCopyReviewSummary() {
     if (!onCopyReviewSummary) return;
+    if (pipelineView) {
+      onCopyReviewSummary(
+        pipelineReviewSummary(pipelineView, {
+          bundleName: parsedBundle?.bundle?.name ?? "Unknown bundle",
+          targetLabel,
+          resolveName: (value) => displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+        }),
+      );
+      return;
+    }
     onCopyReviewSummary(
       buildBundleReviewSummary({
         parsedBundle,
@@ -3023,10 +3101,10 @@ export default function App({
         // What is shown, not what was asked for: a target that fell back shows the preview.
         selectedTarget={inspectedTargetMode === "target" ? requestedTarget : undefined}
         onTargetChange={onSelectTarget}
-        jobKeys={jobKeys}
-        selectedJobKey={selectedJobKey}
-        jobOptions={jobOptions}
-        onJobChange={handleJobChange}
+        pickerGroups={pickerGroups}
+        selectedValue={selection ? selectionValue(selection) : ""}
+        onPickerChange={(value) => handleSelectionChange(parseSelectionValue(value))}
+        showTaskTools={!pipelineView}
         searchValue={searchValue}
         searchItems={searchItems}
         onSearchChange={setSearchValue}
@@ -3094,7 +3172,18 @@ export default function App({
       {/* Canvas + Detail */}
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 overflow-hidden">
-          {flowNodes.length === 0 ? (
+          {pipelineView ? (
+            <PipelineView
+              view={pipelineView}
+              otherPipelines={otherPipelines}
+              background={rfStyle}
+              onSelect={handleSelectionChange}
+              onOpenFile={onOpenFile}
+              resolveName={(value) =>
+                displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName)
+              }
+            />
+          ) : flowNodes.length === 0 ? (
             <div
               className="flex h-full flex-col items-center justify-center gap-2 text-center"
               style={rfStyle}
@@ -3103,14 +3192,14 @@ export default function App({
                 {jobNode
                   ? "This job has no tasks."
                   : jobKeys.length === 0
-                    ? "No jobs found in this bundle."
+                    ? "No jobs or pipelines found in this bundle."
                     : "No tasks found for the selected job."}
               </span>
               {jobKeys.length === 0 && (
                 <span className="text-xs text-muted">
                   {nonJobResourceTypes.length > 0
                     ? `Contains: ${nonJobResourceTypes.join(", ")}.`
-                    : "This bundle may only contain pipelines or other non-job resources."}
+                    : "The graph shows jobs and pipelines; this bundle defines neither."}
                 </span>
               )}
             </div>
@@ -3176,7 +3265,7 @@ export default function App({
           )}
         </div>
 
-        {selectedNodeId && (
+        {selectedNodeId && !pipelineView && (
           <DetailPanel
             nodeId={selectedNodeId}
             graph={graph}
@@ -3184,6 +3273,8 @@ export default function App({
             targetName={effectiveTargetName}
             inspectorIssues={inspectorIssues}
             onSelectTask={selectTaskNode}
+            pipelineKeys={pipelineKeys}
+            onSelectPipeline={(key) => handleSelectionChange({ group: "pipelines", key })}
             onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
           />

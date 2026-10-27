@@ -2,7 +2,7 @@
 
 Find Databricks bundle problems before you deploy, including ones `databricks bundle validate` misses. See them in your code, at the exact line, and explore how your jobs and tasks connect.
 
-It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel; the graph shows your jobs and pipelines.
+It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel. The graph shows each job's tasks and how they depend on each other. A pipeline appears as a task in the job that runs it; the graph doesn't show the tables inside a pipeline, or a pipeline no job runs.
 
 Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
 
@@ -38,6 +38,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 
 - **Job graph**: tasks and what they depend on, with pan, zoom and search.
 - **Task details**: type, source file, parameters, compute, linked pipelines and problems labelled **Error**, **Warning** or **Note**.
+- **Pipelines**: pick a pipeline in the graph's dropdown to see the jobs in the bundle that run it, its default catalog and schema, each source in `libraries` with whether it was found, and its problems, all from the YAML. It doesn't show the tables inside a pipeline. A bundle with only pipelines opens on its first one.
 - **Secrets and widgets** found in each task's code.
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
