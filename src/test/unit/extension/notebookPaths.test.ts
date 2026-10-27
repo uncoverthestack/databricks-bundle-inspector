@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeAll } from "@jest/globals";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
 import {
@@ -9,6 +10,7 @@ import {
 import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
 import { checkNotebookPath, isNotebookFile } from "../../../bundle/notebookFiles.js";
 import { locateFix } from "../../../bundle/quickFix.js";
+import { JUPYTER_CASES } from "../../jupyterCases.js";
 
 const bundleRoot = path.resolve(__dirname, "../../fixtures/notebook-paths");
 const src = (name: string) => path.join(bundleRoot, "src", name);
@@ -52,6 +54,16 @@ describe("isNotebookFile", () => {
     ["plain.py", false],
   ])("%s is a notebook: %s", (file, expected) => {
     expect(isNotebookFile(src(file))).toBe(expected);
+  });
+
+  test.each(JUPYTER_CASES)("Jupyter file $name is a notebook: $inspector", ({ text, inspector }) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-jupyter-"));
+    try {
+      writeFileSync(path.join(dir, "nb.ipynb"), text);
+      expect(isNotebookFile(path.join(dir, "nb.ipynb"))).toBe(inspector);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("is undefined for a missing file or a folder", () => {

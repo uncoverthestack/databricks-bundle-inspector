@@ -65,13 +65,24 @@ export class TelemetryQueue {
   }
 
   private async drain(): Promise<void> {
+    // The age limit holds when sending too, not only when the queue loads or grows: a
+    // window open for weeks would otherwise send events older than 14 days.
+    this.dropExpired();
     while (this.events.length > 0) {
       const batch = this.events.slice(0, this.batchSize);
       const result = await this.send(batch);
       if (result === "retry") return;
       this.events = this.events.filter((e) => !batch.includes(e));
       this.persist();
+      this.dropExpired();
     }
+  }
+
+  private dropExpired(): void {
+    const kept = this.withinLimits(this.events);
+    if (kept.length === this.events.length) return;
+    this.events = kept;
+    this.persist();
   }
 
   private withinLimits(events: QueuedEvent[]): QueuedEvent[] {

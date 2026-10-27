@@ -22,16 +22,41 @@ type Rule =
 const oneOf = (...values: string[]): Rule => ({ type: "enum", values });
 const bool: Rule = { type: "boolean" };
 const bucket = oneOf("0", "1", "2-5", "6-20", "21-50", "51+");
+/** `major.minor` only, e.g. `1.21` (see telemetryCliVersion). */
+const cliVersion: Rule = { type: "pattern", pattern: /^\d{1,3}\.\d{1,4}$/ };
+
+/** The findings whose quick fix is counted, by kind. */
+export const QUICK_FIX_KINDS: readonly string[] = [
+  "notebook_missing_extension",
+  "include_matches_nothing",
+  "missing_file",
+  "missing_pipeline_source",
+];
+
+/** What was used in the sidebar. Only rows and buttons of the sidebar, never the Command Palette. */
+export const SIDEBAR_ACTIONS = [
+  "open_graph",
+  "open_problems",
+  "pick_problem",
+  "open_target",
+  "open_bundle_file",
+  "check_again",
+  "check_all",
+  "choose_cli",
+  "choose_profile",
+] as const;
+export type SidebarAction = (typeof SIDEBAR_ACTIONS)[number];
 
 export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   extension_activated: {
     bundle_count: bucket,
     bundle_at_root: bool,
     cli_found: bool,
+    cli_version: cliVersion,
     issue_count: bucket,
   },
   inspect_bundle: {
-    trigger: oneOf("command", "issues_command", "target_switch", "status_bar"),
+    trigger: oneOf("command", "issues_command", "target_switch", "status_bar", "sidebar"),
     from_resource_file: bool,
     outcome: oneOf(
       "ok",
@@ -47,10 +72,23 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
     ),
     cli_problem: oneOf("not_installed", "configured_path_invalid", "not_databricks_cli"),
     cli_outdated: bool,
+    cli_version: cliVersion,
     duration_ms: { type: "integer", max: 3_600_000 },
     has_diagnostics: bool,
     target_mode: oneOf("target", "probe"),
     fell_back_to_probe: bool,
+    fallback_reason: oneOf(
+      "timeout",
+      "not_logged_in",
+      "no_profile",
+      "several_profiles",
+      "other_workspace",
+      "no_such_target",
+      "login_unreachable",
+      "login_expired",
+      "login_other",
+      "other",
+    ),
     auth_configured: bool,
     target_count: bucket,
     job_count: bucket,
@@ -69,7 +107,9 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   pipeline_selected: {},
   search_result_selected: {},
   issue_item_selected: {},
-  quick_fix_applied: { kind: oneOf("notebook_missing_extension", "include_matches_nothing") },
+  quick_fix_applied: { kind: oneOf(...QUICK_FIX_KINDS) },
+  sidebar_opened: { at_start: bool },
+  sidebar_action: { action: oneOf(...SIDEBAR_ACTIONS) },
   bundle_progress: {
     comparison: oneOf("compared", "not_comparable", "check_incomplete"),
     resolved: bucket,
@@ -95,7 +135,6 @@ export const COMMON_KEYS: ReadonlySet<string> = new Set([
   "common.uikind",
   "common.vscodecommithash",
   "common.vscodereleasedate",
-  "common.vscodesessionid",
   "common.vscodeversion",
 ]);
 const COMMON_VALUE = /^[\w .:+()/@-]{0,100}$/;

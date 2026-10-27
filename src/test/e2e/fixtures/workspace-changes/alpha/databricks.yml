@@ -1,0 +1,16 @@
+bundle:
+  name: alpha
+
+include:
+  - ../shared/job.yml
+
+# Targets a merge brings in: the CLI lists staging with dev.
+x-shared-targets: &shared_targets
+  staging:
+    mode: development
+
+targets:
+  <<: *shared_targets
+  dev:
+    default: true
+    mode: development

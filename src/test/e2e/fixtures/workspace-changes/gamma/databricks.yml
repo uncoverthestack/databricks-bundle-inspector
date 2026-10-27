@@ -1,0 +1,10 @@
+bundle:
+  name: gamma
+
+include:
+  - ../shared/job.yml
+
+targets:
+  dev:
+    default: true
+    mode: development

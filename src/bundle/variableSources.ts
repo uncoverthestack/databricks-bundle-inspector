@@ -29,7 +29,7 @@ function isEmpty(node: Node | null): boolean {
 type Anchors = Map<string, Node[]>;
 
 /** Every anchor in a document, read once: `Alias.resolve` reads the whole document each time. */
-function anchorsOf(doc: Document): Anchors {
+export function anchorsOf(doc: Document): Anchors {
   const anchors: Anchors = new Map();
   visit(doc, (_key, node) => {
     if (isNode(node) && node.anchor) {
@@ -56,15 +56,16 @@ function resolved(anchors: Anchors, node: unknown): Node | undefined {
  * first, a later merged map winning over an earlier one, then the mapping's own
  * keys, which win over merged ones wherever they are written. The CLI's acceptance
  * tests yaml_anchors/target_variable_precedence and target_variable_shorthand_alias
- * show both rules.
+ * show both rules. A key YAML reads as null (`~`, `null`) is named as it is written,
+ * as the CLI names it (checked on CLI 0.299.0 and 1.21.0).
  */
-function entries(anchors: Anchors, node: unknown, depth = 0): Map<string, Entry> {
+export function entries(anchors: Anchors, node: unknown, depth = 0): Map<string, Entry> {
   const map = resolved(anchors, node);
   const result = new Map<string, Entry>();
   if (!map || !isMap(map) || depth > 50) return result;
   const own: [string, Entry][] = [];
   for (const pair of map.items) {
-    const key = isScalar(pair.key) ? pair.key.value : pair.key;
+    const key = isScalar(pair.key) ? (pair.key.value ?? pair.key.source) : pair.key;
     const value = (pair.value ?? null) as Node | null;
     if (key === "<<") {
       const merged = resolved(anchors, value);

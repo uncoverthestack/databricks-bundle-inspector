@@ -160,3 +160,7 @@ jobs:
       # The cases that need a workspace login are skipped: CI has none.
       - name: E2E, targets
         run: ${{ matrix.display }} npm run test:e2e:targets
+      - name: E2E, sidebar
+        run: ${{ matrix.display }} npm run test:e2e:sidebar
+      - name: E2E, workspace changes (shared files, removed and new bundles)
+        run: ${{ matrix.display }} npm run test:e2e:workspace-changes
