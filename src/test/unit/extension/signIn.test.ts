@@ -7,6 +7,8 @@ import {
   profileUpdated,
   signInCommand,
   targetWorkspace,
+  terminalCli,
+  type ConfigSections,
 } from "../../../databricksCli/signIn.js";
 
 const CONFIG = [
@@ -29,12 +31,49 @@ const CONFIG = [
   "auth_type = databricks-cli",
 ].join("\r\n");
 
+const parse = (text: string): ConfigSections => {
+  const sections = parseConfigSections(text);
+  if (!sections) throw new Error("the test config should parse");
+  return sections;
+};
+
 describe("parseConfigSections", () => {
   test("reads every section, a profile with no host too, without quotes or inline comments", () => {
-    const sections = parseConfigSections(CONFIG);
+    const sections = parse(CONFIG);
     expect([...sections.keys()]).toEqual(["DEFAULT", "web", "tok", "nohost", "ADB-9"]);
     expect(sections.get("tok")).toEqual({ host: "https://adb-1234.azuredatabricks.net", token: "dapi-fake" });
     expect(sections.get("ADB-9")?.host).toBe("https://adb-9.azuredatabricks.net");
+  });
+
+  // As `databricks auth profiles` listed this file on CLI 0.299.0 and 1.21.0.
+  test("reads names and keys as the CLI does", () => {
+    const sections = parse(
+      [
+        "host = https://top.example.invalid",
+        "token = fake-top",
+        "[protected] # keep this token",
+        "host = https://p.example.invalid",
+        "token = fake",
+        "[semi] ; note",
+        "[bracket] # see [other]",
+        "[colon]",
+        "host: https://colon.example.invalid",
+        "auth_type: databricks-cli",
+        "[ spaced ]",
+      ].join("\n"),
+    );
+    expect([...sections.keys()]).toEqual(["DEFAULT", "protected", "semi", "bracket] # see [other", "colon", " spaced "]);
+    expect(sections.get("DEFAULT")).toEqual({ host: "https://top.example.invalid", token: "fake-top" });
+    expect(sections.get("protected")?.token).toBe("fake");
+    expect(sections.get("colon")).toEqual({ host: "https://colon.example.invalid", auth_type: "databricks-cli" });
+  });
+
+  test("nothing when a line is one the CLI refuses the file for", () => {
+    expect(parseConfigSections("[ok]\nhost = https://x.example.invalid\nnot a key value line")).toBeUndefined();
+    expect(parseConfigSections("[unclosed\nhost = x")).toBeUndefined();
+    expect(parseConfigSections("[]\nhost = x")).toBeUndefined();
+    expect(parseConfigSections("= no key")).toBeUndefined();
+    expect(parseConfigSections("")).toEqual(new Map());
   });
 });
 
@@ -58,12 +97,40 @@ describe("isSafeHost and signInCommand", () => {
     expect(signInCommand("https://adb-1234.azuredatabricks.net/?o=1234", "second one")).toBe(
       'databricks auth login --host "https://adb-1234.azuredatabricks.net/?o=1234" --profile "second one"',
     );
+    expect(signInCommand("https://h.example.com", "p", "/opt/cli/databricks-custom")).toBe(
+      '/opt/cli/databricks-custom auth login --host "https://h.example.com" --profile "p"',
+    );
+  });
+});
+
+describe("terminalCli: the terminal runs the CLI file the checks use", () => {
+  test("a file named databricks is found by name with its folder first on PATH", () => {
+    expect(terminalCli("/opt/homebrew/bin/databricks", "darwin")).toEqual({ command: "databricks", folder: "/opt/homebrew/bin" });
+    expect(terminalCli("C:\\Program Files\\Databricks\\databricks.exe", "win32")).toEqual({
+      command: "databricks",
+      folder: "C:\\Program Files\\Databricks",
+    });
+    expect(terminalCli("C:\\tools\\DATABRICKS.CMD", "win32")).toEqual({ command: "databricks", folder: "C:\\tools" });
+  });
+
+  test("another name is typed as its path, which PATH would not find", () => {
+    expect(terminalCli("/tmp/x/databricks-custom", "darwin")).toEqual({ command: "/tmp/x/databricks-custom" });
+    // On macOS and Linux, `databricks` doesn't find databricks.sh or databricks.exe.
+    expect(terminalCli("/tmp/x/databricks.sh", "linux")).toEqual({ command: "/tmp/x/databricks.sh" });
+    expect(terminalCli("C:\\tools\\databricks-1.21.exe", "win32")).toEqual({ command: "C:\\tools\\databricks-1.21.exe" });
+  });
+
+  test("not a path with spaces or characters a shell would read", () => {
+    expect(terminalCli("/Users/me/my tools/databricks-custom", "darwin")).toBeUndefined();
+    expect(terminalCli("/tmp/$(id)/dbx", "darwin")).toBeUndefined();
+    expect(terminalCli("~/bin/dbx", "darwin")).toBeUndefined();
+    expect(terminalCli("C:\\Program Files\\dbx.exe", "win32")).toBeUndefined();
   });
 });
 
 describe("newProfileName", () => {
   test("the host's first label, unique in the file whatever the letter case", () => {
-    const sections = parseConfigSections(CONFIG);
+    const sections = parse(CONFIG);
     expect(newProfileName("https://dbc-a1b2.cloud.databricks.com", sections)).toBe("dbc-a1b2");
     // "adb-9" is taken as ADB-9.
     expect(newProfileName("https://adb-9.azuredatabricks.net", sections)).toBe("adb-9-2");
@@ -72,7 +139,7 @@ describe("newProfileName", () => {
 });
 
 describe("planSignIn: never a name that would be replaced", () => {
-  const sections = parseConfigSections(CONFIG);
+  const sections = parse(CONFIG);
   const host = "https://adb-1234.azuredatabricks.net";
 
   test("reuses a browser profile for that workspace, not the token profile next to it", () => {
@@ -118,6 +185,21 @@ describe("planSignIn: never a name that would be replaced", () => {
     expect(planSignIn({ host, profile: 'a"b', sections }).kind).toBe("blocked");
     expect(planSignIn({ host, profile: "__settings__", sections }).kind).toBe("blocked");
   });
+
+  test("a token profile named with a comment after its header is still protected", () => {
+    const commented = parse("[protected] # keep this token\nhost = https://p.example.invalid\ntoken = fake\n");
+    const plan = planSignIn({ host: "https://p.example.invalid", profile: "protected", sections: commented });
+    expect(plan.kind === "blocked" && plan.reason).toMatch(/signs in another way/);
+  });
+
+  test("a host set with a variable is asked for; a profile set with one blocks", () => {
+    expect(planSignIn({ host: null, profile: "web", sections })).toEqual({ kind: "needs_host", profile: "web" });
+    expect(planSignIn({ host: null, profile: undefined, sections })).toEqual({ kind: "needs_host" });
+    expect(planSignIn({ host, profile: null, sections })).toEqual({
+      kind: "blocked",
+      reason: "its profile is set with a variable, which only the Databricks CLI fills in",
+    });
+  });
 });
 
 describe("targetWorkspace", () => {
@@ -137,9 +219,9 @@ describe("targetWorkspace", () => {
     "      profile: ${var.who}",
   ].join("\n");
 
-  test("the target's own values over the bundle's, merges read, variables left out", () => {
+  test("the target's own values over the bundle's, merges read, a variable unknown", () => {
     expect(targetWorkspace([bundle], "dev")).toEqual({ host: "https://top.example.com", profile: "from-anchor" });
-    expect(targetWorkspace([bundle], "prod")).toEqual({ host: "https://prod.example.com" });
+    expect(targetWorkspace([bundle], "prod")).toEqual({ host: "https://prod.example.com", profile: null });
     expect(targetWorkspace([bundle], "missing")).toEqual({ host: "https://top.example.com" });
   });
 
@@ -147,25 +229,43 @@ describe("targetWorkspace", () => {
     const included = "targets:\n  staging:\n    workspace:\n      host: https://staging.example.com\n";
     expect(targetWorkspace([bundle, included], "staging")).toEqual({ host: "https://staging.example.com" });
   });
+
+  test("a target's variable hides the bundle's own value, here and from an included file", () => {
+    const top = "workspace:\n  host: https://prod.example.invalid\n  profile: prod\n";
+    const dev = "targets:\n  dev:\n    workspace:\n      host: ${var.dev_host}\n      profile: ${var.dev_profile}\n";
+    expect(targetWorkspace([top + dev], "dev")).toEqual({ host: null, profile: null });
+    expect(targetWorkspace([top, dev], "dev")).toEqual({ host: null, profile: null });
+    // A variable at the top is unknown too.
+    expect(targetWorkspace(["workspace:\n  profile: ${var.p}\n"], "dev")).toEqual({ profile: null });
+  });
 });
 
 describe("profileUpdated: only the profile being signed in", () => {
   const host = "https://adb-1234.azuredatabricks.net";
   const browser = { host, auth_type: "databricks-cli" };
+  const other = { host: "https://other.example.com", auth_type: "databricks-cli" };
+  const sections = (entries: Record<string, Record<string, string>>): ConfigSections => new Map(Object.entries(entries));
+  const updated = (before: ConfigSections, after: ConfigSections, backupChanged: boolean) =>
+    profileUpdated({ before, after, profile: "web", host, backupChanged });
 
   test("a new browser profile for the workspace", () => {
-    expect(profileUpdated({ before: undefined, after: browser, host, backupChanged: false })).toBe(true);
+    expect(updated(sections({}), sections({ web: browser }), false)).toBe(true);
   });
 
   test("a profile that was already there counts once the CLI rewrote the file", () => {
-    expect(profileUpdated({ before: browser, after: { ...browser }, host, backupChanged: false })).toBe(false);
-    expect(profileUpdated({ before: browser, after: { ...browser }, host, backupChanged: true })).toBe(true);
-    expect(profileUpdated({ before: browser, after: { ...browser, workspace_id: "1234" }, host, backupChanged: false })).toBe(true);
+    expect(updated(sections({ web: browser }), sections({ web: { ...browser } }), false)).toBe(false);
+    expect(updated(sections({ web: browser }), sections({ web: { ...browser } }), true)).toBe(true);
+    expect(updated(sections({ web: browser }), sections({ web: { ...browser, workspace_id: "1234" } }), false)).toBe(true);
+  });
+
+  test("not a sign-in to another profile, which rewrites the file and its copy too", () => {
+    expect(updated(sections({ web: browser }), sections({ web: browser, other }), true)).toBe(false);
+    expect(updated(sections({ web: browser, other }), sections({ web: browser, other: { ...other, workspace_id: "9" } }), true)).toBe(false);
   });
 
   test("not when the profile is missing, not a browser one, or for another workspace", () => {
-    expect(profileUpdated({ before: undefined, after: undefined, host, backupChanged: true })).toBe(false);
-    expect(profileUpdated({ before: undefined, after: { host, token: "x" }, host, backupChanged: true })).toBe(false);
-    expect(profileUpdated({ before: undefined, after: { ...browser, host: "https://other.example.com" }, host, backupChanged: true })).toBe(false);
+    expect(updated(sections({}), sections({}), true)).toBe(false);
+    expect(updated(sections({}), sections({ web: { host, token: "x" } }), true)).toBe(false);
+    expect(updated(sections({}), sections({ web: { ...browser, host: "https://other.example.com" } }), true)).toBe(false);
   });
 });
