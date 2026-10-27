@@ -188,6 +188,87 @@ export function issueCodesSuite() {
       }
     });
 
+    it("a missing notebook names the one that fits, opens it to the side, and changes the path to it", async function () {
+      const document = await vscode.workspace.openTextDocument(resource);
+      const original = document.getText();
+      async function replaceDocument(text: string): Promise<void> {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(resource, new vscode.Range(0, 0, document.lineCount, 0), text);
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
+      }
+      try {
+        const etl = path.join(path.dirname(path.dirname(resource.fsPath)), "src", "etl.py");
+        await vscode.window.showTextDocument(document);
+        await replaceDocument(original.replace("notebook_path: ../src/etl", "notebook_path: ../notebooks/etl.py"));
+        await waitFor(() => Boolean(finding(resource, "missing_file")), "missing_file finding");
+        const diagnostic = finding(resource, "missing_file")!;
+        assert.equal(diagnostic.message, 'File not found: ../notebooks/etl.py. Did you mean "../src/etl.py"?');
+
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider", resource, diagnostic.range, vscode.CodeActionKind.QuickFix.value,
+        );
+        const titles = actions.map(action => action.title);
+        assert.ok(titles.includes('Change to "../src/etl.py"'), JSON.stringify(titles));
+        const open = actions.find(action => action.title === 'Open "../src/etl.py" to the side');
+        assert.ok(open?.command, JSON.stringify(titles));
+
+        // Opens beside the YAML, which keeps the focus.
+        await vscode.commands.executeCommand(open.command.command, ...(open.command.arguments ?? []));
+        await waitFor(
+          () => vscode.window.visibleTextEditors.some(editor => editor.document.uri.fsPath === etl),
+          "the suggested notebook beside the YAML",
+        );
+        const beside = vscode.window.visibleTextEditors.find(editor => editor.document.uri.fsPath === etl)!;
+        assert.notEqual(beside.viewColumn, vscode.window.visibleTextEditors.find(editor => editor.document === document)?.viewColumn);
+        assert.equal(vscode.window.activeTextEditor?.document, document);
+
+        const change = actions.find(action => action.title === 'Change to "../src/etl.py"')!;
+        assert.ok(await vscode.workspace.applyEdit(change.edit!));
+        await document.save();
+        await waitFor(() => !finding(resource, "missing_file"), "missing_file clears once the path is changed");
+      } finally {
+        await replaceDocument(original);
+        await waitFor(() => Boolean(finding(resource, "notebook_missing_extension")), "original fixture restored");
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+
+    it("a suggested path with \" #\" in it is quoted, so YAML keeps it whole", async function () {
+      const document = await vscode.workspace.openTextDocument(resource);
+      const original = document.getText();
+      const folder = vscode.Uri.file(path.join(path.dirname(path.dirname(resource.fsPath)), "team #2"));
+      async function replaceDocument(text: string): Promise<void> {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(resource, new vscode.Range(0, 0, document.lineCount, 0), text);
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
+      }
+      try {
+        await vscode.workspace.fs.writeFile(
+          vscode.Uri.joinPath(folder, "moved.py"),
+          Buffer.from("# Databricks notebook source\nprint(1)\n"),
+        );
+        await replaceDocument(original.replace("notebook_path: ../src/etl", "notebook_path: ../notebooks/moved.py"));
+        await waitFor(() => Boolean(finding(resource, "missing_file")), "missing_file finding");
+        const diagnostic = finding(resource, "missing_file")!;
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider", resource, diagnostic.range, vscode.CodeActionKind.QuickFix.value,
+        );
+        const change = actions.find(action => action.title === 'Change to "../team #2/moved.py"');
+        assert.ok(change?.edit, JSON.stringify(actions.map(action => action.title)));
+        assert.ok(await vscode.workspace.applyEdit(change.edit));
+        // Unquoted, YAML would read "../team" and take the rest as a comment.
+        assert.equal(document.lineAt(diagnostic.range.start.line).text.trim(), "notebook_path: '../team #2/moved.py'");
+        await document.save();
+        await waitFor(() => !finding(resource, "missing_file"), "missing_file clears once the path is changed");
+      } finally {
+        await replaceDocument(original);
+        await vscode.workspace.fs.delete(folder, { recursive: true, useTrash: false });
+        await waitFor(() => Boolean(finding(resource, "notebook_missing_extension")), "original fixture restored");
+      }
+    });
+
     it("rejects stale Quick Fixes after unsaved edits and leaves repeated text in comments alone", async function () {
       for (const example of [
         { uri: bundle, kind: "include_matches_nothing", prefix: "  - ", oldValue: "resource/*.yml", newValue: "resources/*.yml" },

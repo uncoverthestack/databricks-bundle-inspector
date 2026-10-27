@@ -1,3 +1,5 @@
+import { isScalar, parseDocument } from "yaml";
+
 /** Where a value sits in a line of YAML, as character offsets: `start` up to, not including, `end`. */
 export interface TextSpan {
   start: number;
@@ -59,6 +61,45 @@ export function locateFix(line: string, oldText: string, column: number): TextSp
     found.push({ start, end });
   }
   return found.length === 1 ? found[0] : undefined;
+}
+
+/** Whether YAML, as 1.2 and as the older 1.1, reads `text` written plain as exactly `value`. */
+function readsBackAs(text: string, value: string): boolean {
+  return (["1.2", "1.1"] as const).every((version) => {
+    const document = parseDocument(text, { version });
+    const node = document.contents;
+    return document.errors.length === 0 && document.warnings.length === 0 && isScalar(node) && !node.tag && node.value === value;
+  });
+}
+
+/**
+ * `value` written so YAML reads it back as that exact string, in the quotes the old
+ * value had. A plain value stays plain unless that would change it: `a #b` would lose
+ * `#b` as a comment, `a: b` would be a mapping, `1.5` a number. Then it is single
+ * quoted, which needs no escapes but `''`. Control characters need double quotes.
+ */
+export function yamlValue(value: string, quote: '"' | "'" | undefined): string {
+  if (quote === '"' || /[\u0000-\u001f\u007f]/.test(value)) return JSON.stringify(value);
+  if (quote === undefined && readsBackAs(value, value)) return value;
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/** The edit a quick fix makes on its line: the whole value, quotes included. */
+export interface FixEdit extends TextSpan {
+  text: string;
+}
+
+/**
+ * The edit that writes `newText` in place of `oldText` (see {@link locateFix}). The new
+ * value keeps the old one's quotes when it can, and gains them when it needs them, so
+ * a path holding `'`, `"`, `:` or `#` is still that path to the CLI.
+ */
+export function fixEdit(line: string, oldText: string, newText: string, column: number): FixEdit | undefined {
+  const span = locateFix(line, oldText, column);
+  if (!span) return undefined;
+  const quote = line[span.start - 1];
+  if (quote === '"' || quote === "'") return { start: span.start - 1, end: span.end + 1, text: yamlValue(newText, quote) };
+  return { ...span, text: yamlValue(newText, undefined) };
 }
 
 /**

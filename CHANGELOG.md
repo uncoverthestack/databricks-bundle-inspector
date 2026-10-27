@@ -4,6 +4,27 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+### Added
+
+- **A sidebar** ([#245](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/245), [PR #246](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/246)). The Bundle Inspector icon in the Activity Bar opens two sections, built from VS Code's own tree views. **Bundles** lists every bundle in the open folders with the status bar's result, adds where a bundle is when two share a name, selects the bundle of the open file, and has **Open Bundle File** and **Check Again** on each bundle and **Check All Databricks Bundles Again** at the top. Under each bundle (open already when there is only one): **Open Graph** shows what the check covered (`3 jobs · 11 tasks`) or the target picked in the graph, and opens the graph; **Problems** gives the count and its scope (`2 · structural preview`) and opens the problem where it is, as F8 does, or, with several, lists them all by file, each with its task, to pick from; **Target definitions** lists the bundle's targets by name, each opening where it is defined. **Settings** shows the Databricks CLI in use, its version and where it is from; clicking it lists every Databricks CLI found, with its version, where it is from and its file, to choose one. Clicking the sign-in profile chooses a profile. With no usable CLI, it offers Locate and the install guide. Problems stay in the YAML and the Problems panel. Switching targets from the sidebar and signing in come in later releases. See [docs/usage.md](docs/usage.md#sidebar).
+- **"Did you mean" for a missing file, with a quick fix.** When a task's or pipeline's file doesn't exist and exactly one file in the bundle has that name and is the right kind for the field, the problem names it: `File not found: ../notebooks/train.py. Did you mean "../src/train.py"?`. The light bulb offers **Change to "../src/train.py"** and **Open "../src/train.py" to the side**, so the file can be checked without leaving Bundle Inspector for the Explorer. It follows the Databricks CLI's rules, checked on CLI 0.299.0 and 1.21.0: the path is written from the YAML file's folder, a notebook field only gets notebooks and a file field only files that aren't notebooks, and files left out of the upload are never suggested. With the suggestion written in, `bundle validate` passes. See [docs/checks.md](docs/checks.md#missing_file).
+
+### Changed
+
+- **One name for opening the graph: Open Graph.** The editor title bar button, its right-click menu and the sidebar's right-click menu said **Inspect Databricks Bundle** or **Inspect Bundle**, while the sidebar row said **Open Graph**, for the same thing. All now say **Open Graph**; in the Command Palette it is **Databricks Bundle Inspector: Open Graph**. The command id is unchanged, so keybindings still work.
+- **A missing file says so plainly:** `File not found: ../notebooks/train.py` instead of `Missing local file reference: …`, and `Pipeline source file not found` instead of `Missing pipeline source file`.
+- **The description leads with what you get:** "Find Databricks bundle problems before you deploy, including ones bundle validate misses. See them in your code and explore how your jobs and tasks connect."
+- **The Inspect button in the editor title bar is an icon** ([PR #246](https://github.com/uncoverthestack/databricks-bundle-inspector/pull/246)): the extension's cube and magnifier, as in the Activity Bar. It was the words "Inspect Databricks Bundle".
+
+### Fixed
+
+- **A file several bundles include shows what each of them found.** Each bundle's check used to replace the others' findings in that file, and removing one bundle cleared them for all. A finding several bundles report is listed once in the Problems panel, its source naming each bundle (`Databricks Bundle Inspector (alpha, gamma)`), and counts for each of them.
+- **A bundle made while the folder is open is found and checked**, as on open: `databricks bundle init` in a terminal, a checkout or a copy. It used to need the folder opened again.
+- **A removed folder's bundle stays gone** when a check of it was still running. It used to come back, with its problems, when that check finished.
+- **A quick fix no longer breaks the YAML when the new path holds `#`, `:`, `"` or `'`.** The path was pasted in as it was: inside double quotes a `"` ended the value, inside single quotes a `'` did, and in a plain value a space then `#` cut the rest off as a comment, and a colon then a space made it a mapping. The fix now writes the value so YAML reads it back exactly: in the quotes it had, with `\"` or `''` where they are needed, or in single quotes when a plain value would change. With the fix written in, `bundle validate` passes (CLI 0.299.0 and 1.21.0).
+- **No "Did you mean" in a bundle too large to list.** The search for a moved file stops at 20,000 files, and a single match among those could hide a second one further on. It now suggests nothing when it stopped early.
+- **An `.ipynb` file is a notebook only when the Databricks CLI would take it as one.** The CLI reads `cells` as a list, `metadata` as an object, and `nbformat` and `nbformat_minor` as whole numbers; a file with, for example, `"metadata": []` was taken for a notebook, offered as a "Did you mean" for a notebook task, and not reported. Each case is now checked against CLI 0.299.0 and 1.21.0 in the CLI tests.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

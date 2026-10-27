@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -55,6 +55,28 @@ export function cliFilesOnPath(
   return pathEntries(pathValue, platform)
     .map((entry) => join(entry, cliFileName(platform)))
     .filter((file) => isFile(file));
+}
+
+/**
+ * The file that running `databricks` by name starts, from {@link cliFilesOnPath}'s list: the
+ * first one the OS can run. On macOS and Linux a file without the execute permission is
+ * skipped, as the OS skips it; Windows has no such permission, so the first file runs.
+ */
+export function fileRunByName(
+  files: readonly string[],
+  platform: NodeJS.Platform,
+  canRun: (file: string) => boolean = isExecutable,
+): string | undefined {
+  return platform === "win32" ? files[0] : files.find((file) => canRun(file));
+}
+
+function isExecutable(file: string): boolean {
+  try {
+    accessSync(file, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "events": {
     "inspect_bundle": {
-      "description": "Inspect Databricks Bundle ran, via the command, the Open Bundle Issues command, or a target switch in the panel.",
+      "description": "Open Graph ran, via the command, the Open Bundle Issues command, or a target switch in the panel.",
       "properties": {
         "trigger": "command | issues_command | target_switch | status_bar",
         "from_resource_file": "Whether it was started from a resource file that include loads, not from databricks.yml. No path is sent.",

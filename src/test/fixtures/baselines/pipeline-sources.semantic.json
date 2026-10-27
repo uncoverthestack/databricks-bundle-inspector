@@ -71,7 +71,7 @@
     {
       "severity": "error",
       "kind": "missing_pipeline_source",
-      "title": "Missing pipeline source file",
+      "title": "Pipeline source file not found",
       "detail": "../src/dlt/missing_file.py",
       "file": "resources/pipelines.yml",
       "line": 23,
@@ -81,7 +81,7 @@
     {
       "severity": "error",
       "kind": "missing_pipeline_source",
-      "title": "Missing pipeline source file",
+      "title": "Pipeline source file not found",
       "detail": "../src/dlt/missing_notebook.py",
       "file": "resources/pipelines.yml",
       "line": 21,

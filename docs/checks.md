@@ -25,7 +25,9 @@ A task points at a local notebook or file that doesn't exist, including the inne
 - **Severity:** error.
 - **Example:** `notebook_path: ../src/etl.py`, with no `src/etl.py`.
 - **Fix:** create the file, or correct the path. Paths are relative to the YAML file they are written in.
-- **Limits:** a path built from a variable isn't checked in the structural preview.
+- **Did you mean:** when exactly one file in the bundle has that name and is the kind the field takes, the message names it, written from the YAML file's folder: `File not found: ../notebooks/train.py. Did you mean "../src/train.py"?`. A notebook field only suggests notebooks (with the Databricks header, or Jupyter files); a Python, SQL or other file field only suggests files that aren't notebooks; files left out of the upload aren't suggested. With two or more candidates, none is named, nor in a bundle of more than 20,000 files, where the search stops early. The quick fix quotes the new path when YAML needs it to, for example for `team #2/train.py`.
+- **Quick fix:** yes, from the light bulb: **Change to "../src/train.py"**, and **Open "../src/train.py" to the side** to look at it first, without leaving the YAML. Only offered while the file still holds that value, so a path from a variable gets none.
+- **Limits:** a path built from a variable isn't checked in the structural preview. Folders and dbt projects get no suggestion.
 
 ### `notebook_missing_extension`
 
@@ -43,6 +45,7 @@ A Lakeflow Spark Declarative Pipeline (formerly Delta Live Tables, DLT) lists a 
 - **Severity:** error.
 - **Example:** `libraries: [{ glob: { include: ../src/dlt/** } }]` with an empty `src/dlt`.
 - **Fix:** add the source files, or correct the path or glob.
+- **Did you mean and quick fix:** as for [`missing_file`](#missing_file), for a notebook or file path. Not for a glob.
 
 ### `missing_library`
 
@@ -55,7 +58,7 @@ A task installs a local wheel or JAR that isn't there.
 
 ### `not_a_notebook`
 
-A notebook task, or a pipeline `notebook` library, points at a file that the CLI won't treat as a notebook, following the CLI's rules: a `.py`, `.sql`, `.scala` or `.r` file needs the Databricks notebook header as its first line, and a `.ipynb` file must be a valid Jupyter notebook.
+A notebook task, or a pipeline `notebook` library, points at a file that the CLI won't treat as a notebook, following the CLI's rules: a `.py`, `.sql`, `.scala` or `.r` file needs the Databricks notebook header as its first line, and a `.ipynb` file must be a Jupyter notebook as the CLI reads it: `cells` a list, `metadata` an object, and `nbformat` a whole number, 4 or more.
 
 - **Severity:** error.
 - **Example:** `notebook_path: ../src/query.sql`, where the file has no `-- Databricks notebook source` line.
