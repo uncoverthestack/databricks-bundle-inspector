@@ -84,3 +84,11 @@ jobs:
 
       - name: Bundle schema coverage
         run: npm run test:schema-coverage
+
+      # The random task-graph test with 20,000 jobs instead of the 400 every push runs
+      # (about 2 minutes). It doesn't use the CLI, so once per run, not per CLI version.
+      - name: Random task graphs, 20,000 jobs
+        if: github.event_name != 'pull_request' && matrix.cli == 'latest'
+        env:
+          RANDOM_RUNS: "20000"
+        run: npx jest src/test/unit/extension/jobStructure.random.test.ts
