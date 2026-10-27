@@ -4,7 +4,7 @@ import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
-import type { TaskNodeData } from "./resources/task.js";
+import type { FileReference, TaskNodeData } from "./resources/task.js";
 import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
@@ -12,6 +12,7 @@ import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
+import { filesUnder, movedFileSuggestion, type ExpectedFile } from "./pathSuggestions.js";
 import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
 
@@ -63,6 +64,8 @@ export interface IssueFix {
   newText: string;
   /** What the Quick Fix menu says, e.g. `Change to "src/etl.py"`. */
   title: string;
+  /** A file the fix points to, offered as "Open … to the side" next to the change. */
+  opens?: string;
 }
 
 export interface InspectorIssue {
@@ -151,17 +154,73 @@ function missingExtensionFix(
   line: number | undefined,
   column: number | undefined,
 ): Pick<InspectorIssue, "fix"> {
-  if (problem.kind !== "missing_extension" || !resolvedPath || !file || !line || !column) return {};
+  if (problem.kind !== "missing_extension") return {};
+  const written = writtenPathAt(resolvedPath, file, line, column);
+  if (!written) return {};
+  const extension = problem.suggestedPath.slice(rawPath.length);
+  return { fix: replacementFix(written, written + extension) };
+}
+
+/**
+ * The path as written at the issue's place, when it is the one that leads to
+ * `resolvedPath` from the file's folder. Undefined when the value came from somewhere
+ * else (a variable, a target override), so a fix never edits the wrong text.
+ */
+function writtenPathAt(
+  resolvedPath: string | undefined,
+  file: string | undefined,
+  line: number | undefined,
+  column: number | undefined,
+): string | undefined {
+  if (!resolvedPath || !file || !line || !column) return undefined;
   let text: string;
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    return {};
+    return undefined;
   }
   const written = writtenValueAt(text.split(/\r?\n/)[line - 1] ?? "", column);
-  if (!written || path.resolve(path.dirname(file), written) !== resolvedPath) return {};
-  const extension = problem.suggestedPath.slice(rawPath.length);
-  return { fix: replacementFix(written, written + extension) };
+  return written && path.resolve(path.dirname(file), written) === resolvedPath ? written : undefined;
+}
+
+/**
+ * The title, detail and fix for a local path that doesn't exist, with "Did you mean"
+ * when one file in the bundle fits (see pathSuggestions.ts). Without one, as before.
+ */
+function missingPathSuggestion(
+  rawPath: string,
+  resolvedPath: string | undefined,
+  file: string | undefined,
+  line: number | undefined,
+  column: number | undefined,
+  expects: ExpectedFile | undefined,
+  bundleFiles: () => readonly string[],
+  excluded: (file: string) => boolean,
+): Pick<InspectorIssue, "detail" | "fix"> {
+  // A path from `/` is a workspace path to the CLI, which never looks for it locally
+  // (checked on CLI 0.299.0 and 1.21.0): a local file is no answer to it.
+  if (!expects || !resolvedPath || !file || rawPath.startsWith("/") || path.isAbsolute(rawPath)) return { detail: rawPath };
+  const suggestion = movedFileSuggestion({ rawPath, resolvedPath, sourceFile: file, expects, files: bundleFiles, excluded });
+  if (!suggestion) return { detail: rawPath };
+  const written = writtenPathAt(resolvedPath, file, line, column);
+  return {
+    detail: `${rawPath}. Did you mean "${suggestion}"?`,
+    ...(written
+      ? { fix: { ...replacementFix(written, suggestion), opens: path.resolve(path.dirname(file), suggestion) } }
+      : {}),
+  };
+}
+
+/**
+ * What a task's path field takes, for a suggestion. None for folders, dbt projects and
+ * paths in a Git source, which aren't files in this bundle.
+ */
+function expectedFileFor(ref: Pick<FileReference, "referenceType" | "source">): ExpectedFile | undefined {
+  if (ref.source === "GIT") return undefined;
+  if (ref.referenceType === "notebook") return "notebook";
+  if (ref.referenceType === "python_script" || ref.referenceType === "sql") return "file";
+  if (ref.referenceType === "python_wheel" || ref.referenceType === "jar") return "any";
+  return undefined;
 }
 
 function isMissingLocalPath(ref: {
@@ -464,6 +523,10 @@ export function buildInspectorIssues(
   const syncExclusionOf = parsedBundle.sync?.paths?.length
     ? () => undefined
     : createSyncExclusion(bundleRoot, parsedBundle.sync);
+  // The bundle's files, read once and only when a path is missing.
+  let bundleFileList: string[] | undefined;
+  const bundleFiles = () => (bundleFileList ??= filesUnder(bundleRoot));
+  const excludedFromSync = (file: string) => syncExclusionOf(file) !== undefined;
 
   for (const task of tasks) {
     const taskData = task.taskData;
@@ -595,7 +658,16 @@ export function buildInspectorIssues(
         severity: "error",
         kind: "missing_file",
         title: "Missing local file reference",
-        detail: ref.path,
+        ...missingPathSuggestion(
+          ref.path,
+          ref.resolvedPath,
+          ref.sourceFile || sourceFileForTask(task),
+          ref.sourceLine || undefined,
+          ref.sourceColumn,
+          expectedFileFor(ref),
+          bundleFiles,
+          excludedFromSync,
+        ),
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: ref.yamlPath,
@@ -708,7 +780,18 @@ export function buildInspectorIssues(
           ref.kind === "glob"
             ? "Pipeline source folder has no files"
             : "Missing pipeline source file",
-        detail: ref.path,
+        ...(ref.kind === "glob"
+          ? { detail: ref.path }
+          : missingPathSuggestion(
+              ref.path,
+              ref.resolvedPath,
+              ref.sourceFile,
+              ref.sourceLine || undefined,
+              ref.sourceColumn,
+              ref.kind,
+              bundleFiles,
+              excludedFromSync,
+            )),
         resourceId: pipeline.id,
         yamlPath: `${pipeline.id}.${ref.yamlPath}`,
         fixHint:

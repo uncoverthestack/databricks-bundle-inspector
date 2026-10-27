@@ -72,6 +72,17 @@ export class InspectorQuickFixProvider implements vscode.CodeActionProvider {
       action.isPreferred = true;
       action.command = { command: QUICK_FIX_APPLIED_COMMAND, title: "", arguments: [fix.kind] };
       actions.push(action);
+      // Look before changing: the suggested file next to the YAML, without leaving it.
+      if (fix.opens) {
+        const open = new vscode.CodeAction(`Open "${fix.newText}" to the side`, vscode.CodeActionKind.QuickFix);
+        open.command = {
+          command: "vscode.open",
+          title: open.title,
+          arguments: [vscode.Uri.file(fix.opens), { viewColumn: vscode.ViewColumn.Beside, preview: true, preserveFocus: true }],
+        };
+        open.diagnostics = [diagnostic];
+        actions.push(open);
+      }
     }
     return actions;
   }
