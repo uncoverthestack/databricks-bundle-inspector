@@ -383,6 +383,7 @@
     "test:e2e:saved-file": "npm run test:e2e -- --suite savedFile --fixture src/test/e2e/fixtures/saved-file",
     "test:e2e:saved-file:other-case": "npm run test:e2e:saved-file -- --folder-case other",
     "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets",
+    "test:e2e:targets:watch": "npm run test:e2e:targets -- --pause-ms 8000",
     "test:e2e:sidebar": "npm run test:e2e -- --suite sidebar --fixture src/test/e2e/fixtures/targets",
     "test:e2e:workspace-changes": "npm run test:e2e -- --suite workspaceChanges --fixture src/test/e2e/fixtures/workspace-changes",
     "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes"

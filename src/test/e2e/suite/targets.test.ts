@@ -9,6 +9,10 @@ import { codeValue } from "../../../bundle/issueDocs.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Set by `npm run test:e2e:targets:watch`: each state of the sign-in banner stays on screen this long. */
+const PAUSE_MS = Number(process.env.E2E_PAUSE_MS ?? 0);
+const pause = () => (PAUSE_MS > 0 ? sleep(PAUSE_MS) : Promise.resolve());
+
 /**
  * A profile from ~/.databrickscfg for the cases that need a login. The fixture has no
  * workspace host: the CLI takes it from this profile, so nothing about a real workspace
@@ -242,12 +246,19 @@ export function targetsSuite() {
         // The CLI reads a file token cache, never the OS keychain.
         process.env.DATABRICKS_AUTH_STORAGE = "plaintext";
         typed = [];
-        // A stand-in terminal records what would be typed; no shell is started.
-        window.createTerminal = (() => ({
-          show: () => {},
-          sendText: (text: string, addNewLine?: boolean) => void typed.push({ text, addNewLine }),
-          dispose: () => {},
-        })) as unknown as typeof vscode.window.createTerminal;
+        // A stand-in terminal records what would be typed; no shell is started. When
+        // watching, a real terminal shows the command too: typed, and still never run.
+        window.createTerminal = ((options: vscode.TerminalOptions) => {
+          const real = PAUSE_MS > 0 ? originals.createTerminal(options) : undefined;
+          return {
+            show: () => real?.show(),
+            sendText: (text: string, addNewLine?: boolean) => {
+              typed.push({ text, addNewLine });
+              real?.sendText(text, addNewLine);
+            },
+            dispose: () => real?.dispose(),
+          };
+        }) as unknown as typeof vscode.window.createTerminal;
         window.showInputBox = (async () => HOST) as typeof vscode.window.showInputBox;
         await setProfile("NO_SUCH_PROFILE_E2E");
       });
@@ -267,8 +278,10 @@ export function targetsSuite() {
         vscode.commands.executeCommand("databricksBundleInspector.sidebar.openSignInTerminal", { kind: "graph", root });
 
       it("a missing sign-in offers the terminal, which gets the command typed and not run", async function () {
-        this.timeout(120_000);
+        this.timeout(120_000 + 5 * PAUSE_MS);
+        if (PAUSE_MS > 0) await vscode.commands.executeCommand("workbench.view.extension.databricksBundleInspector");
         const data = (await pickTarget("dev")) as GraphData & { signIn?: Banner };
+        await pause();
         assert.equal(data?.inspectedTargetMode, "probe", "the graph shows the structural preview");
         assert.deepEqual(data?.signIn, { target: "dev", stage: "needed" });
 
@@ -278,6 +291,7 @@ export function targetsSuite() {
           { text: `databricks auth login --host "${HOST}" --profile "NO_SUCH_PROFILE_E2E"`, addNewLine: false },
         ]);
         assert.equal((await banner())?.stage, "terminal");
+        await pause();
 
         // Another profile changing is not this sign-in.
         await writeFile(config, "[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n");
@@ -291,6 +305,7 @@ export function targetsSuite() {
           `[someone-else]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n\n[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\nauth_type = databricks-cli\n`,
         );
         await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
+        await pause();
 
         // Checking again: no token was ever saved, so dev falls back, and the banner starts over.
         const again = (await vscode.commands.executeCommand("databricksBundleInspector.test.checkTargetAgain", "dev")) as GraphData & {
@@ -299,6 +314,7 @@ export function targetsSuite() {
         assert.equal(again?.inspectedTargetMode, "probe");
         assert.deepEqual(again?.signIn, { target: "dev", stage: "needed" });
         assert.equal(typed.length, 1, "nothing typed again by itself");
+        await pause();
         noDatabricksFolder();
       });
 
