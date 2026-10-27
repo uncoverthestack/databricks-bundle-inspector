@@ -129,14 +129,14 @@ export function graphRow(bundle: SidebarBundle): ChildRow {
   if (picked) {
     return {
       description: `${picked.target} couldn't be checked`,
-      tooltip: `${picked.target} couldn't be checked, so the graph shows the structural preview: the bundle's shared settings. Click to show the graph, where the reason is.`,
+      tooltip: `${picked.target} couldn't be checked, so the graph shows the structural preview: your bundle with no target applied. Click to show the graph, where the reason is.`,
     };
   }
   const contents = bundle.contents ? describeContents(bundle.contents) : "";
   return {
     description: compactContents(bundle.contents) || (!bundle.state || bundle.state === "pending" ? "not checked yet" : ""),
     tooltip: [
-      contents ? `${capitalize(contents)}, from the structural preview: the bundle's shared settings, checked without signing in.` : undefined,
+      contents ? `${capitalize(contents)}, from the structural preview: your bundle with no target applied, checked without signing in.` : undefined,
       "Click to open the graph of jobs, tasks and their dependencies. Pick a target there to check against it.",
     ]
       .filter((line): line is string => Boolean(line))
@@ -156,7 +156,7 @@ export interface ProblemsRow extends ChildRow {
  * it comes from the structural preview. One problem opens where it is; several are listed to pick from.
  */
 export function problemsRow(bundle: SidebarBundle): ProblemsRow {
-  const scope = "The Problems panel and the status bar count the structural preview: the bundle's shared settings, checked without signing in.";
+  const scope = "The Problems panel and the status bar count the structural preview: your bundle with no target applied, checked without signing in.";
   if (bundle.state === "cli_missing") {
     return {
       description: "not checked",
