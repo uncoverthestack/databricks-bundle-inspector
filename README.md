@@ -1,6 +1,8 @@
 # Databricks Bundle Inspector
 
-A VS Code extension that catches Databricks bundle errors before you deploy. It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for the mistakes `databricks bundle validate` lets through, puts them in the Problems panel at the exact line, and shows your jobs and pipelines as an interactive graph.
+Find Databricks bundle problems before you deploy, including ones `databricks bundle validate` misses. See them in your code, at the exact line, and explore how your jobs and tasks connect.
+
+It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel; the graph shows your jobs and pipelines.
 
 Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
 
@@ -45,9 +47,9 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 
 1. Install the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install), `v0.299.0` or newer.
 2. Open a folder that contains a `databricks.yml` or `databricks.yaml`. The extension checks the bundle by itself, lists what it finds in the **Problems** panel, shows the count in the status bar, and checks again every time you save.
-3. For the graph, open the bundle file or a resource file it loads through `include`, then click **Inspect Databricks Bundle** in the editor title bar. From a resource file, the graph opens on the job under your cursor, or the file's first job.
+3. For the graph, open the bundle file or a resource file it loads through `include`, then click **Open Graph** (the cube and magnifier button) in the editor title bar. From a resource file, the graph opens on the job under your cursor, or the file's first job.
 
-If the CLI can't be found, Inspect says why and links to the install steps for your OS. Besides your `PATH`, the inspector looks for the CLI the Databricks extension ships and, on Windows, in the `Path` Windows has stored, so a WinGet install works without a restart. Otherwise restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
+If the CLI can't be found, Open Graph says why and links to the install steps for your OS. Besides your `PATH`, the inspector looks for the CLI the Databricks extension ships and, on Windows, in the `Path` Windows has stored, so a WinGet install works without a restart. Otherwise restart VS Code so it sees the new `PATH`, or click **Locate CLI…** and pick the CLI file.
 
 [Setup and usage in detail](docs/usage.md)
 

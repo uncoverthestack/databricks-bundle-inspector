@@ -1,7 +1,7 @@
 {
   "name": "databricks-bundle-inspector",
   "displayName": "Databricks Bundle Inspector",
-  "description": "Catch Databricks bundle errors before you deploy. Missing files, unresolved variables, secret scope mix-ups and CLI warnings in the Problems panel, with an interactive graph of your jobs and pipelines.",
+  "description": "Find Databricks bundle problems before you deploy, including ones bundle validate misses. See them in your code and explore how your jobs and tasks connect.",
   "version": "0.5.0",
   "publisher": "UncoverTheStack",
   "icon": "resources/icon.png",
@@ -61,7 +61,8 @@
     "commands": [
       {
         "command": "databricksBundleInspector.inspectBundle",
-        "title": "Inspect Databricks Bundle",
+        "title": "Open Graph",
+        "category": "Databricks Bundle Inspector",
         "enablement": "resourceFilename =~ /^databricks\\.ya?ml$/ || databricksBundleInspector.activeFileInBundle",
         "icon": {
           "light": "resources/inspect-light.svg",
@@ -83,7 +84,7 @@
       },
       {
         "command": "databricksBundleInspector.sidebar.inspect",
-        "title": "Inspect Bundle",
+        "title": "Open Graph",
         "icon": {
           "light": "resources/inspect-light.svg",
           "dark": "resources/inspect-dark.svg"
@@ -398,7 +399,7 @@
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.0",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
@@ -422,6 +423,9 @@
     },
     "babel-plugin-istanbul": {
       "test-exclude": "^8.0.0"
+    },
+    "@azure/identity": {
+      "@azure/msal-node": "^7.1.0"
     }
   }
 }

@@ -182,7 +182,8 @@ describe("fileRunByName", () => {
     );
   });
 
-  test("reads the real execute permission by default", () => {
+  // Windows has no execute permission: Node's X_OK check there only asks whether the file exists.
+  (process.platform === "win32" ? test.skip : test)("reads the real execute permission by default", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "bundle-inspector-run-"));
     try {
       const plain = path.join(dir, "plain");

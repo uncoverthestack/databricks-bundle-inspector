@@ -1326,7 +1326,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
       logInspect("no_bundle_file");
       vscode.window.showInformationMessage(
-        "Open a databricks.yml file, or a resource file it includes, then run Inspect Databricks Bundle.",
+        "Open a databricks.yml file, or a resource file it includes, then use Open Graph.",
       );
       return;
     }
