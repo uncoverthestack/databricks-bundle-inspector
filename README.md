@@ -41,7 +41,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 - **Secrets and widgets** found in each task's code.
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
-- **Sidebar**: the Bundle Inspector icon in the Activity Bar lists every bundle in the folder with its result, the targets each can be checked against, and the Databricks CLI and sign-in profile the checks use.
+- **Sidebar**: the Databricks Bundle Inspector icon in the Activity Bar lists every bundle in the folder with its result, the targets each can be checked against, and the Databricks CLI and sign-in profile the checks use.
 
 ## Getting started
 

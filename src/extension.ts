@@ -1464,7 +1464,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       } else {
         const created = vscode.window.createWebviewPanel(
           "bundleInspector",
-          "Bundle Inspector",
+          "Databricks Bundle Inspector",
           vscode.ViewColumn.One,
           {
             enableScripts: true,
