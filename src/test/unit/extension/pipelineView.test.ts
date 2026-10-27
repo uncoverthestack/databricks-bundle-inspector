@@ -3,8 +3,10 @@ import {
   buildPipelineView,
   pipelineIssueCounts,
   pipelineKeysOf,
+  pipelineReviewSummary,
   pipelineRunners,
   referencedPipelineKey,
+  taskPipelineKey,
 } from "../../../webview/lib/pipelineView.js";
 
 const library = (kind: "notebook" | "file" | "glob", path: string, extra: Record<string, unknown> = {}) => ({
@@ -35,6 +37,17 @@ describe("referencedPipelineKey", () => {
     expect(referencedPipelineKey("${var.pipeline_id}")).toBeUndefined();
     expect(referencedPipelineKey(undefined)).toBeUndefined();
     expect(referencedPipelineKey(42)).toBeUndefined();
+  });
+});
+
+describe("taskPipelineKey", () => {
+  test("reads a pipeline task, and one inside a for_each_task", () => {
+    expect(taskPipelineKey({ pipeline_task: { pipeline_id: "${resources.pipelines.a.id}" } })).toBe("a");
+    expect(
+      taskPipelineKey({ for_each_task: { task: { pipeline_task: { pipeline_id: "${resources.pipelines.b.id}" } } } }),
+    ).toBe("b");
+    expect(taskPipelineKey({ for_each_task: { task: { notebook_task: {} } } })).toBeUndefined();
+    expect(taskPipelineKey(undefined)).toBeUndefined();
   });
 });
 
@@ -99,7 +112,9 @@ describe("buildPipelineView", () => {
           library("file", "../src/gone.py", { exists: false }),
           library("glob", "../src/empty/**", { exists: false }),
           library("notebook", "/Workspace/x", { checked: false, exists: false, resolvedPath: undefined }),
-          library("notebook", "../src/plain.py", { notebookProblem: { kind: "missing_header" } }),
+          library("notebook", "../src/plain.py", { notebookProblem: { kind: "not_a_notebook" } }),
+          // A notebook listed under `file:`: it is a notebook, so it must not read "Not a notebook".
+          library("file", "../src/nb.py", { notebookProblem: { kind: "is_a_notebook" } }),
         ],
       },
       { id: "secret:a", nodeType: "secret_scope", data: { scope: "kv" } },
@@ -137,7 +152,7 @@ describe("buildPipelineView", () => {
       development: true,
       runBy: [{ jobKey: "j", jobName: "j", taskKey: "t" }],
     });
-    expect(view.sources.map((s) => s.status)).toEqual(["found", "missing", "no_files", "not_checked", "not_a_notebook"]);
+    expect(view.sources.map((s) => s.status)).toEqual(["found", "missing", "no_files", "not_checked", "not_a_notebook", "is_a_notebook"]);
     expect(view.sources[0]!.resolvedPath).toBe("/b/../src/a.py");
     expect(view.sources[1]!.resolvedPath).toBeUndefined();
     expect(view.secrets).toEqual([{ scope: "kv", file: "/b/src/a.py", line: 4 }, { scope: "other" }]);
@@ -158,6 +173,48 @@ describe("buildPipelineView", () => {
 
   test("gives nothing for a pipeline the bundle doesn't have", () => {
     expect(buildPipelineView(graph, parsed, "missing")).toBeUndefined();
+  });
+
+  test("the copied review names the pipeline and holds only its own issues and sources", () => {
+    const text = pipelineReviewSummary(buildPipelineView(graph, parsed, "p", issues)!, {
+      bundleName: "demo",
+      targetLabel: "dev",
+    });
+    expect(text).toBe(
+      [
+        "## Databricks Bundle Review",
+        "",
+        "Bundle: demo",
+        "Target: dev",
+        "Pipeline: Pipe P",
+        "",
+        "### Issues",
+        "- x (p.yml:12)",
+        "",
+        "### Run by",
+        "- j (task t)",
+        "",
+        "### Sources",
+        "- 6 sources in libraries",
+        "- 1 found",
+        "- 1 missing",
+        "- 1 match no files",
+        "- 1 not checked",
+        "- 1 not a notebook",
+        "- 1 a notebook listed as a file",
+      ].join("\n"),
+    );
+    expect(text).not.toMatch(/Job:|Selected job|bundle-wide|\by\b/);
+  });
+
+  test("the copied review of a pipeline nothing runs and nothing is wrong with", () => {
+    const text = pipelineReviewSummary(buildPipelineView({ nodes: [], edges: [] }, parsed, "q")!, {
+      bundleName: "demo",
+      targetLabel: "dev",
+    });
+    expect(text).toContain("- No issues detected in this pipeline.");
+    expect(text).toContain("- No job in this bundle runs this pipeline.");
+    expect(text).toContain("- 0 sources in libraries");
   });
 });
 

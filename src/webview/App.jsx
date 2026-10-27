@@ -20,7 +20,7 @@ import {
 } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
 import { parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
-import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, referencedPipelineKey } from "./lib/pipelineView";
+import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { variableSourceLocation } from "./lib/variableSource";
@@ -2150,9 +2150,13 @@ function DetailPanel({
     : undefined;
   // A pipeline task of this bundle's own pipeline can open the pipeline view.
   const runsPipelineKey = (() => {
-    const key = referencedPipelineKey(node.data?.pipeline_task?.pipeline_id);
+    const key = taskPipelineKey(node.data);
     return key && pipelineKeys.includes(key) ? key : undefined;
   })();
+  const linkedPipelineKey = onSelectPipeline ? runsPipelineKey : undefined;
+  // A loop's own row shows its inputs, so the pipeline it runs gets a row of its own.
+  const loopPipelineKey = node.data?.pipeline_task ? undefined : linkedPipelineKey;
+  const targetPipelineKey = loopPipelineKey ? undefined : linkedPipelineKey;
   const targetRows = getTaskTargetRows(node, primaryFileRef, primaryFileStatus)
     .map((row) => ({
       ...row,
@@ -2419,22 +2423,30 @@ function DetailPanel({
                 key={row.key}
                 label={row.label}
                 // The pipeline's key, not its `${resources.pipelines.<key>.id}` reference.
-                value={row.key === "task-target" && runsPipelineKey && onSelectPipeline ? runsPipelineKey : row.value}
+                value={row.key === "task-target" && targetPipelineKey ? targetPipelineKey : row.value}
                 title={
-                  row.key === "task-target" && runsPipelineKey && onSelectPipeline
+                  row.key === "task-target" && targetPipelineKey
                     ? `${row.title}. Click to show the pipeline.`
                     : row.title
                 }
                 tone={row.tone}
                 onClick={
-                  row.key === "task-target" && runsPipelineKey && onSelectPipeline
-                    ? () => onSelectPipeline(runsPipelineKey)
+                  row.key === "task-target" && targetPipelineKey
+                    ? () => onSelectPipeline(targetPipelineKey)
                     : row.resolvedPath && onOpenFile
                       ? () => onOpenFile(row.resolvedPath)
                       : undefined
                 }
               />
             ))}
+            {loopPipelineKey && (
+              <ConfigRow
+                label="Pipeline"
+                value={loopPipelineKey}
+                title="Run inside the loop. Click to show the pipeline."
+                onClick={() => onSelectPipeline(loopPipelineKey)}
+              />
+            )}
             {dependencyItems.length > 0 && (
               <ConfigRow label="Depends on">
                 <div className="flex flex-wrap gap-1.5">
@@ -2974,6 +2986,16 @@ export default function App({
 
   function handleCopyReviewSummary() {
     if (!onCopyReviewSummary) return;
+    if (pipelineView) {
+      onCopyReviewSummary(
+        pipelineReviewSummary(pipelineView, {
+          bundleName: parsedBundle?.bundle?.name ?? "Unknown bundle",
+          targetLabel,
+          resolveName: (value) => displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+        }),
+      );
+      return;
+    }
     onCopyReviewSummary(
       buildBundleReviewSummary({
         parsedBundle,

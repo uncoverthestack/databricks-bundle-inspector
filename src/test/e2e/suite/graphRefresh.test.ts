@@ -162,8 +162,47 @@ export function graphRefreshSuite() {
           ["Pipelines", ["pipelines:alpha_pipeline"]],
         ]);
         assert.equal(shown.name, "alpha_pipeline");
-        assert.equal(shown.sources.length, 1);
+        assert.equal(shown.sources.length, 2);
         assert.match(shown.sources[0], /notebook\.\.\/src\/task\.pyjobs\.yml:\d+Found/);
+        assert.match(shown.sources[1], /file\.\.\/src\/task\.pyjobs\.yml:\d+Is a notebook/);
+
+        // Copy review describes this pipeline, not a job, and only its own problems.
+        await vscode.env.clipboard.writeText("");
+        await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
+        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: alpha_pipeline"), "the copied pipeline review");
+        const review = await vscode.env.clipboard.readText();
+        assert.doesNotMatch(review, /Job:|Selected job|file references/);
+        // Its one problem, the notebook listed as a file, and none of the bundle's other issues.
+        assert.match(review, /### Issues\n- "\.\.\/src\/task\.py" may be a notebook, not a file\. \(jobs\.yml:\d+\)\n\n### Run by/);
+        assert.match(review, /### Run by\n- alpha_second \(task refresh\)\n- alpha_second \(task refresh_each\)/);
+        assert.match(review, /- 2 sources in libraries\n- 1 found\n- 1 a notebook listed as a file/);
+
+        // A narrow editor keeps the source paths readable. Resizing the webview itself leaves
+        // it 0px wide, so narrow the VS Code window by what it keeps beside the graph.
+        const { targetInfos } = await browser.call("Target.getTargets");
+        const workbench = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+        assert.ok(workbench, "the VS Code window");
+        const { sessionId: windowSession } = await browser.call("Target.attachToTarget", { targetId: workbench.targetId, flatten: true });
+        const windowWidth = async () =>
+          (await browser.call("Runtime.evaluate", { expression: "window.innerWidth", returnByValue: true }, windowSession)).result.value;
+        const fullWidth = await evaluate("window.innerWidth");
+        try {
+          const besideGraph = (await windowWidth()) - fullWidth;
+          await browser.call("Emulation.setDeviceMetricsOverride", { width: 350 + besideGraph, height: 800, deviceScaleFactor: 1, mobile: false }, windowSession);
+          await waitFor(async () => Math.abs(await evaluate("window.innerWidth") - 350) <= 2, "a 350px graph");
+          const narrow = await evaluate(`({
+            width: window.innerWidth,
+            paths: [...document.querySelectorAll('[aria-label="Sources"] li')].map(li => li.children[1].getBoundingClientRect().width),
+            sideways: document.scrollingElement.scrollWidth > window.innerWidth,
+          })`);
+          assert.equal(narrow.paths.length, 2);
+          for (const width of narrow.paths) assert.ok(width > 100, `source path width at ${narrow.width}px: ${width}`);
+          assert.equal(narrow.sideways, false, `no sideways scroll at ${narrow.width}px`);
+        } finally {
+          await browser.call("Emulation.clearDeviceMetricsOverride", {}, windowSession);
+          await browser.call("Target.detachFromTarget", { sessionId: windowSession });
+        }
+        await waitFor(async () => await evaluate("window.innerWidth") === fullWidth, "the graph's full width again");
         assert.match(shown.defaultSchema, /main\.alpha/);
         assert.equal(shown.search, false, "search works on tasks, so it stands aside for a pipeline");
         assert.equal(shown.taskGraph, false);
@@ -174,13 +213,22 @@ export function graphRefreshSuite() {
 
         // A pipeline task's Pipeline row leads back to its pipeline.
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-        await waitFor(async () => await evaluate(`[...document.querySelectorAll('.react-flow__node')].some(n => n.textContent.includes('refresh'))`) === true, "the pipeline task");
-        await evaluate(`[...document.querySelectorAll('.react-flow__node')].find(n => n.textContent.includes('refresh')).click()`);
+        const taskNode = (key: string) => `document.querySelector('.react-flow__node[data-id$=".tasks.${key}"]')`;
+        await waitFor(async () => await evaluate(`Boolean(${taskNode("refresh")})`) === true, "the pipeline task");
+        await evaluate(`${taskNode("refresh")}.click()`);
         const pipelineRow = `[...document.querySelectorAll('[title$="Click to show the pipeline."]')]`;
         await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the task's Pipeline row");
         await evaluate(`${pipelineRow}[0].click()`);
         await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view again");
         assert.match(await evaluate(`document.querySelector('[aria-label="Run by"]').textContent`), /alpha_second.*task refresh/);
+
+        // A pipeline task inside for_each_task leads to its pipeline too, from a row of its own.
+        await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => await evaluate(`Boolean(${taskNode("refresh_each")})`) === true, "the loop task");
+        await evaluate(`${taskNode("refresh_each")}.click()`);
+        await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the loop's Pipeline row");
+        await evaluate(`${pipelineRow}[0].click()`);
+        await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view from the loop");
       } finally {
         browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");

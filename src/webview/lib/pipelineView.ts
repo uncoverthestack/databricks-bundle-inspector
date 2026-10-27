@@ -18,7 +18,7 @@ interface GraphNode {
     resolvedPath?: string | undefined;
     exists: boolean;
     checked: boolean;
-    notebookProblem?: unknown;
+    notebookProblem?: { kind?: string } | undefined;
     sourceFile: string;
     sourceLine: number;
     sourceColumn?: number | undefined;
@@ -47,7 +47,7 @@ interface Issue {
   column?: number | undefined;
 }
 
-export type SourceStatus = "found" | "missing" | "no_files" | "not_a_notebook" | "not_checked";
+export type SourceStatus = "found" | "missing" | "no_files" | "not_a_notebook" | "is_a_notebook" | "not_checked";
 
 export interface PipelineSource {
   kind: "notebook" | "file" | "glob";
@@ -107,6 +107,13 @@ export function referencedPipelineKey(pipelineId: unknown): string | undefined {
   return /^\$\{resources\.pipelines\.([^.}]+)\.id\}$/.exec(pipelineId.trim())?.[1];
 }
 
+/** The pipeline a task runs, directly or as a `for_each_task`'s inner task. */
+export function taskPipelineKey(task: unknown): string | undefined {
+  const record = asRecord(task);
+  const pipelineTask = asRecord(record.pipeline_task ?? asRecord(asRecord(record.for_each_task).task).pipeline_task);
+  return referencedPipelineKey(pipelineTask.pipeline_id);
+}
+
 /** The tasks in this bundle's jobs that run each pipeline, by pipeline key. */
 export function pipelineRunners(parsedBundle: unknown): Map<string, PipelineRunner[]> {
   const runners = new Map<string, PipelineRunner[]>();
@@ -115,11 +122,8 @@ export function pipelineRunners(parsedBundle: unknown): Map<string, PipelineRunn
     const tasks = asRecord(job).tasks;
     if (!Array.isArray(tasks)) continue;
     for (const task of tasks) {
-      const record = asRecord(task);
-      // A `for_each_task` runs its inner task, which can be a pipeline task.
-      const pipelineTask = asRecord(record.pipeline_task ?? asRecord(asRecord(record.for_each_task).task).pipeline_task);
-      const pipelineKey = referencedPipelineKey(pipelineTask.pipeline_id);
-      const taskKey = asString(record.task_key);
+      const pipelineKey = taskPipelineKey(task);
+      const taskKey = asString(asRecord(task).task_key);
       if (!pipelineKey || !taskKey) continue;
       const list = runners.get(pipelineKey) ?? [];
       list.push({ jobKey, jobName: asString(asRecord(job).name) ?? jobKey, taskKey });
@@ -132,6 +136,8 @@ export function pipelineRunners(parsedBundle: unknown): Map<string, PipelineRunn
 function sourceStatus(ref: NonNullable<GraphNode["pipelineLibraries"]>[number]): SourceStatus {
   if (!ref.checked) return "not_checked";
   if (!ref.exists) return ref.kind === "glob" ? "no_files" : "missing";
+  // A `file` library that points at a notebook is the opposite problem of a notebook that isn't one.
+  if (ref.notebookProblem?.kind === "is_a_notebook") return "is_a_notebook";
   if (ref.notebookProblem) return "not_a_notebook";
   return "found";
 }
@@ -204,4 +210,54 @@ export function pipelineIssueCounts(pipelineKeys: string[], inspectorIssues: Iss
     if (key !== undefined && counts.has(key) && issue.severity !== "info") counts.set(key, counts.get(key)! + 1);
   }
   return counts;
+}
+
+const STATUS_WORDS: Record<SourceStatus, string> = {
+  found: "found",
+  missing: "missing",
+  no_files: "match no files",
+  not_a_notebook: "not a notebook",
+  is_a_notebook: "a notebook listed as a file",
+  not_checked: "not checked",
+};
+
+const locationOf = (file: string | undefined, line: number | undefined) => {
+  const name = file?.split(/[\\/]/).pop();
+  return name ? `${name}${line && line > 0 ? `:${line}` : ""}` : "";
+};
+
+/** The "Copy review" text for one pipeline: only its own issues, runners and sources. */
+export function pipelineReviewSummary(
+  view: PipelineViewModel,
+  { bundleName, targetLabel, resolveName = (value) => value }: {
+    bundleName: string;
+    targetLabel: string;
+    resolveName?: (value: string) => string;
+  },
+): string {
+  const lines = [
+    "## Databricks Bundle Review",
+    "",
+    `Bundle: ${bundleName}`,
+    `Target: ${targetLabel}`,
+    `Pipeline: ${resolveName(view.name)}`,
+    "",
+    "### Issues",
+  ];
+  if (view.issues.length === 0) lines.push("- No issues detected in this pipeline.");
+  for (const issue of view.issues.slice(0, 12)) {
+    const location = locationOf(issue.file, issue.line);
+    lines.push(`- ${issue.title}${location ? ` (${location})` : ""}`);
+  }
+  if (view.issues.length > 12) lines.push(`- ...and ${view.issues.length - 12} more.`);
+
+  lines.push("", "### Run by");
+  if (view.runBy.length === 0) lines.push("- No job in this bundle runs this pipeline.");
+  for (const runner of view.runBy) lines.push(`- ${resolveName(runner.jobName)} (task ${runner.taskKey})`);
+
+  lines.push("", "### Sources", `- ${view.sources.length} source${view.sources.length === 1 ? "" : "s"} in libraries`);
+  const counts = new Map<SourceStatus, number>();
+  for (const source of view.sources) counts.set(source.status, (counts.get(source.status) ?? 0) + 1);
+  for (const [status, count] of counts) lines.push(`- ${count} ${STATUS_WORDS[status]}`);
+  return lines.join("\n");
 }

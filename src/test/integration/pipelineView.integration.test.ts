@@ -4,7 +4,7 @@ import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../bundle/issues.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
-import { buildPipelineView, pipelineKeysOf } from "../../webview/lib/pipelineView.js";
+import { buildPipelineView, pipelineKeysOf, pipelineReviewSummary } from "../../webview/lib/pipelineView.js";
 
 /**
  * The pipeline view from a bundle the real CLI resolved: every value it shows comes from
@@ -26,7 +26,7 @@ describe(`pipeline view (${cli})`, () => {
   test("shows each pipeline of a bundle as its YAML defines it", async () => {
     const { parsed, graph, issues } = await inspect(FIXTURE);
     // The CLI lists resources by key, whatever order the YAML has them in.
-    expect(pipelineKeysOf(parsed)).toEqual(["broken_pipeline", "ok_pipeline", "workspace_pipeline"]);
+    expect(pipelineKeysOf(parsed)).toEqual(["broken_pipeline", "looped_pipeline", "ok_pipeline", "workspace_pipeline"]);
     const pipelinesFile = path.join(FIXTURE, "resources", "pipelines.yml");
 
     const broken = buildPipelineView(graph, parsed, "broken_pipeline", issues)!;
@@ -68,5 +68,16 @@ describe(`pipeline view (${cli})`, () => {
     ]);
     // A workspace path is never reported as missing.
     expect(workspace.issues.filter((i) => i.kind === "missing_pipeline_source")).toEqual([]);
+
+    // A notebook listed as a file is a notebook, and a for_each_task's inner task runs the pipeline.
+    const looped = buildPipelineView(graph, parsed, "looped_pipeline", issues)!;
+    expect(looped.sources.map((s) => [s.kind, s.status])).toEqual([["file", "is_a_notebook"]]);
+    expect(looped.issues.map((i) => i.kind)).toEqual(["file_is_a_notebook"]);
+    expect(looped.runBy).toEqual([{ jobKey: "refresh_job", jobName: "refresh_job", taskKey: "refresh_each" }]);
+    // Its copied review holds none of the other pipelines' problems.
+    const review = pipelineReviewSummary(looped, { bundleName: "pipeline-sources", targetLabel: "dev" });
+    expect(review).toContain("Pipeline: looped_pipeline");
+    expect(review).not.toMatch(/Job:|missing_notebook|bogus_pipeline_field|missing_file/);
+    expect(review).toContain("- 1 a notebook listed as a file");
   });
 });

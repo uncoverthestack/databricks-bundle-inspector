@@ -13,11 +13,25 @@
           "source": "${resources.pipelines.broken_pipeline.id}",
           "dependsOn": [],
           "dependents": [
+            "refresh_each",
             "run_script"
           ],
           "compute": [
             "broken_pipeline"
           ],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "refresh_each",
+          "type": "For each",
+          "source": "[1, 2]",
+          "dependsOn": [
+            "refresh_broken"
+          ],
+          "dependents": [],
+          "compute": [],
           "files": [],
           "variables": [],
           "libraries": []
@@ -46,6 +60,10 @@
       "edges": [
         [
           "refresh_broken",
+          "refresh_each"
+        ],
+        [
+          "refresh_broken",
           "run_script"
         ]
       ],
@@ -58,6 +76,15 @@
     }
   ],
   "issues": [
+    {
+      "severity": "error",
+      "kind": "file_is_a_notebook",
+      "title": "\"../src/dlt/bronze.py\" may be a notebook, not a file.",
+      "file": "resources/pipelines.yml",
+      "line": 40,
+      "column": 19,
+      "yamlPath": "resources.pipelines.looped_pipeline.libraries[0].file.path"
+    },
     {
       "severity": "error",
       "kind": "missing_pipeline_source",

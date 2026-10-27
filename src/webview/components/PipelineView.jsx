@@ -6,6 +6,11 @@ const STATUS = {
   missing: { label: "Missing", className: "text-error" },
   no_files: { label: "No files", className: "text-warning" },
   not_a_notebook: { label: "Not a notebook", className: "text-warning" },
+  is_a_notebook: {
+    label: "Is a notebook",
+    className: "text-warning",
+    title: "Listed as a file, but its first line is the Databricks notebook header.",
+  },
   not_checked: {
     label: "Not checked",
     className: "text-muted",
@@ -64,7 +69,7 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
     <div className="flex h-full flex-col overflow-auto lg:flex-row lg:overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col gap-8 p-6 lg:overflow-auto" style={background}>
         <div className="flex flex-wrap items-start gap-6">
-          <section className="flex w-60 flex-col gap-2" aria-label="Run by">
+          <section className="flex w-60 max-w-full flex-col gap-2" aria-label="Run by">
             <SectionTitle>Run by a job in this bundle</SectionTitle>
             {view.runBy.length === 0 ? (
               <p className="m-0 text-xs text-fg-soft">No job in this bundle runs this pipeline.</p>
@@ -92,7 +97,7 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
 
           <section
             aria-label="Pipeline"
-            className="flex w-80 flex-col gap-3 rounded-2xl border-2 p-4"
+            className="flex w-80 max-w-full flex-col gap-3 rounded-2xl border-2 p-4"
             style={{
               borderColor: kindMeta("pipeline").color,
               backgroundColor: `color-mix(in srgb, ${kindMeta("pipeline").color} 6%, ${UI_COLOR.widget})`,
@@ -119,7 +124,7 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
             </div>
           </section>
 
-          <section className="flex w-56 flex-col gap-2" aria-label="Default catalog and schema">
+          <section className="flex w-56 max-w-full flex-col gap-2" aria-label="Default catalog and schema">
             <SectionTitle>Default catalog · schema</SectionTitle>
             <div
               className="flex h-12 items-center gap-2.5 rounded-xl border px-3"
@@ -147,7 +152,9 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
                 return (
                   <li
                     key={`${source.file}:${source.line}:${index}`}
-                    className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto_6.5rem] items-center gap-3 border-b border-line-soft px-4 py-2.5 text-xs last:border-b-0"
+                    // Narrow editors put where it's listed and its status on a second line, so
+                    // the path keeps the row's width.
+                    className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-b border-line-soft px-4 py-2.5 text-xs last:border-b-0 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto_6.5rem] sm:gap-y-3"
                   >
                     <span className="text-fg-soft">{source.kind}</span>
                     {source.resolvedPath ? (
@@ -159,12 +166,14 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
                         {source.path}
                       </span>
                     )}
-                    <LinkButton onClick={() => open(source.file, source.line, source.column)} title="Open where libraries lists it" className="text-[11px]">
-                      {location(source.file, source.line)}
-                    </LinkButton>
-                    <span title={status.title} className={`justify-self-end text-[10px] font-bold uppercase tracking-wide ${status.className}`}>
-                      {status.label}
-                    </span>
+                    <div className="col-start-2 flex min-w-0 items-center justify-between gap-3 sm:contents">
+                      <LinkButton onClick={() => open(source.file, source.line, source.column)} title="Open where libraries lists it" className="text-[11px]">
+                        {location(source.file, source.line)}
+                      </LinkButton>
+                      <span title={status.title} className={`shrink-0 justify-self-end text-[10px] font-bold uppercase tracking-wide ${status.className}`}>
+                        {status.label}
+                      </span>
+                    </div>
                   </li>
                 );
               })}
