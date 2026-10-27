@@ -224,9 +224,13 @@ export class SettingsTreeProvider implements vscode.TreeDataProvider<SettingsEle
   }
 }
 
+/** The argument a setting row passes to its command, so the command knows where it was run from. */
+export const SIDEBAR_ORIGIN = "sidebar";
+
 function settingItem(row: SettingRow, icon: string, contextValue: string, command: string): vscode.TreeItem {
   const item = new vscode.TreeItem(row.label);
-  item.command = { command, title: row.label };
+  // Tells the command it came from the sidebar, not the Command Palette.
+  item.command = { command, title: row.label, arguments: [SIDEBAR_ORIGIN] };
   item.description = row.description;
   item.tooltip = row.tooltip;
   item.iconPath = row.warning

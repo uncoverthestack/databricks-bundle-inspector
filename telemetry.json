@@ -1,17 +1,19 @@
 {
   "events": {
     "inspect_bundle": {
-      "description": "Open Graph ran, via the command, the Open Bundle Issues command, or a target switch in the panel.",
+      "description": "Open Graph ran, via the command, the Open Bundle Issues command, a target switch in the panel, the status bar or the sidebar.",
       "properties": {
-        "trigger": "command | issues_command | target_switch | status_bar",
+        "trigger": "command | issues_command | target_switch | status_bar | sidebar",
         "from_resource_file": "Whether it was started from a resource file that include loads, not from databricks.yml. No path is sent.",
         "outcome": "ok | ok_with_errors | no_bundle_file | cli_not_found | cli_not_executable | validation_timeout | validation_output_too_large | invalid_bundle_shape | validation_failed | exception",
         "cli_problem": "cli_not_found only: not_installed | configured_path_invalid | not_databricks_cli",
         "cli_outdated": "Whether the Databricks CLI is older than the oldest tested version (v0.299.0). Not sent when no CLI was found.",
+        "cli_version": "The Databricks CLI's major and minor version, e.g. 1.21. Not sent when no CLI was found or its version isn't a plain number.",
         "duration_ms": "Time the inspection took.",
         "has_diagnostics": "Failed inspections only: whether the CLI reported file diagnostics.",
         "target_mode": "target | probe",
         "fell_back_to_probe": "Whether the requested target failed and a structural preview was shown instead.",
+        "fallback_reason": "Fell back only: why, as one fixed word, never the message: timeout | not_logged_in | no_profile | several_profiles | other_workspace | no_such_target | login_unreachable (the login needed renewing and Databricks couldn't be reached) | login_expired | login_other | other",
         "auth_configured": "Whether Databricks authentication was configured.",
         "target_count": "Number of targets, as a range (0, 1, 2-5, 6-20, 21-50, 51+).",
         "job_count": "Number of jobs, as a range.",
@@ -26,6 +28,7 @@
         "bundle_count": "Number of bundles found in the open folders, as a range.",
         "bundle_at_root": "Whether a bundle file sits at the top of an open folder.",
         "cli_found": "Whether the Databricks CLI could be run. Not sent when no bundle was found, because nothing was checked.",
+        "cli_version": "The Databricks CLI's major and minor version, e.g. 1.21. Sent only when it could be run and its version is a plain number.",
         "issue_count": "Number of errors and warnings the first check put in the Problems panel, as a range. Not sent when nothing was checked."
       }
     },
@@ -47,7 +50,7 @@
     "issue_item_selected": { "description": "An item in the issues panel was clicked." },
     "quick_fix_applied": {
       "description": "A suggested fix was applied from the Quick Fix menu.",
-      "properties": { "kind": "notebook_missing_extension | include_matches_nothing" }
+      "properties": { "kind": "notebook_missing_extension | include_matches_nothing | missing_file | missing_pipeline_source" }
     },
     "bundle_progress": {
       "description": "Once a day, for the previous day the extension checked bundles: whether findings were resolved. Each bundle's errors and warnings at the start of the day are compared with its last complete check, on this machine. Checks on another branch, extension version or Databricks CLI version are not compared. Never sends which bundle or which findings.",
@@ -57,14 +60,26 @@
         "new": "compared only: findings that were not there at the start, as a range."
       }
     },
+    "sidebar_opened": {
+      "description": "The Bundle Inspector sidebar showed for the first time in a VS Code window. Once per window.",
+      "properties": {
+        "at_start": "Whether it showed within 5 seconds of the extension starting, which usually means VS Code reopened it as it was left. Someone opening it in those first 5 seconds is counted the same way."
+      }
+    },
+    "sidebar_action": {
+      "description": "A row or button of the sidebar was used: each one at most once per VS Code window, so it says whether it is used, not how often. The same commands run from the Command Palette are not counted here.",
+      "properties": {
+        "action": "open_graph | open_problems | pick_problem (a problem picked from the list of several) | open_target | open_bundle_file | check_again | check_all | choose_cli | choose_profile"
+      }
+    },
     "extension_uninstalled": {
       "description": "Sent once by the vscode:uninstall hook, only if the extension last recorded that usage telemetry was enabled.",
       "properties": {}
     }
   },
   "commonProperties": {
-    "common.*": "Added by VS Code's TelemetryLogger: extension name and version, VS Code version, commit and release date, product, UI kind, remote type, session ID, whether VS Code was newly installed. Only these listed keys are kept; machine and device IDs (common.vscodemachineid, common.sqmid, common.devDeviceId) are removed.",
-    "install_id": "Added by the proxy: the event's anonymous distinct_id, copied so PostHog filters can match it.",
+    "common.*": "Added by VS Code's TelemetryLogger: extension name and version, VS Code version, commit and release date, product, UI kind, remote type, whether VS Code was newly installed. Not the VS Code session ID. Only these listed keys are kept; machine and device IDs (common.vscodemachineid, common.sqmid, common.devDeviceId) are removed.",
+    "install_id": "Added by the proxy: the event's pseudonymous distinct_id, copied so PostHog filters can match it.",
     "common.appname": "Host editor name, e.g. Visual Studio Code or Cursor.",
     "common.os": "Operating system: darwin, win32 or linux.",
     "common.platformversion": "Operating system release, e.g. 25.0.0.",

@@ -4,7 +4,24 @@ import {
   isDatabricksCliVersionOutput,
   isOlderThanSupported,
   legacyCliVersion,
+  telemetryCliVersion,
 } from "../../../databricksCli/parsing.js";
+
+describe("telemetryCliVersion", () => {
+  test.each([
+    ["v1.21.0", "1.21"],
+    ["v0.299.2", "0.299"],
+    ["1.21.0", "1.21"],
+    // Anything but a plain version sends nothing: a dev build, extra text, a path.
+    ["v1.21.0-dev+abc", undefined],
+    ["Databricks CLI v1.21.0", undefined],
+    ["/Users/someone/bin/databricks", undefined],
+    ["", undefined],
+    [undefined, undefined],
+  ])("%j is sent as %j", (version, sent) => {
+    expect(telemetryCliVersion(version)).toBe(sent);
+  });
+});
 
 describe("extractDatabricksVersion", () => {
   test("extracts Databricks CLI version", () => {
