@@ -234,6 +234,41 @@ export function issueCodesSuite() {
       }
     });
 
+    it("a suggested path with \" #\" in it is quoted, so YAML keeps it whole", async function () {
+      const document = await vscode.workspace.openTextDocument(resource);
+      const original = document.getText();
+      const folder = vscode.Uri.file(path.join(path.dirname(path.dirname(resource.fsPath)), "team #2"));
+      async function replaceDocument(text: string): Promise<void> {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(resource, new vscode.Range(0, 0, document.lineCount, 0), text);
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
+      }
+      try {
+        await vscode.workspace.fs.writeFile(
+          vscode.Uri.joinPath(folder, "moved.py"),
+          Buffer.from("# Databricks notebook source\nprint(1)\n"),
+        );
+        await replaceDocument(original.replace("notebook_path: ../src/etl", "notebook_path: ../notebooks/moved.py"));
+        await waitFor(() => Boolean(finding(resource, "missing_file")), "missing_file finding");
+        const diagnostic = finding(resource, "missing_file")!;
+        const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider", resource, diagnostic.range, vscode.CodeActionKind.QuickFix.value,
+        );
+        const change = actions.find(action => action.title === 'Change to "../team #2/moved.py"');
+        assert.ok(change?.edit, JSON.stringify(actions.map(action => action.title)));
+        assert.ok(await vscode.workspace.applyEdit(change.edit));
+        // Unquoted, YAML would read "../team" and take the rest as a comment.
+        assert.equal(document.lineAt(diagnostic.range.start.line).text.trim(), "notebook_path: '../team #2/moved.py'");
+        await document.save();
+        await waitFor(() => !finding(resource, "missing_file"), "missing_file clears once the path is changed");
+      } finally {
+        await replaceDocument(original);
+        await vscode.workspace.fs.delete(folder, { recursive: true, useTrash: false });
+        await waitFor(() => Boolean(finding(resource, "notebook_missing_extension")), "original fixture restored");
+      }
+    });
+
     it("rejects stale Quick Fixes after unsaved edits and leaves repeated text in comments alone", async function () {
       for (const example of [
         { uri: bundle, kind: "include_matches_nothing", prefix: "  - ", oldValue: "resource/*.yml", newValue: "resources/*.yml" },

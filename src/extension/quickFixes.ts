@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { InspectorIssueKind, IssueFix } from "../bundle/issues.js";
-import { locateFix } from "../bundle/quickFix.js";
+import { fixEdit } from "../bundle/quickFix.js";
 import { codeValue } from "../bundle/issueDocs.js";
 
 /** A fix the last check offered, keyed to the diagnostic it belongs to. */
@@ -58,15 +58,15 @@ export class InspectorQuickFixProvider implements vscode.CodeActionProvider {
     for (const diagnostic of context.diagnostics) {
       const fix = storedFixFor(document.uri, diagnostic);
       if (!fix || fix.column === undefined || fix.line >= document.lineCount) continue;
-      const span = locateFix(document.lineAt(fix.line).text, fix.oldText, fix.column);
-      if (!span) continue;
+      const edit = fixEdit(document.lineAt(fix.line).text, fix.oldText, fix.newText, fix.column);
+      if (!edit) continue;
 
       const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
       action.edit = new vscode.WorkspaceEdit();
       action.edit.replace(
         document.uri,
-        new vscode.Range(fix.line, span.start, fix.line, span.end),
-        fix.newText,
+        new vscode.Range(fix.line, edit.start, fix.line, edit.end),
+        edit.text,
       );
       action.diagnostics = [diagnostic];
       action.isPreferred = true;

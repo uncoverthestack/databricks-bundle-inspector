@@ -6,7 +6,7 @@ import path from "node:path";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../../bundle/issues.js";
-import { locateFix } from "../../bundle/quickFix.js";
+import { fixEdit } from "../../bundle/quickFix.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
@@ -20,8 +20,8 @@ afterAll(async () => {
 function fixedLine(issue: InspectorIssue): string | undefined {
   if (!issue.fix || !issue.file || !issue.line) return undefined;
   const line = readFileSync(issue.file, "utf8").split(/\r?\n/)[issue.line - 1]!;
-  const span = locateFix(line, issue.fix.oldText, issue.column ?? -1);
-  return span ? line.slice(0, span.start) + issue.fix.newText + line.slice(span.end) : undefined;
+  const edit = fixEdit(line, issue.fix.oldText, issue.fix.newText, issue.column ?? -1);
+  return edit ? line.slice(0, edit.start) + edit.text + line.slice(edit.end) : undefined;
 }
 
 /**

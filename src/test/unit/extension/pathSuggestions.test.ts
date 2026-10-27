@@ -38,7 +38,7 @@ const suggest = (rawPath: string, expects: "notebook" | "file" | "any", sourceFi
 
 describe("movedFileSuggestion", () => {
   test("skips installed and generated folders", () => {
-    const files = filesUnder(root).map((file) => path.relative(root, file).split(path.sep).join("/"));
+    const files = filesUnder(root).files.map((file) => path.relative(root, file).split(path.sep).join("/"));
     expect(files.sort()).toEqual(["resources/job.yml", "src/run.py", "src/train.py"]);
   });
 
@@ -71,5 +71,21 @@ describe("movedFileSuggestion", () => {
       }),
     ).toBeUndefined();
     expect(suggest("../x/missing.py", "any")).toBeUndefined();
+  });
+
+  test("nothing when the bundle has too many files to list them all", () => {
+    // Folders left unread could hold a second train.py, so one match proves nothing.
+    expect(filesUnder(root).complete).toBe(true);
+    expect(filesUnder(root, 1).complete).toBe(false);
+    expect(
+      movedFileSuggestion({
+        rawPath: "../x/train.py",
+        resolvedPath: path.join(root, "x", "train.py"),
+        sourceFile: path.join(root, "resources", "job.yml"),
+        expects: "notebook",
+        files: () => ({ files: [path.join(root, "src", "train.py")], complete: false }),
+        excluded: () => false,
+      }),
+    ).toBeUndefined();
   });
 });

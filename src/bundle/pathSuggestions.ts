@@ -15,7 +15,8 @@ import { isNotebookFile } from "./notebookFiles.js";
  *   ... but got a file"), and a file field rejects a notebook ("expected a file ... but
  *   got a notebook"), so only files of the right kind are suggested.
  *
- * No suggestion when several files would do: the inspector would be guessing.
+ * No suggestion when several files would do, or when the bundle has too many files to
+ * list them all: the inspector would be guessing.
  */
 
 /** What the field takes, as the CLI checks it. `any`: wheels and jars, which have no notebook rule. */
@@ -23,11 +24,17 @@ export type ExpectedFile = "notebook" | "file" | "any";
 
 const MAX_FILES = 20_000;
 
+/** The files under a folder. `complete` is false when the listing stopped at {@link MAX_FILES}. */
+export interface FileList {
+  files: string[];
+  complete: boolean;
+}
+
 /** Every file under a folder, skipping installed and generated folders. Stops at {@link MAX_FILES}. */
-export function filesUnder(root: string): string[] {
+export function filesUnder(root: string, maxFiles = MAX_FILES): FileList {
   const files: string[] = [];
   const pending = [root];
-  while (pending.length > 0 && files.length < MAX_FILES) {
+  while (pending.length > 0 && files.length < maxFiles) {
     const folder = pending.pop()!;
     let entries;
     try {
@@ -44,7 +51,8 @@ export function filesUnder(root: string): string[] {
       }
     }
   }
-  return files;
+  // Folders left unread may hold another file with the name.
+  return { files, complete: pending.length === 0 };
 }
 
 function fitsField(file: string, expects: ExpectedFile): boolean {
@@ -65,19 +73,19 @@ export function movedFileSuggestion(options: {
   resolvedPath: string;
   sourceFile: string;
   expects: ExpectedFile;
-  files: () => readonly string[];
+  files: () => FileList;
   excluded: (file: string) => boolean;
 }): string | undefined {
   const name = path.basename(options.resolvedPath);
-  const matches = options
-    .files()
-    .filter(
-      (file) =>
-        path.basename(file) === name &&
-        file !== options.resolvedPath &&
-        !options.excluded(file) &&
-        fitsField(file, options.expects),
-    );
+  const listed = options.files();
+  if (!listed.complete) return undefined;
+  const matches = listed.files.filter(
+    (file) =>
+      path.basename(file) === name &&
+      file !== options.resolvedPath &&
+      !options.excluded(file) &&
+      fitsField(file, options.expects),
+  );
   if (matches.length !== 1) return undefined;
   const relative = path.relative(path.dirname(options.sourceFile), matches[0]!).split(path.sep).join("/");
   // Keep the way the path was written: `./src/x.py` stays with its `./`.

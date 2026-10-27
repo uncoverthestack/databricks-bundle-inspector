@@ -9,8 +9,10 @@ import path from "node:path";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../../bundle/issues.js";
-import { locateFix } from "../../bundle/quickFix.js";
+import { fixEdit } from "../../bundle/quickFix.js";
+import { isNotebookFile } from "../../bundle/notebookFiles.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
+import { JUPYTER_CASES } from "../jupyterCases.js";
 
 /**
  * "Did you mean" for a missing file, judged by the real CLI: every suggested path, once
@@ -68,9 +70,9 @@ function applyFixes(issues: InspectorIssue[]): void {
   for (const issue of issues) {
     const lines = readFileSync(issue.file!, "utf8").split("\n");
     const line = lines[issue.line! - 1]!;
-    const span = locateFix(line, issue.fix!.oldText, issue.column!);
-    expect(span).toBeDefined();
-    lines[issue.line! - 1] = line.slice(0, span!.start) + issue.fix!.newText + line.slice(span!.end);
+    const edit = fixEdit(line, issue.fix!.oldText, issue.fix!.newText, issue.column!);
+    expect(edit).toBeDefined();
+    lines[issue.line! - 1] = line.slice(0, edit!.start) + edit!.text + line.slice(edit!.end);
     writeFileSync(issue.file!, lines.join("\n"));
   }
 }
@@ -153,6 +155,59 @@ describe(`"Did you mean" for a missing file (${cli})`, () => {
     expect(await findings(dir)).toEqual([]);
   });
 
+  // Windows doesn't allow `:` or `"` in a file name.
+  const windows = process.platform === "win32";
+  test("a suggested path with #, :, or quotes is written so YAML reads it back whole, and the CLI accepts it", async () => {
+    const folders = { a: "team #2", e: "it's", ...(windows ? {} : { b: "v: 2", c: 'say "hi"', d: "it's" }) };
+    const tasks: Record<string, string> = {
+      // Plain: ` #` would start a comment, and `: ` a mapping, so these gain quotes.
+      a: "notebook_path: ../old/a.py",
+      b: "notebook_path: ../old/b.py",
+      // Quoted: the new value keeps the quotes and escapes what they need.
+      c: 'notebook_path: "../old/c.py"',
+      d: "notebook_path: '../old/d.py'",
+      // Plain and fine plain: it stays plain.
+      e: "notebook_path: ../old/e.py",
+    };
+    const expected: Record<string, string> = {
+      a: "notebook_path: '../team #2/a.py'",
+      b: "notebook_path: '../v: 2/b.py'",
+      c: String.raw`notebook_path: "../say \"hi\"/c.py"`,
+      d: "notebook_path: '../it''s/d.py'",
+      e: "notebook_path: ../it's/e.py",
+    };
+    const files: Record<string, string> = { "databricks.yml": BUNDLE_FILE };
+    for (const [name, folder] of Object.entries(folders)) files[`${folder}/${name}.py`] = NOTEBOOK;
+    files["resources/job.yml"] = [
+      "resources:",
+      "  jobs:",
+      "    nightly:",
+      "      name: nightly",
+      "      job_clusters:",
+      "        - job_cluster_key: c",
+      "          new_cluster: { spark_version: 15.4.x-scala2.12, node_type_id: i3.xlarge, num_workers: 1 }",
+      "      tasks:",
+      ...Object.keys(folders).flatMap((name) => [
+        `        - task_key: ${name}`,
+        "          job_cluster_key: c",
+        "          notebook_task:",
+        `            ${tasks[name]}`,
+      ]),
+      "",
+    ].join("\n");
+    const dir = await bundle("special-characters", files);
+
+    const issues = await findings(dir);
+    expect(issues.map((issue) => issue.fix?.newText)).toEqual(
+      Object.entries(folders).map(([name, folder]) => `../${folder}/${name}.py`),
+    );
+    applyFixes(issues);
+    const written = readFileSync(path.join(dir, "resources", "job.yml"), "utf8");
+    for (const name of Object.keys(folders)) expect(written).toContain(expected[name]);
+    expect(await validateDev(dir)).toMatch(/Validation OK!/);
+    expect(await findings(dir)).toEqual([]);
+  });
+
   test("no suggestion when the file is the wrong kind, there are two, it isn't uploaded, or the path is a workspace path", async () => {
     const dir = await bundle("unsuggested", {
       "databricks.yml": BUNDLE_FILE,
@@ -201,5 +256,58 @@ describe(`"Did you mean" for a missing file (${cli})`, () => {
       // Reported as missing today, though the CLI accepts it (a separate issue); never "Did you mean".
       ["/notebook.py", undefined],
     ]);
+  });
+});
+
+/**
+ * The inspector's Jupyter rule against the CLI's: each file in JUPYTER_CASES as the
+ * notebook of a task. If one fails, the CLI changed its rule (libs/notebook/detect_jupyter.go).
+ */
+describe(`which .ipynb files are notebooks (${cli})`, () => {
+  test.each(JUPYTER_CASES)("$name: the CLI takes it: $cli", async ({ name, text, cli: accepted, inspector }) => {
+    const dir = await bundle(`jupyter-${name}`, {
+      "databricks.yml": [
+        ...BUNDLE_FILE.split("\n").slice(0, 2),
+        "resources:",
+        "  jobs:",
+        "    nightly:",
+        "      name: nightly",
+        "      job_clusters:",
+        "        - job_cluster_key: c",
+        "          new_cluster: { spark_version: 15.4.x-scala2.12, node_type_id: i3.xlarge, num_workers: 1 }",
+        "      tasks:",
+        "        - task_key: t",
+        "          job_cluster_key: c",
+        "          notebook_task:",
+        "            notebook_path: ./nb.ipynb",
+        "targets:",
+        "  dev:",
+        "    default: true",
+        "",
+      ].join("\n"),
+      "nb.ipynb": text,
+    });
+    const output = await validateDev(dir);
+    expect(output).toMatch(accepted ? /Validation OK!/ : /unable to determine if .* is a notebook/);
+    expect(isNotebookFile(path.join(dir, "nb.ipynb"))).toBe(inspector);
+  });
+
+  test("an .ipynb the CLI doesn't take as a notebook is not suggested for a notebook task", async () => {
+    const dir = await bundle("jupyter-suggestion", {
+      "databricks.yml": BUNDLE_FILE,
+      "src/nb.ipynb": '{"cells":[],"metadata":[],"nbformat":4,"nbformat_minor":5}',
+      "resources/job.yml": [
+        "resources:",
+        "  jobs:",
+        "    nightly:",
+        "      name: nightly",
+        "      tasks:",
+        "        - task_key: t",
+        "          notebook_task:",
+        "            notebook_path: ../old/nb.ipynb",
+        "",
+      ].join("\n"),
+    });
+    expect((await findings(dir)).map((issue) => [issue.detail, issue.fix])).toEqual([["../old/nb.ipynb", undefined]]);
   });
 });

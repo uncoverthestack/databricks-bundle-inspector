@@ -12,7 +12,7 @@ import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
-import { filesUnder, movedFileSuggestion, type ExpectedFile } from "./pathSuggestions.js";
+import { filesUnder, movedFileSuggestion, type ExpectedFile, type FileList } from "./pathSuggestions.js";
 import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
 
@@ -194,7 +194,7 @@ function missingPathSuggestion(
   line: number | undefined,
   column: number | undefined,
   expects: ExpectedFile | undefined,
-  bundleFiles: () => readonly string[],
+  bundleFiles: () => FileList,
   excluded: (file: string) => boolean,
 ): Pick<InspectorIssue, "detail" | "fix"> {
   // A path from `/` is a workspace path to the CLI, which never looks for it locally
@@ -524,7 +524,7 @@ export function buildInspectorIssues(
     ? () => undefined
     : createSyncExclusion(bundleRoot, parsedBundle.sync);
   // The bundle's files, read once and only when a path is missing.
-  let bundleFileList: string[] | undefined;
+  let bundleFileList: FileList | undefined;
   const bundleFiles = () => (bundleFileList ??= filesUnder(bundleRoot));
   const excludedFromSync = (file: string) => syncExclusionOf(file) !== undefined;
 
