@@ -152,7 +152,7 @@ export class BundlesTreeProvider implements vscode.TreeDataProvider<BundlesEleme
         created.tooltip = row.tooltip;
         created.iconPath = this.inspectIcon;
         // The graph opens as a file opens from the Explorer.
-        created.command = { command: INSPECT_COMMAND, title: "Inspect Bundle", arguments: [element] };
+        created.command = { command: INSPECT_COMMAND, title: "Open Graph", arguments: [element] };
         return created;
       }
       case "problems": {

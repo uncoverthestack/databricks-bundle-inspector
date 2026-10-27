@@ -27,7 +27,7 @@ A folder with many bundles gets its first 10 checked on open (the ones closest t
 To see the graph:
 
 1. Open the bundle file, or a resource file it loads through `include` (for example `resources/etl_job.yml`).
-2. Click **Inspect Databricks Bundle** (editor title bar button) or right-click and select the command.
+2. Click **Open Graph** (the cube and magnifier button in the editor title bar), or right-click and choose **Open Graph**. In the Command Palette it is **Databricks Bundle Inspector: Open Graph**.
 
 The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
 
@@ -35,12 +35,12 @@ The graph opens in a new editor panel. From a resource file, it opens on the job
 
 The **Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
 
-**Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar (`2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used). When two bundles have the same folder name, each also shows where it is, for example `teams/sales/analytics`. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for **Open Bundle File** (its `databricks.yml`) and **Check Again**; right-click it for **Inspect Bundle** too. **Check All Databricks Bundles Again**, at the top of the section, checks every bundle, one at a time.
+**Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar (`2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used). When two bundles have the same folder name, each also shows where it is, for example `teams/sales/analytics`. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for **Open Bundle File** (its `databricks.yml`) and **Check Again**; right-click it for **Open Graph** too. **Check All Databricks Bundles Again**, at the top of the section, checks every bundle, one at a time.
 
 Under each bundle (open already when the folder has only one):
 
 - **Open Graph** shows what the last check covered (`3 jobs · 11 tasks`), or the target picked in the graph. Click it to open the graph; a graph already open on that bundle comes to the front as it is, with its target. A target the CLI couldn't check shows as `<target> couldn't be checked`, and the graph shows the structural preview.
-- **Problems** shows how many problems the last check found, and that they come from the structural preview: the bundle's shared settings, checked without signing in (`2 · structural preview`, or `none found · structural preview`). Click it to open the problem where it is, in your YAML or notebook, with its explanation below the line, as F8 does. With several, often in several files, it first lists them all under their file names, each with its task (`fanout_b · Missing local file reference: …`) and line: move through the list to see each one in the editor, and pick one to open it. The icons show the most severe problem: red when there is an error. Problems with no line in a file are listed too, and open the graph. A target can still have its own problems: pick it in the graph to check it.
+- **Problems** shows how many problems the last check found, and that they come from the structural preview: the bundle's shared settings, checked without signing in (`2 · structural preview`, or `none found · structural preview`). Click it to open the problem where it is, in your YAML or notebook, with its explanation below the line, as F8 does. With several, often in several files, it first lists them all under their file names, each with its task (`fanout_b · File not found: …`) and line: move through the list to see each one in the editor, and pick one to open it. The icons show the most severe problem: red when there is an error. Problems with no line in a file are listed too, and open the graph. A target can still have its own problems: pick it in the graph to check it.
 - **Target definitions** lists the targets the bundle's last check found, by name. Click one to open where it is defined, in the bundle file or a file its `include` loads. The one the graph uses says `graph in use`.
 
 The Problems panel and the status bar always use the structural preview. VS Code keeps what you expanded and selected when the rows update.
@@ -86,7 +86,7 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 
 | Command ID | Title | When available |
 | --- | --- | --- |
-| `databricksBundleInspector.inspectBundle` | Inspect Databricks Bundle | Active file is `databricks.yml` or `databricks.yaml`, or a file the bundle's `include` loads |
+| `databricksBundleInspector.inspectBundle` | Open Graph | Active file is `databricks.yml` or `databricks.yaml`, or a file the bundle's `include` loads |
 | `databricksBundleInspector.openBundleIssues` | Open Bundle Issues | Command Palette; focuses issues for the active inspector bundle |
 | `databricksBundleInspector.chooseProfile` | Choose Databricks Login Profile | Command Palette; lists the profiles in `~/.databrickscfg` and saves the one used when you pick a target |
 | `databricksBundleInspector.checkAllBundles` | Check All Databricks Bundles Again | Command Palette and the sidebar's Bundles section; checks every bundle in the open folders, one at a time |

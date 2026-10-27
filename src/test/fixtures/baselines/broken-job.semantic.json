@@ -61,7 +61,7 @@
     {
       "severity": "error",
       "kind": "missing_file",
-      "title": "Missing local file reference",
+      "title": "File not found",
       "detail": "./src/missing.py",
       "taskKey": "missing_notebook",
       "file": "databricks.yml",

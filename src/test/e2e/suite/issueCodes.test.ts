@@ -203,7 +203,7 @@ export function issueCodesSuite() {
         await replaceDocument(original.replace("notebook_path: ../src/etl", "notebook_path: ../notebooks/etl.py"));
         await waitFor(() => Boolean(finding(resource, "missing_file")), "missing_file finding");
         const diagnostic = finding(resource, "missing_file")!;
-        assert.equal(diagnostic.message, 'Missing local file reference: ../notebooks/etl.py. Did you mean "../src/etl.py"?');
+        assert.equal(diagnostic.message, 'File not found: ../notebooks/etl.py. Did you mean "../src/etl.py"?');
 
         const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
           "vscode.executeCodeActionProvider", resource, diagnostic.range, vscode.CodeActionKind.QuickFix.value,
