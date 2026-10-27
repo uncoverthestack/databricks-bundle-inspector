@@ -82,7 +82,7 @@ describe("buildInspectorIssues", () => {
       {
         severity: "error",
         kind: "missing_file",
-        title: "Missing local file reference",
+        title: "File not found",
         detail: "../src/missing.py",
         taskName: "extract",
         file: "/workspace/demo/resources/job.yml",
@@ -534,7 +534,7 @@ describe("pipeline issues and job scoping", () => {
         id: "missing-pipeline-source:resources.pipelines.bronze:libraries[0].notebook.path",
         severity: "error",
         kind: "missing_pipeline_source",
-        title: "Missing pipeline source file",
+        title: "Pipeline source file not found",
         detail: "../src/dlt/missing.py",
         resourceId: "resources.pipelines.bronze",
         yamlPath: "resources.pipelines.bronze.libraries[0].notebook.path",

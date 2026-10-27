@@ -657,7 +657,7 @@ export function buildInspectorIssues(
         id: `missing-file:${task.id}:${ref.yamlPath}:${ref.path}`,
         severity: "error",
         kind: "missing_file",
-        title: "Missing local file reference",
+        title: "File not found",
         ...missingPathSuggestion(
           ref.path,
           ref.resolvedPath,
@@ -779,7 +779,7 @@ export function buildInspectorIssues(
         title:
           ref.kind === "glob"
             ? "Pipeline source folder has no files"
-            : "Missing pipeline source file",
+            : "Pipeline source file not found",
         ...(ref.kind === "glob"
           ? { detail: ref.path }
           : missingPathSuggestion(

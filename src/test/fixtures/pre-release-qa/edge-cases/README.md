@@ -1,6 +1,6 @@
 # Pre-Release QA Edge Cases
 
-Open `databricks.yml` in the VS Code Extension Host and run `Inspect Databricks Bundle`.
+Open `databricks.yml` in the VS Code Extension Host and run `Open Graph`.
 
 This bundle is intentionally compact but covers several release-blocking edge cases:
 
