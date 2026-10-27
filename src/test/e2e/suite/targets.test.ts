@@ -344,6 +344,99 @@ export function targetsSuite() {
           await chmod(dir, 0o700);
         }
       });
+
+      // The CLI reports a token profile or a file it can't parse differently from a missing
+      // sign-in, so each starts from the banner and then changes the file, as a user would.
+      it("a token profile with a comment on its header is protected, and fixing it unblocks without picking again", async function () {
+        this.timeout(120_000);
+        await pickTarget("dev");
+        assert.deepEqual(await banner(), { target: "dev", stage: "needed" });
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E] # keep this token\nhost = ${HOST}\ntoken = fake-test-only\n`);
+        await openTerminal();
+        assert.equal(typed.length, 0, "nothing typed for a token profile");
+        assert.match((await banner())?.blockedReason ?? "", /signs in another way/);
+
+        // The user switches the profile to browser sign-in: the next click plans again.
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await openTerminal();
+        assert.deepEqual(typed.map((entry) => entry.text), [`databricks auth login --host "${HOST}" --profile "NO_SUCH_PROFILE_E2E"`]);
+        assert.equal((await banner())?.stage, "terminal");
+      });
+
+      it("a blocked banner's Check again plans again", async function () {
+        this.timeout(120_000);
+        await pickTarget("dev");
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\ntoken = fake-test-only\n`);
+        await openTerminal();
+        assert.match((await banner())?.blockedReason ?? "", /signs in another way/);
+        await writeFile(config, "");
+        const again = (await vscode.commands.executeCommand("databricksBundleInspector.test.checkTargetAgain", "dev")) as GraphData & {
+          signIn?: Banner;
+        };
+        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed" });
+      });
+
+      it("a config file that can't be read, or that the CLI can't read, blocks", async function () {
+        this.timeout(120_000);
+        await pickTarget("dev");
+        await writeFile(config, "[ok]\nhost = https://ok.example.invalid\nnot a key value line\n");
+        await openTerminal();
+        assert.equal(typed.length, 0);
+        assert.match((await banner())?.blockedReason ?? "", /has a line the Databricks CLI can't read/);
+        if (process.platform === "win32") return;
+        await writeFile(config, "");
+        await vscode.commands.executeCommand("databricksBundleInspector.test.checkTargetAgain", "dev");
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\ntoken = fake-test-only\n`);
+        await chmod(config, 0o200);
+        try {
+          await openTerminal();
+          assert.equal(typed.length, 0);
+          assert.match((await banner())?.blockedReason ?? "", /can't be read/);
+        } finally {
+          await chmod(config, 0o600);
+        }
+      });
+
+      it("two quick clicks open one terminal", async function () {
+        this.timeout(120_000);
+        await pickTarget("dev");
+        await Promise.all([openTerminal(), openTerminal(), openTerminal()]);
+        assert.equal(typed.length, 1);
+      });
+
+      it("a sign-in to another profile is not this one's, and this one's own rewrite is", async function () {
+        this.timeout(120_000);
+        const web = `[web-e2e]\nhost = ${HOST}\nauth_type = databricks-cli\n`;
+        await writeFile(config, web);
+        await setProfile("web-e2e");
+        await pickTarget("dev");
+        await openTerminal();
+        assert.deepEqual(typed.map((entry) => entry.text), [`databricks auth login --host "${HOST}" --profile "web-e2e"`]);
+
+        // What `auth login --profile other` writes: a copy of the old file, then the new profile.
+        await writeFile(`${config}.bak`, web);
+        await writeFile(config, `${web}\n[other]\nhost = https://other.example.invalid\nauth_type = databricks-cli\n`);
+        await sleep(1_500);
+        assert.equal((await banner())?.stage, "terminal");
+
+        // What `auth login --profile web-e2e` writes again: the same file, and a new copy.
+        await sleep(50);
+        await writeFile(`${config}.bak`, await readFile(config, "utf8"));
+        await writeFile(config, await readFile(config, "utf8"));
+        await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
+      });
+
+      it("a CLI file in Settings with another name is typed as its path", async function () {
+        if (process.platform === "win32") this.skip();
+        this.timeout(120_000);
+        await withLoggingCli({}, async () => {
+          const cli = vscode.workspace.getConfiguration("databricksBundleInspector").get<string>("cliPath")!;
+          assert.notEqual(path.basename(cli), "databricks");
+          await pickTarget("dev");
+          await openTerminal();
+          assert.deepEqual(typed.map((entry) => entry.text), [`${cli} auth login --host "${HOST}" --profile "NO_SUCH_PROFILE_E2E"`]);
+        });
+      });
     });
 
     it("after a fallback, saves refresh the preview without running the target again", async function () {

@@ -2608,7 +2608,16 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
   );
   let content;
   if (blockedReason) {
-    content = <span>Couldn't check {target}: you need to sign in, and {blockedReason}.</span>;
+    // Once the reason is fixed (a profile or the config file), checking again plans again.
+    content = (
+      <>
+        <span>Couldn't check {target}: you need to sign in, and {blockedReason}.</span>
+        <button type="button" onClick={onCheckAgain} className={BANNER_BUTTON}>
+          Check {target} again
+        </button>
+        {guide}
+      </>
+    );
   } else if (stage === "needed") {
     content = (
       <>

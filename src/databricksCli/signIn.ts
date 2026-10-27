@@ -1,3 +1,4 @@
+import path from "node:path";
 import { isScalar, parseDocument } from "yaml";
 import { anchorsOf, entries } from "../bundle/variableSources.js";
 
@@ -21,28 +22,37 @@ export type ConfigSection = Record<string, string>;
 export type ConfigSections = Map<string, ConfigSection>;
 
 /**
- * The sections of a `.databrickscfg` file. Read from the file, not `databricks auth
+ * The sections of a `.databrickscfg` file, or undefined when a line isn't one the CLI reads,
+ * as then nobody can say which profiles it holds. Read from the file, not `databricks auth
  * profiles`, which leaves out a profile with no host (checked on CLI 0.299.0 and 1.21.0),
- * though signing in under its name would still replace it.
+ * though signing in under its name would still replace it. Read as `auth profiles` reads it
+ * on CLI 0.299.0 and 1.21.0: keys before the first `[section]` are the DEFAULT profile, a
+ * section name ends at the line's last `]` (so `[a] # note` is `a`) and keeps its spaces,
+ * `:` works as `=`, and a line with neither makes the CLI refuse the whole file.
  */
-export function parseConfigSections(text: string): ConfigSections {
+export function parseConfigSections(text: string): ConfigSections | undefined {
   const sections: ConfigSections = new Map();
   let current: ConfigSection | undefined;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith(";") || line.startsWith("#")) continue;
-    const header = /^\[(.*)\]$/.exec(line);
-    if (header) {
-      const name = header[1]!.trim();
+    if (line.startsWith("[")) {
+      const close = line.lastIndexOf("]");
+      if (close <= 1) return undefined;
+      const name = line.slice(1, close);
       current = sections.get(name) ?? {};
       sections.set(name, current);
       continue;
     }
-    const equals = line.indexOf("=");
-    if (!current || equals <= 0) continue;
-    const key = line.slice(0, equals).trim().toLowerCase();
+    const delimiter = line.search(/[=:]/);
+    if (delimiter <= 0) return undefined;
+    if (!current) {
+      current = sections.get("DEFAULT") ?? {};
+      sections.set("DEFAULT", current);
+    }
+    const key = line.slice(0, delimiter).trim().toLowerCase();
     // An inline comment starts with a space then ; or #, as the CLI's ini reader reads it.
-    let value = line.slice(equals + 1).replace(/\s[;#].*$/, "").trim();
+    let value = line.slice(delimiter + 1).replace(/\s[;#].*$/, "").trim();
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.endsWith(value[0]!)) value = value.slice(1, -1);
     current[key] = value;
   }
@@ -80,8 +90,26 @@ export function isSafeProfileName(name: string): boolean {
 }
 
 /** The command typed into the terminal. Both values are checked first and double-quoted. */
-export function signInCommand(host: string, profile: string): string {
-  return `databricks auth login --host "${host}" --profile "${profile}"`;
+export function signInCommand(host: string, profile: string, cli = "databricks"): string {
+  return `${cli} auth login --host "${host}" --profile "${profile}"`;
+}
+
+/**
+ * How the terminal runs the CLI file the checks use. A file named `databricks` (with
+ * `.exe`, `.cmd` or `.bat` on Windows) is found by name once its folder is first on PATH.
+ * Another name is typed as its path, which every one of those shells runs as it is when it
+ * has no spaces or characters a shell would read. Undefined when it has them.
+ */
+export function terminalCli(
+  cliFile: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: "databricks"; folder: string } | { command: string } | undefined {
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  const base = paths.basename(cliFile);
+  const named = platform === "win32" ? /^databricks\.(exe|cmd|bat)$/i.test(base) : base === "databricks";
+  if (named) return { command: "databricks", folder: paths.dirname(cliFile) };
+  // No leading `~`, which zsh and bash would expand.
+  return /^[A-Za-z0-9_./\\][A-Za-z0-9_.~/\\:+-]*$/.test(cliFile) ? { command: cliFile } : undefined;
 }
 
 /** A profile name for a new sign-in: the host's first label (`adb-1234` from `adb-1234.azuredatabricks.net`), unique in the file. */
@@ -99,17 +127,21 @@ export function newProfileName(host: string, sections: ConfigSections): string {
   for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
-/** The workspace a target uses, as its YAML writes it. A value with `${...}` is not known here. */
+/**
+ * The workspace a target uses, as its YAML writes it. `null` is a value with `${...}`, which
+ * only the CLI fills in: not known here, and not the bundle's own value either.
+ */
 export interface TargetWorkspace {
-  host?: string;
-  profile?: string;
+  host?: string | null;
+  profile?: string | null;
 }
 
 /**
  * The target's `workspace.host` and `workspace.profile`, else the bundle's top-level ones,
  * from the bundle file and the files it includes, read as the CLI reads keys (anchors,
- * merges, a repeated key where it last appears). A value that uses a variable is left out:
- * the CLI fills it in, and the inspector would be guessing.
+ * merges, a repeated key where it last appears). A value that uses a variable is `null`:
+ * the CLI fills it in, and the inspector would be guessing. A target's `null` still hides
+ * the top-level value, as the CLI uses the target's.
  */
 export function targetWorkspace(texts: readonly string[], target: string): TargetWorkspace {
   const top: TargetWorkspace = {};
@@ -127,15 +159,15 @@ export function targetWorkspace(texts: readonly string[], target: string): Targe
     const targetEntry = entries(anchors, root.get("targets")?.value).get(target);
     read(entries(anchors, entries(anchors, targetEntry?.value).get("workspace")?.value), own);
   }
-  const host = own.host ?? top.host;
-  const profile = own.profile ?? top.profile;
-  return { ...(host ? { host } : {}), ...(profile ? { profile } : {}) };
+  const host = own.host !== undefined ? own.host : top.host;
+  const profile = own.profile !== undefined ? own.profile : top.profile;
+  return { ...(host !== undefined ? { host } : {}), ...(profile !== undefined ? { profile } : {}) };
 
   function read(workspace: ReturnType<typeof entries>, into: TargetWorkspace): void {
     for (const key of ["host", "profile"] as const) {
       const node = workspace.get(key)?.value;
       const value = isScalar(node) && typeof node.value === "string" ? node.value.trim() : undefined;
-      if (value && !value.includes("${")) into[key] = value;
+      if (value) into[key] = value.includes("${") ? null : value;
     }
   }
 }
@@ -150,18 +182,24 @@ export type SignInPlan =
   | { kind: "blocked"; reason: string };
 
 /**
- * Which profile to sign in under, never one that would be replaced:
+ * Which profile to sign in under, never one that would be replaced. A `null` host or profile
+ * is set with a variable: an unknown host is asked for, and an unknown profile blocks, as
+ * signing in under another name wouldn't be the one the checks use.
  * 1. the profile the checks use (the `profile` setting, else the target's `workspace.profile`),
  *    when it doesn't exist yet or already signs in through the browser for that workspace;
  * 2. else a browser profile that already exists for the host;
  * 3. else a new name made from the host.
  */
 export function planSignIn(options: {
-  host: string | undefined;
-  profile: string | undefined;
+  host: string | null | undefined;
+  profile: string | null | undefined;
   sections: ConfigSections;
 }): SignInPlan {
   const { sections } = options;
+  if (options.profile === null) {
+    return { kind: "blocked", reason: "its profile is set with a variable, which only the Databricks CLI fills in" };
+  }
+  if (options.host === null) return { kind: "needs_host", ...(options.profile ? { profile: options.profile } : {}) };
   if (options.host !== undefined && !isSafeHost(options.host)) {
     return { kind: "blocked", reason: "its workspace URL isn't a plain https:// address" };
   }
@@ -196,21 +234,28 @@ export function planSignIn(options: {
 /**
  * Whether the CLI has updated the profile being signed in: after the change it signs in
  * through the browser for that workspace, and it is new, its settings changed, or the CLI
- * rewrote the file (it writes the `.bak` copy each time it saves a sign-in). Another edit
- * to the file, or to another profile, is not one.
+ * rewrote the file with no other profile changed (it writes the `.bak` copy each time it
+ * saves a sign-in, whichever profile that is). Another edit to the file, or a sign-in to
+ * another profile, is not one.
  */
 export function profileUpdated(options: {
-  before: ConfigSection | undefined;
-  after: ConfigSection | undefined;
+  before: ConfigSections;
+  after: ConfigSections;
+  profile: string;
   host: string;
   backupChanged: boolean;
 }): boolean {
-  const { before, after } = options;
-  if (!after || !isBrowserSignIn(after) || workspaceOf(after.host) !== workspaceOf(options.host)) return false;
-  const changed = !before || JSON.stringify(sorted(before)) !== JSON.stringify(sorted(after));
-  return changed || options.backupChanged;
+  const { before, after, profile } = options;
+  const was = before.get(profile);
+  const now = after.get(profile);
+  if (!now || !isBrowserSignIn(now) || workspaceOf(now.host) !== workspaceOf(options.host)) return false;
+  if (!was || text(was) !== text(now)) return true;
+  if (!options.backupChanged) return false;
+  const others = (sections: ConfigSections) =>
+    JSON.stringify([...sections].filter(([name]) => name !== profile).map(([name, section]) => [name, text(section)]).sort());
+  return others(before) === others(after);
 }
 
-function sorted(section: ConfigSection): [string, string][] {
-  return Object.entries(section).sort(([a], [b]) => a.localeCompare(b));
+function text(section: ConfigSection): string {
+  return JSON.stringify(Object.entries(section).sort(([a], [b]) => a.localeCompare(b)));
 }

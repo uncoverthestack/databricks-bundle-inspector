@@ -81,9 +81,10 @@ When a target you picked can't be checked because you aren't signed in to its wo
 
 Which workspace and profile name it types:
 
-- The workspace is the target's `workspace.host`, else the bundle's. When it uses a variable, or there is none, you are asked for the workspace URL.
-- The profile is the one the checks use (the `databricksBundleInspector.profile` setting, else the target's `workspace.profile`), a profile that already signs in through the browser for that workspace, or else a new name made from the workspace (for example `adb-1234`).
-- It never types the name of a profile that signs in another way, for example with a token: signing in under that name would replace it. The graph says so instead. It also types nothing when the config file can't be written, and says why.
+- The workspace is the target's `workspace.host`, else the bundle's. When it uses a variable, or there is none, you are asked for the workspace URL. A target's variable is never swapped for the bundle's own host.
+- The profile is the one the checks use (the `databricksBundleInspector.profile` setting, else the target's `workspace.profile`), a profile that already signs in through the browser for that workspace, or else a new name made from the workspace (for example `adb-1234`). When the profile the checks use is set with a variable, it types nothing, as only the CLI knows its value; set `databricksBundleInspector.profile` to sign in from the graph.
+- It never types the name of a profile that signs in another way, for example with a token: signing in under that name would replace it. The graph says so instead, with **Check dev again** for once you've changed it. It also types nothing when the config file can't be read or written, or has a line the CLI can't read, and says why.
+- It runs the Databricks CLI the checks use. When `databricksBundleInspector.cliPath` names a file that isn't called `databricks`, its path is typed instead.
 
 To undo a sign-in, run `databricks auth logout --profile <name> --delete`, which removes that profile only.
 

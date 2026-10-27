@@ -10,7 +10,8 @@ import {
   profileUpdated,
   signInCommand,
   targetWorkspace,
-  type ConfigSection,
+  terminalCli,
+  type ConfigSections,
   type SignInPlan,
 } from "../databricksCli/signIn.js";
 
@@ -34,8 +35,10 @@ interface Flow {
   target: string;
   stage: SignInStage;
   blockedReason?: string;
+  /** Between a click and the terminal opening, so a second click opens no second terminal. */
+  opening?: boolean;
   /** Set once the terminal is open: what is watched. */
-  watch?: { profile: string; host: string; before: ConfigSection | undefined; backupTime: number | undefined; watcher: FSWatcher };
+  watch?: { watcher: FSWatcher };
 }
 
 export interface SignInDeps {
@@ -66,7 +69,8 @@ export class SignInFlow implements vscode.Disposable {
   /**
    * The banner for a target that fell back, or undefined when signing in can't fix the
    * reason. The same target keeps its stage across refreshes; a new target, or a check
-   * asked for that failed again, starts over.
+   * asked for that failed again, starts over. Before the terminal opens, each refresh
+   * plans again, so a fixed config file or bundle unblocks it.
    */
   bannerFor(root: string, target: string, code: FallbackCode | undefined): SignInBanner | undefined {
     if (!code || !SIGN_IN_CODES.has(code)) {
@@ -76,9 +80,9 @@ export class SignInFlow implements vscode.Disposable {
     const same = this.flow && this.flow.root === root && this.flow.target === target;
     if (!same || this.flow!.stage === "checking") {
       this.reset();
-      const plan = this.plan(root, target);
-      this.flow = { root, target, stage: "needed", ...(plan.kind === "blocked" ? { blockedReason: plan.reason } : {}) };
+      this.flow = { root, target, stage: "needed" };
     }
+    if (this.flow!.stage === "needed") this.setBlocked(this.flow!, this.plan(root, target));
     return this.banner();
   }
 
@@ -105,11 +109,21 @@ export class SignInFlow implements vscode.Disposable {
   /**
    * Types `databricks auth login` into a new terminal without running it. Asks for the
    * workspace URL when the bundle doesn't give one. Nothing is typed when the profile would
-   * be replaced or the config file can't be written.
+   * be replaced or the config file can't be read or written. Plans again on each click.
    */
   async openTerminal(root: string, target: string, from: "graph" | "sidebar"): Promise<void> {
     const flow = this.flow;
-    if (!flow || flow.root !== root || flow.target !== target || flow.blockedReason) return;
+    if (!flow || flow.root !== root || flow.target !== target || flow.opening) return;
+    flow.opening = true;
+    try {
+      await this.open(flow, from);
+    } finally {
+      flow.opening = false;
+    }
+  }
+
+  private async open(flow: Flow, from: "graph" | "sidebar"): Promise<void> {
+    const { root, target } = flow;
     const configFile = configFilePath();
     if (!canWrite(configFile)) {
       flow.blockedReason = `${configFile} can't be written, and the Databricks CLI saves your sign-in there`;
@@ -129,23 +143,29 @@ export class SignInFlow implements vscode.Disposable {
       if (!host || this.flow !== flow) return;
       plan = this.plan(root, target, host.trim());
     }
+    this.setBlocked(flow, plan);
     if (plan.kind !== "ready") {
-      if (plan.kind === "blocked") flow.blockedReason = plan.reason;
       this.deps.changed(root, this.banner());
       return;
     }
 
     const cliFile = await this.deps.cliFile();
     if (this.flow !== flow) return;
+    // The CLI the checks use: first on PATH when it is named `databricks`, else typed as its path.
+    const cli = cliFile ? terminalCli(cliFile) : { command: "databricks" };
+    if (!cli) {
+      flow.blockedReason = `the Databricks CLI file in Settings, ${cliFile}, has characters a terminal would read`;
+      this.deps.changed(root, this.banner());
+      return;
+    }
     const terminal = vscode.window.createTerminal({
       name: "Databricks sign-in",
       cwd: root,
-      // The CLI the checks use goes first on PATH, so `databricks` is that one.
-      ...(cliFile ? { env: { [pathKey()]: `${path.dirname(cliFile)}${path.delimiter}${process.env[pathKey()] ?? ""}` } } : {}),
+      ...("folder" in cli ? { env: { [pathKey()]: `${cli.folder}${path.delimiter}${process.env[pathKey()] ?? ""}` } } : {}),
     });
     terminal.show();
     // Typed, not run: the user reads it and presses Enter.
-    terminal.sendText(signInCommand(plan.host, plan.profile), false);
+    terminal.sendText(signInCommand(plan.host, plan.profile, cli.command), false);
     this.watchProfile(flow, configFile, plan);
     flow.stage = "terminal";
     this.deps.telemetry("terminal_opened", from);
@@ -162,6 +182,11 @@ export class SignInFlow implements vscode.Disposable {
     return { target: flow.target, stage: flow.stage, ...(flow.blockedReason ? { blockedReason: flow.blockedReason } : {}) };
   }
 
+  private setBlocked(flow: Flow, plan: SignInPlan): void {
+    if (plan.kind === "blocked") flow.blockedReason = plan.reason;
+    else delete flow.blockedReason;
+  }
+
   private plan(root: string, target: string, askedHost?: string): SignInPlan {
     const texts = this.deps.bundleFiles(root).flatMap((file) => {
       try {
@@ -171,10 +196,12 @@ export class SignInFlow implements vscode.Disposable {
       }
     });
     const workspace = targetWorkspace(texts, target);
+    const config = readConfig(configFilePath());
+    if ("reason" in config) return { kind: "blocked", reason: config.reason };
     return planSignIn({
       host: askedHost ?? workspace.host,
       profile: this.deps.configuredProfile() ?? workspace.profile,
-      sections: readSections(configFilePath()),
+      sections: config.sections,
     });
   }
 
@@ -182,8 +209,14 @@ export class SignInFlow implements vscode.Disposable {
   private watchProfile(flow: Flow, configFile: string, plan: Extract<SignInPlan, { kind: "ready" }>): void {
     flow.watch?.watcher.close();
     const backup = `${configFile}.bak`;
-    const before = readSections(configFile).get(plan.profile);
-    const backupTime = modifiedTime(backup);
+    const read = () => {
+      const config = readConfig(configFile);
+      return "sections" in config ? config.sections : undefined;
+    };
+    // What the file was at the last change that wasn't this sign-in, so a sign-in to another
+    // profile in between doesn't hide this one's.
+    let before = read() ?? new Map();
+    let backupTime = modifiedTime(backup);
     let timer: NodeJS.Timeout | undefined;
     const watcher = watch(path.dirname(configFile), (_event, name) => {
       const changed = name?.toString();
@@ -192,9 +225,14 @@ export class SignInFlow implements vscode.Disposable {
       // The CLI writes the file and its copy one after the other: read once both are done.
       timer = setTimeout(() => {
         if (this.flow !== flow || flow.stage !== "terminal") return;
-        const after = readSections(configFile).get(plan.profile);
-        const backupChanged = modifiedTime(backup) !== backupTime;
-        if (!profileUpdated({ before, after, host: plan.host, backupChanged })) return;
+        const after = read();
+        const time = modifiedTime(backup);
+        if (!after) return;
+        if (!profileUpdated({ before, after, profile: plan.profile, host: plan.host, backupChanged: time !== backupTime })) {
+          before = after;
+          backupTime = time;
+          return;
+        }
         watcher.close();
         flow.stage = "updated";
         this.deps.telemetry("profile_updated");
@@ -202,16 +240,24 @@ export class SignInFlow implements vscode.Disposable {
       }, 300);
     });
     watcher.on("error", () => watcher.close());
-    flow.watch = { profile: plan.profile, host: plan.host, before, backupTime, watcher };
+    flow.watch = { watcher };
   }
 }
 
-function readSections(file: string) {
+/**
+ * The profiles in the config file: none when there is no file yet, and a reason when it
+ * can't be read or has a line the CLI can't read, as then no name is known to be safe.
+ */
+function readConfig(file: string): { sections: ConfigSections } | { reason: string } {
+  let text;
   try {
-    return parseConfigSections(readFileSync(file, "utf8"));
-  } catch {
-    return parseConfigSections("");
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { sections: new Map() };
+    return { reason: `${file} can't be read, so it isn't known which sign-in profiles it holds` };
   }
+  const sections = parseConfigSections(text);
+  return sections ? { sections } : { reason: `${file} has a line the Databricks CLI can't read` };
 }
 
 function modifiedTime(file: string): number | undefined {
