@@ -7,6 +7,7 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 ### Added
 
 - **Pipelines in the graph.** The graph's dropdown lists the bundle's pipelines after its jobs, and a bundle with only pipelines opens on its first pipeline instead of "No jobs found". A pipeline shows what its YAML says: the jobs in the bundle that run it (click one to see its tasks), its default catalog and schema, each source in `libraries` marked Found, Missing, No files, Not a notebook or Not checked, with links to the file and the YAML line, its problems, configuration and secret scopes. Nothing is read from the pipeline's table code, so it shows no tables. Opening the graph from a resource file starts on the job or pipeline under the cursor, and a pipeline task's **Pipeline** row in a job's graph opens its pipeline. Checked on CLI 0.299.0 and 1.21.0, and across 763 bundles (109 pipelines) from Databricks' examples and the CLI's own tests: every source marked Missing, No files or Not a notebook has its matching problem at the same line. See [docs/usage.md](docs/usage.md#usage).
+- **The graph's dropdown reads `key (name)`**, and only the key when the name is the same, for jobs and pipelines. It was `key — name`, which repeated the key for a job named after it.
 - **Telemetry: `pipeline_selected`** when a pipeline is picked in the graph, and **`pipeline_count`** (a range) on `inspect_bundle`, to learn how many bundles have pipelines. Redeploy the telemetry Worker before releasing, or it drops both.
 
 ## [0.5.0] - 2026-10-23

@@ -2693,7 +2693,7 @@ export default function App({
         return {
           value: selectionValue({ group: "jobs", key }),
           key,
-          label: displayName ? `${key} — ${displayName}` : key,
+          label: displayName && displayName !== key ? `${key} (${displayName})` : key,
         };
       }),
     [jobKeys, jobsByKey, effectiveResolutionBundle, effectiveTargetName],
@@ -2709,7 +2709,7 @@ export default function App({
       return {
         value: selectionValue({ group: "pipelines", key }),
         key,
-        label: displayName && displayName !== key ? `${key} — ${displayName}` : key,
+        label: displayName && displayName !== key ? `${key} (${displayName})` : key,
       };
     });
     return [
