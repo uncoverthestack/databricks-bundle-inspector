@@ -114,6 +114,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "databricksBundleInspector.sidebar.checkAll",
+        "title": "Check All Databricks Bundles Again",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "databricksBundleInspector.openGuide",
         "title": "Open the Bundle Inspector Guide",
         "icon": "$(book)"
@@ -252,13 +257,17 @@
           "when": "false"
         },
         {
+          "command": "databricksBundleInspector.sidebar.checkAll",
+          "when": "false"
+        },
+        {
           "command": "databricksBundleInspector.sidebar.openBundleFile",
           "when": "false"
         }
       ],
       "view/title": [
         {
-          "command": "databricksBundleInspector.checkAllBundles",
+          "command": "databricksBundleInspector.sidebar.checkAll",
           "when": "view == databricksBundleInspector.bundles",
           "group": "navigation"
         },

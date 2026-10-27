@@ -77,6 +77,25 @@ describe("TelemetryQueue", () => {
     expect(storage.saved).toEqual([]);
   });
 
+  it("drops events past the age limit when sending, in a window open for weeks", async () => {
+    let now = NOW;
+    const delivered: string[] = [];
+    const queue = new TelemetryQueue(
+      memoryStorage(),
+      async (batch: QueuedEvent[]) => {
+        delivered.push(...batch.map((e) => e.event));
+        return "sent";
+      },
+      { now: () => now },
+    );
+    queue.enqueue(makeEvent("old", new Date(NOW).toISOString()));
+    // 14 days and an hour later, without the queue loading or growing in between.
+    now = NOW + 14 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000;
+    await queue.flush();
+    expect(delivered).toEqual([]);
+    expect(queue.size).toBe(0);
+  });
+
   it("restores persisted events from a previous session", async () => {
     const send = jest.fn<Send>(async () => "sent");
     const queue = new TelemetryQueue(memoryStorage([makeEvent("old")]), send, { now: () => NOW });
@@ -351,6 +370,27 @@ describe("schema", () => {
       issue_count: "6-20",
     });
     expect(validateProperties("extension_activated", { bundle_count: "7", issue_count: 7 })).toEqual({});
+  });
+
+  it("keeps the CLI version only as major.minor", () => {
+    for (const event of ["inspect_bundle", "extension_activated"]) {
+      expect(validateProperties(event, { cli_version: "1.21" })).toEqual({ cli_version: "1.21" });
+      for (const value of ["1.21.0", "v1.21", "1.21-dev", "/Users/someone/databricks", "1"]) {
+        expect(validateProperties(event, { cli_version: value })).toEqual({});
+      }
+    }
+  });
+
+  it("keeps the sidebar events' fixed values and nothing else", () => {
+    expect(validateProperties("sidebar_opened", { at_start: true, bundle: "sales" })).toEqual({ at_start: true });
+    expect(validateProperties("sidebar_action", { action: "open_graph" })).toEqual({ action: "open_graph" });
+    expect(validateProperties("sidebar_action", { action: "rm -rf" })).toEqual({});
+    expect(validateProperties("inspect_bundle", { trigger: "sidebar" })).toEqual({ trigger: "sidebar" });
+    expect(validateProperties("quick_fix_applied", { kind: "missing_file" })).toEqual({ kind: "missing_file" });
+  });
+
+  it("never sends the VS Code session ID, which would link one window's events beyond the install ID", () => {
+    expect(outgoingProperties({ "common.vscodesessionid": "abc", "common.os": "darwin" })).toEqual({ "common.os": "darwin" });
   });
 
   it("drops machine and device IDs before sending", () => {
