@@ -3,12 +3,16 @@ import {
   bundleRow,
   bundlesMessage,
   bundleStatus,
-  checkAgainst,
   cliCandidates,
   cliChoices,
   cliRow,
+  compactContents,
+  graphRow,
+  pathHints,
+  problemsRow,
   profileRow,
   targetLine,
+  targetsRow,
   type SidebarBundle,
 } from "../../../extension/sidebar.js";
 import { bundleSummary } from "../../../extension/statusBar.js";
@@ -29,13 +33,23 @@ function bundle(overrides: Partial<SidebarBundle> = {}): SidebarBundle {
 }
 
 describe("bundleRow", () => {
-  test("says what the status bar says, so the two always agree", () => {
+  test("starts with what the status bar says, so the two always agree", () => {
     for (const state of [undefined, "pending", "checked", "failed", "cli_missing"] as const) {
       for (const count of [{ problems: 0, notes: 0 }, { problems: 3, notes: 1 }, { problems: 0, notes: 2 }]) {
         const row = bundleRow(bundle({ state, count }));
-        expect(row.description).toBe(bundleSummary(state, count, undefined));
+        expect(row.description.split(" · ")[0]).toBe(bundleSummary(state, count, undefined));
       }
     }
+  });
+
+  test("only the result: what the check covered is on the Graph row", () => {
+    expect(bundleRow(bundle()).description).toBe("2 problems");
+  });
+
+  test("with where the bundle is, when another has the same name", () => {
+    expect(bundleRow(bundle({ pathHint: "teams/sales/analytics" })).description).toBe(
+      "2 problems · teams/sales/analytics",
+    );
   });
 
   test("names the bundle by its folder and lists what the check covered in the tooltip", () => {
@@ -54,6 +68,9 @@ describe("bundleRow", () => {
   test("shows a check that is running", () => {
     const row = bundleRow(bundle({ checking: true }));
     expect(row.description).toBe("checking…");
+    expect(bundleRow(bundle({ checking: true, pathHint: "teams/sales/analytics" })).description).toBe(
+      "checking… · teams/sales/analytics",
+    );
     expect(row.status).toBe("checking");
     expect(row.tooltip).toContain("Checking now.");
   });
@@ -65,53 +82,120 @@ describe("bundleStatus", () => {
     expect(bundleStatus(bundle({ state: "pending" }))).toBe("pending");
     expect(bundleStatus(bundle({ state: "cli_missing" }))).toBe("cli_missing");
     expect(bundleStatus(bundle({ count: { problems: 1, notes: 0 } }))).toBe("problems");
+    expect(bundleStatus(bundle({ count: { problems: 3, errors: 1, notes: 0 } }))).toBe("errors");
     expect(bundleStatus(bundle({ count: { problems: 0, notes: 5 } }))).toBe("passed");
     expect(bundleStatus(bundle({ state: "failed", count: { problems: 0, notes: 0 } }))).toBe("failed");
     expect(bundleStatus(bundle({ state: "failed", count: { problems: 2, notes: 0 } }))).toBe("problems");
   });
 });
 
-describe("checkAgainst", () => {
-  test("lists the structural preview next to the targets, in use when no target is picked", () => {
-    const group = checkAgainst(bundle());
-    expect(group.description).toBe("structural preview");
-    expect(group.options).toEqual([
-      { target: undefined, label: "Structural preview", description: "shared settings · in use", inUse: true },
-      { target: "dev", label: "dev", description: "", inUse: false },
-      { target: "prod", label: "prod", description: "", inUse: false },
+describe("compactContents", () => {
+  test("jobs, tasks and pipelines; local files stay in the tooltip", () => {
+    expect(compactContents({ jobs: 3, tasks: 11, pipelines: 0, files: 4 })).toBe("3 jobs · 11 tasks");
+    expect(compactContents({ jobs: 1, tasks: 1, pipelines: 2, files: 0 })).toBe("1 job · 1 task · 2 pipelines");
+    expect(compactContents({ jobs: 0, tasks: 0, pipelines: 0, files: 3 })).toBe("");
+    expect(compactContents(undefined)).toBe("");
+  });
+});
+
+describe("pathHints", () => {
+  test("only bundles that share a folder name get their place", () => {
+    const hints = pathHints([
+      { root: "/w/teams/sales/analytics", name: "analytics", displayPath: "teams/sales/analytics/databricks.yml" },
+      { root: "/w/teams/marketing/analytics", name: "analytics", displayPath: "teams/marketing/analytics/databricks.yml" },
+      { root: "/w/ingest", name: "ingest", displayPath: "ingest/databricks.yml" },
+    ]);
+    expect([...hints]).toEqual([
+      ["/w/teams/sales/analytics", "teams/sales/analytics"],
+      ["/w/teams/marketing/analytics", "teams/marketing/analytics"],
     ]);
   });
 
-  test("marks the target the graph shows", () => {
-    const group = checkAgainst(bundle({ graphTarget: { target: "dev", fellBack: false } }));
-    expect(group.description).toBe("dev");
-    expect(group.options.filter((option) => option.inUse).map((option) => option.label)).toEqual(["dev"]);
-    expect(group.options[0]!.description).toBe("shared settings");
-  });
-
-  test("a target that couldn't be checked leaves the structural preview in use, and says so", () => {
-    const group = checkAgainst(bundle({ graphTarget: { target: "prod", fellBack: true } }));
-    expect(group.description).toBe("structural preview · prod couldn't be checked");
-    expect(group.options.filter((option) => option.inUse).map((option) => option.label)).toEqual([
-      "Structural preview",
+  test("a bundle at the top of the folder, and Windows separators", () => {
+    const hints = pathHints([
+      { root: "/w", name: "w", displayPath: "databricks.yml" },
+      { root: "/x/w", name: "w", displayPath: "x\\w\\databricks.yml" },
     ]);
+    expect(hints.get("/w")).toBe("folder root");
+    expect(hints.get("/x/w")).toBe("x/w");
+  });
+});
+
+describe("graphRow", () => {
+  test("on the structural preview, what the check covered; with a target picked, the target", () => {
+    expect(graphRow(bundle()).description).toBe("3 jobs · 11 tasks · 1 pipeline");
+    expect(graphRow(bundle()).tooltip).toContain("from the structural preview");
+    expect(graphRow(bundle()).tooltip).toContain("Click to open the graph");
+    expect(graphRow(bundle({ graphTarget: { target: "dev", fellBack: false } })).description).toBe("dev");
   });
 
+  test("before a check, and after one that covered nothing", () => {
+    expect(graphRow(bundle({ state: "pending", contents: undefined })).description).toBe("not checked yet");
+    expect(graphRow(bundle({ state: "failed", contents: undefined })).description).toBe("");
+  });
+
+  test("a target that couldn't be checked says so", () => {
+    const row = graphRow(bundle({ graphTarget: { target: "prod", fellBack: true } }));
+    expect(row.description).toBe("prod couldn't be checked");
+    expect(row.tooltip).toContain("the graph shows the structural preview");
+  });
+});
+
+describe("problemsRow", () => {
+  test("problems: the count with its scope, and a click opens the first", () => {
+    const row = problemsRow(bundle());
+    expect(row).toMatchObject({ description: "2 · structural preview", status: "problems", canOpen: true });
+    expect(row.tooltip).toContain("Click to see all 2, by file, and pick one");
+    expect(problemsRow(bundle({ count: { problems: 1, notes: 0 } })).tooltip).toContain("Click to open it where it is.");
+  });
+
+  test("none found says its scope rather than claiming the bundle passed", () => {
+    const row = problemsRow(bundle({ count: { problems: 0, notes: 1 } }));
+    expect(row).toMatchObject({ description: "none found · structural preview", status: "none", canOpen: false });
+    expect(row.tooltip).toContain("A target can still have its own");
+  });
+
+  test("no result yet, or none possible, says what to do", () => {
+    expect(problemsRow(bundle({ state: "pending" }))).toMatchObject({ description: "not checked yet", canOpen: false });
+    expect(problemsRow(bundle({ state: undefined })).tooltip).toContain("Check Again");
+    expect(problemsRow(bundle({ state: "cli_missing", count: { problems: 0, notes: 0 } })).tooltip).toContain("Settings");
+    expect(problemsRow(bundle({ state: "failed", count: { problems: 0, notes: 0 } }))).toMatchObject({
+      description: "not checked",
+      status: "unknown",
+    });
+  });
+
+  test("shows the most severe problem: one error is enough for the error icon", () => {
+    expect(problemsRow(bundle({ count: { problems: 9, errors: 1, notes: 0 } })).status).toBe("errors");
+    expect(problemsRow(bundle({ count: { problems: 9, errors: 0, notes: 0 } })).status).toBe("problems");
+  });
+
+  test("a failed check that still found problems lets them be opened", () => {
+    expect(problemsRow(bundle({ state: "failed" })).canOpen).toBe(true);
+  });
+});
+
+describe("targetsRow", () => {
   test("lists targets by name, so they stay put when the CLI lists them in another order", () => {
-    const labels = (targets: string[]) =>
-      checkAgainst(bundle({ targets })).options.map((option) => option.label);
-    expect(labels(["dev", "ambiguous", "prod"])).toEqual(["Structural preview", "ambiguous", "dev", "prod"]);
-    expect(labels(["prod", "dev", "ambiguous"])).toEqual(labels(["dev", "ambiguous", "prod"]));
+    const names = (targets: string[]) => targetsRow(bundle({ targets })).targets.map((item) => item.target);
+    expect(names(["dev", "ambiguous", "prod"])).toEqual(["ambiguous", "dev", "prod"]);
+    expect(names(["prod", "dev", "ambiguous"])).toEqual(names(["dev", "ambiguous", "prod"]));
+    expect(targetsRow(bundle()).description).toBe("dev, prod");
   });
 
-  test("before a check, only the structural preview is listed", () => {
-    expect(checkAgainst(bundle({ state: "pending", targets: [] })).options.map((option) => option.label)).toEqual([
-      "Structural preview",
+  test("marks the target the graph uses, not one that couldn't be checked", () => {
+    expect(targetsRow(bundle({ graphTarget: { target: "dev", fellBack: false } })).targets).toEqual([
+      { target: "dev", description: "graph in use" },
+      { target: "prod", description: "" },
     ]);
+    expect(
+      targetsRow(bundle({ graphTarget: { target: "dev", fellBack: true } })).targets.every((item) => item.description === ""),
+    ).toBe(true);
   });
 
-  test("says the counts always come from the structural preview", () => {
-    expect(checkAgainst(bundle()).tooltip).toContain("always use the structural preview");
+  test("before a check, and with none", () => {
+    expect(targetsRow(bundle({ state: "pending", targets: [] })).description).toBe("not checked yet");
+    expect(targetsRow(bundle({ targets: [] })).description).toBe("none listed");
   });
 });
 
@@ -213,6 +297,29 @@ describe("targetLine", () => {
 
   test("a repeated target counts where it last appears, as the CLI keeps the last one", () => {
     expect(targetLine("targets:\n  dev: {}\n  dev:\n    mode: development\n", "dev")).toBe(2);
+  });
+
+  // The CLI lists merged targets (`Available targets: prod, dev, staging`) on 0.299.0 and
+  // 1.21.0; the row opens where the anchor writes each one.
+  test("finds a target a `<<` merge brings in, where the anchor writes it", () => {
+    const merged = "x-base: &base\n  dev:\n    default: true\n  staging: {}\ntargets:\n  <<: *base\n  prod: {}\n";
+    expect(targetLine(merged, "dev")).toBe(1);
+    expect(targetLine(merged, "staging")).toBe(3);
+    expect(targetLine(merged, "prod")).toBe(6);
+  });
+
+  test("a target written directly beats a merged one, and a later merged anchor beats an earlier one", () => {
+    const yaml = "a: &a\n  dev: {}\nb: &b\n  dev: {}\n  qa: {}\ntargets:\n  <<: [*a, *b]\n  qa: {}\n";
+    expect(targetLine(yaml, "dev")).toBe(3);
+    expect(targetLine(yaml, "qa")).toBe(7);
+  });
+
+  // The CLI names a key YAML reads as null as it is written (`Available targets: ~`, `null`, `Null`).
+  test("finds targets named ~, null and Null", () => {
+    expect(targetLine("targets:\n  ~: {}\n", "~")).toBe(1);
+    expect(targetLine("targets:\n  dev: {}\n  null: {}\n", "null")).toBe(2);
+    expect(targetLine("targets:\n  Null: {}\n", "Null")).toBe(1);
+    expect(targetLine("targets:\n  ~: {}\n", "null")).toBeUndefined();
   });
 
   test("reads Windows line endings and a missing targets mapping", () => {

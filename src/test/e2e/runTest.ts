@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
  * Runs the e2e suite inside a real VS Code with this extension loaded.
  * Build first with `npm run test:e2e`, which bundles this file to out/e2e.
  */
-import { mkdtemp } from "node:fs/promises";
+import { cp, mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
@@ -56,6 +56,13 @@ async function main() {
       return;
     }
     folder = path.join(path.dirname(folder), swapLetterCase(path.basename(folder)));
+  }
+  // A multi-root workspace whose folders the suite removes and adds back, which VS Code
+  // writes to the .code-workspace file: run it on a copy, so the fixture stays as it is.
+  if (suite === "workspaceChanges") {
+    const copy = path.join(await mkdtemp(path.join(os.tmpdir(), "dbi-ws-")), "workspace-changes");
+    await cp(folder, copy, { recursive: true });
+    folder = path.join(copy, "workspace-changes.code-workspace");
   }
   await runTests({
     extensionDevelopmentPath: root,

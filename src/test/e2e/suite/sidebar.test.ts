@@ -15,10 +15,9 @@ interface ShownSidebar {
     label: string;
     description: string;
     status: string;
-    checkAgainst: {
-      description: string;
-      options: Array<{ target: string | undefined; label: string; description: string; inUse: boolean }>;
-    };
+    graph: { description: string; tooltip: string };
+    problems: { description: string; tooltip: string; status: string; canOpen: boolean };
+    targets: { description: string; targets: Array<{ target: string; description: string }> };
   }>;
   settings: { cli: { description: string; tooltip: string; warning: boolean }; profile: { description: string } };
 }
@@ -41,7 +40,7 @@ const checked = (shown: ShownSidebar) =>
   shown.bundles.length === 1 &&
   shown.bundles[0]!.status !== "pending" &&
   shown.bundles[0]!.status !== "checking" &&
-  shown.bundles[0]!.checkAgainst.options.length > 1;
+  shown.bundles[0]!.targets.targets.length > 0;
 
 function databricksCliAvailable(): boolean {
   try {
@@ -69,7 +68,7 @@ export function sidebarSuite() {
       if (!databricksCliAvailable()) this.skip();
     });
 
-    it("lists the bundle with the status bar's result, its targets, and the structural preview in use", async () => {
+    it("lists the bundle with the status bar's result, its graph, problems and targets", async () => {
       const shown = await sidebarWhen(checked);
       assert.equal(shown.bundles.length, 1, JSON.stringify(shown));
       const bundle = shown.bundles[0]!;
@@ -78,20 +77,19 @@ export function sidebarSuite() {
       const statusBar = await vscode.commands.executeCommand<{ view?: { text: string } }>(
         "databricksBundleInspector.test.statusBar",
       );
+      const result = bundle.description.split(" · ")[0]!;
       assert.ok(
-        statusBar?.view?.text.includes(bundle.description),
-        `the status bar "${statusBar?.view?.text}" should say "${bundle.description}"`,
+        statusBar?.view?.text.includes(result),
+        `the status bar "${statusBar?.view?.text}" should say "${result}"`,
       );
 
-      assert.equal(bundle.checkAgainst.description, "structural preview");
-      assert.deepEqual(
-        bundle.checkAgainst.options.map((option) => option.label).sort(),
-        ["Structural preview", "ambiguous", "dev"],
-      );
-      assert.deepEqual(
-        bundle.checkAgainst.options.filter((option) => option.inUse).map((option) => option.label),
-        ["Structural preview"],
-      );
+      assert.equal(bundle.description, result);
+      assert.match(bundle.graph.description, /^\d+ jobs? · \d+ tasks?/);
+      assert.match(bundle.problems.description, /structural preview$/);
+      assert.deepEqual(bundle.targets.targets, [
+        { target: "ambiguous", description: "" },
+        { target: "dev", description: "" },
+      ]);
       assert.equal(shown.message, undefined);
       assert.match(shown.settings.cli.description, /^v\d+\.\d+\.\d+/);
     });
@@ -134,7 +132,7 @@ export function sidebarSuite() {
       assert.equal(result?.ok, true, "Check Again should run a check and return its result");
       const after = await sidebarWhen(checked);
       assert.equal(after.bundles[0]!.description, before.bundles[0]!.description);
-      assert.deepEqual(after.bundles[0]!.checkAgainst.options, before.bundles[0]!.checkAgainst.options);
+      assert.deepEqual(after.bundles[0]!.targets, before.bundles[0]!.targets);
     });
 
     it("a target the CLI rejects shows as not checked, and the structural preview again clears it", async function () {
@@ -144,14 +142,83 @@ export function sidebarSuite() {
       await vscode.commands.executeCommand("databricksBundleInspector.sidebar.inspect", { kind: "bundle", root });
       await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", "ambiguous");
 
-      const fellBack = await sidebarWhen((shown) => shown.bundles[0]!.checkAgainst.description !== "structural preview");
-      const group = fellBack.bundles[0]!.checkAgainst;
-      assert.equal(group.description, "structural preview · ambiguous couldn't be checked");
-      assert.deepEqual(group.options.filter((option) => option.inUse).map((option) => option.label), ["Structural preview"]);
+      const fellBack = await sidebarWhen((shown) => shown.bundles[0]!.graph.description.includes("ambiguous"));
+      assert.equal(fellBack.bundles[0]!.graph.description, "ambiguous couldn't be checked");
+
+      // Clicking Graph shows the graph as it is: it doesn't go back to the structural preview.
+      await vscode.commands.executeCommand("databricksBundleInspector.sidebar.inspect", { kind: "graph", root });
+      await sleep(2_000);
+      assert.equal((await sidebar()).bundles[0]!.graph.description, "ambiguous couldn't be checked");
+      assert.ok(fellBack.bundles[0]!.targets.targets.every((item) => item.description === ""));
 
       await vscode.commands.executeCommand("databricksBundleInspector.test.selectTarget", undefined);
-      const back = await sidebarWhen((shown) => shown.bundles[0]!.checkAgainst.description === "structural preview");
-      assert.equal(back.bundles[0]!.checkAgainst.description, "structural preview");
+      const back = await sidebarWhen((shown) => !shown.bundles[0]!.graph.description.includes("ambiguous"));
+      assert.match(back.bundles[0]!.graph.description, /^\d+ jobs? · \d+ tasks?/);
+    });
+
+    it("the Problems row opens the first problem where it is, as F8 does", async () => {
+      // The fixture's notebook reads a widget the job doesn't pass: one warning, in src/load.py.
+      const shown = await sidebarWhen((current) => checked(current) && current.bundles[0]!.problems.canOpen);
+      const bundle = shown.bundles[0]!;
+      assert.equal(bundle.problems.status, "problems", JSON.stringify(bundle.problems));
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+      await vscode.commands.executeCommand("databricksBundleInspector.sidebar.openProblems", { kind: "problems", root: bundle.root });
+      const editor = vscode.window.activeTextEditor;
+      const notebook = path.join(bundle.root, "src", "load.py");
+      assert.equal(editor?.document.fileName, notebook);
+      const lines = (await readFile(notebook, "utf8")).split(/\r?\n/);
+      assert.equal(editor?.selection.active.line, lines.findIndex((line) => line.includes("dbutils.widgets.get")));
+    });
+
+    it("with problems in several files, the Problems row lists them all by file to pick from", async function () {
+      this.timeout(120_000);
+      const root = (await sidebarWhen(checked)).bundles[0]!.root;
+      const jobFile = path.join(root, "resources", "job.yml");
+      const original = await readFile(jobFile, "utf8");
+      const document = await vscode.workspace.openTextDocument(jobFile);
+      const replaceAll = async (text: string) => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), text);
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
+      };
+      const window = vscode.window as { showQuickPick: typeof vscode.window.showQuickPick };
+      const showQuickPick = window.showQuickPick;
+      try {
+        // A second task whose notebook doesn't exist: a problem in job.yml, next to the one in load.py.
+        const extra = "\n        - task_key: extra\n          notebook_task:\n            notebook_path: ../src/missing_notebook.py\n";
+        await replaceAll(original.trimEnd() + extra);
+        const two = await sidebarWhen((shown) => shown.bundles[0]?.problems.description === "2 · structural preview");
+        assert.equal(two.bundles[0]!.problems.description, "2 · structural preview", JSON.stringify(two.bundles[0]!.problems));
+
+        let offered: Array<vscode.QuickPickItem & { problem?: { message: string } }> = [];
+        window.showQuickPick = (async (items: readonly vscode.QuickPickItem[]) => {
+          offered = [...items];
+          return offered.find((item) => item.label.includes("missing_notebook"));
+        }) as unknown as typeof vscode.window.showQuickPick;
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+        await vscode.commands.executeCommand("databricksBundleInspector.sidebar.openProblems", { kind: "problems", root });
+
+        const separators = offered.filter((item) => item.kind === vscode.QuickPickItemKind.Separator).map((item) => item.label);
+        // Short headings, the file name only, so the messages keep their room.
+        assert.deepEqual(separators, ["job.yml", "load.py"], JSON.stringify(offered));
+        const problems = offered.filter((item) => item.problem).map((item) => item.label);
+        assert.equal(problems.length, 2);
+        // Each one starts with its task.
+        assert.match(problems[0]!, /^\$\(error\) extra · /, problems[0]);
+        assert.match(problems[1]!, /^\$\(warning\) load · /, problems[1]);
+        assert.equal(two.bundles[0]!.problems.status, "errors");
+        assert.equal(two.bundles[0]!.status, "errors");
+        const editor = vscode.window.activeTextEditor;
+        assert.equal(editor?.document.fileName, jobFile);
+        const lines = (original.trimEnd() + extra).split(/\r?\n/);
+        assert.equal(editor?.selection.active.line, lines.findIndex((line) => line.includes("missing_notebook")));
+      } finally {
+        window.showQuickPick = showQuickPick;
+        await replaceAll(original);
+        await sidebarWhen((shown) => shown.bundles[0]?.problems.description === "1 · structural preview");
+      }
     });
 
     it("Open Bundle File opens the bundle's databricks.yml", async () => {

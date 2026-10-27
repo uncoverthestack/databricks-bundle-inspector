@@ -104,6 +104,10 @@
         "title": "Open Target"
       },
       {
+        "command": "databricksBundleInspector.sidebar.openProblems",
+        "title": "Open Bundle Problems"
+      },
+      {
         "command": "databricksBundleInspector.checkAllBundles",
         "title": "Check All Databricks Bundles Again",
         "icon": "$(refresh)"
@@ -243,6 +247,10 @@
           "when": "false"
         },
         {
+          "command": "databricksBundleInspector.sidebar.openProblems",
+          "when": "false"
+        },
+        {
           "command": "databricksBundleInspector.sidebar.openBundleFile",
           "when": "false"
         }
@@ -266,19 +274,29 @@
       ],
       "view/item/context": [
         {
-          "command": "databricksBundleInspector.sidebar.inspect",
+          "command": "databricksBundleInspector.sidebar.openBundleFile",
           "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
           "group": "inline@1"
         },
         {
-          "command": "databricksBundleInspector.sidebar.openBundleFile",
+          "command": "databricksBundleInspector.sidebar.checkAgain",
           "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
           "group": "inline@2"
         },
         {
+          "command": "databricksBundleInspector.sidebar.inspect",
+          "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
+          "group": "navigation@1"
+        },
+        {
+          "command": "databricksBundleInspector.sidebar.openBundleFile",
+          "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
+          "group": "navigation@2"
+        },
+        {
           "command": "databricksBundleInspector.sidebar.checkAgain",
           "when": "view == databricksBundleInspector.bundles && viewItem == bundle",
-          "group": "inline@3"
+          "group": "navigation@3"
         },
         {
           "command": "databricksBundleInspector.chooseCli",
@@ -342,6 +360,7 @@
     "test:e2e:saved-file:other-case": "npm run test:e2e:saved-file -- --folder-case other",
     "test:e2e:targets": "npm run test:e2e -- --suite targets --fixture src/test/e2e/fixtures/targets",
     "test:e2e:sidebar": "npm run test:e2e -- --suite sidebar --fixture src/test/e2e/fixtures/targets",
+    "test:e2e:workspace-changes": "npm run test:e2e -- --suite workspaceChanges --fixture src/test/e2e/fixtures/workspace-changes",
     "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes"
   },
   "lint-staged": {

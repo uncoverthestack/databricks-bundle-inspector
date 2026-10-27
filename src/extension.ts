@@ -83,6 +83,8 @@ import {
   setIssueDocsVersion,
   bundleLoadedFiles,
   completeCheckFindings,
+  bundleProblems,
+  type BundleProblem,
   type BundleValidationResult,
 } from "./extension/diagnostics.js";
 import { getWebviewContent, getWebviewPaths } from "./extension/webviewPanel.js";
@@ -102,12 +104,15 @@ import {
 import {
   bundleRow,
   bundlesMessage,
-  checkAgainst,
   cliCandidates,
   cliChoices,
   cliRow,
+  graphRow,
+  pathHints,
+  problemsRow,
   profileRow,
   targetLine,
+  targetsRow,
   type CliCandidate,
   type SidebarBundle,
   type SidebarCli,
@@ -116,6 +121,7 @@ import {
   BUNDLES_VIEW,
   BundlesTreeProvider,
   CHOOSE_CLI_COMMAND,
+  OPEN_PROBLEMS_COMMAND,
   OPEN_TARGET_COMMAND,
   SETTINGS_VIEW,
   SettingsTreeProvider,
@@ -271,7 +277,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       roots.map((root) => ({
         name: path.basename(root),
         state: checkStates.get(root) ?? "pending",
-        count: bundleProblemCount(root, diagnosticCollection),
+        count: bundleProblemCount(root),
         contents: bundleContentsByRoot.get(root),
         cliIssue: cliIssues.get(root),
       })),
@@ -316,12 +322,26 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     statusBarItem.show();
   }
 
+  /**
+   * Counts how often each bundle was forgotten (its folder removed, its file deleted). A
+   * check started before that is about a bundle that is gone, and is dropped on finishing.
+   */
+  const bundleGenerations = new Map<string, number>();
+  const generationOf = (bundleRoot: string) => bundleGenerations.get(bundleRoot) ?? 0;
+
+  /** Records a check's result, unless the bundle was forgotten since `generation`. Says whether it did. */
   function recordCheck(
     bundleRoot: string,
     result: BundleValidationResult,
     graph: BundleGraph | undefined,
-    options: { inspected?: boolean; cliPath: string | undefined },
-  ): void {
+    options: { inspected?: boolean; cliPath: string | undefined; generation: number },
+  ): boolean {
+    if (generationOf(bundleRoot) !== options.generation) {
+      // The check wrote its findings as it finished; they belong to no bundle now.
+      forgetBundleDiagnostics(bundleRoot, diagnosticCollection);
+      renderStatusBar();
+      return false;
+    }
     checkStates.set(bundleRoot, checkStateOf(result));
     // A failed check lists no targets; keep the last ones rather than show none.
     if (result.ok) targetsByRoot.set(bundleRoot, result.targetOptions ?? []);
@@ -359,6 +379,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     // The bundle whose graph was just opened is the one the user is looking at.
     if (options.inspected) lastStatusBarBundle = bundleRoot;
     renderStatusBar();
+    return true;
   }
   // Whether findings get resolved, compared between complete checks of the same bundle on
   // this machine. Only a daily summary, in ranges, is sent; see telemetry/bundleProgress.ts.
@@ -443,7 +464,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           ? (fileRunByName(cliFilesOnPath(lookup.pathValue, lookup.platform, lookup.isFile), lookup.platform) ?? cli.candidate)
           : cli.candidate;
         const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
-        const source = candidates.find((candidate) => same(candidate.path, file))?.source ?? (byName || process.platform !== "win32" ? "path" : "windowsPath");
+        // A cliPath setting of just `databricks` still runs it by name, but from the setting.
+        const fromSetting = cli.candidate === currentConfiguredCliPath();
+        const source = fromSetting
+          ? "setting"
+          : (candidates.find((candidate) => same(candidate.path, file))?.source ??
+            (byName || process.platform !== "win32" ? "path" : "windowsPath"));
         found = { ok: true, path: file, version: cli.versionOutput, source };
       } else {
         found = {
@@ -530,12 +556,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       forgetBundle(bundleRoot);
       return undefined;
     }
+    const generation = generationOf(bundleRoot);
     runningRefreshes.add(bundleRoot);
     waitingRefreshes.add(bundleRoot);
     await checkSlots.acquire();
-    waitingRefreshes.delete(bundleRoot);
-    refreshSidebar?.();
     try {
+      waitingRefreshes.delete(bundleRoot);
+      refreshSidebar?.();
+      // Forgotten (its folder removed) while it waited for its turn.
+      if (generationOf(bundleRoot) !== generation) return undefined;
       // Deleted while it waited for its turn.
       if (!hasBundleFile(bundleRoot)) {
         forgetBundle(bundleRoot);
@@ -550,7 +579,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           fileToBundleRoot,
         ),
       );
-      recordCheck(bundleRoot, result, graph, { cliPath });
+      if (!recordCheck(bundleRoot, result, graph, { cliPath, generation })) return undefined;
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
       }
@@ -642,6 +671,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
   /** Drops a bundle that is gone: its diagnostics, its watchers, and its place in the status bar. */
   function forgetBundle(bundleRoot: string): void {
+    bundleGenerations.set(bundleRoot, generationOf(bundleRoot) + 1);
     forgetBundleDiagnostics(bundleRoot, diagnosticCollection);
     const watch = bundleWatches.get(bundleRoot);
     watch?.rootWatcher.dispose();
@@ -706,6 +736,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     /** Errors and warnings the checks put in the Problems panel. Undefined when nothing was checked. */
     issueCount: number | undefined;
   }
+  /** The sidebar says "no bundle found" only after looking, not while it looks. */
+  function bundlesSearched(): void {
+    void vscode.commands.executeCommand("setContext", "databricksBundleInspector.bundlesSearched", true);
+  }
+
   async function checkBundlesIn(
     folders: readonly vscode.WorkspaceFolder[],
   ): Promise<OpenFoldersCheck> {
@@ -729,8 +764,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
       check.bundleCount = allRoots.length;
       for (const bundleRoot of allRoots) foundBundles.add(bundleRoot);
-      // The sidebar says "no bundle found" only after looking, not while it looks.
-      void vscode.commands.executeCommand("setContext", "databricksBundleInspector.bundlesSearched", true);
+      bundlesSearched();
       renderStatusBar();
       check.bundleAtRoot = localFolders.some((folder) => allRoots.includes(folder.uri.fsPath));
       // One at a time, so a folder with several bundles does not start several CLI runs at once.
@@ -760,6 +794,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       }
     } catch (error) {
       console.warn("[BundleInspector] checking bundles on open failed:", error);
+    } finally {
+      // Also when the search failed, so the view never stays on "Looking for bundles…".
+      bundlesSearched();
     }
     return check;
   }
@@ -771,6 +808,22 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         }
       }
       void checkBundlesIn(event.added);
+    }),
+  );
+
+  // A bundle made while the folder is open (`databricks bundle init` in a terminal, a
+  // checkout, a copy) is found as it appears, by the same rules as on open. A deleted one
+  // is forgotten by its own watcher's next check.
+  const newBundleWatcher = vscode.workspace.createFileSystemWatcher(BUNDLE_FILE_GLOB, false, true, true);
+  extensionContext.subscriptions.push(
+    newBundleWatcher,
+    newBundleWatcher.onDidCreate((uri) => {
+      if (uri.scheme !== "file" || !vscode.workspace.getWorkspaceFolder(uri)) return;
+      const [bundleRoot] = selectBundleRoots([uri.fsPath], Infinity);
+      if (!bundleRoot || foundBundles.has(bundleRoot)) return;
+      foundBundles.add(bundleRoot);
+      renderStatusBar();
+      scheduleRefresh(bundleRoot, "config");
     }),
   );
 
@@ -900,7 +953,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     activeStructuralResolutionBundle = inspection.structuralResolutionBundle;
   }
 
-  function postBundleData(data: object) {
+  /**
+   * The bundle whose graph the panel holds now. Not {@link activeBundleDir}, which is set
+   * as soon as a bundle is asked for: when that check fails, the panel still shows the
+   * bundle before it.
+   */
+  let shownBundleDir: string | undefined;
+
+  function postBundleData(bundleDir: string, data: object) {
+    shownBundleDir = bundleDir;
     activeBundleData = data;
     livePanel()?.webview.postMessage({
       type: "bundleData",
@@ -1040,7 +1101,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         if (!requestedTarget) {
           const messageData = bundleMessageDataFromInspection(probeInspection, undefined, { preserveView: true });
           if (messageData) {
-            postBundleData(messageData);
+            postBundleData(bundleDir, messageData);
           }
           return;
         }
@@ -1065,7 +1126,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         { preserveView: true },
       );
       if (messageData) {
-        postBundleData(messageData);
+        postBundleData(bundleDir, messageData);
       }
     } catch (error) {
       if (!isCurrent()) return;
@@ -1241,6 +1302,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       await trackBundleFiles(bundleDir, fileToBundleRoot);
       if (!isCurrent()) return;
       const cliPath = currentConfiguredCliPath();
+      const generation = generationOf(bundleDir);
       const inspection = await whileChecking(() =>
         inspectBundleAtTarget(bundleDir, requestedTarget),
       );
@@ -1259,8 +1321,8 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           fileToBundleRoot,
         );
         if (!isCurrent()) return;
-        recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true, cliPath });
-        if (result.ok && diagnosticsGraph) {
+        const recorded = recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true, cliPath, generation });
+        if (recorded && result.ok && diagnosticsGraph) {
           await watchBundle(bundleDir, result.data, diagnosticsGraph);
         }
       }
@@ -1343,7 +1405,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const shown = livePanel();
       if (shown) {
         shown.reveal(vscode.ViewColumn.One);
-        postBundleData(bundleMessageData);
+        postBundleData(bundleDir, bundleMessageData);
       } else {
         const created = vscode.window.createWebviewPanel(
           "bundleInspector",
@@ -1446,6 +1508,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         // Kept even if the panel closes while its page loads (a quick close, or a close
         // still under way from before): the next panel then gets it on "webviewReady".
         activeBundleData = bundleMessageData;
+        shownBundleDir = bundleDir;
         try {
           created.webview.html = await getWebviewContent(
             created.webview,
@@ -1458,7 +1521,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         // Closed while loading: nothing to show it in.
         if (!isCurrent() || livePanel() !== created) return;
 
-        postBundleData(bundleMessageData);
+        postBundleData(bundleDir, bundleMessageData);
       }
     } catch (error) {
       if (!isCurrent()) return;
@@ -1506,7 +1569,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         const bundles = sidebarBundles();
         return {
           message: bundlesMessage(bundles),
-          bundles: bundles.map((bundle) => ({ root: bundle.root, ...bundleRow(bundle), checkAgainst: checkAgainst(bundle) })),
+          bundles: bundles.map((bundle) => ({
+            root: bundle.root,
+            ...bundleRow(bundle),
+            graph: graphRow(bundle),
+            problems: problemsRow(bundle),
+            targets: targetsRow(bundle),
+          })),
           settings: { cli: cliRow(sidebarCli), profile: profileRow(getConfiguredProfile(getConfiguration())) },
         };
       }),
@@ -1546,15 +1615,24 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return existsSync(yml) ? yml : path.join(root, "databricks.yaml");
   }
   function sidebarBundles(): SidebarBundle[] {
-    const graphOpen = livePanel() !== undefined;
-    return [...foundBundles].map((root) => {
-      const target = graphOpen && activeBundleDir === root ? activeRequestedTarget : undefined;
+    // A target only applies to the row of the bundle the graph shows.
+    const graphBundle = livePanel() !== undefined && shownBundleDir === activeBundleDir ? shownBundleDir : undefined;
+    const places = [...foundBundles].map((root) => ({
+      root,
+      name: path.basename(root),
+      displayPath: vscode.workspace.asRelativePath(bundleFilePath(root), true),
+    }));
+    const hints = pathHints(places);
+    return places.map(({ root, name, displayPath }) => {
+      const target = graphBundle === root ? activeRequestedTarget : undefined;
+      const pathHint = hints.get(root);
       return {
         root,
-        name: path.basename(root),
-        displayPath: vscode.workspace.asRelativePath(bundleFilePath(root), true),
+        name,
+        displayPath,
+        ...(pathHint ? { pathHint } : {}),
         state: checkStates.get(root),
-        count: bundleProblemCount(root, diagnosticCollection),
+        count: bundleProblemCount(root),
         contents: bundleContentsByRoot.get(root),
         cliIssue: cliIssues.get(root),
         checking: runningRefreshes.has(root) && !waitingRefreshes.has(root),
@@ -1563,7 +1641,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       };
     });
   }
-  const bundlesTree = new BundlesTreeProvider(sidebarBundles);
+  const bundlesTree = new BundlesTreeProvider(sidebarBundles, {
+    light: vscode.Uri.joinPath(extensionContext.extensionUri, "resources", "inspect-light.svg"),
+    dark: vscode.Uri.joinPath(extensionContext.extensionUri, "resources", "inspect-dark.svg"),
+  });
   const settingsTree = new SettingsTreeProvider(() => ({
     cli: sidebarCli,
     profile: getConfiguredProfile(getConfiguration()),
@@ -1594,9 +1675,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   async function openTarget(root: string, target: string): Promise<void> {
     const files = [bundleFilePath(root), ...(bundleLoadedFiles().get(root) ?? [])];
     for (const file of files) {
+      // An open file as the editor has it, unsaved edits included, so the line is the one shown.
+      const open = vscode.workspace.textDocuments.find((document) => document.uri.fsPath === file);
       let text: string;
       try {
-        text = readFileSync(file, "utf8");
+        text = open ? open.getText() : readFileSync(file, "utf8");
       } catch {
         continue;
       }
@@ -1607,6 +1690,94 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return;
     }
     await vscode.window.showTextDocument(vscode.Uri.file(bundleFilePath(root)));
+  }
+
+  /**
+   * The sidebar's Graph row. A graph already open on this bundle comes to the front as it
+   * is, with the target it shows, as the row says; otherwise it opens on the structural preview.
+   */
+  async function openGraph(root: string): Promise<void> {
+    const panel = livePanel();
+    // Only a graph that shows this bundle: a failed check of it leaves the one before on screen.
+    if (panel && shownBundleDir === root && activeBundleDir === root) {
+      panel.reveal();
+      return;
+    }
+    await inspectBundle(undefined, undefined, root);
+  }
+
+  /** Opens a problem where it is, with its explanation below the line, as F8 does. */
+  async function openProblem(problem: BundleProblem): Promise<void> {
+    const start = problem.range.start;
+    await vscode.window.showTextDocument(problem.uri, { selection: new vscode.Range(start, start) });
+    // From a cursor on the problem, VS Code's own "next problem" opens that one.
+    await vscode.commands.executeCommand("editor.action.marker.next");
+  }
+
+  /**
+   * The Problems row: one problem opens where it is. Several, often in several files, are
+   * listed first, by file, so the count matches what can be picked; moving through the
+   * list shows each one in the editor. Problems with no line in a file are in the graph.
+   */
+  async function openBundleProblems(root: string): Promise<void> {
+    const { inFiles, graphOnly } = bundleProblems(root);
+    if (inFiles.length === 1 && graphOnly === 0) return openProblem(inFiles[0]!);
+    if (inFiles.length === 0) {
+      if (graphOnly > 0) await openGraph(root);
+      return;
+    }
+    type Item = vscode.QuickPickItem & { problem?: BundleProblem; graph?: true };
+    const items: Item[] = [];
+    // Headings name the file only, so the messages keep their room; two files with the
+    // same name get their folder too.
+    const files = [...new Set(inFiles.map((problem) => problem.uri.fsPath))];
+    const sameName = (file: string) => files.filter((other) => path.basename(other) === path.basename(file)).length > 1;
+    let file: string | undefined;
+    for (const problem of inFiles) {
+      if (problem.uri.fsPath !== file) {
+        file = problem.uri.fsPath;
+        const name = path.basename(file);
+        items.push({
+          label: sameName(file) ? `${name} (${path.basename(path.dirname(file))})` : name,
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+      }
+      // The task first: several tasks often share one message, such as the same missing file.
+      const icon = problem.severity === vscode.DiagnosticSeverity.Error ? "$(error)" : "$(warning)";
+      items.push({
+        label: `${icon} ${problem.owner ? `${problem.owner} · ` : ""}${problem.message}`,
+        description: `Ln ${problem.range.start.line + 1}`,
+        problem,
+      });
+    }
+    if (graphOnly > 0) {
+      items.push(
+        { label: "Only in the graph", kind: vscode.QuickPickItemKind.Separator },
+        {
+          label: `$(type-hierarchy) ${graphOnly === 1 ? "1 problem has" : `${graphOnly} problems have`} no line in a file`,
+          description: "opens the graph",
+          graph: true,
+        },
+      );
+    }
+    const total = inFiles.length + graphOnly;
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `${path.basename(root)}: ${total} problems · structural preview`,
+      placeHolder: "Go to a problem…",
+      matchOnDescription: true,
+      onDidSelectItem: (item) => {
+        const problem = (item as Item).problem;
+        if (!problem) return;
+        const start = problem.range.start;
+        void vscode.window.showTextDocument(problem.uri, {
+          preview: true,
+          preserveFocus: true,
+          selection: new vscode.Range(start, start),
+        });
+      },
+    });
+    if (picked?.problem) await openProblem(picked.problem);
+    else if (picked?.graph) await openGraph(root);
   }
 
   /** Checks every bundle again, after the CLI changed. */
@@ -1679,7 +1850,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (event.visible) revealOpenFileBundle();
     }),
     vscode.commands.registerCommand("databricksBundleInspector.sidebar.inspect", (element?: BundlesElement) =>
-      element ? inspectBundle(undefined, undefined, element.root) : undefined,
+      element ? openGraph(element.root) : undefined,
     ),
     vscode.commands.registerCommand("databricksBundleInspector.sidebar.checkAgain", (element?: BundlesElement) =>
       element ? refreshBundle(element.root, checkAgainFlags) : undefined,
@@ -1689,6 +1860,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
     }),
     vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => openTarget(root, target)),
+    vscode.commands.registerCommand(OPEN_PROBLEMS_COMMAND, (element?: BundlesElement) =>
+      element ? openBundleProblems(element.root) : undefined,
+    ),
     vscode.commands.registerCommand("databricksBundleInspector.openGuide", () =>
       vscode.env.openExternal(vscode.Uri.parse(usageDocsUrl(extensionVersion))),
     ),
@@ -1749,7 +1923,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           description: vscode.workspace.asRelativePath(root, true),
           detail: bundleSummary(
             checkStates.get(root),
-            bundleProblemCount(root, diagnosticCollection),
+            bundleProblemCount(root),
             cliIssues.get(root),
           ),
           root,
