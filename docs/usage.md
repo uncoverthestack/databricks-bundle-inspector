@@ -40,6 +40,13 @@ The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipel
 
 The graph doesn't show the tables inside a pipeline. In a job's graph, a pipeline task's **Pipeline** row opens its pipeline.
 
+**Copy review**, at the right of the graph's header, copies a Markdown review of the job or pipeline the graph shows, for a pull request or a chat. For a job it's a menu:
+
+- **Short summary**: the bundle, target and job, up to 12 problems, each labelled **Error** or **Warning** with errors first, the parameter flow, the schedule and file counts. For Slack, Teams or Jira, which don't draw diagrams.
+- **Full report**: for GitHub or GitLab. A table with the bundle, target, job, how it starts, the Databricks CLI's version, the inspector's version and when it was checked; the error and warning counts; a picture of the job as a [Mermaid](https://mermaid.js.org) diagram, from how it starts to its last task, with tasks that have problems in red (error) or amber (warning), pipelines rounded, if/else conditions as diamonds and for-each loops as dashed boxes; the errors, then the warnings, with the task, file and line; tables of the tasks (problems first), job parameters and files; and what the report can't vouch for. A job with more than 50 tasks gets no picture, and its tables stop at 50 rows. The report stays under 60,000 characters, below GitHub's 65,536 for a comment: when it would be longer, it keeps the header, counts, errors and warnings first and says what it left out.
+
+A pipeline has the short summary only.
+
 ## Sidebar
 
 The **Databricks Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.

@@ -173,7 +173,7 @@ export function graphRefreshSuite() {
         const review = await vscode.env.clipboard.readText();
         assert.doesNotMatch(review, /Job:|Selected job|file references/);
         // Its one problem, the notebook listed as a file, and none of the bundle's other issues.
-        assert.match(review, /### Issues\n- "\.\.\/src\/task\.py" may be a notebook, not a file\. \(jobs\.yml:\d+\)\n\n### Run by/);
+        assert.match(review, /### Issues\n- \*\*Error\*\* · "\.\.\/src\/task\.py" may be a notebook, not a file\. \(jobs\.yml:\d+\)\n\n### Run by/);
         assert.match(review, /### Run by\n- alpha_second \(task refresh\)\n- alpha_second \(task refresh_each\)/);
         assert.match(review, /- 2 sources in libraries\n- 1 found\n- 1 a notebook listed as a file/);
 
@@ -229,6 +229,23 @@ export function graphRefreshSuite() {
         await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the loop's Pipeline row");
         await evaluate(`${pipelineRow}[0].click()`);
         await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view from the loop");
+
+        // A job's Copy review is a menu; Full report adds the task graph, built by the extension.
+        await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => await evaluate(`Boolean(${taskNode("refresh_each")})`) === true, "alpha_second's graph");
+        await vscode.env.clipboard.writeText("");
+        await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
+        await waitFor(async () => await evaluate(`document.querySelectorAll('[role="menuitem"]').length`) === 2, "the Copy review menu");
+        await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(b => b.textContent.startsWith('Full report')).click()`);
+        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("## Databricks Bundle Review: alpha_second"), "the copied full report");
+        const report = await vscode.env.clipboard.readText();
+        assert.match(report, /\| Databricks CLI \| \d+\.\d+\.\d+ \|/);
+        assert.match(report, /\| Databricks Bundle Inspector \| \d+\.\d+\.\d+ \|/);
+        assert.match(report, /```mermaid\nflowchart LR\n/);
+        assert.match(report, /t2\(\["<b>refresh<\/b><br\/>Pipeline"\]\)/);
+        assert.match(report, /subgraph t3\["refresh_each · for each of \[1, 2\]"\]/);
+        assert.match(report, /t1 --> t2\n {2}t2 --> t3/);
+        assert.equal(await evaluate(`document.querySelectorAll('[role="menuitem"]').length`), 0, "the menu closes");
       } finally {
         browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");

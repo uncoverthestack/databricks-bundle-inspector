@@ -9,14 +9,22 @@ export interface TextSpan {
 const QUOTES = new Set(['"', "'"]);
 
 /** Where a YAML comment starts on the line: a `#` after a space or at the start, outside quotes. */
-function commentStart(line: string): number {
-  let quote: string | undefined;
-  for (let i = 0; i < line.length; i++) {
+function commentStart(line: string, valueStart: number): number {
+  // Only an opening quote at the start makes this a quoted YAML scalar. Quotes
+  // inside a plain path (../it's/a.py) are ordinary characters.
+  let quote = QUOTES.has(line[valueStart] ?? "") ? line[valueStart] : undefined;
+  for (let i = valueStart + (quote ? 1 : 0); i < line.length; i++) {
     const char = line[i]!;
     if (quote) {
+      if (quote === '"' && char === "\\") {
+        i++;
+        continue;
+      }
+      if (quote === "'" && char === "'" && line[i + 1] === "'") {
+        i++;
+        continue;
+      }
       if (char === quote) quote = undefined;
-    } else if (QUOTES.has(char)) {
-      quote = char;
     } else if (char === "#" && (i === 0 || line[i - 1] === " " || line[i - 1] === "\t")) {
       return i;
     }
@@ -50,7 +58,7 @@ function isWholeValue(line: string, start: number, end: number): boolean {
 export function locateFix(line: string, oldText: string, column: number): TextSpan | undefined {
   if (!oldText) return undefined;
   const found: TextSpan[] = [];
-  const code = commentStart(line);
+  const code = commentStart(line, column - 1);
   for (let start = line.indexOf(oldText); start !== -1; start = line.indexOf(oldText, start + 1)) {
     const end = start + oldText.length;
     if (end > code) break;
@@ -119,6 +127,6 @@ export function writtenValueAt(line: string, column: number): string | undefined
     if (first === "'" && line[end + 1] === "'") return undefined;
     return inner || undefined;
   }
-  const value = line.slice(start, commentStart(line)).trim();
+  const value = line.slice(start, commentStart(line, start)).trim();
   return value || undefined;
 }

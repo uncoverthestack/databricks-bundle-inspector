@@ -107,6 +107,24 @@ const BUNDLE_FILE = [
 ].join("\n");
 
 describe(`"Did you mean" for a missing file (${cli})`, () => {
+  test("a quote in a plain missing path does not hide a quick fix before a YAML comment", async () => {
+    const dir = await bundle("quoted-plain-comment", {
+      "databricks.yml": BUNDLE_FILE,
+      "src/it's.py": NOTEBOOK,
+      "resources/job.yml": [
+        "resources:", "  jobs:", "    nightly:", "      name: nightly",
+        "      tasks:", "        - task_key: train", "          notebook_task:",
+        "            notebook_path: ../old/it's.py # moved notebook", "",
+      ].join("\n"),
+    });
+    const issues = await findings(dir);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.fix?.newText).toBe("../src/it's.py");
+    applyFixes(issues);
+    expect(await findings(dir)).toEqual([]);
+    expect(await validateDev(dir)).toMatch(/Validation OK!/);
+  });
+
   test("each suggestion is written from the YAML file's folder, and the CLI accepts every one", async () => {
     const dir = await bundle("fixable", {
       "databricks.yml": BUNDLE_FILE,

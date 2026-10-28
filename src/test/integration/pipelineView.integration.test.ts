@@ -1,10 +1,13 @@
 import { describe, expect, test } from "@jest/globals";
 import path from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../bundle/issues.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 import { buildPipelineView, pipelineKeysOf, pipelineReviewSummary } from "../../webview/lib/pipelineView.js";
+import { resourceAtLine } from "../../bundle/resourceFiles.js";
 
 /**
  * The pipeline view from a bundle the real CLI resolved: every value it shows comes from
@@ -23,6 +26,26 @@ async function inspect(dir: string) {
 }
 
 describe(`pipeline view (${cli})`, () => {
+  test.each(["42", "null", "~", "true"])("resource selection agrees with the CLI for the YAML key %s", async (key) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "dbi-scalar-resource-"));
+    try {
+      const text = `bundle:\n  name: scalar-resource\nresources:\n  pipelines:\n    first: {name: first}\n    ${key}:\n      name: selected\n`;
+      await writeFile(path.join(root, "databricks.yml"), text);
+      const result = await validateBundle(root, undefined, cli);
+      if (key === "42" || key === "true") {
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error("CLI unexpectedly accepted a non-string resource key");
+        expect(result.error.details).toContain("invalid key tag");
+        return;
+      }
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      expect(Object.keys(result.data.resources?.pipelines ?? {})).toContain(key);
+      expect(resourceAtLine(text, 6)).toEqual({ group: "pipelines", key });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("shows each pipeline of a bundle as its YAML defines it", async () => {
     const { parsed, graph, issues } = await inspect(FIXTURE);
     // The CLI lists resources by key, whatever order the YAML has them in.

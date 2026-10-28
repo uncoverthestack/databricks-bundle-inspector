@@ -1,6 +1,6 @@
 import { describe, test, expect } from "@jest/globals";
 import { parse } from "yaml";
-import { fixEdit, locateFix, yamlValue } from "../../../bundle/quickFix.js";
+import { fixEdit, locateFix, writtenValueAt, yamlValue } from "../../../bundle/quickFix.js";
 
 /** The text a fix would replace, or undefined when none is offered. */
 function replaced(line: string, oldText: string, column: number): string | undefined {
@@ -64,6 +64,26 @@ describe("locateFix", () => {
 });
 
 describe("yamlValue", () => {
+  test("1000 generated path strings round-trip in all quote styles and both YAML versions", () => {
+    const alphabet = [..."abc012 /:#'\"`[]{}&*!\\", "\n", "\r", "\t", "\u0085", "\u2028", "\u2029", "é", "🐍"];
+    let seed = 42;
+    const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+    for (let i = 0; i < 1000; i++) {
+      const value = Array.from({ length: next() % 40 }, () => alphabet[next() % alphabet.length]).join("");
+      for (const quote of [undefined, '"', "'"] as const) {
+        for (const version of ["1.1", "1.2"] as const) {
+          expect(parse(`key: ${yamlValue(value, quote)}`, { version })).toEqual({ key: value });
+        }
+      }
+    }
+  });
+
+  test.each(["a\u0085b.py", "a\u2028b.py", "a\u2029b.py", "a\r\nb.py"])("preserves YAML line-break characters in %j", (value) => {
+    for (const quote of [undefined, '"', "'"] as const) {
+      expect(parse(`key: ${yamlValue(value, quote)}`)).toEqual({ key: value });
+    }
+  });
+
   test("keeps a plain value plain when YAML reads it back unchanged", () => {
     expect(yamlValue("../src/etl.py", undefined)).toBe("../src/etl.py");
     expect(yamlValue("../it's/a.py", undefined)).toBe("../it's/a.py");
@@ -104,6 +124,12 @@ describe("yamlValue", () => {
     for (const quote of [undefined, '"', "'"] as const) {
       expect(parse(`key: ${yamlValue(value, quote)}`)).toEqual({ key: value });
     }
+  });
+});
+
+describe("writtenValueAt", () => {
+  test.each(["../it's/a.py", '../say"hi/a.py'])("a quote inside the plain path %s cannot hide its trailing comment", (value) => {
+    expect(writtenValueAt(`  path: ${value} # old location`, 9)).toBe(value);
   });
 });
 

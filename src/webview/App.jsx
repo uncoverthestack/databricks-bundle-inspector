@@ -1417,14 +1417,14 @@ function buildBundleReviewSummary({
   if (issues.length === 0) {
     lines.push("- No issues detected in this job.");
   } else {
-    for (const issue of issues.slice(0, 12)) {
+    for (const issue of orderBySeverity(issues).slice(0, 12)) {
       const taskPrefix =
         issue.subtitle && issue.subtitle !== issue.title
           ? `${issue.subtitle}: `
           : "";
       const location = formatSourceLocation(issue.file, issue.line);
       lines.push(
-        `- ${taskPrefix}${issue.title}${location ? ` (${location})` : ""}`,
+        `- **${severityMeta(issue.severity).label}** · ${taskPrefix}${issue.title}${location ? ` (${location})` : ""}`,
       );
     }
     if (issues.length > 12) {
@@ -2712,6 +2712,7 @@ export default function App({
   onSelectTarget,
   onOpenFile,
   onCopyReviewSummary,
+  onCopyReviewReport,
   onTelemetry,
 }) {
   const colorMode = useVscodeColorMode();
@@ -3114,6 +3115,12 @@ export default function App({
         issueCount={selectedJobIssueCount}
         onCopyReviewSummary={
           onCopyReviewSummary ? handleCopyReviewSummary : undefined
+        }
+        // The full report is for a job; a pipeline has the summary only, for now.
+        onCopyReviewReport={
+          onCopyReviewReport && !pipelineView && jobNode?.resourceKey
+            ? () => onCopyReviewReport(jobNode.resourceKey)
+            : undefined
         }
       />
 

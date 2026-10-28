@@ -34,12 +34,14 @@ export interface FileList {
 export function filesUnder(root: string, maxFiles = MAX_FILES): FileList {
   const files: string[] = [];
   const pending = [root];
+  let readable = true;
   while (pending.length > 0 && files.length < maxFiles) {
     const folder = pending.pop()!;
     let entries;
     try {
       entries = readdirSync(folder, { withFileTypes: true });
     } catch {
+      readable = false;
       continue;
     }
     for (const entry of entries) {
@@ -47,12 +49,13 @@ export function filesUnder(root: string, maxFiles = MAX_FILES): FileList {
       if (entry.isDirectory()) {
         if (!SKIPPED_FOLDERS.includes(entry.name)) pending.push(full);
       } else if (entry.isFile()) {
+        if (files.length >= maxFiles) return { files, complete: false };
         files.push(full);
       }
     }
   }
   // Folders left unread may hold another file with the name.
-  return { files, complete: pending.length === 0 };
+  return { files, complete: readable && pending.length === 0 };
 }
 
 function fitsField(file: string, expects: ExpectedFile): boolean {
