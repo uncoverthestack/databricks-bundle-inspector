@@ -16,6 +16,9 @@ export const SKIPPED_FOLDERS: readonly string[] = [
   ".databricks",
   ".venv",
   "venv",
+  "site-packages",
+  ".tox",
+  "__pycache__",
 ];
 
 /** Glob for the folders in {@link SKIPPED_FOLDERS}, at any depth. */
