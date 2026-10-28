@@ -44,6 +44,7 @@ export const SIDEBAR_ACTIONS = [
   "check_all",
   "choose_cli",
   "choose_profile",
+  "open_sign_in_terminal",
 ] as const;
 export type SidebarAction = (typeof SIDEBAR_ACTIONS)[number];
 
@@ -56,7 +57,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
     issue_count: bucket,
   },
   inspect_bundle: {
-    trigger: oneOf("command", "issues_command", "target_switch", "status_bar", "sidebar"),
+    trigger: oneOf("command", "issues_command", "target_switch", "status_bar", "sidebar", "sign_in_retry"),
     from_resource_file: bool,
     outcome: oneOf(
       "ok",
@@ -109,6 +110,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   issue_item_selected: {},
   quick_fix_applied: { kind: oneOf(...QUICK_FIX_KINDS) },
   sidebar_opened: { at_start: bool },
+  sign_in: { step: oneOf("terminal_opened", "profile_updated"), from: oneOf("graph", "sidebar") },
   sidebar_action: { action: oneOf(...SIDEBAR_ACTIONS) },
   bundle_progress: {
     comparison: oneOf("compared", "not_comparable", "check_incomplete"),

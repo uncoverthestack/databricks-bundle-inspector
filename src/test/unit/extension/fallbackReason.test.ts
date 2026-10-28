@@ -13,7 +13,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: failed during request visitor: default auth: cannot configure default credentials, please check https://docs.databricks.com/en/dev-tools/auth.html#databricks-client-unified-authentication to configure credentials for your preferred authentication method. Config: config_file=/dev/null. Env: DATABRICKS_CONFIG_FILE",
       },
-      "you're not logged in to Databricks",
+      "you're not signed in to Databricks",
     ],
     [
       "a profile that doesn't exist",
@@ -23,7 +23,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: cannot resolve bundle auth configuration: resolve: /home/me/.databrickscfg has no NO_SUCH_PROFILE_E2E profile configured. Config: profile=NO_SUCH_PROFILE_E2E",
       },
-      'there\'s no login profile named "NO_SUCH_PROFILE_E2E"',
+      'there\'s no sign-in profile named "NO_SUCH_PROFILE_E2E"',
     ],
     [
       "several matching profiles",
@@ -33,7 +33,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: cannot resolve bundle auth configuration: resolve: https://ambiguous.example.invalid: multiple profiles matched: first-one, second one: please set DATABRICKS_CONFIG_PROFILE or provide --profile flag to specify one.",
       },
-      "several login profiles match this workspace",
+      "several sign-in profiles match this workspace",
     ],
     [
       "a profile for another workspace",
@@ -43,7 +43,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: cannot resolve bundle auth configuration: the host in the profile (https://b.example.invalid) doesn’t match the host configured in the bundle (https://ambiguous.example.invalid)",
       },
-      "the login profile is for a different workspace",
+      "the sign-in profile is for a different workspace",
     ],
     [
       "a target removed from the bundle",
@@ -62,7 +62,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           'error: failed during request visitor: error getting token: token refresh: Post "https://adb-1.azuredatabricks.net/oidc/v1/token": dial tcp: lookup adb-1.azuredatabricks.net: no such host',
       },
-      "your Databricks login needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)",
+      "your Databricks sign-in needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)",
     ],
     [
       "an expired login Databricks turned down",
@@ -72,7 +72,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: failed during request visitor: error getting token: token refresh: Refresh token is invalid (error code: invalid_grant)",
       },
-      'your Databricks login has expired. Run "databricks auth login" to log in again',
+      "your Databricks sign-in has expired",
     ],
     [
       "no saved login for this workspace",
@@ -82,7 +82,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         details:
           "error: failed during request visitor: error getting token: cache: no cached credentials; run `databricks auth login` to sign in",
       },
-      'you\'re not logged in to this workspace. Run "databricks auth login" to log in',
+      "you're not signed in to this workspace",
     ],
     [
       "any other login failure",
@@ -91,7 +91,7 @@ describe("targetFallback: the short reason in the graph's note", () => {
         errorCode: "VALIDATION_FAILED",
         details: "error: failed during request visitor: error getting token: something new",
       },
-      "your Databricks login couldn't be used",
+      "your Databricks sign-in couldn't be used",
     ],
     [
       "anything else: the CLI's first line",
@@ -112,6 +112,8 @@ describe("targetFallback: the short reason in the graph's note", () => {
     ["unreachable", 'error getting token: token refresh: Post "https://h/oidc/v1/token": dial tcp', undefined, "login_unreachable"],
     ["expired", "error getting token: token refresh: Refresh token is invalid", undefined, "login_expired"],
     ["no saved login", "error getting token: cache: no cached credentials", undefined, "not_logged_in"],
+    // CLI 0.299.0's words for the same, captured with a browser profile that has no saved sign-in.
+    ["no saved login (0.299.0)", "error: failed during request visitor: error getting token: cache: token not found", undefined, "not_logged_in"],
     ["other login", "error getting token: something", undefined, "login_other"],
     ["anything else", "error: job x is not defined", undefined, "other"],
   ])("%s has the telemetry code the schema takes", (_name, details, errorCode, code) => {
