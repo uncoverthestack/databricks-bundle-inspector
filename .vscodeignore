@@ -39,6 +39,7 @@ checks.md
 code-review.md
 src/test
 scripts/**
+changes/**
 .husky
 .vscode/**
 .gitignore
