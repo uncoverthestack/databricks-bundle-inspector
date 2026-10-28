@@ -31,7 +31,7 @@ export default function AppHeader({
       style={{ backgroundColor: UI_COLOR.panel }}
     >
       <span className="truncate text-sm font-semibold text-fg">
-        {bundleName ?? "Bundle Inspector"}
+        {bundleName ?? "Databricks Bundle Inspector"}
       </span>
       {targetOptions.length > 0 ? (
         <select

@@ -42,7 +42,7 @@ The graph doesn't show the tables inside a pipeline. In a job's graph, a pipelin
 
 ## Sidebar
 
-The **Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
+The **Databricks Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
 
 **Bundles** lists every bundle in the open folders, named by its folder, with the same result as the status bar (`2 problems`, `no problems`, `not checked yet`, or why the Databricks CLI can't be used). When two bundles have the same folder name, each also shows where it is, for example `teams/sales/analytics`. The bundle of the file you have open is selected, as the Explorer selects the open file. Hover a bundle for **Open Bundle File** (its `databricks.yml`) and **Check Again**; right-click it for **Open Graph** too. **Check All Databricks Bundles Again**, at the top of the section, checks every bundle, one at a time.
 
@@ -119,8 +119,8 @@ Nothing is written into your bundle folder. For a real target the CLI would norm
 | `databricksBundleInspector.locateCli` | Locate the Databricks CLI… | Command Palette and the sidebar; pick the CLI file, saved to `databricksBundleInspector.cliPath` |
 | `databricksBundleInspector.openCliInstallGuide` | Open the Databricks CLI Install Guide | Command Palette and the sidebar; the install steps for your OS |
 | `databricksBundleInspector.chooseCli` | Choose the Databricks CLI… | Command Palette and the sidebar's CLI row; every Databricks CLI found, with its version and where it is from |
-| `databricksBundleInspector.openGuide` | Open the Bundle Inspector Guide | Command Palette and the sidebar's `...` menu; this page, for your version |
-| `databricksBundleInspector.reportIssue` | Report a Bundle Inspector Issue | Command Palette and the sidebar's `...` menu; a new GitHub issue |
+| `databricksBundleInspector.openGuide` | Open the Databricks Bundle Inspector Guide | Command Palette and the sidebar's `...` menu; this page, for your version |
+| `databricksBundleInspector.reportIssue` | Report a Databricks Bundle Inspector Issue | Command Palette and the sidebar's `...` menu; a new GitHub issue |
 
 ## How it works
 
