@@ -227,6 +227,17 @@ describe("jobReviewReport", () => {
     expect(manual).not.toContain("start((");
   });
 
+  // Shapes from the Databricks CLI's acceptance bundles (undefined_resources, variables/issue_2436).
+  test("another job with no body, or with tasks from a complex variable, doesn't stop the report", async () => {
+    const tasks = SALES_JOB.tasks.slice(0, 1);
+    const runner = { name: "r", tasks: [{ task_key: "go", run_job_task: { job_id: "${resources.jobs.nightly.id}" } }] };
+    const others = { empty: null, from_variable: { tasks: "${var.job_tasks}" }, runner };
+    expect(await report(bundle({ name: "n", tasks }, others))).toContain("| Starts | By the job runner, in this bundle |");
+
+    const tables = await report(bundle({ name: "t", trigger: { table_update: { table_names: "${var.tables}" } }, tasks }));
+    expect(tables).toContain("| Starts | By hand or from outside this bundle |");
+  });
+
   test("the structural preview says the workspace wasn't contacted; an unknown CLI says so", async () => {
     const { cliVersion: _known, ...unknownCli } = context;
     const markdown = await report(bundle(SALES_JOB), () => [], {

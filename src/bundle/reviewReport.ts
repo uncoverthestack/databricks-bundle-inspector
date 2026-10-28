@@ -189,7 +189,8 @@ function startsText(
     if (trigger.file_arrival?.url) {
       return { text: `When a file lands in ${trigger.file_arrival.url}${pause}`, node: `When a file lands${pause}` };
     }
-    const tables = trigger.table_update?.table_names ?? [];
+    // The structural preview keeps `table_names: ${var.tables}` as its text.
+    const tables = Array.isArray(trigger.table_update?.table_names) ? trigger.table_update.table_names : [];
     if (tables.length > 0) {
       return { text: `When ${tables.join(", ")} change${tables.length === 1 ? "s" : ""}${pause}`, node: `When ${plural(tables.length, "table")} change${pause}` };
     }
@@ -202,9 +203,14 @@ function startsText(
   if (Array.isArray(job.triggers) && job.triggers.length > 0) {
     return { text: `${plural(job.triggers.length, "trigger")}, set in the bundle file`, node: plural(job.triggers.length, "trigger") };
   }
+  // A job with no body is null, and `tasks: ${var.tasks}` stays text in the structural preview.
+  const tasksOf = (other: unknown): JobTask[] => {
+    const tasks = (other as { tasks?: unknown } | null)?.tasks;
+    return Array.isArray(tasks) ? tasks.filter((task): task is JobTask => typeof task === "object" && task !== null) : [];
+  };
   const runner = Object.entries(parsedBundle.resources?.jobs ?? {}).find(([key, other]) =>
     key !== jobKey &&
-    ((other as { tasks?: Array<JobTask> }).tasks ?? []).some(
+    tasksOf(other).some(
       (task) => {
         const inner = (task.for_each_task as { task?: JobTask } | undefined)?.task;
         return [task, inner].some((candidate) => candidate?.run_job_task?.job_id === `\${resources.jobs.${jobKey}.id}`);

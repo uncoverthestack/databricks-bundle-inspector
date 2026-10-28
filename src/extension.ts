@@ -1579,7 +1579,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
                         `Could not copy the review report: ${error instanceof Error ? error.message : String(error)}`,
                       ),
                   ),
-            );
+            ).catch((error: unknown) => {
+              // Building the report failed: say so rather than copy nothing.
+              console.warn("[BundleInspector] review report failed:", error);
+              void vscode.window.showWarningMessage(
+                `Could not build the review report: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
           }
           if (
             message?.type === "copyReviewSummary" &&
