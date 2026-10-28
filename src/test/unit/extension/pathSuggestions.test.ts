@@ -37,6 +37,22 @@ const suggest = (rawPath: string, expects: "notebook" | "file" | "any", sourceFi
   });
 
 describe("movedFileSuggestion", () => {
+  test("a single wide directory cannot bypass the file scan budget", async () => {
+    const wide = await mkdtemp(path.join(os.tmpdir(), "dbi-wide-"));
+    try {
+      await Promise.all(Array.from({ length: 12 }, (_, i) => writeFile(path.join(wide, `${i}.py`), "")));
+      const listed = filesUnder(wide, 3);
+      expect(listed.files).toHaveLength(3);
+      expect(listed.complete).toBe(false);
+    } finally {
+      await rm(wide, { recursive: true, force: true });
+    }
+  });
+
+  test("an unreadable root is an incomplete scan", () => {
+    expect(filesUnder(path.join(root, "does-not-exist")).complete).toBe(false);
+  });
+
   test("skips installed and generated folders", () => {
     const files = filesUnder(root).files.map((file) => path.relative(root, file).split(path.sep).join("/"));
     expect(files.sort()).toEqual(["resources/job.yml", "src/run.py", "src/train.py"]);

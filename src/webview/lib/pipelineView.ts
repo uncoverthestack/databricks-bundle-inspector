@@ -4,6 +4,8 @@
  * the pipeline's table code, so nothing here is a guess about tables.
  */
 
+import { orderBySeverity, severityMeta } from "./issueSeverity.js";
+
 interface GraphNode {
   id: string;
   kind?: string | undefined;
@@ -245,9 +247,9 @@ export function pipelineReviewSummary(
     "### Issues",
   ];
   if (view.issues.length === 0) lines.push("- No issues detected in this pipeline.");
-  for (const issue of view.issues.slice(0, 12)) {
+  for (const issue of orderBySeverity(view.issues).slice(0, 12)) {
     const location = locationOf(issue.file, issue.line);
-    lines.push(`- ${issue.title}${location ? ` (${location})` : ""}`);
+    lines.push(`- **${severityMeta(issue.severity).label}** · ${issue.title}${location ? ` (${location})` : ""}`);
   }
   if (view.issues.length > 12) lines.push(`- ...and ${view.issues.length - 12} more.`);
 

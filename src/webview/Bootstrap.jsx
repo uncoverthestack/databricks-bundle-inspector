@@ -192,6 +192,11 @@ export default function Bootstrap() {
     vscodeApi?.postMessage({ type: "telemetry", event, properties });
   }
 
+  // The extension builds the full report: it knows the CLI's version and its own.
+  function handleCopyReviewReport(jobKey) {
+    vscodeApi?.postMessage({ type: "copyReviewReport", jobKey });
+  }
+
   function handleCopyReviewSummary(markdown) {
     vscodeApi?.postMessage({
       type: "copyReviewSummary",
@@ -224,6 +229,7 @@ export default function Bootstrap() {
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}
       onCopyReviewSummary={handleCopyReviewSummary}
+      onCopyReviewReport={handleCopyReviewReport}
       onTelemetry={handleTelemetry}
     />
   );

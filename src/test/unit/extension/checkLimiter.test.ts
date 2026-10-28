@@ -4,6 +4,32 @@ import { createCheckLimiter } from "../../../extension/checkLimiter.js";
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("createCheckLimiter", () => {
+  test.each([1, 2, 8])("1000 checks, including failed checks, finish in FIFO order with %i slots", async (max) => {
+    const limiter = createCheckLimiter(max);
+    let running = 0;
+    let peak = 0;
+    const order: number[] = [];
+    const results = await Promise.allSettled(Array.from({ length: 1000 }, async (_, i) => {
+      await limiter.acquire();
+      try {
+        running++;
+        peak = Math.max(peak, running);
+        order.push(i);
+        await tick();
+        if (i % 7 === 0) throw new Error("simulated check failure");
+      } finally {
+        running--;
+        limiter.release();
+      }
+    }));
+    expect(peak).toBe(max);
+    expect(running).toBe(0);
+    expect(order).toEqual(Array.from({ length: 1000 }, (_, i) => i));
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(143);
+    await limiter.acquire();
+    limiter.release();
+  });
+
   test("12 bundles checked again together never run more than 2 checks at once, and all finish", async () => {
     const limiter = createCheckLimiter(2);
     let running = 0;
