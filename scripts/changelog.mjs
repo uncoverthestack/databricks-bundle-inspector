@@ -9,7 +9,7 @@
 //   node scripts/changelog.mjs release   move every file into [Unreleased], then delete them
 //
 // --root <folder> runs it on another copy of the repo (the tests use it).
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -119,4 +119,6 @@ function main() {
   console.log(`Moved ${changes.length} change file${changes.length === 1 ? "" : "s"} into CHANGELOG.md [Unreleased].`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// Run, not imported. Both paths resolved, as a folder reached through a link (macOS's /var
+// is /private/var) would otherwise not match, and the script would silently do nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();

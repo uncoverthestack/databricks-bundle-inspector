@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "@jest/globals";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -138,6 +138,18 @@ describe("scripts/changelog.mjs", () => {
     const at = added.indexOf("- **One more fix.**");
     expect(added.slice(at - 2, at)).toEqual(["### Fixed", ""]);
     expect([...added.slice(0, at), ...added.slice(at + 1)]).toEqual(before);
+  });
+
+  // It once compared the paths without resolving links, and then did nothing at all, so a
+  // check from a linked folder (macOS's /var is /private/var) passed without checking.
+  (process.platform === "win32" ? test.skip : test)("runs when reached through a linked folder", () => {
+    writeFileSync(path.join(root, "CHANGELOG.md"), BASE);
+    change("278-bad.md", "Fixes\n\n- **Wrong section.**\n");
+    const link = path.join(root, "linked-scripts");
+    symlinkSync(path.dirname(SCRIPT), link);
+    const result = spawnSync(process.execPath, [path.join(link, "changelog.mjs"), "check", "--root", root], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("278-bad.md");
   });
 
   test("an unknown command, or a CHANGELOG with no [Unreleased], is refused", () => {
