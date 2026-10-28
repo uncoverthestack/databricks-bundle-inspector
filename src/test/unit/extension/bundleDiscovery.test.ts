@@ -57,6 +57,6 @@ describe("selectBundleRoots", () => {
 
 describe("SKIPPED_FOLDERS_GLOB", () => {
   test("lists every skipped folder at any depth", () => {
-    expect(SKIPPED_FOLDERS_GLOB).toBe("**/{node_modules,.git,.databricks,.venv,venv}/**");
+    expect(SKIPPED_FOLDERS_GLOB).toBe("**/{node_modules,.git,.databricks,.venv,venv,site-packages,.tox,__pycache__}/**");
   });
 });

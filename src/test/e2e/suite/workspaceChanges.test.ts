@@ -216,6 +216,25 @@ export function workspaceChangesSuite(): void {
       }
     });
 
+    it("Check All finds a bundle the file watcher missed", async () => {
+      const made = path.join(folder("alpha"), "hidden-from-watcher");
+      await mkdir(made);
+      try {
+        await writeFile(path.join(made, "databricks.yml"), "bundle:\n  name: missed\n\ntargets:\n  dev:\n    default: true\n");
+        // Long enough for a watcher event to arrive, had there been one.
+        await sleep(3_000);
+        assert.ok(!(await bundles()).some((bundle) => bundle.root === made), "the watcher should not report it");
+        await vscode.commands.executeCommand("databricksBundleInspector.checkAllBundles");
+        const found = (await bundles()).find((bundle) => bundle.root === made);
+        assert.equal(found?.problems.description, "none found · structural preview", JSON.stringify(found));
+      } finally {
+        await rm(made, { recursive: true, force: true });
+        await vscode.commands.executeCommand("databricksBundleInspector.checkAllBundles");
+        await waitFor(async () => !(await bundles()).some((bundle) => bundle.root === made), "the deleted bundle to leave");
+        await idle();
+      }
+    });
+
     it("a check still running when its folder is removed doesn't bring the bundle back", async function () {
       // The CLI is held by a #!/bin/sh wrapper, which Windows can't run.
       if (process.platform === "win32") this.skip();
