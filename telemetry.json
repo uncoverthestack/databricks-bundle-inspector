@@ -63,7 +63,7 @@
       }
     },
     "sidebar_opened": {
-      "description": "The Bundle Inspector sidebar showed for the first time in a VS Code window. Once per window.",
+      "description": "The Databricks Bundle Inspector sidebar showed for the first time in a VS Code window. Once per window.",
       "properties": {
         "at_start": "Whether it showed within 5 seconds of the extension starting, which usually means VS Code reopened it as it was left. Someone opening it in those first 5 seconds is counted the same way."
       }
