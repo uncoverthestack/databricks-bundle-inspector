@@ -48,8 +48,13 @@ export function readChanges(dir) {
     .map((name) => ({ name, ...parseChange(readFileSync(path.join(dir, name), "utf8"), name) }));
 }
 
-/** The CHANGELOG with each change at the top of its section under [Unreleased]. */
+/**
+ * The CHANGELOG with each change at the top of its section under [Unreleased], in the line
+ * endings it has: git on Windows checks it out with CRLF, and a rewrite to LF would change
+ * every line.
+ */
 export function withChanges(changelog, changes) {
+  const eol = changelog.includes("\r\n") ? "\r\n" : "\n";
   const lines = changelog.replace(/\r\n/g, "\n").split("\n");
   const start = lines.findIndex((line) => line.startsWith("## [Unreleased]"));
   if (start === -1) throw new Error("CHANGELOG.md has no ## [Unreleased] heading");
@@ -75,7 +80,7 @@ export function withChanges(changelog, changes) {
   // One blank line before the next version.
   while (block.length > 1 && !block[block.length - 1].trim() && !block[block.length - 2].trim()) block.pop();
   if (next !== -1 && block.at(-1)?.trim()) block.push("");
-  return [...lines.slice(0, start + 1), ...block, ...lines.slice(end)].join("\n");
+  return [...lines.slice(0, start + 1), ...block, ...lines.slice(end)].join(eol);
 }
 
 function main() {

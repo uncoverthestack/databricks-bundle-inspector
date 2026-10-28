@@ -124,6 +124,16 @@ describe("scripts/changelog.mjs", () => {
     expect(changelog()).not.toContain("\r");
   });
 
+  test("a CHANGELOG with Windows line endings keeps them, as git on Windows checks it out", () => {
+    const crlf = BASE.replace(/\n/g, "\r\n");
+    writeFileSync(path.join(root, "CHANGELOG.md"), crlf);
+    expect(run("release").status).toBe(0);
+    expect(changelog()).toBe(crlf);
+    change("279-win.md", "Fixed\n\n- **On Windows.**\n");
+    expect(run("release").status).toBe(0);
+    expect(changelog()).toBe(crlf.replace("### Fixed\r\n\r\n", "### Fixed\r\n\r\n- **On Windows.**\r\n"));
+  });
+
   test("on the repository's own CHANGELOG: no files change nothing, and one file adds exactly its line", () => {
     const real = readFileSync(path.resolve("CHANGELOG.md"), "utf8");
     writeFileSync(path.join(root, "CHANGELOG.md"), real);
@@ -132,8 +142,8 @@ describe("scripts/changelog.mjs", () => {
 
     change("276-one.md", "Fixed\n\n- **One more fix.**\n");
     expect(run("release").status).toBe(0);
-    const added = changelog().split("\n");
-    const before = real.split("\n");
+    const added = changelog().split(/\r?\n/);
+    const before = real.split(/\r?\n/);
     expect(added.length).toBe(before.length + 1);
     const at = added.indexOf("- **One more fix.**");
     expect(added.slice(at - 2, at)).toEqual(["### Fixed", ""]);
