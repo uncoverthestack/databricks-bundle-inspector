@@ -7,6 +7,7 @@ import {
   planSignIn,
   profileUpdated,
   signInCommand,
+  signsInAs,
   targetWorkspace,
   terminalCli,
   type ConfigSections,
@@ -245,6 +246,43 @@ describe("planSignIn: never a name that would be replaced", () => {
       kind: "blocked",
       reason: "its profile is set with a variable, which only the Databricks CLI fills in",
     });
+  });
+});
+
+describe("signsInAs: the name a plan signs in as, and why", () => {
+  const sections = parse(CONFIG);
+  const host = "https://adb-1234.azuredatabricks.net";
+  const why = (options: Parameters<typeof planSignIn>[0], named?: "setting" | "environment" | "bundle") =>
+    signsInAs(planSignIn(options), { named, defaultOnly: options.defaultOnly ?? false });
+
+  test("DEFAULT for a target with no address, before the address is asked for and after", () => {
+    const dev = { host: undefined, profile: undefined, sections: parse(""), defaultOnly: true };
+    expect(planSignIn(dev)).toEqual({ kind: "needs_host", profile: "DEFAULT" });
+    expect(why(dev)).toEqual({ profile: "DEFAULT", source: "default" });
+    expect(why({ ...dev, host })).toEqual({ profile: "DEFAULT", source: "default" });
+  });
+
+  test("a name set in Settings, the environment or the bundle says where it is set, ahead of DEFAULT", () => {
+    for (const named of ["setting", "environment", "bundle"] as const) {
+      expect(why({ host, profile: "mine", sections }, named)).toEqual({ profile: "mine", source: named });
+      // The setting wins over DEFAULT for a target with no address, as in the Windows test.
+      expect(why({ host: undefined, profile: "mine", sections, defaultOnly: true }, named)).toEqual({ profile: "mine", source: named });
+    }
+  });
+
+  test("a browser profile for the workspace is reused; otherwise a new name from the address", () => {
+    expect(why({ host, profile: undefined, sections })).toEqual({ profile: "web", source: "existing" });
+    expect(why({ host: "https://dbc-a1b2.cloud.databricks.com", profile: undefined, sections })).toEqual({
+      profile: "dbc-a1b2",
+      source: "new",
+    });
+  });
+
+  test("nothing when the name isn't known yet or signing in isn't offered", () => {
+    // An address set with a variable is asked for, and the new name depends on it.
+    expect(why({ host: null, profile: undefined, sections })).toBeUndefined();
+    expect(why({ host, profile: "tok", sections }, "setting")).toBeUndefined();
+    expect(why({ host, profile: null, sections }, "bundle")).toBeUndefined();
   });
 });
 

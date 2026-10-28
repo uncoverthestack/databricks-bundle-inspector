@@ -84,9 +84,12 @@ describe("SignInFlow", () => {
   test("DATABRICKS_CONFIG_PROFILE is the profile signed in, before the bundle's, as the CLI picks it", async () => {
     process.env.DATABRICKS_CONFIG_PROFILE = "env-picked";
     const signIn = flow();
+    expect(signIn.bannerOf(bundle)?.signsInAs).toEqual({ profile: "env-picked", source: "environment" });
     finishCliLookup(undefined);
     await signIn.openTerminal(bundle, "dev", "graph");
     expect(typed).toEqual([`databricks auth login --host "${HOST}" --profile "env-picked"`]);
+    // Once the terminal is open, the command there says it.
+    expect(signIn.bannerOf(bundle)?.signsInAs).toBeUndefined();
     signIn.dispose();
   });
 
@@ -94,9 +97,40 @@ describe("SignInFlow", () => {
     process.env.DATABRICKS_CONFIG_PROFILE = "env-picked";
     settingProfile = "from-settings";
     const signIn = flow();
+    expect(signIn.bannerOf(bundle)?.signsInAs).toEqual({ profile: "from-settings", source: "setting" });
     finishCliLookup(undefined);
     await signIn.openTerminal(bundle, "dev", "graph");
     expect(typed).toEqual([`databricks auth login --host "${HOST}" --profile "from-settings"`]);
+    signIn.dispose();
+  });
+
+  test("the banner names the profile the terminal then gets, and says where it comes from", async () => {
+    const cases: Array<{ yaml: string; config?: string; profile: string; source: string }> = [
+      { yaml: `    workspace:\n      host: ${HOST}\n`, profile: "flow-unit", source: "new" },
+      { yaml: `    workspace:\n      host: ${HOST}\n`, config: `[mine]\nhost = ${HOST}\nauth_type = databricks-cli\n`, profile: "mine", source: "existing" },
+      { yaml: `    workspace:\n      host: ${HOST}\n      profile: from-bundle\n`, profile: "from-bundle", source: "bundle" },
+      { yaml: "    default: true\n", profile: "DEFAULT", source: "default" },
+    ];
+    window.showInputBox = async () => HOST;
+    for (const { yaml, config: text = "", profile, source } of cases) {
+      writeFileSync(path.join(bundle, "databricks.yml"), `bundle:\n  name: b\ntargets:\n  dev:\n${yaml}`);
+      writeFileSync(config, text);
+      typed = [];
+      const signIn = flow();
+      expect(signIn.bannerOf(bundle)?.signsInAs).toEqual({ profile, source });
+      finishCliLookup(undefined);
+      await signIn.openTerminal(bundle, "dev", "graph");
+      expect(typed).toEqual([`databricks auth login --host "${HOST}" --profile "${profile}"`]);
+      signIn.dispose();
+    }
+  });
+
+  test("no name on a banner that can't offer the sign-in", () => {
+    settingProfile = "protected";
+    writeFileSync(config, `[protected]\nhost = ${HOST}\ntoken = fake-test-only\n`);
+    const signIn = flow();
+    expect(signIn.bannerOf(bundle)?.blockedReason).toMatch(/signs in another way/);
+    expect(signIn.bannerOf(bundle)?.signsInAs).toBeUndefined();
     signIn.dispose();
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import App from "./App";
 import { contextMenuContext } from "./lib/textSelection";
+import { PROFILE_SOURCES } from "./lib/signsInAs";
 
 // acquireVsCodeApi is injected by VS Code into webview scripts at runtime.
 // It is declared as a global in eslint.config.js so the linter doesn't flag it.
@@ -16,6 +17,10 @@ function validSignIn(value) {
         target: value.target,
         stage: value.stage,
         blockedReason: typeof value.blockedReason === "string" ? value.blockedReason : null,
+        signsInAs:
+          typeof value.signsInAs?.profile === "string" && PROFILE_SOURCES.includes(value.signsInAs.source)
+            ? { profile: value.signsInAs.profile, source: value.signsInAs.source }
+            : null,
       }
     : null;
 }
