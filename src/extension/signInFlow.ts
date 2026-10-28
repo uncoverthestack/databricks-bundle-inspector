@@ -10,9 +10,11 @@ import {
   planSignIn,
   profileUpdated,
   signInCommand,
+  signsInAs,
   targetWorkspace,
   terminalCli,
   type ConfigSections,
+  type ProfileSource,
   type SignInPlan,
 } from "../databricksCli/signIn.js";
 
@@ -29,6 +31,8 @@ export interface SignInBanner {
   stage: SignInStage;
   /** Why the terminal isn't offered, when signing in here would be unsafe or can't work. */
   blockedReason?: string;
+  /** Before the click: the name the sign-in will use, and where it comes from. */
+  signsInAs?: { profile: string; source: ProfileSource };
 }
 
 interface Flow {
@@ -36,6 +40,7 @@ interface Flow {
   target: string;
   stage: SignInStage;
   blockedReason?: string;
+  signsInAs?: { profile: string; source: ProfileSource };
   /** Between a click and the terminal opening, so a second click opens no second terminal. */
   opening?: boolean;
   /** Set once the terminal is open: what is watched. */
@@ -92,7 +97,14 @@ export class SignInFlow implements vscode.Disposable {
       this.reset();
       this.flow = { root, target, stage: "needed" };
     }
-    if (this.flow!.stage === "needed") this.setBlocked(this.flow!, this.plan(root, target));
+    if (this.flow!.stage === "needed") {
+      const plan = this.plan(root, target);
+      this.setBlocked(this.flow!, plan);
+      const named = this.nameSource(root, target);
+      const why = signsInAs(plan, { named, defaultOnly: this.workspace(root, target).host === undefined });
+      if (why) this.flow!.signsInAs = why;
+      else delete this.flow!.signsInAs;
+    }
     return this.banner();
   }
 
@@ -191,7 +203,13 @@ export class SignInFlow implements vscode.Disposable {
   private banner(): SignInBanner | undefined {
     const flow = this.flow;
     if (!flow) return undefined;
-    return { target: flow.target, stage: flow.stage, ...(flow.blockedReason ? { blockedReason: flow.blockedReason } : {}) };
+    return {
+      target: flow.target,
+      stage: flow.stage,
+      ...(flow.blockedReason ? { blockedReason: flow.blockedReason } : {}),
+      // Only while the click is still to come, and the click would sign in.
+      ...(flow.stage === "needed" && !flow.blockedReason && flow.signsInAs ? { signsInAs: flow.signsInAs } : {}),
+    };
   }
 
   /** The graph hasn't moved on, and Check again wasn't clicked, while the terminal was being opened. */
@@ -228,6 +246,13 @@ export class SignInFlow implements vscode.Disposable {
       workspace.profile === undefined &&
       typeof workspace.host === "string"
     );
+  }
+
+  /** Where the name the checks use is set, in the order the CLI reads them; undefined when none is. */
+  private nameSource(root: string, target: string): "setting" | "environment" | "bundle" | undefined {
+    if (this.deps.configuredProfile() !== undefined) return "setting";
+    if (environmentProfile() !== undefined) return "environment";
+    return typeof this.workspace(root, target).profile === "string" ? "bundle" : undefined;
   }
 
   private plan(root: string, target: string, askedHost?: string): SignInPlan {

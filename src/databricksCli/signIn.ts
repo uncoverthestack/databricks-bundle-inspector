@@ -246,6 +246,32 @@ export function planSignIn(options: {
 }
 
 /**
+ * Where the name a sign-in uses comes from, for the banner's "Signs in as" line:
+ * `default` (the target has no workspace address, so DEFAULT), one of the places a name is
+ * set (`setting`, `environment`, `bundle`), `existing` (a browser profile for the host), or
+ * `new` (a name made from the host).
+ */
+export type ProfileSource = "default" | "setting" | "environment" | "bundle" | "existing" | "new";
+
+/**
+ * The name a plan signs in as, and why, as {@link planSignIn} chose it. Undefined when the
+ * name isn't known yet (the workspace URL is asked for first) or signing in isn't offered.
+ *
+ * @param named Where the name passed to the plan as `profile` came from, if one was.
+ * @param defaultOnly As passed to the plan.
+ */
+export function signsInAs(
+  plan: SignInPlan,
+  { named, defaultOnly }: { named?: "setting" | "environment" | "bundle" | undefined; defaultOnly: boolean },
+): { profile: string; source: ProfileSource } | undefined {
+  if (plan.kind === "blocked" || !plan.profile) return undefined;
+  if (named) return { profile: plan.profile, source: named };
+  if (defaultOnly) return { profile: plan.profile, source: "default" };
+  if (plan.kind !== "ready") return undefined;
+  return { profile: plan.profile, source: plan.reuses ? "existing" : "new" };
+}
+
+/**
  * Whether the CLI has updated the profile being signed in: after the change it signs in
  * through the browser for that workspace, and it is new, its settings changed, or the CLI
  * rewrote the file with no other profile changed (it writes the `.bak` copy each time it

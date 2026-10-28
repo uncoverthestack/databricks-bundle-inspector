@@ -223,7 +223,14 @@ export function targetsSuite() {
     });
 
     describe("signing in for a target (no account used)", function () {
-      type Banner = { target: string; stage: string; blockedReason?: string } | null;
+      type Banner = {
+        target: string;
+        stage: string;
+        blockedReason?: string;
+        signsInAs?: { profile: string; source: string };
+      } | null;
+      // The profile setting names this, so the banner says the sign-in uses it, from Settings.
+      const FROM_SETTING = { profile: "NO_SUCH_PROFILE_E2E", source: "setting" };
       const banner = () => vscode.commands.executeCommand<Banner>("databricksBundleInspector.test.signIn");
       const HOST = "https://signin-e2e.example.invalid";
       let dir: string;
@@ -283,7 +290,7 @@ export function targetsSuite() {
         const data = (await pickTarget("dev")) as GraphData & { signIn?: Banner };
         await pause();
         assert.equal(data?.inspectedTargetMode, "probe", "the graph shows the structural preview");
-        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed" });
+        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
 
         await openTerminal();
         // dev has no workspace host, so the URL was asked for.
@@ -312,7 +319,7 @@ export function targetsSuite() {
           signIn?: Banner;
         };
         assert.equal(again?.inspectedTargetMode, "probe");
-        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed" });
+        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
         assert.equal(typed.length, 1, "nothing typed again by itself");
         await pause();
         noDatabricksFolder();
@@ -350,7 +357,7 @@ export function targetsSuite() {
       it("a token profile with a comment on its header is protected, and fixing it unblocks without picking again", async function () {
         this.timeout(120_000);
         await pickTarget("dev");
-        assert.deepEqual(await banner(), { target: "dev", stage: "needed" });
+        assert.deepEqual(await banner(), { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
         await writeFile(config, `[NO_SUCH_PROFILE_E2E] # keep this token\nhost = ${HOST}\ntoken = fake-test-only\n`);
         await openTerminal();
         assert.equal(typed.length, 0, "nothing typed for a token profile");
@@ -373,7 +380,7 @@ export function targetsSuite() {
         const again = (await vscode.commands.executeCommand("databricksBundleInspector.test.checkTargetAgain", "dev")) as GraphData & {
           signIn?: Banner;
         };
-        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed" });
+        assert.deepEqual(again?.signIn, { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
       });
 
       it("a config file that can't be read, or that the CLI can't read, blocks", async function () {
@@ -431,7 +438,7 @@ export function targetsSuite() {
         // No profile in Settings or the bundle, and ambiguous has a host: the CLI picks the profile by host.
         await setProfile(undefined);
         const data = (await pickTarget("ambiguous")) as GraphData & { signIn?: Banner };
-        assert.deepEqual(data?.signIn, { target: "ambiguous", stage: "needed" });
+        assert.deepEqual(data?.signIn, { target: "ambiguous", stage: "needed", signsInAs: { profile: "ambiguous", source: "new" } });
         await openTerminal();
         assert.deepEqual(typed.map((entry) => entry.text), ['databricks auth login --host "https://ambiguous.example.invalid" --profile "ambiguous"']);
 
@@ -465,7 +472,7 @@ export function targetsSuite() {
         this.timeout(120_000);
         await setProfile(undefined);
         const data = (await pickTarget("dev")) as GraphData & { signIn?: Banner };
-        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed" });
+        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed", signsInAs: { profile: "DEFAULT", source: "default" } });
         // A browser profile for the workspace under another name: the CLI wouldn't use it here.
         await writeFile(config, `[web-e2e]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
         await openTerminal();

@@ -23,6 +23,7 @@ import { parseSelectionValue, resolveSelection, selectionValue } from "./lib/job
 import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
+import { signsInAsLine } from "./lib/signsInAs";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -2621,13 +2622,32 @@ const BANNER_BUTTON =
 const BANNER_LINK =
   "underline decoration-dotted underline-offset-2 text-fg-soft hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
+/** The name the sign-in will use, and why, on its own line under the banner's first state. */
+function SignsInAs({ target, signsInAs, onChooseProfile }) {
+  const { lead, profile, rest, change } = signsInAsLine(target, signsInAs);
+  return (
+    <span data-signs-in-as={signsInAs.source} className="basis-full text-fg-soft">
+      {lead} <code className="text-fg">{profile}</code>
+      {rest}
+      {change && onChooseProfile && (
+        <>
+          {" "}
+          <button type="button" onClick={onChooseProfile} className={BANNER_LINK}>
+            Change
+          </button>
+        </>
+      )}
+    </span>
+  );
+}
+
 /**
  * The banner for a target that fell back for want of a sign-in. One state at a time, each
  * replacing the one before: needs sign-in, press Enter in the terminal, sign-in saved,
  * checking. The graph below stays usable throughout: it shows the structural preview.
  */
-function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, onOpenGuide }) {
-  const { target, stage, blockedReason } = signIn;
+function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, onOpenGuide, onChooseProfile }) {
+  const { target, stage, blockedReason, signsInAs } = signIn;
   const warning = stage === "needed";
   const guide = (
     <button type="button" onClick={onOpenGuide} className={BANNER_LINK}>
@@ -2654,6 +2674,7 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
           Open Sign-in Terminal
         </button>
         {guide}
+        {signsInAs && <SignsInAs target={target} signsInAs={signsInAs} onChooseProfile={onChooseProfile} />}
       </>
     );
   } else if (stage === "terminal") {
@@ -3144,6 +3165,7 @@ export default function App({
           onOpenTerminal={() => onOpenSignInTerminal?.(signIn.target)}
           onCheckAgain={() => onCheckTargetAgain?.(signIn.target)}
           onOpenGuide={onOpenSignInGuide}
+          onChooseProfile={onChooseProfile}
         />
       )}
 
