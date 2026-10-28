@@ -25,6 +25,10 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ### Fixed
 
+- **Full review reports include every job parameter**, rather than only the graph's three-parameter summary, and include files and pipeline references inside for-each tasks. A job called by a for-each task is now named in the report's Starts row. Reports disclose when the size limit leaves out the parameter table, shorten oversized metadata, and handle backticks and table separators in copied text.
+- **Missing-file suggestions respect their scan limit in wide folders**, and offer no suggestion when a folder could not be read. An unread folder could hold another matching file.
+- **A quote inside a plain file path no longer hides its quick fix before a YAML comment**, such as `notebook_path: ../old/it's.py # moved`.
+- **Opening a graph under a resource key written as `null` or `~` selects that resource**, as the Databricks CLI names it, instead of the file's first job or pipeline.
 - **A file several bundles include shows what each of them found.** Each bundle's check used to replace the others' findings in that file, and removing one bundle cleared them for all. A finding several bundles report is listed once in the Problems panel, its source naming each bundle (`Databricks Bundle Inspector (alpha, gamma)`), and counts for each of them.
 - **A bundle made while the folder is open is found and checked**, as on open: `databricks bundle init` in a terminal, a checkout or a copy. It used to need the folder opened again.
 - **Check All Databricks Bundles Again finds bundles it didn't know about.** On Linux, VS Code can miss a bundle file written the instant its folder is made, as `cp -r` sometimes does; that bundle then stayed missing until VS Code was reloaded. Check All now searches the open folders first, as on open. Bundles inside `site-packages`, `.tox` and `__pycache__` are now skipped too, along with `node_modules`, `.git`, `.databricks`, `.venv` and `venv`.

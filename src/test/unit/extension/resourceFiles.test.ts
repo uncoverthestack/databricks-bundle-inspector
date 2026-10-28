@@ -21,6 +21,11 @@ const job = (key: string) => ({ group: "jobs", key });
 const pipeline = (key: string) => ({ group: "pipelines", key });
 
 describe("resourceAtLine", () => {
+  test.each(["null", "~", "Null", "NULL"])("opens the scalar resource key %s under the cursor", (key) => {
+    const text = `resources:\n  jobs:\n    first: {}\n    ${key}:\n      name: selected\n`;
+    expect(resourceAtLine(text, 4)).toEqual(job(key));
+  });
+
   test("picks the job whose definition holds the cursor", () => {
     expect(resourceAtLine(RESOURCE_FILE, 5)).toEqual(job("ingest"));
     expect(resourceAtLine(RESOURCE_FILE, 7)).toEqual(job("ingest"));

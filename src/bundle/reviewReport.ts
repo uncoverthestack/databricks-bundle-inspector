@@ -69,7 +69,7 @@ export function jobReviewReport(
     `| Bundle | ${cell(parsedBundle.bundle?.name ?? "Unknown bundle")} |`,
     `| Target | ${cell(context.targetLabel)} |`,
     `| Job | ${cell(jobName === jobKey ? jobKey : `${jobName} (${jobKey})`)} |`,
-    `| Starts | ${starts.text.includes("`") ? starts.text : cell(starts.text)} |`,
+    `| Starts | ${starts.markdown ? starts.text : cell(starts.text)} |`,
     `| Databricks CLI | ${cell(context.cliVersion ?? "Unknown")} |`,
     `| Databricks Bundle Inspector | ${cell(context.extensionVersion)} |`,
     `| Checked | ${cell(checkedAtText(context.checkedAt))} |`,
@@ -89,13 +89,15 @@ export function jobReviewReport(
   const warningSection = take(problemSection("Warnings", "Warning", warnings, room));
   const picture = take(pictureSection(tasks, starts.node));
   const taskTable = take(tasksSection(tasks));
-  const parameterTable = take(parametersSection(jobNode));
+  const parameters = Array.isArray(job.parameters) ? job.parameters : [];
+  const parameterTable = take(parametersSection(parameters));
   const fileTable = take(filesSection(files));
   const left = [
     errors.length > 0 && !errorSection ? "the errors" : "",
     warnings.length > 0 && !warningSection ? "the warnings" : "",
     !picture && tasks.length > 0 ? "the task graph" : "",
     !taskTable && tasks.length > 0 ? "the task table" : "",
+    !parameterTable && parameters.length > 0 ? "the job parameters" : "",
     !fileTable && files.length > 0 ? "the file table" : "",
   ].filter(Boolean);
 
@@ -130,9 +132,12 @@ function reportTask(node: BundleGraphNode, graph: BundleGraph, issues: readonly 
     });
   // What the task runs: its file, the pipeline's key, else what the graph shows under its name.
   // A loop's subtitle is its inputs, which the picture shows already.
-  const pipeline = /resources\.pipelines\.([^.}]+)/.exec(String(node.subtitle ?? ""))?.[1];
+  const pipeline = /resources\.pipelines\.([^.}]+)/.exec(String(
+    (forEach?.task?.pipeline_task as { pipeline_id?: unknown } | undefined)?.pipeline_id ?? node.subtitle ?? "",
+  ))?.[1];
   const runs =
     node.taskData?.fileReferences?.[0]?.path ??
+    node.taskData?.nestedTask?.fileReferences?.[0]?.path ??
     (pipeline ? `pipeline ${pipeline}` : !forEach && typeof node.subtitle === "string" ? node.subtitle : undefined);
   return {
     node,
@@ -159,14 +164,14 @@ function startsText(
   job: Record<string, unknown>,
   jobKey: string,
   parsedBundle: ParsedBundleConfig,
-): { text: string; node: string } {
+): { text: string; node: string; markdown?: boolean } {
   const paused = (value: unknown) =>
     typeof value === "object" && value !== null && (value as { pause_status?: unknown }).pause_status === "PAUSED";
   const schedule = job.schedule as { quartz_cron_expression?: string; timezone_id?: string } | undefined;
   if (schedule?.quartz_cron_expression) {
     const words = describeCronExpression(schedule.quartz_cron_expression, schedule.timezone_id);
     const pause = paused(schedule) ? ", paused" : "";
-    return { text: `${words}${pause}, cron ${code(schedule.quartz_cron_expression)}`, node: `${words}${pause}` };
+    return { text: `${cell(words)}${pause}, cron ${code(schedule.quartz_cron_expression)}`, node: `${words}${pause}`, markdown: true };
   }
   if (job.continuous) {
     const pause = paused(job.continuous) ? ", paused" : "";
@@ -199,8 +204,11 @@ function startsText(
   }
   const runner = Object.entries(parsedBundle.resources?.jobs ?? {}).find(([key, other]) =>
     key !== jobKey &&
-    ((other as { tasks?: Array<{ run_job_task?: { job_id?: unknown } }> }).tasks ?? []).some(
-      (task) => String(task.run_job_task?.job_id ?? "").includes(`resources.jobs.${jobKey}.id`),
+    ((other as { tasks?: Array<JobTask> }).tasks ?? []).some(
+      (task) => {
+        const inner = (task.for_each_task as { task?: JobTask } | undefined)?.task;
+        return [task, inner].some((candidate) => candidate?.run_job_task?.job_id === `\${resources.jobs.${jobKey}.id}`);
+      },
     ),
   );
   if (runner) return { text: `By the job ${runner[0]}, in this bundle`, node: `Started by ${runner[0]}` };
@@ -306,15 +314,14 @@ function problemSection(heading: string, word: string, list: readonly InspectorI
   return lines.join("\n");
 }
 
-function parametersSection(jobNode: BundleGraphNode): string {
-  const parameters = jobNode.parameters ?? [];
+function parametersSection(parameters: Array<{ name?: string; default?: string }>): string {
   if (parameters.length === 0) return "";
   return [
     "### Job parameters",
     "",
     "| Parameter | Default |",
     "|---|---|",
-    ...parameters.map((parameter) => `| ${code(parameter.name)} | ${parameter.value ? code(short(parameter.value, 120)) : ""} |`),
+    ...parameters.map((parameter) => `| ${code(parameter.name ?? "")} | ${parameter.default !== undefined ? code(short(parameter.default, 120)) : ""} |`),
   ].join("\n");
 }
 
@@ -327,7 +334,7 @@ interface ReportFile {
 function jobFiles(taskNodes: readonly BundleGraphNode[]): ReportFile[] {
   const files = new Map<string, ReportFile>();
   for (const node of taskNodes) {
-    for (const ref of node.taskData?.fileReferences ?? []) {
+    for (const ref of [...(node.taskData?.fileReferences ?? []), ...(node.taskData?.nestedTask?.fileReferences ?? [])]) {
       const key = ref.resolvedPath ?? ref.path;
       const file = files.get(key) ?? {
         path: ref.path,
@@ -402,18 +409,21 @@ function short(text: string, limit: number): string {
 
 /** Text in a table cell: one line, `|` escaped. */
 function cell(text: string): string {
-  return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+  return inline(text).replace(/\|/g, "\\|");
 }
 
 /** Running text: one line. */
 function inline(text: string): string {
-  return text.replace(/\r?\n/g, " ");
+  const flat = text.replace(/\r?\n/g, " ");
+  return flat.length > 1_000 ? `${flat.slice(0, 999)}…` : flat;
 }
 
 /** Inline code that survives backticks and `|` inside it. */
 function code(text: string): string {
   const flat = cell(text);
-  return flat.includes("`") ? `\`\` ${flat} \`\`` : `\`${flat}\``;
+  const runs = flat.match(/`+/g) ?? [];
+  const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+  return runs.length ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
 }
 
 /** Text inside a quoted Mermaid label: quotes and angle brackets as entity codes. */

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { isMap, LineCounter, parseDocument } from "yaml";
+import { isMap, isScalar, LineCounter, parseDocument } from "yaml";
 
 /** A job or pipeline the graph can open on. */
 export interface GraphResource {
@@ -27,7 +27,9 @@ export function resourceAtLine(text: string, cursorLine: number): GraphResource 
       const groupMap = resources.get(group, true);
       if (!isMap(groupMap)) return [];
       return groupMap.items.flatMap((item) => {
-        const key = (item.key as { value?: unknown } | null)?.value;
+        const value = isScalar(item.key) ? (item.key.value ?? item.key.source) : undefined;
+        // The CLI preserves null-like keys as written, but rejects numeric/boolean keys.
+        const key = typeof value === "string" ? value : undefined;
         const offset = (item.key as { range?: [number, number, number] } | null)?.range?.[0];
         const end = (item.value as { range?: [number, number, number] } | null)?.range?.[2]
           ?? (item.key as { range?: [number, number, number] } | null)?.range?.[2];

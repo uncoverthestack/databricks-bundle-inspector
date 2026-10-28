@@ -56,6 +56,76 @@ const SALES_JOB = {
 };
 
 describe("jobReviewReport", () => {
+  test("long YAML metadata cannot exceed the report's hard character budget", async () => {
+    const markdown = await report(bundle({ name: "name".repeat(20_000), tasks: [] }));
+    expect(markdown.length).toBeLessThanOrEqual(REVIEW_REPORT_MAX_CHARACTERS);
+    expect(markdown).toContain("### Not checked");
+  });
+
+  test("a starts URL containing a backtick still occupies one escaped table cell", async () => {
+    const markdown = await report(bundle({
+      trigger: { file_arrival: { url: "s3://bucket/`folder|name" } }, tasks: [],
+    }));
+    expect(markdown).toContain("s3://bucket/`folder\\|name");
+  });
+
+  test("backtick runs in a file name cannot close its inline code", async () => {
+    const markdown = await report(bundle({ tasks: [{
+      task_key: "t", notebook_task: { notebook_path: "./src/``name.py" },
+    }] }));
+    expect(markdown).toContain("``` ./src/``name.py ```");
+  });
+
+  test("an omitted oversized parameter table is explicitly disclosed", async () => {
+    const markdown = await report(bundle({
+      parameters: Array.from({ length: 1000 }, (_, i) => ({ name: `p${i}`, default: "x".repeat(120) })),
+      tasks: [],
+    }));
+    expect(markdown).toContain("the job parameters");
+    expect(markdown.length).toBeLessThanOrEqual(REVIEW_REPORT_MAX_CHARACTERS);
+  });
+
+  test("copies all job parameters, including those beyond the graph's three-row summary", async () => {
+    const markdown = await report(bundle({
+      parameters: Array.from({ length: 7 }, (_, i) => ({ name: `p${i}`, default: `v${i}` })), tasks: [],
+    }));
+    for (let i = 0; i < 7; i++) expect(markdown).toContain(`| \`p${i}\` | \`v${i}\` |`);
+  });
+
+  test("a caller's inner for-each task is recognized as starting the reviewed job", async () => {
+    const markdown = await report(bundle({ tasks: [] }, { caller: { tasks: [{ task_key: "each", for_each_task: {
+      inputs: "[1,2]", task: { task_key: "run", run_job_task: { job_id: "${resources.jobs.nightly.id}" } },
+    } }] } }));
+    expect(markdown).toContain("| Starts | By the job caller, in this bundle |");
+  });
+
+  test("includes a for-each inner task's files and the script it runs", async () => {
+    const parsed = bundle({ tasks: [SALES_JOB.tasks[4]] });
+    // Give extraction a root, as a real inspection does, to resolve task file references.
+    const graph = await extractBundleGraph(parsed, "/repo");
+    const markdown = jobReviewReport(parsed, graph, "nightly", [], context);
+    expect(markdown).toContain("### Files (1)");
+    expect(markdown).toContain("./src/region.py");
+    expect(markdown).toContain("| per_region → region_report | For each → Notebook | `./src/region.py`");
+  });
+
+  test("large generated jobs at the picture boundary keep every problem in the right job", async () => {
+    for (const size of [0, 1, 49, 50, 51, 100, 1000]) {
+      const tasks = Array.from({ length: size }, (_, i) => ({
+        task_key: `task_${i}`, spark_python_task: { python_file: `./src/${i}.py` },
+        ...(i ? { depends_on: [{ task_key: `task_${i - 1}` }] } : {}),
+      }));
+      const markdown = await report(bundle({ tasks }), (id) => size ? [
+        issue(id, `task_${size - 1}`, "error", "selected job error"),
+        issue("resources.jobs.other", "task_0", "error", "OTHER JOB ERROR"),
+      ] : []);
+      expect(markdown.length).toBeLessThanOrEqual(REVIEW_REPORT_MAX_CHARACTERS);
+      expect(markdown.includes("```mermaid")).toBe(size > 0 && size <= 50);
+      expect(markdown).not.toContain("OTHER JOB ERROR");
+      if (size) expect(markdown).toContain("selected job error");
+    }
+  });
+
   test("a header table with its own rows for the CLI and the inspector, then the counts", async () => {
     const markdown = await report(bundle(SALES_JOB), (jobId) => [
       issue(jobId, "load", "error", "File not found: ../src/load.py"),
