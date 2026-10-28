@@ -11,10 +11,10 @@ export default function AppHeader({
   targetOptions = [],
   selectedTarget,
   onTargetChange,
-  jobKeys,
-  selectedJobKey,
-  jobOptions,
-  onJobChange,
+  pickerGroups = [],
+  selectedValue,
+  onPickerChange,
+  showTaskTools = true,
   searchValue,
   searchItems,
   onSearchChange,
@@ -24,13 +24,14 @@ export default function AppHeader({
   issueCount,
   onCopyReviewSummary,
 }) {
+  const options = pickerGroups.flatMap((group) => group.options);
   return (
     <header
       className="flex h-12 shrink-0 items-center gap-3 border-b border-line-soft px-4"
       style={{ backgroundColor: UI_COLOR.panel }}
     >
       <span className="truncate text-sm font-semibold text-fg">
-        {bundleName ?? "Bundle Inspector"}
+        {bundleName ?? "Databricks Bundle Inspector"}
       </span>
       {targetOptions.length > 0 ? (
         <select
@@ -60,35 +61,51 @@ export default function AppHeader({
           {targetLabel ?? "structural preview"}
         </span>
       )}
-      {jobKeys.length > 0 && <span className="text-xs text-muted">·</span>}
-      {jobKeys.length > 1 ? (
+      {options.length > 0 && <span className="text-xs text-muted">·</span>}
+      {options.length > 1 ? (
         <select
-          value={selectedJobKey ?? ""}
-          onChange={(e) => onJobChange(e.target.value)}
+          aria-label="Job or pipeline"
+          value={selectedValue ?? ""}
+          onChange={(e) => onPickerChange(e.target.value)}
           className="cursor-pointer rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
         >
-          {jobOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
+          {pickerGroups.length > 1
+            ? pickerGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            : options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
         </select>
-      ) : jobKeys.length === 1 ? (
-        <span className="truncate text-xs text-fg-soft">
-          {selectedJobKey}
-        </span>
+      ) : options.length === 1 ? (
+        <span className="truncate text-xs text-fg-soft">{options[0].key}</span>
       ) : null}
-      <SearchBox
-        value={searchValue}
-        items={searchItems}
-        onChange={onSearchChange}
-        onSelect={onSearchSelect}
-      />
-      <GraphModeToggle
-        value={graphMode}
-        onChange={onGraphModeChange}
-        issueCount={issueCount}
-      />
+      {/* Search and the Issues toggle work on a job's tasks; a pipeline has none. */}
+      {showTaskTools ? (
+        <>
+          <SearchBox
+            value={searchValue}
+            items={searchItems}
+            onChange={onSearchChange}
+            onSelect={onSearchSelect}
+          />
+          <GraphModeToggle
+            value={graphMode}
+            onChange={onGraphModeChange}
+            issueCount={issueCount}
+          />
+        </>
+      ) : (
+        <div className="flex-1" />
+      )}
       {onCopyReviewSummary && (
         <button
           type="button"

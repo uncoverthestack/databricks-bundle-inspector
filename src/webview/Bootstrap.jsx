@@ -21,7 +21,7 @@ export default function Bootstrap() {
   const [targetFallbackReason, setTargetFallbackReason] = useState(null);
   const [profileChoice, setProfileChoice] = useState(null);
   const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
-  const [initialJob, setInitialJob] = useState(null);
+  const [initialResource, setInitialResource] = useState(null);
 
   useEffect(() => {
     vscodeApi?.postMessage({ type: "webviewReady" });
@@ -87,13 +87,14 @@ export default function Bootstrap() {
         } else if (!data.preserveView) {
           setFocusIssuesNonce(null);
         }
-        // Kept until the next one, so a target switch stays on the job the user is viewing.
+        // Kept until the next one, so a target switch stays on what the user is viewing.
         if (
-          data.initialJob &&
-          typeof data.initialJob.key === "string" &&
-          typeof data.initialJob.nonce === "number"
+          data.initialResource &&
+          (data.initialResource.group === "jobs" || data.initialResource.group === "pipelines") &&
+          typeof data.initialResource.key === "string" &&
+          typeof data.initialResource.nonce === "number"
         ) {
-          setInitialJob(data.initialJob);
+          setInitialResource(data.initialResource);
         }
       }
       if (data.type === "focusIssues") {
@@ -164,7 +165,7 @@ export default function Bootstrap() {
 
   return (
     <App
-      key={`${focusIssuesNonce ?? "inspector"}:${initialJob?.nonce ?? ""}`}
+      key={`${focusIssuesNonce ?? "inspector"}:${initialResource?.nonce ?? ""}`}
       parsedBundle={parsedBundle}
       resolutionBundle={resolutionBundle ?? parsedBundle}
       graph={bundleGraph}
@@ -179,7 +180,7 @@ export default function Bootstrap() {
       profileChoice={profileChoice}
       onChooseProfile={handleChooseProfile}
       focusIssuesNonce={focusIssuesNonce}
-      initialJobKey={initialJob?.key}
+      initialResource={initialResource ? { group: initialResource.group, key: initialResource.key } : undefined}
       onSelectTarget={handleSelectTarget}
       onOpenFile={handleOpenFile}
       onCopyReviewSummary={handleCopyReviewSummary}

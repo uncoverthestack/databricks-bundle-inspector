@@ -208,7 +208,7 @@ export function cliNotFoundSuite() {
 
       assert.equal(
         shown?.message,
-        "Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below.",
+        "Databricks Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below.",
       );
       assert.deepEqual(shown?.bundles.map((bundle) => [bundle.description, bundle.status]), [
         ["Databricks CLI not found", "cli_missing"],
@@ -216,7 +216,7 @@ export function cliNotFoundSuite() {
       assert.deepEqual(shown?.settings.cli, {
         label: "Databricks CLI",
         description: "not found",
-        tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
+        tooltip: "Databricks Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
         warning: true,
       });
     });
