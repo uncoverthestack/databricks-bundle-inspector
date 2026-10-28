@@ -541,6 +541,11 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
     withOptionalSubtitle("script", "Python operator", task.python_operator_task?.main),
 };
 
+/** The label the graph shows for a task's type, such as "Notebook" or "If/else". */
+export function taskTypeLabel(task: JobTask): string {
+  return detectTaskType(task).label;
+}
+
 function detectTaskType(task: JobTask): TaskPresentation {
   const payloadKey = getTaskPayloadKey(task);
   if (payloadKey) return { ...TASK_PRESENTATION[payloadKey](task), badge: TASK_BADGE[payloadKey] };

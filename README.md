@@ -41,7 +41,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 - **Pipelines**: pick a pipeline in the graph's dropdown to see the jobs in the bundle that run it, its default catalog and schema, each source in `libraries` with whether it was found, and its problems, all from the YAML. It doesn't show the tables inside a pipeline. A bundle with only pipelines opens on its first one.
 - **Secrets and widgets** found in each task's code.
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
-- **Review summary**: copy a Markdown summary of the bundle and its issues for a pull request.
+- **Review report**: copy a short summary for chat, or a full report for a pull request with a picture of the job's tasks, its errors and warnings, and tables of tasks, parameters and files.
 - **Sidebar**: the Databricks Bundle Inspector icon in the Activity Bar lists every bundle in the folder with its result, the targets each can be checked against, and the Databricks CLI and sign-in profile the checks use.
 
 ## Getting started

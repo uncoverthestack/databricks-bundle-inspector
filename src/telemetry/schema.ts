@@ -101,7 +101,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   file_opened: {
     file_kind: oneOf("py", "ipynb", "sql", "yml", "json", "whl", "jar", "scala", "r", "other"),
   },
-  review_summary_copied: {},
+  review_summary_copied: { format: oneOf("summary", "report") },
   graph_mode_changed: { mode: oneOf("all", "issues") },
   job_selected: {},
   pipeline_selected: {},

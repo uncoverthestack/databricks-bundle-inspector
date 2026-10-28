@@ -189,7 +189,7 @@ describe("buildPipelineView", () => {
         "Pipeline: Pipe P",
         "",
         "### Issues",
-        "- x (p.yml:12)",
+        "- **Error** · x (p.yml:12)",
         "",
         "### Run by",
         "- j (task t)",
