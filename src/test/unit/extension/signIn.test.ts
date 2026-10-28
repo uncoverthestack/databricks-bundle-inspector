@@ -145,6 +145,45 @@ describe("newProfileName", () => {
   });
 });
 
+describe("planSignIn: a target with no host, which the CLI checks with DEFAULT alone", () => {
+  const host = "https://adb-1234.azuredatabricks.net";
+  const plan = (config: string, profile?: string) =>
+    planSignIn({ host, profile, sections: parse(config), defaultOnly: true });
+
+  test("DEFAULT when it is missing or empty, even with a browser profile for the workspace under another name", () => {
+    expect(plan("")).toEqual({ kind: "ready", host, profile: "DEFAULT", reuses: false });
+    expect(plan("[DEFAULT]\n")).toEqual({ kind: "ready", host, profile: "DEFAULT", reuses: true });
+    expect(plan(`[web]\nhost = ${host}\nauth_type = databricks-cli\n`)).toMatchObject({ kind: "ready", profile: "DEFAULT" });
+  });
+
+  test("an existing browser DEFAULT for the workspace is reused, its host used when none was asked", () => {
+    const config = `[DEFAULT]\nhost = ${host}\nauth_type = databricks-cli\n`;
+    expect(plan(config)).toEqual({ kind: "ready", host, profile: "DEFAULT", reuses: true });
+    expect(planSignIn({ host: undefined, profile: undefined, sections: parse(config), defaultOnly: true })).toMatchObject({
+      kind: "ready",
+      profile: "DEFAULT",
+    });
+  });
+
+  test("not when DEFAULT has a token, keys before any header included, or is for another workspace", () => {
+    for (const config of [`[DEFAULT]\nhost = ${host}\ntoken = x\n`, `host = ${host}\ntoken = x\n`]) {
+      expect(plan(config)).toEqual({
+        kind: "blocked",
+        reason:
+          "this target has no workspace address, so the Databricks CLI checks it with the DEFAULT profile, which signs in another way, such as with a token, and signing in under its name would replace that. Pick a profile in the Profile setting to sign in from the graph",
+      });
+    }
+    expect(plan("[DEFAULT]\nhost = https://other.example.com\nauth_type = databricks-cli\n")).toMatchObject({
+      kind: "blocked",
+      reason: expect.stringContaining("DEFAULT profile, which is for a different workspace."),
+    });
+  });
+
+  test("a profile named in Settings, the environment or the bundle comes first, as the CLI uses it", () => {
+    expect(plan("", "mine")).toEqual({ kind: "ready", host, profile: "mine", reuses: false });
+  });
+});
+
 describe("planSignIn: never a name that would be replaced", () => {
   const sections = parse(CONFIG);
   const host = "https://adb-1234.azuredatabricks.net";

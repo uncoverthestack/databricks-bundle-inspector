@@ -239,6 +239,8 @@ export class SignInFlow implements vscode.Disposable {
       // As the CLI picks it: --profile (the setting), then the environment, then the bundle.
       profile: this.deps.configuredProfile() ?? environmentProfile() ?? workspace.profile,
       sections: config.sections,
+      // A host set with a variable still has one when the CLI runs, so it picks by host.
+      defaultOnly: workspace.host === undefined,
     });
   }
 

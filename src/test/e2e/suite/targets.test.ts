@@ -461,6 +461,32 @@ export function targetsSuite() {
         assert.equal((await banner())?.stage, "terminal");
       });
 
+      it("a target with no host and no profile signs in as DEFAULT, the only profile the CLI checks it with", async function () {
+        this.timeout(120_000);
+        await setProfile(undefined);
+        const data = (await pickTarget("dev")) as GraphData & { signIn?: Banner };
+        assert.deepEqual(data?.signIn, { target: "dev", stage: "needed" });
+        // A browser profile for the workspace under another name: the CLI wouldn't use it here.
+        await writeFile(config, `[web-e2e]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await openTerminal();
+        assert.deepEqual(typed.map((entry) => entry.text), [`databricks auth login --host "${HOST}" --profile "DEFAULT"`]);
+
+        // What `auth login --profile DEFAULT` writes: a copy of the old file, then DEFAULT.
+        await writeFile(`${config}.bak`, await readFile(config, "utf8"));
+        await writeFile(config, `[DEFAULT]\nhost = ${HOST}\nauth_type = databricks-cli\n\n[web-e2e]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await waitFor(async () => (await banner())?.stage === "updated", "the sign-in saved banner");
+      });
+
+      it("a target with no host: a DEFAULT with a token is not replaced, and the banner says to pick a profile", async function () {
+        this.timeout(120_000);
+        await setProfile(undefined);
+        await pickTarget("dev");
+        await writeFile(config, `[DEFAULT]\nhost = ${HOST}\ntoken = fake-test-only\n`);
+        await openTerminal();
+        assert.equal(typed.length, 0);
+        assert.match((await banner())?.blockedReason ?? "", /no workspace address, so the Databricks CLI checks it with the DEFAULT profile/);
+      });
+
       it("a CLI file in Settings with another name is typed as its path", async function () {
         if (process.platform === "win32") this.skip();
         this.timeout(120_000);

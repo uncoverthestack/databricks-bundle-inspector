@@ -190,13 +190,25 @@ export type SignInPlan =
  *    when it doesn't exist yet or already signs in through the browser for that workspace;
  * 2. else a browser profile that already exists for the host;
  * 3. else a new name made from the host.
+ * With `defaultOnly` (the bundle gives no host and nothing names a profile), the CLI checks the
+ * target with DEFAULT alone (CLI 0.299.0 and 1.21.0), so DEFAULT is the profile, as if named.
  */
 export function planSignIn(options: {
   host: string | null | undefined;
   profile: string | null | undefined;
   sections: ConfigSections;
+  defaultOnly?: boolean;
 }): SignInPlan {
   const { sections } = options;
+  if (options.defaultOnly && options.profile === undefined) {
+    const plan = planSignIn({ ...options, profile: "DEFAULT", defaultOnly: false });
+    if (plan.kind !== "blocked") return plan;
+    const why = plan.reason.replace(/^the "DEFAULT" profile /, "");
+    return {
+      kind: "blocked",
+      reason: `this target has no workspace address, so the Databricks CLI checks it with the DEFAULT profile, which ${why}. Pick a profile in the Profile setting to sign in from the graph`,
+    };
+  }
   if (options.profile === null) {
     return { kind: "blocked", reason: "its profile is set with a variable, which only the Databricks CLI fills in" };
   }
@@ -208,7 +220,8 @@ export function planSignIn(options: {
   if (named !== undefined) {
     if (!isSafeProfileName(named)) return { kind: "blocked", reason: `the profile name "${named}" has characters a terminal would read` };
     const section = sections.get(named);
-    if (section && !isBrowserSignIn(section)) {
+    // An empty section, such as a bare [DEFAULT], has nothing a sign-in would replace.
+    if (section && Object.keys(section).length > 0 && !isBrowserSignIn(section)) {
       return {
         kind: "blocked",
         reason: `the "${named}" profile signs in another way, such as with a token, and signing in under its name would replace that`,
