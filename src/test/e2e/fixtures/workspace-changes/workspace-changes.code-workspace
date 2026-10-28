@@ -1,3 +1,5 @@
 {
-  "folders": [{ "path": "alpha" }, { "path": "beta" }, { "path": "gamma" }, { "path": "anchored" }]
+  "folders": [{ "path": "alpha" }, { "path": "beta" }, { "path": "gamma" }, { "path": "anchored" }],
+  // A folder VS Code doesn't watch, standing in for a bundle file the watcher missed.
+  "settings": { "files.watcherExclude": { "**/hidden-from-watcher/**": true } }
 }

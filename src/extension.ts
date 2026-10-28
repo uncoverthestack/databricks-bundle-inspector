@@ -773,6 +773,22 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     void vscode.commands.executeCommand("setContext", "databricksBundleInspector.bundlesSearched", true);
   }
 
+  /** Every bundle in the folders, by the same rules on open and on Check All. */
+  async function findBundleRoots(folders: readonly vscode.WorkspaceFolder[]): Promise<string[]> {
+    const found = await Promise.all(
+      folders
+        .filter((folder) => folder.uri.scheme === "file")
+        .map((folder) =>
+          vscode.workspace.findFiles(
+            new vscode.RelativePattern(folder, BUNDLE_FILE_GLOB),
+            SKIPPED_FOLDERS_GLOB,
+            BUNDLE_SEARCH_MAX_FILES,
+          ),
+        ),
+    );
+    return selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
+  }
+
   async function checkBundlesIn(
     folders: readonly vscode.WorkspaceFolder[],
   ): Promise<OpenFoldersCheck> {
@@ -785,16 +801,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     };
     try {
       const localFolders = folders.filter((folder) => folder.uri.scheme === "file");
-      const found = await Promise.all(
-        localFolders.map((folder) =>
-          vscode.workspace.findFiles(
-            new vscode.RelativePattern(folder, BUNDLE_FILE_GLOB),
-            SKIPPED_FOLDERS_GLOB,
-            BUNDLE_SEARCH_MAX_FILES,
-          ),
-        ),
-      );
-      const allRoots = selectBundleRoots(found.flat().map((uri) => uri.fsPath), Infinity);
+      const allRoots = await findBundleRoots(localFolders);
       check.bundleCount = allRoots.length;
       for (const bundleRoot of allRoots) foundBundles.add(bundleRoot);
       bundlesSearched();
@@ -1788,7 +1795,15 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   noteSidebarShown(bundlesView.visible || settingsView.visible);
 
   // One at a time, as on open, so many bundles never start many CLI runs at once.
+  /**
+   * Searches the open folders again first: on Linux, VS Code can miss a bundle file written
+   * the instant its folder was made (`cp -r`), and then only this finds it.
+   */
   async function checkAllBundles(): Promise<void> {
+    const roots = await findBundleRoots(vscode.workspace.workspaceFolders ?? []);
+    const added = roots.filter((root) => !foundBundles.has(root));
+    for (const root of added) foundBundles.add(root);
+    if (added.length > 0) renderStatusBar();
     for (const root of [...foundBundles]) await refreshBundle(root, checkAgainFlags);
   }
   refreshSidebar = () => {

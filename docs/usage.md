@@ -22,7 +22,7 @@ Each one is checked with `databricks --version` before it is used. So on Windows
 
 Open a folder containing a `databricks.yml` or `databricks.yaml` file. That is all it takes to get the checks: the extension starts by itself, checks the bundles in the folder, and lists what it finds in the **Problems** panel. It checks again each time you save. It opens no panel and shows no messages while doing so.
 
-A folder with many bundles gets its first 10 checked on open (the ones closest to the top of the folder first). The others are checked when you save one of their files. Bundles inside `node_modules`, `.git`, `.databricks`, `.venv` and `venv` are skipped.
+A folder with many bundles gets its first 10 checked on open (the ones closest to the top of the folder first). The others are checked when you save one of their files. Bundles inside `node_modules`, `.git`, `.databricks`, `.venv`, `venv`, `site-packages`, `.tox` and `__pycache__` are skipped. A bundle made while the folder is open shows up on its own. On Linux, VS Code can miss a bundle file written the instant its folder is made (a `cp -r` of a bundle folder missed about 1 in 50 to 200 times in testing); **Check All Databricks Bundles Again** searches the open folders and finds it.
 
 To see the graph:
 
