@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../bundle/issues.js";
+import { jobReviewReport } from "../../bundle/reviewReport.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 import { buildPipelineView, pipelineKeysOf, pipelineReviewSummary } from "../../webview/lib/pipelineView.js";
 
@@ -15,7 +16,7 @@ import { buildPipelineView, pipelineKeysOf, pipelineReviewSummary } from "../../
  * preview leaves it as its text (`tasks: "${var.job_tasks}"`). One bundle per list or
  * block field of a job and a pipeline, from `databricks bundle schema`, each with that
  * field (or a list's first item) set to a variable: every one the CLI accepts must go
- * through the inspector without an error. A field a new CLI adds is tested as it appears.
+ * through the inspector, the pipeline view and each job's full report without an error. A field a new CLI adds is tested as it appears.
  */
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
@@ -128,6 +129,14 @@ async function inspect(dir: string): Promise<boolean> {
   if (!result.ok) return false;
   const graph = await enrichGraphWithFileContent(await extractBundleGraph(result.data, dir));
   const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir);
+  for (const jobKey of Object.keys(result.data.resources?.jobs ?? {})) {
+    jobReviewReport(result.data, graph, jobKey, issues, {
+      targetLabel: "structural preview",
+      structuralPreview: true,
+      extensionVersion: "test",
+      checkedAt: new Date(0),
+    });
+  }
   for (const key of pipelineKeysOf(result.data)) {
     const view = buildPipelineView(graph, result.data, key, issues);
     if (view) pipelineReviewSummary(view, { bundleName: "variable-fields", targetLabel: "structural preview" });
