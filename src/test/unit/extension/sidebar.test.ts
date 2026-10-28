@@ -148,7 +148,7 @@ describe("graphRow", () => {
     expect(graphRow(at({ stage: "needed" })).description).toBe("dev needs sign-in");
     expect(graphRow(at({ stage: "needed" })).tooltip).toContain("typed, not run");
     expect(graphRow(at({ stage: "terminal" })).description).toBe("dev: press Enter in the terminal");
-    expect(graphRow(at({ stage: "updated" })).description).toBe("sign-in profile updated");
+    expect(graphRow(at({ stage: "updated" })).description).toBe("sign-in saved");
     expect(graphRow(at({ stage: "checking" })).description).toBe("checking dev…");
     const blocked = at({ stage: "needed", blockedReason: "the \"tok\" profile signs in another way" });
     expect(graphRow(blocked).tooltip).toContain('Couldn\'t check dev: the "tok" profile signs in another way.');

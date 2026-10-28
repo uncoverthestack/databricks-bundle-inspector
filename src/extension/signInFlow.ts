@@ -54,11 +54,20 @@ export interface SignInDeps {
   telemetry(step: "terminal_opened" | "profile_updated", from?: "graph" | "sidebar"): void;
 }
 
-/** The file `auth login` saves profiles in: `DATABRICKS_CONFIG_FILE`, else `~/.databrickscfg`. */
-export function configFilePath(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * The file `auth login` saves profiles in: `DATABRICKS_CONFIG_FILE`, else `~/.databrickscfg`.
+ * A relative path is from `folder`, as the CLI reads it from the folder it runs in, and the
+ * checks and the sign-in terminal both run it in the bundle's folder (CLI 0.299.0 and 1.21.0).
+ */
+export function configFilePath(folder: string, env: NodeJS.ProcessEnv = process.env): string {
   const set = env.DATABRICKS_CONFIG_FILE?.trim();
   if (!set) return path.join(os.homedir(), ".databrickscfg");
-  return set.startsWith("~/") ? path.join(os.homedir(), set.slice(2)) : set;
+  return set.startsWith("~/") ? path.join(os.homedir(), set.slice(2)) : path.resolve(folder, set);
+}
+
+/** `DATABRICKS_CONFIG_PROFILE`, which the CLI uses before the bundle's `workspace.profile` (CLI 0.299.0 and 1.21.0). */
+function environmentProfile(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.DATABRICKS_CONFIG_PROFILE?.trim() || undefined;
 }
 
 /** The sign-in for the target the graph shows; one at a time, as there is one graph. */
@@ -125,7 +134,18 @@ export class SignInFlow implements vscode.Disposable {
 
   private async open(flow: Flow, from: "graph" | "sidebar"): Promise<void> {
     const { root, target } = flow;
-    const configFile = configFilePath();
+    // Found first, so the profile is planned with no wait before it is typed: a token
+    // profile saved meanwhile under the planned name would otherwise be replaced.
+    const cliFile = await this.deps.cliFile();
+    if (!this.stillOpening(flow)) return;
+    // The CLI the checks use: first on PATH when it is named `databricks`, else typed as its path.
+    const cli = cliFile ? terminalCli(cliFile) : { command: "databricks" };
+    if (!cli) {
+      flow.blockedReason = `the Databricks CLI file in Settings, ${cliFile}, has characters a terminal would read`;
+      this.deps.changed(root, this.banner());
+      return;
+    }
+    const configFile = configFilePath(root);
     if (!canWrite(configFile)) {
       flow.blockedReason = `${configFile} can't be written, and the Databricks CLI saves your sign-in there`;
       this.deps.changed(root, this.banner());
@@ -141,7 +161,7 @@ export class SignInFlow implements vscode.Disposable {
         validateInput: (value) =>
           isSafeHost(value.trim()) ? undefined : "An https:// address, such as https://adb-1234.7.azuredatabricks.net",
       });
-      if (!host || this.flow !== flow) return;
+      if (!host || !this.stillOpening(flow)) return;
       plan = this.plan(root, target, host.trim());
     }
     this.setBlocked(flow, plan);
@@ -150,15 +170,6 @@ export class SignInFlow implements vscode.Disposable {
       return;
     }
 
-    const cliFile = await this.deps.cliFile();
-    if (this.flow !== flow) return;
-    // The CLI the checks use: first on PATH when it is named `databricks`, else typed as its path.
-    const cli = cliFile ? terminalCli(cliFile) : { command: "databricks" };
-    if (!cli) {
-      flow.blockedReason = `the Databricks CLI file in Settings, ${cliFile}, has characters a terminal would read`;
-      this.deps.changed(root, this.banner());
-      return;
-    }
     const terminal = vscode.window.createTerminal({
       name: "Databricks sign-in",
       cwd: root,
@@ -183,6 +194,11 @@ export class SignInFlow implements vscode.Disposable {
     return { target: flow.target, stage: flow.stage, ...(flow.blockedReason ? { blockedReason: flow.blockedReason } : {}) };
   }
 
+  /** The graph hasn't moved on, and Check again wasn't clicked, while the terminal was being opened. */
+  private stillOpening(flow: Flow): boolean {
+    return this.flow === flow && flow.stage !== "checking";
+  }
+
   private setBlocked(flow: Flow, plan: SignInPlan): void {
     if (plan.kind === "blocked") flow.blockedReason = plan.reason;
     else delete flow.blockedReason;
@@ -201,21 +217,27 @@ export class SignInFlow implements vscode.Disposable {
 
   /**
    * Whether the checks leave the profile to the CLI, which then picks it by the target's
-   * host: no profile in Settings or the bundle, and a host in the bundle. With no host the
+   * host: no profile in Settings, `DATABRICKS_CONFIG_PROFILE` or the bundle, and a host in the bundle. With no host the
    * CLI uses DEFAULT only (seen on CLI 1.21.0), so a profile under another name isn't used.
    */
   private picksProfileByHost(root: string, target: string): boolean {
     const workspace = this.workspace(root, target);
-    return this.deps.configuredProfile() === undefined && workspace.profile === undefined && typeof workspace.host === "string";
+    return (
+      this.deps.configuredProfile() === undefined &&
+      environmentProfile() === undefined &&
+      workspace.profile === undefined &&
+      typeof workspace.host === "string"
+    );
   }
 
   private plan(root: string, target: string, askedHost?: string): SignInPlan {
     const workspace = this.workspace(root, target);
-    const config = readConfig(configFilePath());
+    const config = readConfig(configFilePath(root));
     if ("reason" in config) return { kind: "blocked", reason: config.reason };
     return planSignIn({
       host: askedHost ?? workspace.host,
-      profile: this.deps.configuredProfile() ?? workspace.profile,
+      // As the CLI picks it: --profile (the setting), then the environment, then the bundle.
+      profile: this.deps.configuredProfile() ?? environmentProfile() ?? workspace.profile,
       sections: config.sections,
     });
   }

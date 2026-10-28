@@ -107,7 +107,8 @@ export function terminalCli(
   const paths = platform === "win32" ? path.win32 : path.posix;
   const base = paths.basename(cliFile);
   const named = platform === "win32" ? /^databricks\.(exe|cmd|bat)$/i.test(base) : base === "databricks";
-  if (named) return { command: "databricks", folder: paths.dirname(cliFile) };
+  // A folder with the PATH separator in it (`:`, or `;` on Windows) would be split in two on PATH.
+  if (named && !paths.dirname(cliFile).includes(paths.delimiter)) return { command: "databricks", folder: paths.dirname(cliFile) };
   // No leading `~`, which zsh and bash would expand.
   return /^[A-Za-z0-9_./\\][A-Za-z0-9_.~/\\:+-]*$/.test(cliFile) ? { command: cliFile } : undefined;
 }

@@ -162,7 +162,11 @@ function signInRow(target: string, signIn: NonNullable<NonNullable<SidebarBundle
     return { description: `${target}: press Enter in the terminal`, tooltip: `Press Enter in the terminal to start sign-in. ${preview}` };
   }
   if (signIn.stage === "updated") {
-    return { description: "sign-in profile updated", tooltip: `Sign-in profile updated. Check ${target} again from the graph. ${preview}` };
+    // Which profile a sign-in was for can't always be told from the file, so it isn't claimed.
+    return {
+      description: "sign-in saved",
+      tooltip: `The Databricks CLI saved a sign-in. Check ${target} again from the graph to see whether it worked. ${preview}`,
+    };
   }
   return {
     description: `${target} needs sign-in`,

@@ -121,6 +121,12 @@ describe("terminalCli: the terminal runs the CLI file the checks use", () => {
     expect(terminalCli("C:\\tools\\databricks-1.21.exe", "win32")).toEqual({ command: "C:\\tools\\databricks-1.21.exe" });
   });
 
+  test("a folder with the PATH separator in it is typed as its path, as PATH would split it in two", () => {
+    expect(terminalCli("/tmp/cli:1.21/databricks", "darwin")).toEqual({ command: "/tmp/cli:1.21/databricks" });
+    // On Windows the separator is `;`, which a shell would read, so nothing is typed.
+    expect(terminalCli("C:\\tools;old\\databricks.exe", "win32")).toBeUndefined();
+  });
+
   test("not a path with spaces or characters a shell would read", () => {
     expect(terminalCli("/Users/me/my tools/databricks-custom", "darwin")).toBeUndefined();
     expect(terminalCli("/tmp/$(id)/dbx", "darwin")).toBeUndefined();

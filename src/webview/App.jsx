@@ -2623,7 +2623,7 @@ const BANNER_LINK =
 
 /**
  * The banner for a target that fell back for want of a sign-in. One state at a time, each
- * replacing the one before: needs sign-in, press Enter in the terminal, profile updated,
+ * replacing the one before: needs sign-in, press Enter in the terminal, sign-in saved,
  * checking. The graph below stays usable throughout: it shows the structural preview.
  */
 function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, onOpenGuide }) {
@@ -2666,7 +2666,7 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
   } else if (stage === "updated") {
     content = (
       <>
-        <span>Sign-in profile updated.</span>
+        <span>The Databricks CLI saved a sign-in.</span>
         <button type="button" onClick={onCheckAgain} className={BANNER_BUTTON}>
           Check {target} again
         </button>
