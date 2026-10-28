@@ -501,7 +501,7 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
   dashboard_task: (task) => withOptionalSubtitle("dashboard", "Dashboards", task.dashboard_task?.dashboard_id),
   alert_task: (task) =>
     withOptionalSubtitle("alert", "Alert", task.alert_task?.workspace_path ?? task.alert_task?.alert_id),
-  dbt_task: (task) => withOptionalSubtitle("script", "dbt", task.dbt_task?.commands?.join(" ")),
+  dbt_task: (task) => withOptionalSubtitle("script", "dbt", listOf(task.dbt_task?.commands)?.join(" ")),
   dbt_platform_task: (task) =>
     withOptionalSubtitle("script", "dbt platform (Beta)", task.dbt_platform_task?.dbt_platform_job_id),
   dbt_cloud_task: (task) =>
@@ -528,7 +528,7 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
   run_job_task: (task) => withOptionalSubtitle("job", "Run Job", task.run_job_task?.job_id === undefined ? undefined : String(task.run_job_task.job_id)),
   sql_task: (task) => withOptionalSubtitle("sql", "SQL", task.sql_task?.file?.path),
   spark_submit_task: (task) =>
-    withOptionalSubtitle("script", "Spark Submit", task.spark_submit_task?.parameters?.join(" ")),
+    withOptionalSubtitle("script", "Spark Submit", listOf(task.spark_submit_task?.parameters)?.join(" ")),
   ai_runtime_task: (task) =>
     withOptionalSubtitle("script", "AI Runtime", task.ai_runtime_task?.code_source_path),
   gen_ai_compute_task: (task) =>
@@ -571,11 +571,13 @@ function formatTrigger(job: Job): string {
   if (trigger.file_arrival?.url) {
     return `File arrival: ${trigger.file_arrival.url}`;
   }
-  if (trigger.table_update?.table_names?.length) {
-    return `Table update: ${trigger.table_update.table_names.join(", ")}`;
+  const updatedTables = listOf(trigger.table_update?.table_names);
+  if (updatedTables?.length) {
+    return `Table update: ${updatedTables.join(", ")}`;
   }
-  if (trigger.table?.table_names?.length) {
-    return `Table: ${trigger.table.table_names.join(", ")}`;
+  const tables = listOf(trigger.table?.table_names);
+  if (tables?.length) {
+    return `Table: ${tables.join(", ")}`;
   }
   if (trigger.periodic?.interval && trigger.periodic.unit) {
     const { interval, unit } = trigger.periodic;
@@ -595,8 +597,16 @@ function formatRunAs(job: Job): string {
   return "Not specified";
 }
 
+/**
+ * A list field, or `undefined` when it isn't one: the structural preview leaves a complex
+ * variable such as `tasks: ${var.job_tasks}` as its text.
+ */
+function listOf<T>(value: readonly T[] | undefined): readonly T[] | undefined {
+  return Array.isArray(value) ? value : undefined;
+}
+
 function getParameterSummary(job: Job): GraphParameter[] {
-  return (job.parameters ?? [])
+  return (listOf(job.parameters) ?? [])
     .filter((parameter) => typeof parameter.name === "string")
     .slice(0, 3)
     .map((parameter) => ({
@@ -667,7 +677,7 @@ function getJobClusterDetails(
   job: Job | undefined,
   jobClusterKey: string,
 ): GraphComputeDetail[] | undefined {
-  const jobCluster = (job?.job_clusters ?? []).find(
+  const jobCluster = (listOf(job?.job_clusters) ?? []).find(
     (cluster) => cluster.job_cluster_key === jobClusterKey,
   );
   return clusterDetails(jobCluster?.new_cluster);
@@ -1454,7 +1464,7 @@ function addConfigSecretReferences(
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const taskId = (task: JobTask, index: number) =>
       `${jobId}.tasks.${task.task_key ?? `task-${index + 1}`}`;
-    (job.job_clusters ?? []).forEach((jobCluster, index) => {
+    (listOf(job.job_clusters) ?? []).forEach((jobCluster, index) => {
       const users = tasks
         .map((task, taskIndex) => ({ task, taskIndex }))
         .filter(({ task }) => task.job_cluster_key && task.job_cluster_key === jobCluster.job_cluster_key)
