@@ -1,3 +1,4 @@
+import path from "path";
 import { LineCounter, parseDocument } from "yaml";
 import { anchorsOf, entries } from "../bundle/variableSources.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
@@ -35,7 +36,12 @@ export interface SidebarBundle {
   /** Where the bundle is, when another bundle has the same folder name (see {@link pathHints}). */
   pathHint?: string;
   /** Set when this bundle is the one open in the graph with a real target picked. */
-  graphTarget?: { target: string; fellBack: boolean };
+  graphTarget?: {
+    target: string;
+    fellBack: boolean;
+    /** The sign-in banner the graph shows for it, when signing in can fix the fallback. */
+    signIn?: { stage: "needed" | "terminal" | "updated" | "checking"; blockedReason?: string } | undefined;
+  };
 }
 
 export interface BundleRow {
@@ -126,6 +132,7 @@ export function graphRow(bundle: SidebarBundle): ChildRow {
       tooltip: `Jobs, tasks and their dependencies, checked against ${picked.target}. Click to show the graph.`,
     };
   }
+  if (picked?.signIn) return signInRow(picked.target, picked.signIn);
   if (picked) {
     return {
       description: `${picked.target} couldn't be checked`,
@@ -142,6 +149,35 @@ export function graphRow(bundle: SidebarBundle): ChildRow {
       .filter((line): line is string => Boolean(line))
       .join("\n"),
   };
+}
+
+/** The Graph row while a target waits on a sign-in: the same state as the graph's banner, in a few words. */
+function signInRow(target: string, signIn: NonNullable<NonNullable<SidebarBundle["graphTarget"]>["signIn"]>): ChildRow {
+  const preview = "The graph shows the structural preview meanwhile. Click to show it.";
+  if (signIn.stage === "checking") return { description: `checking ${target}…`, tooltip: `Checking ${target} again. ${preview}` };
+  if (signIn.blockedReason) {
+    return { description: `${target} needs sign-in`, tooltip: `Couldn't check ${target}: ${signIn.blockedReason}. ${preview}` };
+  }
+  if (signIn.stage === "terminal") {
+    return { description: `${target}: press Enter in the terminal`, tooltip: `Press Enter in the terminal to start sign-in. ${preview}` };
+  }
+  if (signIn.stage === "updated") {
+    // Which profile a sign-in was for can't always be told from the file, so it isn't claimed.
+    return {
+      description: "sign-in saved",
+      tooltip: `The Databricks CLI saved a sign-in. Check ${target} again from the graph to see whether it worked. ${preview}`,
+    };
+  }
+  return {
+    description: `${target} needs sign-in`,
+    tooltip: `Couldn't check ${target}. Sign in to try again: the key icon opens a terminal with the sign-in command typed, not run. ${preview}`,
+  };
+}
+
+/** Whether the Graph row offers the sign-in terminal: only while the banner does. */
+export function graphRowOffersSignIn(bundle: SidebarBundle): boolean {
+  const signIn = bundle.graphTarget?.signIn;
+  return signIn?.stage === "needed" && !signIn.blockedReason;
 }
 
 export interface ProblemsRow extends ChildRow {
@@ -298,6 +334,20 @@ export function cliChoices(checked: readonly CheckedCli[], inUsePath: string | u
       };
     })
     .sort((a, b) => Number(b.inUse) - Number(a.inUse));
+}
+
+/**
+ * A full path typed into the CLI picker, or undefined for anything else, which the picker
+ * only uses to filter its rows. Quotes from Windows' "Copy as path" are dropped, and `~/`
+ * is the home folder.
+ */
+export function typedCliPath(value: string, platform: NodeJS.Platform, home: string): string | undefined {
+  let typed = value.trim();
+  if (/^"[^"]+"$/.test(typed)) typed = typed.slice(1, -1).trim();
+  if (/^~[\\/]/.test(typed)) typed = home + typed.slice(1);
+  // On Windows a full path starts with a drive or `\\server`: `\foo` alone has no drive.
+  const full = platform === "win32" ? /^([a-zA-Z]:[\\/]|\\\\[^\\])/.test(typed) : path.posix.isAbsolute(typed);
+  return full ? typed : undefined;
 }
 
 /** What the Settings view knows about the Databricks CLI. `undefined` while it is looked up. */

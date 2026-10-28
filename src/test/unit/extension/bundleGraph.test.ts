@@ -817,4 +817,36 @@ describe("extractBundleGraph: unusual but valid bundles", () => {
     // IDs above 2^53 are rounded by JSON.parse, as in the CLI output, so only the edge is checked.
     expect(graph.edges.some((edge) => edge.target.startsWith("external-job:"))).toBe(true);
   });
+
+  // The structural preview leaves a complex variable as its text, where a list is expected.
+  test("handles list fields set by a complex variable", async () => {
+    const graph = await extractBundleGraph({
+      bundle: { name: "list-variables" },
+      resources: {
+        jobs: {
+          vars: {
+            parameters: "${var.parameters}",
+            job_clusters: "${var.clusters}",
+            trigger: { table_update: { table_names: "${var.tables}" } },
+            tasks: [
+              { task_key: "dbt", dbt_task: { commands: "${var.commands}" } },
+              { task_key: "submit", spark_submit_task: { parameters: "${var.args}" }, job_cluster_key: "c" },
+            ],
+          },
+          old_trigger: {
+            trigger: { table: { table_names: "${var.tables}" } },
+            tasks: [{ task_key: "t", notebook_task: { notebook_path: "/Workspace/nb" } }],
+          },
+        },
+      },
+    } as unknown as ParsedBundleConfig, "/tmp/bundle-root");
+    const job = graph.nodes.find((node) => node.id === "resources.jobs.vars");
+    expect(job?.trigger).toBe("Not specified");
+    expect(job?.parameters).toEqual([]);
+    const task = (key: string) => graph.nodes.find((node) => node.id === `resources.jobs.vars.tasks.${key}`);
+    expect(task("dbt")).toMatchObject({ taskTypeLabel: "dbt" });
+    expect(task("dbt")?.subtitle).toBeUndefined();
+    expect(task("submit")).toMatchObject({ taskTypeLabel: "Spark Submit" });
+    expect(graph.nodes.find((node) => node.id === "resources.jobs.old_trigger")?.trigger).toBe("Not specified");
+  });
 });
