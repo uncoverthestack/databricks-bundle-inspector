@@ -333,7 +333,7 @@ export function cliRow(cli: SidebarCli): SettingRow {
   return {
     label,
     description: cliProblemWords(cli.issue),
-    tooltip: "Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
+    tooltip: "Databricks Bundle Inspector checks bundles with the Databricks CLI. Click to choose or locate one, or open the install guide.",
     warning: true,
   };
 }
@@ -363,8 +363,8 @@ export function bundlesMessage(bundles: readonly SidebarBundle[]): string | unde
   if (bundles.length === 0 || !bundles.every((bundle) => bundle.state === "cli_missing")) return undefined;
   const notInstalled = bundles.every((bundle) => !bundle.cliIssue || bundle.cliIssue.problem === "not_installed");
   return notInstalled
-    ? "Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below."
-    : "Bundle Inspector checks bundles with the Databricks CLI, and couldn't use the one it found. See Settings below.";
+    ? "Databricks Bundle Inspector checks bundles with the Databricks CLI, and couldn't find it. See Settings below."
+    : "Databricks Bundle Inspector checks bundles with the Databricks CLI, and couldn't use the one it found. See Settings below.";
 }
 
 /**

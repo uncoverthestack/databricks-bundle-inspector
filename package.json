@@ -120,12 +120,12 @@
       },
       {
         "command": "databricksBundleInspector.openGuide",
-        "title": "Open the Bundle Inspector Guide",
+        "title": "Open the Databricks Bundle Inspector Guide",
         "icon": "$(book)"
       },
       {
         "command": "databricksBundleInspector.reportIssue",
-        "title": "Report a Bundle Inspector Issue",
+        "title": "Report a Databricks Bundle Inspector Issue",
         "icon": "$(comment-discussion)"
       },
       {
@@ -148,7 +148,7 @@
       "activitybar": [
         {
           "id": "databricksBundleInspector",
-          "title": "Bundle Inspector",
+          "title": "Databricks Bundle Inspector",
           "icon": "resources/sidebar.svg"
         }
       ]
@@ -159,13 +159,13 @@
           "id": "databricksBundleInspector.bundles",
           "name": "Bundles",
           "icon": "resources/sidebar.svg",
-          "contextualTitle": "Bundle Inspector"
+          "contextualTitle": "Databricks Bundle Inspector"
         },
         {
           "id": "databricksBundleInspector.settings",
           "name": "Settings",
           "icon": "resources/sidebar.svg",
-          "contextualTitle": "Bundle Inspector"
+          "contextualTitle": "Databricks Bundle Inspector"
         }
       ]
     },
@@ -182,7 +182,7 @@
       },
       {
         "view": "databricksBundleInspector.bundles",
-        "contents": "No bundle found in the open folders. Bundle Inspector checks folders that hold a databricks.yml or databricks.yaml file. [Read the usage guide](command:databricksBundleInspector.openGuide)",
+        "contents": "No bundle found in the open folders. Databricks Bundle Inspector checks folders that hold a databricks.yml or databricks.yaml file. [Read the usage guide](command:databricksBundleInspector.openGuide)",
         "when": "workspaceFolderCount > 0 && databricksBundleInspector.bundlesSearched"
       }
     ],
