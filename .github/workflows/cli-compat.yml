@@ -11,6 +11,10 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
+  # The merge queue tests each pull request merged with main and the ones queued ahead of
+  # it; required checks must run here too, or the queue waits for them until it times out.
+  merge_group:
+    types: [checks_requested]
 
 # A newer push to a pull request cancels its older run, whose result no one reads.
 # Every other event (main, schedules, releases) gets a group of its own: never cancelled.
@@ -87,8 +91,9 @@ jobs:
 
       # The random task-graph test with 20,000 jobs instead of the 400 every push runs
       # (about 2 minutes). It doesn't use the CLI, so once per run, not per CLI version.
+      # Weekly and by hand only, not for each pull request in the merge queue.
       - name: Random task graphs, 20,000 jobs
-        if: github.event_name != 'pull_request' && matrix.cli == 'latest'
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.cli == 'latest'
         env:
           RANDOM_RUNS: "20000"
         run: npx jest src/test/unit/extension/jobStructure.random.test.ts

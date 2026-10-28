@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue tests each pull request merged with main and the ones queued ahead of
+  # it; required checks must run here too, or the queue waits for them until it times out.
+  merge_group:
+    types: [checks_requested]
 
 # A newer push to a pull request cancels its older run, whose result no one reads.
 # Every other event (main, schedules, releases) gets a group of its own: never cancelled.
