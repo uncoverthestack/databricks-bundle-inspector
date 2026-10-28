@@ -13,6 +13,16 @@ const INCLUDE_KINDS = new Set(["include_matches_nothing", "resource_not_included
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** No check running or waiting to start, so a background refresh can't land mid-comparison. */
+async function idle(): Promise<void> {
+  for (let waited = 0; waited < 60_000; waited += 250) {
+    const status = await vscode.commands.executeCommand<{ checksPending: boolean }>("databricksBundleInspector.test.statusBar");
+    if (!status?.checksPending) return;
+    await sleep(250);
+  }
+  throw new Error("Timed out waiting for the checks to finish");
+}
+
 function databricksCliAvailable(): boolean {
   try {
     execFileSync("databricks", ["--version"], { stdio: "ignore", timeout: 10_000 });
@@ -205,13 +215,19 @@ export function includeMistakesSuite() {
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
       const fromTop = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
       assert.equal(fromTop?.initialResource?.key, "top_job", "above the jobs, the file's first job");
+      await idle();
       if (PAUSE_MS > 0) await sleep(PAUSE_MS);
 
       // A file include doesn't load is not part of the bundle, so Inspect doesn't open it.
       await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "resources", "legacy.job.yaml")));
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+      await idle();
       const afterLegacy = await vscode.commands.executeCommand<GraphData>("databricksBundleInspector.test.graphData");
-      assert.equal(afterLegacy?.initialResource?.nonce, fromTop?.initialResource?.nonce, "nothing new was sent to the graph");
+      // Not opened on another job: a background refresh keeps the view and carries no
+      // initialResource, which is fine; a new one would mean Inspect opened the file (#275).
+      const nonce = afterLegacy?.initialResource?.nonce;
+      assert.ok(nonce === undefined || nonce === fromTop?.initialResource?.nonce, `the graph was opened again: ${JSON.stringify(afterLegacy?.initialResource)}`);
+      assert.equal(afterLegacy?.parsedBundle?.bundle?.name, "include-mistakes", "the graph still shows the bundle");
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
 
