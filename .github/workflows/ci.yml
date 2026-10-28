@@ -75,6 +75,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check changes/ files
+        run: npm run changelog:check
+
   # Most installs are on Windows, so run the tests there too. Lint, audit and
   # builds do not depend on the OS and stay in the job above.
   windows-tests:
