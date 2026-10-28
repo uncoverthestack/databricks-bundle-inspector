@@ -87,6 +87,23 @@ If the CLI stops partway through a target, for example on a variable with no val
 
 If several profiles in `~/.databrickscfg` point at the same workspace, the CLI refuses to choose one. The graph then lists the matching profiles with a **Choose profile** button; your choice is saved in your user settings (`databricksBundleInspector.profile`) and the target is checked again. To change it later, run **Choose Databricks Login Profile** from the Command Palette. The structural preview doesn't use a profile.
 
+### Signing in for a target
+
+When a target you picked can't be checked because you aren't signed in to its workspace, or your sign-in has expired, the graph says **Couldn't check dev. Sign in to try again.** and keeps showing the structural preview, which stays usable. The same shows on the sidebar's **Open Graph** row, with a key icon.
+
+1. **Open Sign-in Terminal** (or the key icon) opens a terminal named *Databricks sign-in* with the Databricks CLI's standard sign-in command typed in, the same command as in the Databricks docs: `databricks auth login --host "<workspace>" --profile "<name>"`. It isn't run: you read it and press Enter.
+2. Your browser opens the Databricks sign-in page for that workspace. After you sign in, the CLI saves a profile with that name in `~/.databrickscfg` (or the file `DATABRICKS_CONFIG_FILE` names), keeps a copy of the old file next to it as `.bak` (a relative `DATABRICKS_CONFIG_FILE` is from the bundle's folder, as the checks run the CLI there), and keeps the sign-in itself on your computer (in the OS keychain from CLI 1.0).
+3. The graph then says **The Databricks CLI saved a sign-in.** Click **Check dev again** to check the target with it. Nothing is checked by itself. It doesn't say which profile was signed in, as the file doesn't always show it: signing in again to a profile that was already there leaves the file as it was.
+
+Which workspace and profile name it types:
+
+- The workspace is the target's `workspace.host`, else the bundle's. When it uses a variable, or there is none, you are asked for the workspace URL. A target's variable is never swapped for the bundle's own host.
+- The profile is the one the checks use (the `databricksBundleInspector.profile` setting, else `DATABRICKS_CONFIG_PROFILE` in VS Code's environment, else the target's `workspace.profile`, the order the CLI uses), a profile that already signs in through the browser for that workspace, or else a new name made from the workspace (for example `adb-1234`). When neither the target nor the bundle has a `workspace.host` and nothing names a profile, it's `DEFAULT`: the CLI checks such a target with `DEFAULT` only, so a sign-in under another name wouldn't be used. A `DEFAULT` with a token, or for another workspace, isn't replaced; pick a profile in the Profile setting instead. When the profile the checks use is set with a variable, it types nothing, as only the CLI knows its value; set `databricksBundleInspector.profile` to sign in from the graph.
+- It never types the name of a profile that signs in another way, for example with a token: signing in under that name would replace it. The graph says so instead, with **Check dev again** for once you've changed it. It also types nothing when the config file can't be read or written, or has a line the CLI can't read, and says why.
+- It runs the Databricks CLI the checks use. When `databricksBundleInspector.cliPath` names a file that isn't called `databricks`, its path is typed instead.
+
+To undo a sign-in, run `databricks auth logout --profile <name> --delete`, which removes that profile only.
+
 The Problems panel and the status bar always show the structural preview, so they never need a login, including when you save. A picked target changes the graph only.
 
 The status bar item sums up the last checks:

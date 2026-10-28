@@ -1,9 +1,9 @@
 {
   "events": {
     "inspect_bundle": {
-      "description": "Open Graph ran, via the command, the Open Bundle Issues command, a target switch in the panel, the status bar or the sidebar.",
+      "description": "Open Graph ran, via the command, the Open Bundle Issues command, a target switch in the panel, the status bar, the sidebar, or the sign-in banner's Check again.",
       "properties": {
-        "trigger": "command | issues_command | target_switch | status_bar | sidebar",
+        "trigger": "command | issues_command | target_switch | status_bar | sidebar | sign_in_retry",
         "from_resource_file": "Whether it was started from a resource file that include loads, not from databricks.yml. No path is sent.",
         "outcome": "ok | ok_with_errors | no_bundle_file | cli_not_found | cli_not_executable | validation_timeout | validation_output_too_large | invalid_bundle_shape | validation_failed | exception",
         "cli_problem": "cli_not_found only: not_installed | configured_path_invalid | not_databricks_cli",
@@ -74,7 +74,14 @@
     "sidebar_action": {
       "description": "A row or button of the sidebar was used: each one at most once per VS Code window, so it says whether it is used, not how often. The same commands run from the Command Palette are not counted here.",
       "properties": {
-        "action": "open_graph | open_problems | pick_problem (a problem picked from the list of several) | open_target | open_bundle_file | check_again | check_all | choose_cli | choose_profile"
+        "action": "open_graph | open_problems | pick_problem (a problem picked from the list of several) | open_target | open_bundle_file | check_again | check_all | choose_cli | choose_profile | open_sign_in_terminal"
+      }
+    },
+    "sign_in": {
+      "description": "Signing in for a target that fell back for want of a sign-in. The extension types the sign-in command into a terminal and never runs it; nothing about the profile, host or account is sent.",
+      "properties": {
+        "step": "terminal_opened (the command was typed into a terminal) | profile_updated (the Databricks CLI then saved that profile)",
+        "from": "terminal_opened only: graph (the banner's button) | sidebar (the key icon on Open Graph)"
       }
     },
     "extension_uninstalled": {

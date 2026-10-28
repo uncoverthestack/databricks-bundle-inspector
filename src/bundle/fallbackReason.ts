@@ -11,11 +11,14 @@ export type FallbackCode =
   | "login_other"
   | "other";
 
+/** The reasons signing in can fix, so the graph offers the sign-in terminal for them. */
+export const SIGN_IN_CODES: ReadonlySet<FallbackCode> = new Set(["not_logged_in", "login_expired", "no_profile"]);
+
 /** What a failed real-target check left for the graph's note. */
 export interface TargetFallback {
   /** The CLI's whole message, shown on hover and read for the profile choice. */
   message: string;
-  /** A short reason for the note, such as "you're not logged in to Databricks". */
+  /** A short reason for the note, such as "you're not signed in to Databricks". */
   reason: string;
   code: FallbackCode;
 }
@@ -41,14 +44,14 @@ function shortReason(errorCode: string | undefined, message: string): Reason {
     const reason = seconds ? `the workspace didn't answer within ${seconds} seconds` : "the workspace didn't answer";
     return { reason, code: "timeout" };
   }
-  if (errorCode === "AUTH_NOT_CONFIGURED") return { reason: "you're not logged in to Databricks", code: "not_logged_in" };
+  if (errorCode === "AUTH_NOT_CONFIGURED") return { reason: "you're not signed in to Databricks", code: "not_logged_in" };
   const missingProfile = /has no (\S+) profile configured/.exec(message);
-  if (missingProfile) return { reason: `there's no login profile named "${missingProfile[1]}"`, code: "no_profile" };
+  if (missingProfile) return { reason: `there's no sign-in profile named "${missingProfile[1]}"`, code: "no_profile" };
   if (/multiple profiles matched/.test(message)) {
-    return { reason: "several login profiles match this workspace", code: "several_profiles" };
+    return { reason: "several sign-in profiles match this workspace", code: "several_profiles" };
   }
   if (/host in the profile .* match the host configured in the bundle/.test(message)) {
-    return { reason: "the login profile is for a different workspace", code: "other_workspace" };
+    return { reason: "the sign-in profile is for a different workspace", code: "other_workspace" };
   }
   if (/: no such target\b/.test(message)) return { reason: "the bundle has no such target", code: "no_such_target" };
   const login = loginReason(message);
@@ -67,23 +70,24 @@ function shortReason(errorCode: string | undefined, message: string): Reason {
  *   and the request to renew it got no answer: no network, a VPN, a proxy or a firewall.
  *   When Databricks answers and turns the renewal down, the SDK says why instead
  *   ("Refresh token is invalid", "(error code: invalid_grant)").
- * - `no cached credentials` (CLI 1.x): no saved login for that workspace at all.
+ * - `no cached credentials` (CLI 1.x) and `cache: token not found` (CLI 0.299.0): no
+ *   saved sign-in for that workspace at all.
  */
 function loginReason(message: string): Reason | undefined {
   if (!/error getting token:/.test(message)) return undefined;
   if (/token refresh: Post "/.test(message)) {
     return {
-      reason: "your Databricks login needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)",
+      reason: "your Databricks sign-in needed renewing, but Databricks couldn't be reached (check your network, VPN or proxy)",
       code: "login_unreachable",
     };
   }
-  if (/no cached credentials/.test(message)) {
-    return { reason: 'you\'re not logged in to this workspace. Run "databricks auth login" to log in', code: "not_logged_in" };
+  if (/no cached credentials|cache: token not found/.test(message)) {
+    return { reason: "you're not signed in to this workspace", code: "not_logged_in" };
   }
   if (/Refresh token is invalid|invalid_grant|cached token has no refresh token/.test(message)) {
-    return { reason: 'your Databricks login has expired. Run "databricks auth login" to log in again', code: "login_expired" };
+    return { reason: "your Databricks sign-in has expired", code: "login_expired" };
   }
-  return { reason: "your Databricks login couldn't be used", code: "login_other" };
+  return { reason: "your Databricks sign-in couldn't be used", code: "login_other" };
 }
 
 /**

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import path from "path";
+import os from "os";
 import { existsSync, readFileSync } from "fs";
 import {
   BUNDLE_PROBE_TARGET,
@@ -115,6 +116,7 @@ import {
   profileRow,
   targetLine,
   targetsRow,
+  typedCliPath,
   type CliCandidate,
   type SidebarBundle,
   type SidebarCli,
@@ -126,12 +128,14 @@ import {
   OPEN_PROBLEMS_COMMAND,
   OPEN_TARGET_COMMAND,
   SETTINGS_VIEW,
+  SIGN_IN_COMMAND,
   SIDEBAR_ORIGIN,
   SettingsTreeProvider,
   type BundlesElement,
 } from "./extension/sidebarView.js";
 import { NEW_ISSUE_URL, usageDocsUrl } from "./bundle/issueDocs.js";
 import { createCheckLimiter } from "./extension/checkLimiter.js";
+import { SignInFlow, type SignInBanner } from "./extension/signInFlow.js";
 
 // Re-exported so existing imports of it from this module keep working.
 export { isOpenFilePathAllowed };
@@ -139,7 +143,7 @@ export { isOpenFilePathAllowed };
 /** A sidebar shown this soon after the extension started counts as reopened by VS Code. */
 const SIDEBAR_AT_START_MS = 5_000;
 
-type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar" | "sidebar";
+type InspectTrigger = "command" | "issues_command" | "target_switch" | "status_bar" | "sidebar" | "sign_in_retry";
 
 let telemetry: Telemetry | undefined;
 
@@ -920,6 +924,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    * instead of running the failing target again; picking it again in the graph retries it.
    */
   let activeTargetFallback: TargetFallback | undefined;
+  /** Signing in for the target that fell back, shown as the graph's banner (see signInFlow.ts). */
+  const signInFlow = new SignInFlow({
+    bundleFiles: (root) => [bundleFilePath(root), ...(bundleLoadedFiles().get(root) ?? [])],
+    configuredProfile: () => getConfiguredProfile(getConfiguration()),
+    cliFile: async () => {
+      const cli = await resolveDatabricksCli(currentConfiguredCliPath());
+      // Run by name: the terminal finds the same one on PATH.
+      return cli.ok && (cli.candidate.includes("/") || cli.candidate.includes("\\")) ? cli.candidate : undefined;
+    },
+    changed: (root, banner) => {
+      if (shownBundleDir === root) {
+        activeBundleData = activeBundleData ? { ...(activeBundleData as object), signIn: banner ?? null } : activeBundleData;
+        livePanel()?.webview.postMessage({ type: "signIn", signIn: banner ?? null });
+      }
+      refreshSidebar?.();
+    },
+    telemetry: (step, from) => telemetry?.logUsage("sign_in", { step, ...(from ? { from } : {}) }),
+  });
+  extensionContext.subscriptions.push(signInFlow);
   let activeTargetOptions: string[] = [];
   let activeStructuralResolutionBundle: ParsedBundleConfig | undefined;
   // The latest user navigation owns the panel, even if an older CLI finishes later.
@@ -1047,12 +1070,18 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   function bundleMessageDataFromInspection(
+    root: string,
     inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
     requestedTarget?: string,
     options?: { focusIssues?: boolean; initialResource?: GraphResource | undefined; preserveView?: boolean },
   ): object | undefined {
     const { result } = inspection;
     if (!result.ok) return undefined;
+    // A target that fell back for want of a sign-in gets the sign-in banner; any other result clears it.
+    const fellBack = requestedTarget !== undefined && inspection.inspectedTargetMode === "probe" && inspection.fallbackMessage !== undefined;
+    const signIn: SignInBanner | undefined = fellBack
+      ? signInFlow.bannerFor(root, requestedTarget, inspection.fallbackCode)
+      : (signInFlow.reset(), undefined);
 
     const bundleData = inspection.bundleData;
     const enrichedGraph = inspection.enrichedGraph;
@@ -1071,6 +1100,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       requestedTarget: requestedTarget ?? null,
       targetFallbackMessage: inspection.fallbackMessage ?? null,
       targetFallbackReason: inspection.fallbackReason ?? null,
+      signIn: signIn ?? null,
       profileChoice: requestedTarget ? ambiguousProfilesOf(inspection) ?? null : null,
       focusIssuesNonce: options?.focusIssues ? Date.now() : null,
       preserveView: options?.preserveView === true,
@@ -1176,7 +1206,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           activeTargetFallback = undefined;
         }
         if (!requestedTarget) {
-          const messageData = bundleMessageDataFromInspection(probeInspection, undefined, { preserveView: true });
+          const messageData = bundleMessageDataFromInspection(bundleDir, probeInspection, undefined, { preserveView: true });
           if (messageData) {
             postBundleData(bundleDir, messageData);
           }
@@ -1198,6 +1228,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         : inspected;
       if (!fellBack) activeTargetFallback = fallbackOf(inspected);
       const messageData = bundleMessageDataFromInspection(
+        bundleDir,
         inspection,
         requestedTarget,
         { preserveView: true },
@@ -1254,16 +1285,25 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     });
     const file = picked?.[0]?.fsPath;
     if (!file) return;
+    await useCliFile(file, inspectAgain);
+  }
 
-    const cli = await verifyCliPath(file);
-    if (!cli.ok) {
+  /**
+   * Saves `file` to the cliPath user setting once it answers `--version` as the Databricks
+   * CLI. Otherwise says why and offers the file picker.
+   */
+  async function useCliFile(file: string, inspectAgain: () => Promise<void>): Promise<void> {
+    const cli = existsSync(file) ? await verifyCliPath(file) : undefined;
+    if (!cli?.ok) {
       const name = path.basename(file);
-      const printed = cli.otherProgramOutput?.trim().slice(0, 60);
+      const printed = cli?.otherProgramOutput?.trim().slice(0, 60);
       const expected = process.platform === "win32" ? "databricks.exe" : "databricks";
       const choice = await vscode.window.showErrorMessage(
-        printed
-          ? `${name} is not the Databricks CLI (it printed "${printed}"). Pick ${expected}.`
-          : `${name} could not be run as the Databricks CLI. Pick ${expected}.`,
+        !cli
+          ? `There is no file at ${file}. Pick ${expected}.`
+          : printed
+            ? `${name} is not the Databricks CLI (it printed "${printed}"). Pick ${expected}.`
+            : `${name} could not be run as the Databricks CLI. Pick ${expected}.`,
         LOCATE_CLI,
       );
       if (choice === LOCATE_CLI) await locateCli(inspectAgain);
@@ -1486,6 +1526,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
       rememberInspection(inspection);
       const bundleMessageData = bundleMessageDataFromInspection(
+        bundleDir,
         inspection,
         requestedTarget,
         { ...options, initialResource, preserveView: options?.trigger === "target_switch" },
@@ -1534,6 +1575,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           }
           if (message?.type === "chooseProfile") {
             void chooseProfileFromGraph();
+          }
+          // The sign-in banner. The target is the one the banner names, checked against the flow.
+          if (message?.type === "openSignInTerminal" && typeof message.target === "string" && activeBundleDir) {
+            void signInFlow.openTerminal(activeBundleDir, message.target, "graph");
+          }
+          if (message?.type === "checkTargetAgain" && typeof message.target === "string" && activeBundleDir) {
+            void checkTargetAgain(activeBundleDir, message.target);
+          }
+          if (message?.type === "openSignInGuide") {
+            void vscode.env.openExternal(vscode.Uri.parse(`${usageDocsUrl(extensionVersion)}#signing-in-for-a-target`));
           }
           if (message?.type === "openFile" && typeof message.path === "string") {
             if (
@@ -1645,6 +1696,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
   }
 
+  /** The sign-in banner's Check again: the banner says "Checking" until the check ends. */
+  async function checkTargetAgain(root: string, target: string): Promise<void> {
+    signInFlow.markChecking(root, target);
+    await inspectBundle(target, { trigger: "sign_in_retry" }, root);
+  }
+
   /** A target picked in the graph's dropdown, or the structural preview for `undefined`. */
   async function selectTarget(target: string | undefined): Promise<void> {
     const bundleDirForPanel = activeBundleDir;
@@ -1671,6 +1728,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           return activeBundleData;
         },
       ),
+      // The sign-in banner of the bundle in the graph, and its Check again as the graph sends it.
+      vscode.commands.registerCommand("databricksBundleInspector.test.signIn", () =>
+        activeBundleDir ? (signInFlow.bannerOf(activeBundleDir) ?? null) : null,
+      ),
+      vscode.commands.registerCommand("databricksBundleInspector.test.checkTargetAgain", async (target: string) => {
+        if (activeBundleDir) await checkTargetAgain(activeBundleDir, target);
+        return activeBundleData;
+      }),
       vscode.commands.registerCommand(
         "databricksBundleInspector.test.graphData",
         () => activeBundleData,
@@ -1750,7 +1815,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         cliIssue: cliIssues.get(root),
         checking: runningRefreshes.has(root) && !waitingRefreshes.has(root),
         targets: targetsByRoot.get(root) ?? [],
-        ...(target ? { graphTarget: { target, fellBack: activeTargetFallback !== undefined } } : {}),
+        ...(target
+          ? { graphTarget: { target, fellBack: activeTargetFallback !== undefined, signIn: signInFlow.bannerOf(root) } }
+          : {}),
       };
     });
   }
@@ -1940,7 +2007,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     );
     const inUse = sidebarCli?.ok ? sidebarCli.path : undefined;
     const choices = cliChoices(checked, inUse);
-    type Item = vscode.QuickPickItem & { path?: string; action?: "browse" | "clear" | "install" };
+    type Item = vscode.QuickPickItem & { path?: string; action?: "browse" | "clear" | "install" | "typed" };
     const items: Item[] = [
       ...choices.map((choice) => ({
         label: choice.inUse ? `$(check) ${choice.label}` : choice.label,
@@ -1957,13 +2024,33 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         ? [{ label: "$(link-external) Open the Databricks CLI Install Guide", action: "install" as const }]
         : []),
     ];
-    const picked = await vscode.window.showQuickPick(items, {
-      title: "Choose the Databricks CLI",
-      placeHolder: choices.length > 0 ? "Pick a CLI, or browse for one" : "No Databricks CLI found. Browse for one, or install it",
-      matchOnDetail: true,
+    const picker = vscode.window.createQuickPick<Item>();
+    picker.title = "Choose the Databricks CLI";
+    picker.placeholder =
+      choices.length > 0
+        ? "Pick a CLI, type its full path, or browse for one"
+        : "No Databricks CLI found. Type its full path, browse for one, or install it";
+    picker.matchOnDetail = true;
+    picker.items = items;
+    // A full path typed in becomes the first row, so Enter uses it.
+    picker.onDidChangeValue((value) => {
+      const typed = typedCliPath(value, process.platform, os.homedir());
+      picker.items = typed
+        ? [{ label: `$(file) Use ${typed}`, description: "saves to the cliPath setting", path: typed, action: "typed", alwaysShow: true }, ...items]
+        : items;
     });
+    const picked = await new Promise<Item | undefined>((resolve) => {
+      picker.onDidAccept(() => {
+        resolve(picker.selectedItems[0]);
+        picker.hide();
+      });
+      picker.onDidHide(() => resolve(undefined));
+      picker.show();
+    });
+    picker.dispose();
     if (!picked) return;
     if (picked.action === "browse") return locateCli(recheckAllBundles);
+    if (picked.action === "typed" && picked.path) return useCliFile(picked.path, recheckAllBundles);
     if (picked.action === "install") {
       void vscode.env.openExternal(vscode.Uri.parse(databricksCliInstallUrl(process.platform)));
       return;
@@ -2010,6 +2097,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     vscode.commands.registerCommand(OPEN_TARGET_COMMAND, (root: string, target: string) => {
       logSidebarAction("open_target");
       return openTarget(root, target);
+    }),
+    vscode.commands.registerCommand(SIGN_IN_COMMAND, (element?: BundlesElement) => {
+      const target = element ? sidebarBundles().find((bundle) => bundle.root === element.root)?.graphTarget?.target : undefined;
+      if (!element || !target) return undefined;
+      logSidebarAction("open_sign_in_terminal");
+      return signInFlow.openTerminal(element.root, target, "sidebar");
     }),
     vscode.commands.registerCommand(OPEN_PROBLEMS_COMMAND, (element?: BundlesElement) => {
       if (!element) return undefined;
