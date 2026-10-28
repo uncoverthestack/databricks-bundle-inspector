@@ -1,37 +1,48 @@
 import path from "node:path";
 import { isMap, LineCounter, parseDocument } from "yaml";
 
+/** A job or pipeline the graph can open on. */
+export interface GraphResource {
+  group: "jobs" | "pipelines";
+  key: string;
+}
+
 /**
- * The job a resource file's graph opens on: the one whose definition holds the cursor,
- * otherwise the first job in the file. `undefined` when the file defines no job.
+ * The job or pipeline a resource file's graph opens on: the one whose definition holds
+ * the cursor, otherwise the file's first job, otherwise its first pipeline. `undefined`
+ * when the file defines neither.
  *
  * @param text The file's YAML.
  * @param cursorLine The cursor's 0-based line.
  */
-export function jobKeyAtLine(text: string, cursorLine: number): string | undefined {
+export function resourceAtLine(text: string, cursorLine: number): GraphResource | undefined {
   const lineCounter = new LineCounter();
-  let jobs: { key: string; firstLine: number; lastLine: number }[];
+  let found: (GraphResource & { firstLine: number; lastLine: number })[];
   try {
     const document = parseDocument(text, { lineCounter });
     if (document.errors.length > 0) return undefined;
     const resources = isMap(document.contents) ? document.contents.get("resources", true) : undefined;
-    const jobMap = isMap(resources) ? resources.get("jobs", true) : undefined;
-    if (!isMap(jobMap)) return undefined;
-    jobs = jobMap.items.flatMap((item) => {
-      const key = (item.key as { value?: unknown } | null)?.value;
-      const offset = (item.key as { range?: [number, number, number] } | null)?.range?.[0];
-      const end = (item.value as { range?: [number, number, number] } | null)?.range?.[2]
-        ?? (item.key as { range?: [number, number, number] } | null)?.range?.[2];
-      return typeof key === "string" && typeof offset === "number" && typeof end === "number"
-        ? [{ key, firstLine: lineCounter.linePos(offset).line - 1, lastLine: lineCounter.linePos(Math.max(offset, end - 1)).line - 1 }]
-        : [];
+    if (!isMap(resources)) return undefined;
+    found = (["jobs", "pipelines"] as const).flatMap((group) => {
+      const groupMap = resources.get(group, true);
+      if (!isMap(groupMap)) return [];
+      return groupMap.items.flatMap((item) => {
+        const key = (item.key as { value?: unknown } | null)?.value;
+        const offset = (item.key as { range?: [number, number, number] } | null)?.range?.[0];
+        const end = (item.value as { range?: [number, number, number] } | null)?.range?.[2]
+          ?? (item.key as { range?: [number, number, number] } | null)?.range?.[2];
+        return typeof key === "string" && typeof offset === "number" && typeof end === "number"
+          ? [{ group, key, firstLine: lineCounter.linePos(offset).line - 1, lastLine: lineCounter.linePos(Math.max(offset, end - 1)).line - 1 }]
+          : [];
+      });
     });
   } catch {
     return undefined;
   }
-  // A later section (pipelines, variables, etc.) is outside the last job too.
-  const holding = jobs.find((job) => job.firstLine <= cursorLine && cursorLine <= job.lastLine);
-  return (holding ?? jobs[0])?.key;
+  // Outside every definition (variables, a comment, the `resources:` line), jobs come first.
+  const holding = found.find((item) => item.firstLine <= cursorLine && cursorLine <= item.lastLine);
+  const chosen = holding ?? found.find((item) => item.group === "jobs") ?? found[0];
+  return chosen ? { group: chosen.group, key: chosen.key } : undefined;
 }
 
 /** One spelling of a path, for comparing paths on a file system that ignores case. */

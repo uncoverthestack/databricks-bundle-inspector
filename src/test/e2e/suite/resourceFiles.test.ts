@@ -5,7 +5,7 @@ import { codeValue } from "../../../bundle/issueDocs.js";
 import { folderIgnoresCase } from "../../../bundle/pathCase.js";
 
 type GraphData = {
-  initialJob?: { key: string; nonce: number } | null;
+  initialResource?: { group: string; key: string; nonce: number } | null;
   parsedBundle?: { bundle?: { name?: string } };
 };
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,7 +44,7 @@ export function resourceFilesSuite() {
       await realExecute("databricksBundleInspector.inspectBundle");
       const result = await data();
       assert.equal(result?.parsedBundle?.bundle?.name, bundle);
-      assert.equal(result?.initialJob?.key, job);
+      assert.equal(result?.initialResource?.key, job);
     }
 
     async function inspectAlpha(): Promise<void> {
@@ -81,6 +81,13 @@ export function resourceFilesSuite() {
         await inspect("beta/resources/jobs.yml", "name: beta_second", "resource_beta", "beta_second");
         await inspect("alpha/teams/sales/resources/shared.yml", "name: sales_second", "resource_sales", "sales_second");
       }
+    });
+
+    it("opens on the pipeline whose definition holds the cursor", async function () {
+      await inspect("alpha/resources/jobs.yml", "schema: alpha", "resource_alpha", "alpha_pipeline");
+      assert.equal((await data())?.initialResource?.group, "pipelines");
+      await inspect("alpha/resources/jobs.yml", "name: alpha_second", "resource_alpha", "alpha_second");
+      assert.equal((await data())?.initialResource?.group, "jobs");
     });
 
     it("uses the file's first job when the cursor is in a later variables section", async function () {

@@ -7,7 +7,7 @@ The workspace has three bundles. `alpha` also includes the file that the nested
 bundle uses `databricks.yaml`, to check that the CLI uses the requested root.
 
 The real VS Code tests cover repeated bundle switching, the job under the cursor,
-a cursor after the jobs, unrelated YAML, `files.exclude`, removing and restoring
+a cursor after the jobs, the pipeline under the cursor, unrelated YAML, `files.exclude`, removing and restoring
 an include, renaming a loaded file to a name with spaces and Unicode, path letter
 case where the file system ignores it, and deleting a nested bundle while its
 parent still loads the same resource file.

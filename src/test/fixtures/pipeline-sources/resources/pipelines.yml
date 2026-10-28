@@ -31,6 +31,13 @@ resources:
       libraries:
         - notebook:
             path: /Users/someone@example.com/pipelines/gold
+    looped_pipeline:
+      name: looped_pipeline
+      serverless: true
+      libraries:
+        # A notebook listed as a file.
+        - file:
+            path: ../src/dlt/bronze.py
   jobs:
     refresh_job:
       name: refresh_job
@@ -43,3 +50,12 @@ resources:
             - task_key: refresh_broken
           spark_python_task:
             python_file: ../src/run.py
+        - task_key: refresh_each
+          depends_on:
+            - task_key: refresh_broken
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: refresh_each_inner
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.looped_pipeline.id}

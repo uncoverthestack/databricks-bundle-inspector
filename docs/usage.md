@@ -29,7 +29,16 @@ To see the graph:
 1. Open the bundle file, or a resource file it loads through `include` (for example `resources/etl_job.yml`).
 2. Click **Open Graph** (the cube and magnifier button in the editor title bar), or right-click and choose **Open Graph**. In the Command Palette it is **Databricks Bundle Inspector: Open Graph**.
 
-The graph opens in a new editor panel. From a resource file, it opens on the job your cursor is in, or the file's first job. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
+The graph opens in a new editor panel. From a resource file, it opens on the job or pipeline your cursor is in, otherwise the file's first job, or its first pipeline when it has no jobs. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
+
+The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipelines**. A bundle with only pipelines opens on its first pipeline. A pipeline shows what its YAML says, with nothing read from its table code:
+
+- **Run by a job in this bundle**: each job with a `pipeline_task` that points at it. Click one to see that job's tasks. Jobs outside the bundle that run it aren't known.
+- **Default catalog · schema**: the pipeline's `catalog` and `schema` (or the older `target`). Databricks puts tables there unless the code names another catalog or schema.
+- **Sources**: each entry in `libraries`, marked **Found**, **Missing**, **No files** (a folder pattern that matches nothing), **Not a notebook**, or **Not checked** (a workspace path, a variable, or a pattern the inspector doesn't read). Click a path to open the file, or its location to open the YAML line.
+- **Issues**, **Configuration** (mode is **Triggered** unless `continuous: true`) and the **Secret scopes** found in its `.py`, `.sql` and `.ipynb` sources and cluster settings.
+
+The graph doesn't show the tables inside a pipeline. In a job's graph, a pipeline task's **Pipeline** row opens its pipeline.
 
 ## Sidebar
 
