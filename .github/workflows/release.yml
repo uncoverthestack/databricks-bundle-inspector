@@ -1,21 +1,17 @@
 name: Release
 
+# Runs only for a pushed tag, so every release is built from its tag's commit. To publish an
+# existing release to a registry again, use publish-release.yml, which reuses its VSIX.
 on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to publish, for example v0.1.0"
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +21,7 @@ jobs:
     name: E2E on every OS
     uses: ./.github/workflows/e2e.yml
     with:
-      ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+      ref: ${{ github.ref }}
 
   package:
     name: Package GitHub release
@@ -42,22 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
-
-      - name: Create tag (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code origin "refs/tags/${{ inputs.tag }}" > /dev/null 2>&1; then
-            echo "Tag ${{ inputs.tag }} already exists — skipping creation"
-          else
-            git tag "${{ inputs.tag }}"
-            git push origin "${{ inputs.tag }}"
-            echo "Created tag ${{ inputs.tag }}"
-          fi
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -87,9 +68,6 @@ jobs:
           set -euo pipefail
           package_version="$(node -p "require('./package.json').version")"
           tag_name="${GITHUB_REF_NAME}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag_name="${{ inputs.tag }}"
-          fi
           if [ "$tag_name" != "v$package_version" ]; then
             echo "Tag $tag_name does not match package.json version $package_version" >&2
             exit 1
