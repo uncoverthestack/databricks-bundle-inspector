@@ -202,12 +202,21 @@ export function workspaceChangesSuite(): void {
 
     it("finds a bundle made on disk while the folder is open", async () => {
       const made = path.join(folder("alpha"), "made-later");
+      // On Linux VS Code can miss a file written the instant its folder is made (#257, #284),
+      // which Check All covers (next test). So the file is written once VS Code has seen the folder.
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder("alpha"), "made-later"), false, true, true);
+      const seen = new Promise<void>((resolve, reject) => {
+        watcher.onDidCreate(() => resolve());
+        setTimeout(() => reject(new Error("VS Code never reported the new folder")), 10_000);
+      });
       await mkdir(made);
       try {
+        await seen;
         await writeFile(path.join(made, "databricks.yml"), "bundle:\n  name: made_later\n\ntargets:\n  dev:\n    default: true\n");
         await waitFor(async () => (await bundles()).some((bundle) => bundle.root === made), "the new bundle in the sidebar");
         await waitFor(async () => (await bundles()).find((bundle) => bundle.root === made)?.problems.description === "none found · structural preview", "its check");
       } finally {
+        watcher.dispose();
         await rm(made, { recursive: true, force: true });
         // Its watcher's check finds the file gone and forgets the bundle.
         await vscode.commands.executeCommand("databricksBundleInspector.checkAllBundles");
