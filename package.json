@@ -2,7 +2,7 @@
   "name": "databricks-bundle-inspector",
   "displayName": "Databricks Bundle Inspector",
   "description": "Find Databricks bundle problems before you deploy, including ones bundle validate misses. See them in your code and explore how your jobs and tasks connect.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "UncoverTheStack",
   "icon": "resources/icon.png",
   "license": "Apache-2.0",
