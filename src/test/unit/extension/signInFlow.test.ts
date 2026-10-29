@@ -222,19 +222,6 @@ describe("SignInFlow: leaving the terminal", () => {
     signIn.dispose();
   });
 
-  test("closing the terminal after the CLI saved a sign-in keeps the saved banner", async () => {
-    const signIn = await openFlow();
-    writeFileSync(`${config}.bak`, "");
-    writeFileSync(config, `[flow-close]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
-    for (let waited = 0; signIn.bannerOf(bundle)?.stage !== "updated" && waited < 5_000; waited += 50) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(signIn.bannerOf(bundle)?.stage).toBe("updated");
-    closeTerminal(terminals[0]!);
-    expect(signIn.bannerOf(bundle)?.stage).toBe("updated");
-    signIn.dispose();
-  });
-
   test("Check again from the terminal step: checking, then the banner starts over when the target still fails", async () => {
     const signIn = await openFlow();
     signIn.markChecking(bundle, "dev");

@@ -354,6 +354,28 @@ export function targetsSuite() {
         assert.deepEqual(await banner(), { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
       });
 
+      it("closing the sign-in terminal after the CLI saved a sign-in keeps the saved banner", async function () {
+        this.timeout(120_000);
+        let terminal: vscode.Terminal | undefined;
+        window.createTerminal = ((options: vscode.TerminalOptions) =>
+          (terminal = originals.createTerminal(options))) as typeof vscode.window.createTerminal;
+        await pickTarget("dev");
+        await openTerminal();
+        assert.ok(terminal, "the sign-in terminal opened");
+
+        // What `auth login` writes: the profile with browser sign-in, and a copy of the old file.
+        await writeFile(`${config}.bak`, "");
+        await writeFile(config, `[NO_SUCH_PROFILE_E2E]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+        await waitFor(async () => (await banner())?.stage === "updated", "the profile-updated banner");
+
+        const closed = new Promise<void>((resolve) => {
+          const listener = vscode.window.onDidCloseTerminal((t) => t === terminal && (listener.dispose(), resolve()));
+        });
+        terminal.dispose();
+        await closed;
+        assert.equal((await banner())?.stage, "updated");
+      });
+
       it("a config file that can't be written: nothing is typed, and the banner says why", async function () {
         if (process.platform === "win32") this.skip();
         this.timeout(60_000);
