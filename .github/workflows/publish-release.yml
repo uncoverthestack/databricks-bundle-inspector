@@ -1,8 +1,8 @@
 name: Publish existing release
 
 # Publishes the VSIX already attached to a GitHub release, without rebuilding it,
-# so every registry serves the same bytes. For backfilling a registry added after
-# a release, or retrying one after its release run's artifact has expired.
+# so every registry serves the same bytes. release.yml starts it for each new tag;
+# run it by hand to backfill a registry added after a release, or to retry one.
 # Versions a registry already has are skipped, so re-running is safe.
 # The publishing tools come from the branch this runs on; only the VSIX comes
 # from the release.
@@ -80,6 +80,11 @@ jobs:
     environment:
       name: open-vsx
       url: https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector
+    permissions:
+      contents: read
+      # Trusted publishing: Open VSX swaps this job's GitHub OIDC token for a short-lived
+      # publishing token. Registered for this workflow and the open-vsx environment (#175).
+      id-token: write
 
     steps:
       - name: Checkout
@@ -108,8 +113,8 @@ jobs:
           sha256sum --check ./*.vsix.sha256
           echo "package_name=$(ls ./*.vsix)" >> "$GITHUB_OUTPUT"
 
+      # No OVSX_PAT here: a token in the environment would be used instead of the OIDC exchange.
       - name: Publish VSIX
         env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
           PACKAGE: ${{ steps.vsix.outputs.package_name }}
-        run: npx ovsx publish "$PACKAGE" --skip-duplicate
+        run: npx ovsx publish "$PACKAGE" --skip-duplicate --trusted-publishing
