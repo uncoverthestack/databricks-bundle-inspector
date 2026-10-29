@@ -78,7 +78,7 @@ describe("jobReviewReport", () => {
 
   test("an omitted oversized parameter table is explicitly disclosed", async () => {
     const markdown = await report(bundle({
-      parameters: Array.from({ length: 1000 }, (_, i) => ({ name: `p${i}`, default: "x".repeat(120) })),
+      parameters: Array.from({ length: 1000 }, (_, i) => ({ name: `p${i}_${"x".repeat(120)}` })),
       tasks: [],
     }));
     expect(markdown).toContain("the job parameters");
@@ -89,7 +89,17 @@ describe("jobReviewReport", () => {
     const markdown = await report(bundle({
       parameters: Array.from({ length: 7 }, (_, i) => ({ name: `p${i}`, default: `v${i}` })), tasks: [],
     }));
-    for (let i = 0; i < 7; i++) expect(markdown).toContain(`| \`p${i}\` | \`v${i}\` |`);
+    for (let i = 0; i < 7; i++) expect(markdown).toContain(`| \`p${i}\` |\n`);
+  });
+
+  test("never copies a parameter's value, which the CLI may have filled in from outside the repository", async () => {
+    const markdown = await report(bundle({
+      parameters: [{ name: "api_token", default: "SECRET-FROM-BUNDLE-VAR" }, { name: "run_date", default: "2026-01-01" }],
+      tasks: [],
+    }));
+    expect(markdown).toContain("| `api_token` |\n| `run_date` |");
+    expect(markdown).not.toContain("SECRET-FROM-BUNDLE-VAR");
+    expect(markdown).not.toContain("2026-01-01");
   });
 
   test("a caller's inner for-each task is recognized as starting the reviewed job", async () => {
