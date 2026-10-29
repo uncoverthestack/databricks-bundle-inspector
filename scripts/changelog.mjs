@@ -7,6 +7,7 @@
 //   node scripts/changelog.mjs check     every file in changes/ is well formed
 //   node scripts/changelog.mjs preview   print what release would add
 //   node scripts/changelog.mjs release   move every file into [Unreleased], then delete them
+//   node scripts/changelog.mjs notes 0.6.0   print that version's section, for its GitHub release
 //
 // --root <folder> runs it on another copy of the repo (the tests use it).
 import { readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -83,6 +84,22 @@ export function withChanges(changelog, changes) {
   return [...lines.slice(0, start + 1), ...block, ...lines.slice(end)].join(eol);
 }
 
+/**
+ * One version's section of the CHANGELOG, without its heading: what its GitHub release page
+ * shows. It ends at the next version's heading or at the compare links at the bottom. Throws
+ * when the version has no heading or nothing under it, so a release never gets empty notes.
+ */
+export function releaseNotes(changelog, version) {
+  const lines = changelog.replace(/\r\n/g, "\n").split("\n");
+  const heading = `## [${version}]`;
+  const start = lines.findIndex((line) => line === heading || line.startsWith(`${heading} `));
+  if (start === -1) throw new Error(`CHANGELOG.md has no ${heading} heading`);
+  const next = lines.findIndex((line, index) => index > start && (line.startsWith("## [") || /^\[[^\]]+\]: /.test(line)));
+  const notes = lines.slice(start + 1, next === -1 ? lines.length : next).join("\n").trim();
+  if (!notes) throw new Error(`CHANGELOG.md has nothing under ${heading}`);
+  return notes;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -90,8 +107,22 @@ function main() {
   const root = path.resolve(rootAt === -1 ? process.cwd() : args[rootAt + 1]);
   const dir = path.join(root, "changes");
   const file = path.join(root, "CHANGELOG.md");
+  if (command === "notes") {
+    const version = args[1];
+    if (!version || version.startsWith("--")) {
+      console.error("Usage: node scripts/changelog.mjs notes <version> [--root <folder>]");
+      process.exit(2);
+    }
+    try {
+      console.log(releaseNotes(readFileSync(file, "utf8"), version));
+    } catch (error) {
+      console.error(error.message);
+      process.exit(1);
+    }
+    return;
+  }
   if (!["check", "preview", "release"].includes(command)) {
-    console.error("Usage: node scripts/changelog.mjs check|preview|release [--root <folder>]");
+    console.error("Usage: node scripts/changelog.mjs check|preview|release|notes [--root <folder>]");
     process.exit(2);
   }
   let changes;
