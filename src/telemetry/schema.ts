@@ -17,13 +17,15 @@ type Rule =
   | { type: "enum"; values: readonly string[] }
   | { type: "boolean" }
   | { type: "integer"; max: number }
-  | { type: "pattern"; pattern: RegExp };
+  // `maxLength` states the longest value the pattern allows, so the largest possible event
+  // can be worked out from the schema (telemetry.test.ts keeps it under the batch budget).
+  | { type: "pattern"; pattern: RegExp; maxLength: number };
 
 const oneOf = (...values: string[]): Rule => ({ type: "enum", values });
 const bool: Rule = { type: "boolean" };
 const bucket = oneOf("0", "1", "2-5", "6-20", "21-50", "51+");
 /** `major.minor` only, e.g. `1.21` (see telemetryCliVersion). */
-const cliVersion: Rule = { type: "pattern", pattern: /^\d{1,3}\.\d{1,4}$/ };
+const cliVersion: Rule = { type: "pattern", pattern: /^\d{1,3}\.\d{1,4}$/, maxLength: 8 };
 
 /** The findings whose quick fix is counted, by kind. */
 export const QUICK_FIX_KINDS: readonly string[] = [
@@ -95,7 +97,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
     job_count: bucket,
     pipeline_count: bucket,
     task_count: bucket,
-    task_kinds: { type: "pattern", pattern: /^([a-z_]{1,40}_task(,[a-z_]{1,40}_task){0,30})?$/ },
+    task_kinds: { type: "pattern", pattern: /^([a-z_]{1,40}_task(,[a-z_]{1,40}_task){0,30})?$/, maxLength: 31 * 45 + 30 },
     issue_count: bucket,
   },
   bundle_refreshed_on_save: { bundle_file: bool },
@@ -153,7 +155,7 @@ function matchesRule(value: unknown, rule: Rule): value is string | number | boo
     case "integer":
       return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= rule.max;
     case "pattern":
-      return typeof value === "string" && rule.pattern.test(value);
+      return typeof value === "string" && value.length <= rule.maxLength && rule.pattern.test(value);
   }
 }
 
