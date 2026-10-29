@@ -320,14 +320,21 @@ function problemSection(heading: string, word: string, list: readonly InspectorI
   return lines.join("\n");
 }
 
-function parametersSection(parameters: Array<{ name?: string; default?: string }>): string {
+/**
+ * Names only. With a target picked, a default is the CLI's filled-in value, which can come
+ * from outside the repository (a `BUNDLE_VAR_` environment variable, `--var`), and the report
+ * is made to be pasted where others read it.
+ */
+function parametersSection(parameters: Array<{ name?: string }>): string {
   if (parameters.length === 0) return "";
   return [
     "### Job parameters",
     "",
-    "| Parameter | Default |",
-    "|---|---|",
-    ...parameters.map((parameter) => `| ${code(parameter.name ?? "")} | ${parameter.default !== undefined ? code(short(parameter.default, 120)) : ""} |`),
+    "Names only: a default can be filled in from outside the repository, such as a `BUNDLE_VAR_` environment variable.",
+    "",
+    "| Parameter |",
+    "|---|",
+    ...parameters.map((parameter) => `| ${code(parameter.name ?? "")} |`),
   ].join("\n");
 }
 
