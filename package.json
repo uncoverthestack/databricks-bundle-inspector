@@ -35,7 +35,7 @@
   ],
   "engines": {
     "vscode": "^1.85.0",
-    "node": "22.x"
+    "node": "24.x"
   },
   "homepage": "https://github.com/uncoverthestack/databricks-bundle-inspector",
   "qna": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues",
