@@ -32,6 +32,7 @@ export enum ConfigurationTarget {
 }
 
 export const window = {
+  onDidCloseTerminal: () => ({ dispose: () => {} }),
   showErrorMessage: () => {},
   showInformationMessage: () => {},
 };
