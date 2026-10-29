@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "path";
 import { UNINSTALL_STATE_FILE } from "./config.js";
 import type { QueuedEvent, SendResult } from "./transport.js";
+import { outgoingProperties } from "./schema.js";
 
 export interface UninstallState {
   enabled: boolean;
@@ -65,10 +66,12 @@ export async function runUninstallHook(
       event: "extension_uninstalled",
       distinctId: state.distinctId,
       timestamp: now().toISOString(),
-      properties: {
-        "common.extversion": state.extensionVersion,
-        "common.appname": state.appName,
-      },
+      // Read from a file on disk, so checked like every other event (#320).
+      properties:
+        outgoingProperties("extension_uninstalled", {
+          "common.extversion": state.extensionVersion,
+          "common.appname": state.appName,
+        }) ?? {},
     },
   ]);
   return result === "sent";
