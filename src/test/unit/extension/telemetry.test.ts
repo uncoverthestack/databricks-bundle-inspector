@@ -390,12 +390,12 @@ describe("schema", () => {
   });
 
   it("never sends the VS Code session ID, which would link one window's events beyond the install ID", () => {
-    expect(outgoingProperties({ "common.vscodesessionid": "abc", "common.os": "darwin" })).toEqual({ "common.os": "darwin" });
+    expect(outgoingProperties("inspect_bundle", { "common.vscodesessionid": "abc", "common.os": "darwin" })).toEqual({ "common.os": "darwin" });
   });
 
   it("drops machine and device IDs before sending", () => {
     expect(
-      outgoingProperties({
+      outgoingProperties("inspect_bundle", {
         outcome: "cli_not_found",
         cli_problem: "not_installed",
         "common.os": "win32",
@@ -411,6 +411,30 @@ describe("schema", () => {
       "common.os": "win32",
       "common.vscodeversion": "1.125.1",
     });
+  });
+
+  // The same check as the proxy, on this machine: nothing the schema doesn't allow is sent (#320).
+  it("sends only an event's declared properties with allowed values", () => {
+    expect(
+      outgoingProperties("inspect_bundle", {
+        outcome: "cli_not_found",
+        path: "/Users/someone/secret-project/databricks.yml",
+        bundle_name: "sales",
+        cli_problem: "rm -rf",
+        "common.os": "darwin",
+      }),
+    ).toEqual({ outcome: "cli_not_found", "common.os": "darwin" });
+  });
+
+  it("sends nothing for an event the schema doesn't know", () => {
+    expect(outgoingProperties("made_up", { outcome: "cli_not_found" })).toBeUndefined();
+    expect(outgoingProperties("constructor", {})).toBeUndefined();
+  });
+
+  it("keeps a common value only when it looks like one", () => {
+    expect(outgoingProperties("extension_uninstalled", { "common.appname": "Visual Studio Code", "common.extversion": "0.6.1" }))
+      .toEqual({ "common.appname": "Visual Studio Code", "common.extversion": "0.6.1" });
+    expect(outgoingProperties("extension_uninstalled", { "common.appname": "a\nmultiline;value" })).toEqual({});
   });
 
   it.each([

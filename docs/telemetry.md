@@ -18,6 +18,6 @@ Turning it off also deletes any events still waiting to be sent and what is kept
 - **Never collected:** file paths or contents, bundle, job, task or target names, workspace hosts, search text, or error messages.
 - **Identity:** a pseudonymous per-install ID, a one-way hash of VS Code's machine ID (never the ID itself). It names no one, but it links the events of one install. No VS Code session ID, no accounts, no IP address, no location.
 - **Offline:** events wait on your machine (up to 500, for at most 14 days) and are sent when you are back online.
-- **Where it goes:** events are sent to a small proxy run by this project ([telemetry-proxy/](../telemetry-proxy)). The proxy drops anything not listed in `telemetry.json` and forwards the rest to PostHog. The extension itself contains no analytics keys.
+- **Where it goes:** events are sent to a small proxy run by this project ([telemetry-proxy/](../telemetry-proxy)). Anything not listed in `telemetry.json` is dropped twice: by the extension, before it leaves your machine, and again by the proxy, which forwards the rest to PostHog. The extension itself contains no analytics keys.
 
 Every event and property is listed in [telemetry.json](../telemetry.json). To see events as they are sent, run **Developer: Set Log Level…** → **Trace**, then open the **Output** panel and pick the extension's telemetry channel.

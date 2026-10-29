@@ -116,10 +116,12 @@ export function createTelemetry(context: vscode.ExtensionContext): Telemetry {
 
   const sender: vscode.TelemetrySender = {
     sendEventData(eventName, data) {
-      const properties = outgoingProperties(data);
+      // TelemetryLogger prefixes names with the extension ID.
+      const event = eventName.slice(eventName.lastIndexOf("/") + 1);
+      const properties = outgoingProperties(event, data);
+      if (!properties) return;
       queue.enqueue({
-        // TelemetryLogger prefixes names with the extension ID.
-        event: eventName.slice(eventName.lastIndexOf("/") + 1),
+        event,
         distinctId,
         timestamp: new Date().toISOString(),
         properties,

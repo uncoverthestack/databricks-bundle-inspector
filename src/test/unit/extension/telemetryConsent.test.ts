@@ -97,6 +97,21 @@ async function install(state = new Map<string, unknown>()) {
 
 const sentEvents = () => sentBodies.flatMap((body) => body.batch.map((e) => e.event));
 
+describe("what leaves this machine (#320)", () => {
+  it("queues only what the schema allows: no undeclared property, no unknown event", async () => {
+    const { start, state } = await install();
+    const telemetry = start();
+    telemetry.logUsage("extension_activated");
+    await notices[0]!.answer(undefined);
+    telemetry.logUsage("inspect_bundle", { outcome: "cli_not_found", path: "/Users/someone/secret/databricks.yml" });
+    telemetry.logUsage("made_up_event", { anything: "at all" });
+    const queued = state.get("telemetry.queue") as { event: string; properties: Record<string, unknown> }[];
+    expect(queued.map((e) => e.event)).toEqual(["extension_activated", "inspect_bundle"]);
+    expect(queued[1]!.properties.outcome).toBe("cli_not_found");
+    expect(JSON.stringify(queued)).not.toContain("secret");
+  });
+});
+
 describe("telemetry consent", () => {
   it("deletes events queued by an earlier start when telemetry was turned off while VS Code was closed", async () => {
     const { start, state } = await install();

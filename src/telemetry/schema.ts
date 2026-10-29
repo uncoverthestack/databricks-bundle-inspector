@@ -162,18 +162,18 @@ export function isKnownEvent(event: unknown): event is string {
 }
 
 /**
- * What the extension sends: primitive values, with common.* limited to {@link COMMON_KEYS}
- * so machine and device IDs never leave the machine (distinct_id replaces them).
+ * What the extension sends for an event: the same check the proxy applies, so a property
+ * or value the schema doesn't allow never leaves this machine (#320). Only the event's
+ * declared properties with valid values, plus the common.* keys in {@link COMMON_KEYS},
+ * so machine and device IDs never leave either. Undefined for an event the schema doesn't
+ * know, which isn't sent at all. The proxy still checks everything it receives.
  */
-export function outgoingProperties(data: Record<string, unknown> | undefined): TelemetryProperties {
-  const properties: TelemetryProperties = {};
-  for (const [key, value] of Object.entries(data ?? {})) {
-    if (key.startsWith("common.") && !COMMON_KEYS.has(key)) continue;
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      properties[key] = value;
-    }
-  }
-  return properties;
+export function outgoingProperties(
+  event: string,
+  data: Record<string, unknown> | undefined,
+): TelemetryProperties | undefined {
+  if (!isKnownEvent(event)) return undefined;
+  return validateProperties(event, data ?? {}, { allowCommon: true });
 }
 
 /** Keeps only the event's declared properties with valid values (plus common.* when allowed). */
