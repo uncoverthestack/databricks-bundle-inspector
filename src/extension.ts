@@ -10,6 +10,7 @@ import {
 import type { BundleResult } from "./bundle/validateBundle.js";
 import { targetFallback, type FallbackCode, type TargetFallback } from "./bundle/fallbackReason.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
+import { withPreviewVariableReferences } from "./bundle/graph/previewVariableReferences.js";
 import { buildInspectorIssues, type InspectorIssue } from "./bundle/issues.js";
 import { jobReviewReport } from "./bundle/reviewReport.js";
 import {
@@ -1018,9 +1019,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       ...(mergedTargets ? { targets: mergedTargets } : {}),
     };
     const graph = await extractBundleGraph(bundleData, bundleDir);
-    const enrichedGraph = await enrichGraphWithFileContent(graph);
+    const checkedGraph = await enrichGraphWithFileContent(graph);
     const inspectorIssues = buildInspectorIssues(
-      enrichedGraph,
+      checkedGraph,
       // The whole config, as the Problems panel's check has it: `sync` and `include` decide
       // the sync and include checks. Only variables and targets come from the merge.
       { ...bundleData, ...resolutionBundle },
@@ -1028,6 +1029,14 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundleDir,
       inspectedTargetMode === "target" ? inspectedTarget : undefined,
     );
+    // With a target the CLI has replaced every ${var...}, so the graph has no variable
+    // references: take them from the last structural preview for the Variables lists
+    // (#230). After the checks, so what they find is unchanged.
+    const previewResources = previousStructuralBundle?.resources;
+    const enrichedGraph =
+      inspectedTargetMode === "target" && previousStructuralBundle && previewResources
+        ? withPreviewVariableReferences(checkedGraph, await extractBundleGraph(previousStructuralBundle, bundleDir))
+        : checkedGraph;
 
     return {
       result,

@@ -6,7 +6,8 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
+import { extractBundleGraph, type BundleGraph, type ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
+import { withPreviewVariableReferences } from "../../bundle/graph/previewVariableReferences.js";
 import { resolveExpressionForTarget, resolveVariableForTarget } from "../../bundle/targetResolution.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 
@@ -141,6 +142,27 @@ describe(`variables: the inspector shows the value the CLI deploys (${cli}, ${mo
     });
     expect(differences).toEqual([]);
     expect(written.size).toBeGreaterThan(10);
+  });
+
+  // #230: the CLI gives a target its values, not the ${var...} they came from.
+  test.each(TARGETS)("%s: each task lists the variables it uses, as in the preview", async (target) => {
+    const dir = path.join(root, "variables");
+    const previewGraph = await extractBundleGraph(await validated("variables"), dir);
+    const targetGraph = await extractBundleGraph(await validated("variables", target), dir);
+    const references = (graph: BundleGraph) =>
+      Object.fromEntries(
+        graph.nodes
+          .filter((node) => node.taskData)
+          .map((node) => [node.id, node.taskData!.variableReferences.map((ref) => ref.variableName).sort()]),
+      );
+    const uses = (graph: BundleGraph) =>
+      graph.edges.filter((edge) => edge.kind === "uses" && edge.target.startsWith("var:")).map((edge) => edge.id).sort();
+
+    expect(Object.values(references(targetGraph)).flat()).toEqual([]);
+    const shown = withPreviewVariableReferences(targetGraph, previewGraph);
+    expect(references(shown)).toEqual(references(previewGraph));
+    expect(Object.values(references(shown)).flat().length).toBeGreaterThan(10);
+    expect(uses(shown)).toEqual(uses(previewGraph));
   });
 
   test("the lookup resolves to the warehouse's ID", async () => {
