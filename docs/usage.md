@@ -95,6 +95,8 @@ When a target you picked can't be checked because you aren't signed in to its wo
 2. Your browser opens the Databricks sign-in page for that workspace. After you sign in, the CLI saves a profile with that name in `~/.databrickscfg` (or the file `DATABRICKS_CONFIG_FILE` names), keeps a copy of the old file next to it as `.bak` (a relative `DATABRICKS_CONFIG_FILE` is from the bundle's folder, as the checks run the CLI there), and keeps the sign-in itself on your computer (in the OS keychain from CLI 1.0).
 3. The graph then says **The Databricks CLI saved a sign-in.** Click **Check dev again** to check the target with it. Nothing is checked by itself. It doesn't say which profile was signed in, as the file doesn't always show it: signing in again to a profile that was already there leaves the file as it was.
 
+**Check dev again** is on the banner at every step, for when you signed in another way: in your own terminal, with `az login`, or before clicking anything. Closing the *Databricks sign-in* terminal before the CLI saves a sign-in takes the graph back to **Couldn't check dev. Sign in to try again.**, as closing it ends the sign-in.
+
 Which workspace and profile name it types:
 
 - The workspace is the target's `workspace.host`, else the bundle's. When it uses a variable, or there is none, you are asked for the workspace URL. A target's variable is never swapped for the bundle's own host.

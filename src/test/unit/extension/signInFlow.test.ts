@@ -147,6 +147,106 @@ describe("SignInFlow", () => {
   });
 });
 
+describe("SignInFlow: leaving the terminal", () => {
+  const HOST = "https://flow-close.example.invalid";
+  const window = vscode.window as unknown as Record<string, unknown>;
+  let dir: string;
+  let bundle: string;
+  let config: string;
+  let terminals: object[];
+  let closeTerminal: (terminal: object) => void;
+  let banners: Array<SignInBanner | undefined>;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "bdi-signin-close-"));
+    bundle = path.join(dir, "bundle");
+    config = path.join(dir, "databrickscfg");
+    mkdirSync(bundle);
+    writeFileSync(path.join(bundle, "databricks.yml"), `bundle:\n  name: b\ntargets:\n  dev:\n    workspace:\n      host: ${HOST}\n`);
+    writeFileSync(config, "");
+    for (const key of ["DATABRICKS_CONFIG_FILE", "DATABRICKS_CONFIG_PROFILE"]) saved[key] = process.env[key];
+    process.env.DATABRICKS_CONFIG_FILE = config;
+    delete process.env.DATABRICKS_CONFIG_PROFILE;
+    terminals = [];
+    banners = [];
+    window.createTerminal = () => {
+      const terminal = { show: () => {}, sendText: () => {}, dispose: () => {} };
+      terminals.push(terminal);
+      return terminal;
+    };
+    window.onDidCloseTerminal = (listener: (terminal: object) => void) => {
+      closeTerminal = listener;
+      return { dispose: () => {} };
+    };
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const openFlow = async () => {
+    const signIn = new SignInFlow({
+      bundleFiles: () => [path.join(bundle, "databricks.yml")],
+      configuredProfile: () => undefined,
+      cliFile: async () => undefined,
+      changed: (_root, banner) => banners.push(banner),
+      telemetry: () => {},
+    });
+    signIn.bannerFor(bundle, "dev", "not_logged_in");
+    await signIn.openTerminal(bundle, "dev", "graph");
+    expect(signIn.bannerOf(bundle)?.stage).toBe("terminal");
+    return signIn;
+  };
+
+  test("closing the sign-in terminal starts the banner over, with the name planned again", async () => {
+    const signIn = await openFlow();
+    // A browser profile for the workspace saved meanwhile is the name the next click would use.
+    writeFileSync(config, `[mine]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+    closeTerminal(terminals[0]!);
+    expect(signIn.bannerOf(bundle)).toEqual({ target: "dev", stage: "needed", signsInAs: { profile: "mine", source: "existing" } });
+    expect(banners.at(-1)?.stage).toBe("needed");
+    signIn.dispose();
+  });
+
+  test("closing another terminal changes nothing", async () => {
+    const signIn = await openFlow();
+    const count = banners.length;
+    closeTerminal({});
+    expect(signIn.bannerOf(bundle)?.stage).toBe("terminal");
+    expect(banners.length).toBe(count);
+    signIn.dispose();
+  });
+
+  test("closing the terminal after the CLI saved a sign-in keeps the saved banner", async () => {
+    const signIn = await openFlow();
+    writeFileSync(`${config}.bak`, "");
+    writeFileSync(config, `[flow-close]\nhost = ${HOST}\nauth_type = databricks-cli\n`);
+    for (let waited = 0; signIn.bannerOf(bundle)?.stage !== "updated" && waited < 5_000; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(signIn.bannerOf(bundle)?.stage).toBe("updated");
+    closeTerminal(terminals[0]!);
+    expect(signIn.bannerOf(bundle)?.stage).toBe("updated");
+    signIn.dispose();
+  });
+
+  test("Check again from the terminal step: checking, then the banner starts over when the target still fails", async () => {
+    const signIn = await openFlow();
+    signIn.markChecking(bundle, "dev");
+    expect(signIn.bannerOf(bundle)?.stage).toBe("checking");
+    expect(signIn.bannerFor(bundle, "dev", "not_logged_in")?.stage).toBe("needed");
+    // The terminal closing now is not the wait it was.
+    closeTerminal(terminals[0]!);
+    expect(signIn.bannerOf(bundle)?.stage).toBe("needed");
+    signIn.dispose();
+  });
+});
+
 describe("configFilePath", () => {
   const home = os.homedir();
   test("unset is ~/.databrickscfg; ~/ is the home folder; relative is from the folder given; absolute as it is", () => {

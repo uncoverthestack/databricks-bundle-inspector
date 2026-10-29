@@ -45,6 +45,8 @@ interface Flow {
   opening?: boolean;
   /** Set once the terminal is open: what is watched. */
   watch?: { watcher: FSWatcher };
+  /** The terminal the command was typed into, so closing it ends the wait. */
+  terminal?: vscode.Terminal;
 }
 
 export interface SignInDeps {
@@ -78,8 +80,21 @@ function environmentProfile(env: NodeJS.ProcessEnv = process.env): string | unde
 /** The sign-in for the target the graph shows; one at a time, as there is one graph. */
 export class SignInFlow implements vscode.Disposable {
   private flow: Flow | undefined;
+  private readonly terminalClosed: vscode.Disposable;
 
-  constructor(private readonly deps: SignInDeps) {}
+  constructor(private readonly deps: SignInDeps) {
+    // Closing the terminal ends any sign-in running in it: the banner starts over, unless the CLI saved one first.
+    this.terminalClosed = vscode.window.onDidCloseTerminal((terminal) => {
+      const flow = this.flow;
+      if (!flow || flow.stage !== "terminal" || flow.terminal !== terminal) return;
+      flow.watch?.watcher.close();
+      delete flow.watch;
+      delete flow.terminal;
+      flow.stage = "needed";
+      this.planNeeded(flow);
+      this.deps.changed(flow.root, this.banner());
+    });
+  }
 
   /**
    * The banner for a target that fell back, or undefined when signing in can't fix the
@@ -97,15 +112,19 @@ export class SignInFlow implements vscode.Disposable {
       this.reset();
       this.flow = { root, target, stage: "needed" };
     }
-    if (this.flow!.stage === "needed") {
-      const plan = this.plan(root, target);
-      this.setBlocked(this.flow!, plan);
-      const named = this.nameSource(root, target);
-      const why = signsInAs(plan, { named, defaultOnly: this.workspace(root, target).host === undefined });
-      if (why) this.flow!.signsInAs = why;
-      else delete this.flow!.signsInAs;
-    }
+    if (this.flow!.stage === "needed") this.planNeeded(this.flow!);
     return this.banner();
+  }
+
+  /** Plans a sign-in that is still to be clicked: whether it is blocked, and the name it would use. */
+  private planNeeded(flow: Flow): void {
+    const { root, target } = flow;
+    const plan = this.plan(root, target);
+    this.setBlocked(flow, plan);
+    const named = this.nameSource(root, target);
+    const why = signsInAs(plan, { named, defaultOnly: this.workspace(root, target).host === undefined });
+    if (why) flow.signsInAs = why;
+    else delete flow.signsInAs;
   }
 
   /** The current banner of a bundle, for the sidebar. */
@@ -187,6 +206,7 @@ export class SignInFlow implements vscode.Disposable {
       cwd: root,
       ...("folder" in cli ? { env: { [pathKey()]: `${cli.folder}${path.delimiter}${process.env[pathKey()] ?? ""}` } } : {}),
     });
+    flow.terminal = terminal;
     terminal.show();
     // Typed, not run: the user reads it and presses Enter.
     terminal.sendText(signInCommand(plan.host, plan.profile, cli.command), false);
@@ -197,6 +217,7 @@ export class SignInFlow implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.terminalClosed.dispose();
     this.reset();
   }
 

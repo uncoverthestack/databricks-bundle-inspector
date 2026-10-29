@@ -2673,6 +2673,9 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
         <button type="button" onClick={onOpenTerminal} className={BANNER_BUTTON}>
           Open Sign-in Terminal
         </button>
+        <button type="button" onClick={onCheckAgain} className={BANNER_BUTTON}>
+          Check {target} again
+        </button>
         {guide}
         {signsInAs && <SignsInAs target={target} signsInAs={signsInAs} onChooseProfile={onChooseProfile} />}
       </>
@@ -2681,6 +2684,9 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
     content = (
       <>
         <span>Press Enter in the terminal to start sign-in.</span>
+        <button type="button" onClick={onCheckAgain} className={BANNER_BUTTON}>
+          Check {target} again
+        </button>
         {guide}
       </>
     );

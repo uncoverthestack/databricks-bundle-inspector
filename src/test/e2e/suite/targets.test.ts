@@ -338,6 +338,22 @@ export function targetsSuite() {
         assert.equal(await banner(), null);
       });
 
+      it("closing the sign-in terminal before a sign-in is saved starts the banner over", async function () {
+        this.timeout(120_000);
+        // A real terminal, as only VS Code says when one closes. The command is typed and never run.
+        let terminal: vscode.Terminal | undefined;
+        window.createTerminal = ((options: vscode.TerminalOptions) =>
+          (terminal = originals.createTerminal(options))) as typeof vscode.window.createTerminal;
+        await pickTarget("dev");
+        await openTerminal();
+        assert.equal((await banner())?.stage, "terminal");
+        assert.ok(terminal, "the sign-in terminal opened");
+
+        terminal.dispose();
+        await waitFor(async () => (await banner())?.stage === "needed", "the needs-sign-in banner");
+        assert.deepEqual(await banner(), { target: "dev", stage: "needed", signsInAs: FROM_SETTING });
+      });
+
       it("a config file that can't be written: nothing is typed, and the banner says why", async function () {
         if (process.platform === "win32") this.skip();
         this.timeout(60_000);
