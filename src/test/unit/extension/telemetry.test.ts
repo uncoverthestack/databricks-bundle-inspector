@@ -16,13 +16,14 @@ import {
   type SendResult,
 } from "../../../telemetry/transport.js";
 import {
+  COMMON_KEYS,
   EVENT_SCHEMA,
   outgoingProperties,
   validateProperties,
   validateWireEvent,
 } from "../../../telemetry/schema.js";
 import { handleTelemetryRequest, type ProxyEnv } from "../../../telemetry/proxy.js";
-import { TelemetryQueue, type QueueStorage } from "../../../telemetry/queue.js";
+import { MAX_BATCH_BYTES, TelemetryQueue, type QueueStorage } from "../../../telemetry/queue.js";
 import { UNINSTALL_STATE_FILE } from "../../../telemetry/config.js";
 import {
   parseUninstallState,
@@ -50,6 +51,49 @@ function memoryStorage(initial?: QueuedEvent[]): QueueStorage & { saved: QueuedE
 }
 
 describe("TelemetryQueue", () => {
+  // #322: by size as well as count, so a genuine batch never reaches the proxy's 64 KB limit.
+  it("sends a big queue in requests of at most 32 KB, every event whole and in order", async () => {
+    const sent: QueuedEvent[][] = [];
+    const queue = new TelemetryQueue(memoryStorage(), async (batch) => {
+      sent.push(batch);
+      return "sent";
+    }, { now: () => NOW });
+    // 120 events of about 1.3 KB: fewer than 50 fit in 32 KB.
+    for (let i = 0; i < 120; i++) queue.enqueue({ ...makeEvent(`e${i}`), properties: { task_kinds: "x".repeat(1200) } });
+    await queue.flush();
+    expect(sent.length).toBeGreaterThan(3);
+    for (const batch of sent) {
+      expect(Buffer.byteLength(JSON.stringify(toWireBatch(batch)))).toBeLessThanOrEqual(MAX_BATCH_BYTES + 1024);
+    }
+    expect(sent.flat().map((e) => e.event)).toEqual(Array.from({ length: 120 }, (_, i) => `e${i}`));
+    expect(sent.flat().every((e) => e.properties.task_kinds === "x".repeat(1200))).toBe(true);
+    expect(queue.size).toBe(0);
+  });
+
+  it("still sends at most 50 small events per request", async () => {
+    const sizes: number[] = [];
+    const queue = new TelemetryQueue(memoryStorage(), async (batch) => {
+      sizes.push(batch.length);
+      return "sent";
+    }, { now: () => NOW });
+    for (let i = 0; i < 120; i++) queue.enqueue(makeEvent(`e${i}`));
+    await queue.flush();
+    expect(sizes).toEqual([50, 50, 20]);
+  });
+
+  it("sends an event bigger than the budget on its own, never holding up the rest", async () => {
+    const sent: string[][] = [];
+    const queue = new TelemetryQueue(memoryStorage(), async (batch) => {
+      sent.push(batch.map((e) => e.event));
+      return "sent";
+    }, { now: () => NOW, maxBatchBytes: 1000 });
+    queue.enqueue(makeEvent("a"));
+    queue.enqueue({ ...makeEvent("huge"), properties: { blob: "x".repeat(5000) } });
+    queue.enqueue(makeEvent("b"));
+    await queue.flush();
+    expect(sent).toEqual([["a"], ["huge"], ["b"]]);
+  });
+
   it("keeps events while offline and delivers them once the network is back", async () => {
     const storage = memoryStorage();
     let online = false;
@@ -387,6 +431,44 @@ describe("schema", () => {
     expect(validateProperties("sidebar_action", { action: "rm -rf" })).toEqual({});
     expect(validateProperties("inspect_bundle", { trigger: "sidebar" })).toEqual({ trigger: "sidebar" });
     expect(validateProperties("quick_fix_applied", { kind: "missing_file" })).toEqual({ kind: "missing_file" });
+  });
+
+  // #322: every property has a longest possible value, so the largest event is known.
+  it("can never build an event bigger than the batch budget", () => {
+    const longest = (rule: (typeof EVENT_SCHEMA)[string][string]): string | number | boolean => {
+      switch (rule.type) {
+        case "enum":
+          return rule.values.reduce((a, b) => (b.length > a.length ? b : a));
+        case "integer":
+          return rule.max;
+        case "boolean":
+          return false;
+        case "pattern":
+          return "x".repeat(rule.maxLength);
+      }
+    };
+    let largest = { event: "", bytes: 0 };
+    for (const [event, rules] of Object.entries(EVENT_SCHEMA)) {
+      const properties: Record<string, string | number | boolean> = {};
+      for (const [key, rule] of Object.entries(rules)) properties[key] = longest(rule);
+      // VS Code's common.* values are at most 100 characters (COMMON_VALUE).
+      for (const key of COMMON_KEYS) properties[key] = "x".repeat(100);
+      const wire = toWireBatch([{ event, distinctId: "0".repeat(32), timestamp: new Date(NOW).toISOString(), properties }]);
+      const bytes = Buffer.byteLength(JSON.stringify(wire));
+      if (bytes > largest.bytes) largest = { event, bytes };
+    }
+    // About 2.4 KB on 2026-10-29 (inspect_bundle). A failure means a new property allows
+    // values long enough to fill a request alone: lower its maxLength or the batch budget.
+    expect(largest.bytes).toBeLessThan(MAX_BATCH_BYTES / 4);
+  });
+
+  it("states each pattern's longest value correctly, and refuses anything longer", () => {
+    const longestTaskKinds = Array.from({ length: 31 }, () => `${"a".repeat(40)}_task`).join(",");
+    const rule = EVENT_SCHEMA.inspect_bundle!.task_kinds!;
+    expect(rule.type === "pattern" && rule.maxLength).toBe(longestTaskKinds.length);
+    expect(validateProperties("inspect_bundle", { task_kinds: longestTaskKinds })).toEqual({ task_kinds: longestTaskKinds });
+    expect(validateProperties("inspect_bundle", { task_kinds: `${longestTaskKinds},b_task` })).toEqual({});
+    expect(validateProperties("extension_activated", { cli_version: "999.9999" })).toEqual({ cli_version: "999.9999" });
   });
 
   it("never sends the VS Code session ID, which would link one window's events beyond the install ID", () => {

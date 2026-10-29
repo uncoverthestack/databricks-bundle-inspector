@@ -9,12 +9,18 @@ export interface QueueOptions {
   maxEvents?: number;
   maxAgeMs?: number;
   batchSize?: number;
+  maxBatchBytes?: number;
   now?: () => number;
 }
 
 const DEFAULT_MAX_EVENTS = 500;
 const DEFAULT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const DEFAULT_BATCH_SIZE = 50;
+/**
+ * Half the proxy's 64 KB limit: a bigger body is refused with a 413, which drops the whole
+ * batch. Batches go by size as well as count, so genuine events never reach the limit (#322).
+ */
+export const MAX_BATCH_BYTES = 32 * 1024;
 
 /**
  * Persistent, bounded event queue. Events survive offline periods and restarts
@@ -26,6 +32,7 @@ export class TelemetryQueue {
   private readonly maxEvents: number;
   private readonly maxAgeMs: number;
   private readonly batchSize: number;
+  private readonly maxBatchBytes: number;
   private readonly now: () => number;
 
   constructor(
@@ -36,6 +43,7 @@ export class TelemetryQueue {
     this.maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS;
     this.maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
     this.batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+    this.maxBatchBytes = options.maxBatchBytes ?? MAX_BATCH_BYTES;
     this.now = options.now ?? Date.now;
     this.events = this.withinLimits(storage.get() ?? []);
   }
@@ -69,13 +77,30 @@ export class TelemetryQueue {
     // window open for weeks would otherwise send events older than 14 days.
     this.dropExpired();
     while (this.events.length > 0) {
-      const batch = this.events.slice(0, this.batchSize);
+      const batch = this.nextBatch();
       const result = await this.send(batch);
       if (result === "retry") return;
       this.events = this.events.filter((e) => !batch.includes(e));
       this.persist();
       this.dropExpired();
     }
+  }
+
+  /**
+   * The oldest events that fit in one request: at most `batchSize` of them and at most
+   * `maxBatchBytes` of JSON. Always at least one, so the queue can't get stuck; the rest go
+   * in the next request. Events are sent whole, never cut.
+   */
+  private nextBatch(): QueuedEvent[] {
+    const batch: QueuedEvent[] = [];
+    let bytes = 0;
+    for (const event of this.events) {
+      const size = Buffer.byteLength(JSON.stringify(event));
+      if (batch.length > 0 && (batch.length >= this.batchSize || bytes + size > this.maxBatchBytes)) break;
+      batch.push(event);
+      bytes += size;
+    }
+    return batch;
   }
 
   private dropExpired(): void {
