@@ -15,6 +15,15 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
   assert.fail(`Timed out waiting for ${label}`);
 }
 
+/** No check running or waiting to start. */
+async function idle(): Promise<void> {
+  await waitFor(
+    async () =>
+      !(await vscode.commands.executeCommand<{ checksPending: boolean }>("databricksBundleInspector.test.statusBar"))!.checksPending,
+    "the checks to finish",
+  );
+}
+
 export function graphRefreshSuite() {
   describe("rendered graph after refreshing", function () {
     this.timeout(120_000);
@@ -118,6 +127,9 @@ export function graphRefreshSuite() {
       const line = document.getText().split(/\r?\n/).findIndex(text => text.includes("name: alpha_pipeline"));
       const editor = await vscode.window.showTextDocument(document);
       editor.selection = new vscode.Selection(line, 0, line, 0);
+      // The previous test's saves start checks. One landing as the graph opens would show the
+      // preview without the pipeline to start on (#288, as #275 was for the include test).
+      await idle();
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
 
       const browser = await connectBrowser(process.env.E2E_CDP_PORT);
