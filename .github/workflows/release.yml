@@ -1,7 +1,8 @@
 name: Release
 
-# Runs only for a pushed tag, so every release is built from its tag's commit. To publish an
-# existing release to a registry again, use publish-release.yml, which reuses its VSIX.
+# Runs only for a pushed tag, so every release is built from its tag's commit. It creates the
+# GitHub release, then starts publish-release.yml, which publishes the release's VSIX. To
+# publish an existing release to a registry again, run publish-release.yml by hand.
 on:
   push:
     tags:
@@ -32,7 +33,6 @@ jobs:
 
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
-      package_name: ${{ steps.package.outputs.package_name }}
 
     steps:
       - name: Checkout
@@ -93,16 +93,6 @@ jobs:
       - name: Verify checksum
         run: sha256sum --check "${{ steps.package.outputs.package_name }}.sha256"
 
-      - name: Upload package artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: vsix-release-package
-          path: |
-            ${{ steps.package.outputs.package_name }}
-            ${{ steps.package.outputs.package_name }}.sha256
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,84 +113,20 @@ jobs:
               --notes-file CHANGELOG.md
           fi
 
-  publish-marketplace:
-    name: Publish to VS Code Marketplace
+  # Publishing runs in its own publish-release.yml run, started here for this tag. Open VSX
+  # trusts one workflow file per extension, and checks the file that started the run, not a
+  # workflow it calls. Starting a separate run means a release and a later re-send both come
+  # from publish-release.yml, so its one registration covers both (#175).
+  publish:
+    name: Start publishing
     needs: package
     runs-on: ubuntu-latest
-    environment:
-      name: vscode-marketplace
-      url: https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector
     permissions:
-      contents: read
+      actions: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ needs.package.outputs.tag_name }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "22.13.0"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci --include=optional
-
-      - name: Download package artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: vsix-release-package
-
-      - name: Verify checksum
-        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
-
-      - name: Publish VSIX
+      - name: Start publish-release.yml for this tag
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --packagePath "${{ needs.package.outputs.package_name }}"
-
-  # Cursor, Windsurf and other VS Code forks install extensions from Open VSX,
-  # not the VS Code Marketplace. Runs independently of the Marketplace job so a
-  # failure on one registry doesn't block the other.
-  publish-open-vsx:
-    name: Publish to Open VSX
-    needs: package
-    runs-on: ubuntu-latest
-    environment:
-      name: open-vsx
-      url: https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector
-    permissions:
-      contents: read
-      # Trusted publishing: Open VSX swaps this job's GitHub OIDC token for a short-lived
-      # publishing token. Registered for this workflow and the open-vsx environment (#175).
-      id-token: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ needs.package.outputs.tag_name }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "22.13.0"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci --include=optional
-
-      - name: Download package artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: vsix-release-package
-
-      - name: Verify checksum
-        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
-
-      # No OVSX_PAT here: a token in the environment would be used instead of the OIDC exchange.
-      # publish-release.yml still publishes with OVSX_PAT, to backfill a release if this fails.
-      - name: Publish VSIX
-        run: npx ovsx publish "${{ needs.package.outputs.package_name }}" --trusted-publishing
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.package.outputs.tag_name }}
+        run: gh workflow run publish-release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG" -f registry=both
