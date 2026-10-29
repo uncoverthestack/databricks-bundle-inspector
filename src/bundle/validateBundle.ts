@@ -169,6 +169,18 @@ function wasKilled(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { killed?: unknown }).killed === true;
 }
 
+/** How a CLI run failed, without its output: exit code, Node error code, signal. */
+function failureSummary(error: unknown): { exitCode?: number; errorCode?: string; signal?: string; killed?: boolean } {
+  if (typeof error !== "object" || error === null) return {};
+  const { code, signal, killed } = error as { code?: unknown; signal?: unknown; killed?: unknown };
+  return {
+    ...(typeof code === "number" ? { exitCode: code } : {}),
+    ...(typeof code === "string" ? { errorCode: code } : {}),
+    ...(typeof signal === "string" ? { signal } : {}),
+    ...(killed === true ? { killed } : {}),
+  };
+}
+
 function hasErrorCode(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
@@ -364,13 +376,15 @@ export async function validateBundleWithDependencies(
         target,
       });
     } else {
+      // Not the CLI's output or error text: on a failed check either can hold the resolved
+      // bundle, variable values included, and VS Code keeps this log on disk (#318).
       console.warn("[validateBundle] command exited non-zero", {
         cliPath,
         bundleDir: resolvedBundleDir,
         target,
-        error: getErrorMessage(error),
-        stdout,
-        stderr,
+        ...failureSummary(error),
+        stdoutBytes: Buffer.byteLength(stdout ?? ""),
+        stderrBytes: Buffer.byteLength(stderr ?? ""),
       });
     }
 

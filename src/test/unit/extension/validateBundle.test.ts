@@ -265,6 +265,33 @@ describe("validateBundleWithDependencies", () => {
     });
   });
 
+  test("a failed check logs how it failed, never the CLI's output or error text (#318)", async () => {
+    // On a failed bundle validate the CLI can print the resolved bundle, variable values
+    // and parameter defaults among them; VS Code keeps this log on disk.
+    const secret = "pretend-secret-1f8a";
+    const error = Object.assign(new Error(`Command failed: databricks bundle validate\n${secret}`), {
+      code: 1,
+      stdout: JSON.stringify({ variables: { token: { default: secret } } }),
+      stderr: `Error: something went wrong near ${secret}`,
+    });
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await validateBundleWithDependencies("/workspace/demo", "dev", {
+        execFileAsync: async () => {
+          throw error;
+        },
+        resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: "v0.299.0" }),
+      });
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain("command exited non-zero");
+      expect(logged).not.toContain(secret);
+      const entry = warn.mock.calls.find(([message]) => message === "[validateBundle] command exited non-zero")?.[1];
+      expect(entry).toMatchObject({ target: "dev", exitCode: 1, stdoutBytes: Buffer.byteLength(error.stdout), stderrBytes: Buffer.byteLength(error.stderr) });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("tolerates auth errors when stdout contains valid JSON", async () => {
     const error = Object.assign(new Error("auth failed"), {
       stderr: "Error: cannot configure default credentials",
