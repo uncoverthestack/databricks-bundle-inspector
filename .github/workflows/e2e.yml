@@ -1,13 +1,16 @@
 name: E2E
 
 # The VS Code end-to-end suites on Windows, Linux and macOS, with a real Databricks CLI.
-# The trust benchmark: every PR and push to main runs it, and a release only publishes
-# when it passes on all three (release.yml calls it).
+# The trust benchmark: the merge queue runs it on each pull request merged with main, and a
+# release only publishes when it passes on all three (release.yml calls it). Not on the push
+# to main, which is the commit the queue just tested (#296). To run it on a branch before
+# queueing, use Run workflow.
 on:
-  push:
-    branches: [main]
+  # On a pull request the job skips itself: a job skipped by a condition reports "Success",
+  # so the required E2E checks pass and the pull request can join the queue.
   pull_request:
     branches: [main]
+  workflow_dispatch:
   # The merge queue tests each pull request merged with main and the ones queued ahead of
   # it; required checks must run here too, or the queue waits for them until it times out.
   merge_group:
@@ -31,6 +34,7 @@ permissions:
 jobs:
   e2e:
     name: E2E (${{ matrix.name }})
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
