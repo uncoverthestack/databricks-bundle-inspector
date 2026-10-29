@@ -134,7 +134,7 @@ describe("scripts/changelog.mjs", () => {
     expect(changelog()).toBe(crlf.replace("### Fixed\r\n\r\n", "### Fixed\r\n\r\n- **On Windows.**\r\n"));
   });
 
-  test("on the repository's own CHANGELOG: no files change nothing, and one file adds exactly its line", () => {
+  test("on the repository's own CHANGELOG: no files change nothing, and one file changes only [Unreleased]", () => {
     const real = readFileSync(path.resolve("CHANGELOG.md"), "utf8");
     writeFileSync(path.join(root, "CHANGELOG.md"), real);
     expect(run("release").status).toBe(0);
@@ -144,10 +144,19 @@ describe("scripts/changelog.mjs", () => {
     expect(run("release").status).toBe(0);
     const added = changelog().split(/\r?\n/);
     const before = real.split(/\r?\n/);
-    expect(added.length).toBe(before.length + 1);
     const at = added.indexOf("- **One more fix.**");
     expect(added.slice(at - 2, at)).toEqual(["### Fixed", ""]);
-    expect([...added.slice(0, at), ...added.slice(at + 1)]).toEqual(before);
+    // Right after a release [Unreleased] is empty and gains a Fixed heading too, so lines aren't counted.
+    const unreleased = (lines: string[]) => {
+      const start = lines.indexOf("## [Unreleased]");
+      const end = lines.findIndex((line, i) => i > start && line.startsWith("## ["));
+      return { head: lines.slice(0, start + 1), released: lines.slice(end), at: [start, end] };
+    };
+    const after = unreleased(added);
+    expect(after.head).toEqual(unreleased(before).head);
+    expect(after.released).toEqual(unreleased(before).released);
+    expect(at).toBeGreaterThan(after.at[0]!);
+    expect(at).toBeLessThan(after.at[1]!);
   });
 
   // It once compared the paths without resolving links, and then did nothing at all, so a
