@@ -12,6 +12,7 @@ out/**
 src/**
 public/**
 .yarnrc
+.nvmrc
 esbuild.js
 components.json
 eslint.config.js
