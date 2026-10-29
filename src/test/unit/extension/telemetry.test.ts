@@ -603,6 +603,47 @@ describe("telemetry proxy", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  // #324: counted in bytes as the body arrives, and never read past the limit.
+  it("stops reading a body with no Content-Length once it passes 64 KB", async () => {
+    let pulled = 0;
+    const chunk = new Uint8Array(16 * 1024).fill(0x78);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= 1024 * 1024) return controller.close();
+        pulled += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+    const request = new Request("https://proxy.test/e", { method: "POST", body: stream, duplex: "half" } as RequestInit);
+    expect(request.headers.get("content-length")).toBeNull();
+    const fetchImpl = okFetch();
+    expect((await handleTelemetryRequest(request, env, fetchImpl, NOW)).status).toBe(413);
+    // 1 MiB on offer; reading stopped just past 64 KB.
+    expect(pulled).toBeLessThan(128 * 1024);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("counts bytes, not characters", async () => {
+    // 40,000 two-byte characters: 80 KB, though under 64 K characters.
+    const request = post(`{"batch":[],"pad":"${"é".repeat(40_000)}"}`);
+    request.headers.delete("content-length");
+    expect((await handleTelemetryRequest(request, env, okFetch(), NOW)).status).toBe(413);
+  });
+
+  it("still forwards a full 32 KB batch from the extension", async () => {
+    const fetchImpl = okFetch();
+    // task_kinds at its longest: about 1.6 KB per event, 20 of them about 32 KB.
+    const taskKinds = Array.from({ length: 31 }, () => `${"a".repeat(40)}_task`).join(",");
+    const batch = Array.from({ length: 20 }, () =>
+      wireEvent({ properties: { outcome: "ok", task_kinds: taskKinds, "common.extversion": "0.1.3" } }),
+    );
+    const bytes = Buffer.byteLength(JSON.stringify({ batch }));
+    expect(bytes).toBeGreaterThan(30 * 1024);
+    expect(bytes).toBeLessThan(64 * 1024);
+    expect((await handleTelemetryRequest(post({ batch }), env, fetchImpl, NOW)).status).toBe(204);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("rate limits per client IP", async () => {
     const limit = jest.fn(async (_options: { key: string }) => ({ success: false }));
     const fetchImpl = okFetch();

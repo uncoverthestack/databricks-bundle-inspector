@@ -12,7 +12,7 @@ export interface ProxyEnv {
   RATE_LIMITER?: RateLimiter;
 }
 
-const MAX_BODY_CHARS = 64 * 1024;
+const MAX_BODY_BYTES = 64 * 1024;
 const MAX_BATCH = 50;
 
 const empty = (status: number) => new Response(null, { status });
@@ -36,6 +36,31 @@ export function toPostHogBatch(apiKey: string, events: WireEvent[]) {
   };
 }
 
+/** The body as text, or undefined, having stopped reading, once it passes `limit` bytes. */
+async function readLimited(request: Request, limit: number): Promise<string | undefined> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > limit) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
+
 /**
  * Status codes follow the extension's retry contract (see transport.ts):
  * 2xx delivered, 429/5xx retry later, other 4xx drop.
@@ -56,9 +81,11 @@ export async function handleTelemetryRequest(
     if (!success) return empty(429);
   }
 
-  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_CHARS) return empty(413);
-  const body = await request.text();
-  if (body.length > MAX_BODY_CHARS) return empty(413);
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return empty(413);
+  // Counted in bytes as it arrives, so a body with no Content-Length is never read past the
+  // limit (#324).
+  const body = await readLimited(request, MAX_BODY_BYTES);
+  if (body === undefined) return empty(413);
 
   let batch: unknown;
   try {
