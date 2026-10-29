@@ -4,9 +4,10 @@ name: E2E
 # The trust benchmark: the merge queue runs it on each pull request merged with main, and a
 # release only publishes when it passes on all three (release.yml calls it). Not on the push
 # to main, which is the commit the queue just tested (#296). To run it on a branch before
-# queueing, use Run workflow.
+# queueing, use Run workflow. Each OS runs its suites in two groups at once (#314).
 on:
-  # On a pull request only e2e-on-pull-request runs, so the pull request can join the queue.
+  # On a pull request the groups are skipped and only the e2e summary jobs run, so the
+  # pull request can join the queue.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -31,30 +32,20 @@ permissions:
   contents: read
 
 jobs:
-  # The required E2E checks must pass on a pull request before it can join the merge queue,
-  # which then runs the real job. A matrix job skipped by its `if` is reported once, named
-  # "E2E (${{ matrix.name }})", so the checks wouldn't report (seen on #297). This job
-  # reports them by the same names in seconds; its names must match the real job's matrix.
-  e2e-on-pull-request:
-    name: E2E (${{ matrix.name }})
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        name: [Windows, Linux, macOS]
-    steps:
-      - name: E2E runs in the merge queue
-        run: echo "E2E runs in the merge queue, or by hand with Run workflow."
-
-  e2e:
-    name: E2E (${{ matrix.name }})
+  # Two groups per OS, at the same time. The suites are split by measured time so both
+  # groups take about as long (macOS, 2026-10-29: about 200 seconds each). Two, not three:
+  # the org's GitHub Free plan runs 20 hosted jobs and 5 macOS jobs at once, org-wide.
+  e2e-group:
+    name: E2E (${{ matrix.name }} ${{ matrix.group }}/2)
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
-      # One OS failing must not hide the others' results.
+      # One OS or group failing must not hide the others' results.
       fail-fast: false
       matrix:
+        name: [Windows, Linux, macOS]
+        group: [1, 2]
         include:
           - name: Windows
             os: windows-latest
@@ -119,9 +110,10 @@ jobs:
         run: databricks --version
 
       # Windows can't run the #!/bin/sh fakes the CLI-detection tests use elsewhere, so they
-      # get real programs: the legacy pip package and a CLI older than v0.299.0.
+      # get real programs: the legacy pip package and a CLI older than v0.299.0. Only the
+      # no-CLI suite uses them, in group 2.
       - name: Install the legacy pip databricks-cli (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.group == 2
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/legacy-cli"
@@ -131,7 +123,7 @@ jobs:
           echo "E2E_LEGACY_CLI=$exe" >> "$GITHUB_ENV"
 
       - name: Install Databricks CLI v0.250.0, older than supported (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.group == 2
         run: |
           set -euo pipefail
           version=0.250.0
@@ -147,28 +139,42 @@ jobs:
           ./databricks.exe --version
           echo "E2E_OLD_CLI=$(cygpath -w "$workdir/databricks.exe")" >> "$GITHUB_ENV"
 
-      # Each suite opens its own folder; one step each so a failure names its suite.
+      # Built once: the npm run test:e2e:* scripts rebuild everything before each suite.
+      - name: Build the extension, webview and tests
+        run: npm run build:ext && npm run build:webview && npm run build:e2e
+
+      # Each suite opens its own folder; one step each so a failure names its suite. The
+      # arguments are those of its npm run test:e2e:* script (e2eWorkflow.test.ts checks).
       - name: E2E, no CLI on PATH
-        run: ${{ matrix.display }} npm run test:e2e
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs
       - name: E2E, include
-        run: ${{ matrix.display }} npm run test:e2e:include
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite includeMistakes --fixture src/test/fixtures/include-mistakes
       - name: E2E, issue codes
-        run: ${{ matrix.display }} npm run test:e2e:issue-codes
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite issueCodes --fixture src/test/e2e/fixtures/issue-codes
       - name: E2E, always-on
-        run: ${{ matrix.display }} npm run test:e2e:always-on
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite alwaysOn --fixture src/test/e2e/fixtures/always-on
       - name: E2E, saved file
-        run: ${{ matrix.display }} npm run test:e2e:saved-file
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite savedFile --fixture src/test/e2e/fixtures/saved-file
       - name: E2E, saved file, folder opened in another letter case
-        run: ${{ matrix.display }} npm run test:e2e:saved-file:other-case
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite savedFile --fixture src/test/e2e/fixtures/saved-file --folder-case other
       - name: E2E, resource files
-        run: ${{ matrix.display }} npm run test:e2e:resource-files
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite resourceFiles --fixture src/test/e2e/fixtures/resource-files
       - name: E2E, rendered graph
-        run: ${{ matrix.display }} npm run test:e2e:graph-refresh
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite graphRefresh --fixture src/test/e2e/fixtures/resource-files
       - name: E2E, theme colours
-        run: ${{ matrix.display }} npm run test:e2e:themes
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite themes --fixture src/test/e2e/fixtures/themes
       # What was on screen in each theme, to see why a contrast or pixel check failed.
       - name: Upload theme screenshots
-        if: failure()
+        if: failure() && matrix.group == 2
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: theme-screenshots-${{ runner.os }}
@@ -177,12 +183,42 @@ jobs:
             out/e2e/themes-report.json
           if-no-files-found: ignore
       - name: E2E, overlapping inspections
-        if: runner.os != 'Windows'
-        run: ${{ matrix.display }} npm run test:e2e:inspection-races
+        if: matrix.group == 1 && runner.os != 'Windows'
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite inspectionRaces --fixture src/test/e2e/fixtures/resource-files
       # The cases that need a workspace login are skipped: CI has none.
       - name: E2E, targets
-        run: ${{ matrix.display }} npm run test:e2e:targets
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite targets --fixture src/test/e2e/fixtures/targets
       - name: E2E, sidebar
-        run: ${{ matrix.display }} npm run test:e2e:sidebar
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite sidebar --fixture src/test/e2e/fixtures/targets
       - name: E2E, workspace changes (shared files, removed and new bundles)
-        run: ${{ matrix.display }} npm run test:e2e:workspace-changes
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite workspaceChanges --fixture src/test/e2e/fixtures/workspace-changes
+
+  # The required checks, by the names the ruleset and merge queue wait for. In the merge
+  # queue and at release they pass only when every group passed; needs gives one result
+  # for all groups, so a failing group fails all three, and the group jobs say which. On a
+  # pull request the groups are skipped and these pass at once: E2E runs in the queue. A
+  # skipped matrix job is reported once, as "E2E (${{ matrix.name }})", so these can't be
+  # skipped themselves (seen on #297).
+  e2e:
+    name: E2E (${{ matrix.name }})
+    needs: e2e-group
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        name: [Windows, Linux, macOS]
+    steps:
+      - name: Every group passed
+        env:
+          EVENT: ${{ github.event_name }}
+          GROUPS: ${{ needs.e2e-group.result }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            echo "E2E runs in the merge queue, or by hand with Run workflow."
+            exit 0
+          fi
+          echo "E2E groups: $GROUPS"
+          [ "$GROUPS" = "success" ]
