@@ -104,6 +104,8 @@ body[data-vscode-theme-kind^="vscode-high-contrast"] {
   --color-line: var(--ui-line);
   --color-line-soft: var(--ui-line-soft);
   --color-line-strong: var(--ui-line-strong);
+  /* Pop-ups over the graph or a panel: the theme's own widget shadow, as VS Code's menus use. */
+  --shadow-popover: 0 8px 24px var(--ui-shadow);
   --color-accent: var(--ui-accent);
   --color-link: var(--ui-link);
   --color-link-active: var(--ui-link-active);
