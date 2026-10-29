@@ -93,6 +93,13 @@ jobs:
       - name: Verify checksum
         run: sha256sum --check "${{ steps.package.outputs.package_name }}.sha256"
 
+      # Only this version's section of CHANGELOG.md, not every version's (#294). Fails when
+      # the version has no section or an empty one, before anything is created.
+      - name: Write release notes
+        env:
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: node scripts/changelog.mjs notes "${TAG#v}" > "$RUNNER_TEMP/release-notes.md"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,7 +117,7 @@ jobs:
               "${{ steps.package.outputs.package_name }}" \
               "${{ steps.package.outputs.package_name }}.sha256" \
               --title "${{ steps.version.outputs.tag_name }}" \
-              --notes-file CHANGELOG.md
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
   # Publishing runs in its own publish-release.yml run, started here for this tag. Open VSX

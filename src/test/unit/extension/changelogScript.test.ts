@@ -171,6 +171,99 @@ describe("scripts/changelog.mjs", () => {
     expect(result.stderr).toContain("278-bad.md");
   });
 
+  describe("notes: one version's section, for its GitHub release (#294)", () => {
+    const notes = (...args: string[]) => spawnSync(process.execPath, [SCRIPT, "notes", ...args, "--root", root], { encoding: "utf8" });
+    const VERSIONS = [
+      "# Changelog",
+      "",
+      "## [Unreleased]",
+      "",
+      "### Added",
+      "",
+      "- **Not released yet.**",
+      "",
+      "## [10.6.0] - 2026-12-01",
+      "",
+      "- **Ten.**",
+      "",
+      "## [0.6.0-beta] - 2026-10-28",
+      "",
+      "- **Beta.**",
+      "",
+      "## [0.6.0] - 2026-10-29",
+      "",
+      "### Added",
+      "",
+      "- **Six.**",
+      "",
+      "### Fixed",
+      "",
+      "- **Six fixed.**",
+      "",
+      "## [0.5.0]",
+      "",
+      "- **Five, no date.**",
+      "",
+      "### Compatibility",
+      "",
+      "- VS Code `^1.85.0`.",
+      "",
+      "[0.6.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.5.0...v0.6.0",
+      "",
+    ].join("\n");
+
+    test("gives only that version, from the newest to the oldest, which stops before the compare links", () => {
+      writeFileSync(path.join(root, "CHANGELOG.md"), VERSIONS);
+      const cases: Array<[string, string]> = [
+        ["10.6.0", "- **Ten.**"],
+        ["0.6.0-beta", "- **Beta.**"],
+        ["0.6.0", "### Added\n\n- **Six.**\n\n### Fixed\n\n- **Six fixed.**"],
+        ["0.5.0", "- **Five, no date.**\n\n### Compatibility\n\n- VS Code `^1.85.0`."],
+      ];
+      for (const [version, expected] of cases) {
+        const result = notes(version);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(`${expected}\n`);
+      }
+    });
+
+    test("a version with no heading, a part of one, or an empty section fails, with nothing printed", () => {
+      writeFileSync(path.join(root, "CHANGELOG.md"), VERSIONS.replace("- **Ten.**\n", ""));
+      const cases: Array<[string, string]> = [
+        ["0.7.0", "CHANGELOG.md has no ## [0.7.0] heading"],
+        ["0.6", "CHANGELOG.md has no ## [0.6] heading"],
+        ["6.0", "CHANGELOG.md has no ## [6.0] heading"],
+        ["10.6.0", "CHANGELOG.md has nothing under ## [10.6.0]"],
+      ];
+      for (const [version, message] of cases) {
+        const result = notes(version);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(result.stderr.trim()).toBe(message);
+      }
+      expect(notes().status).toBe(2);
+    });
+
+    test("a CHANGELOG with Windows line endings gives the same notes", () => {
+      writeFileSync(path.join(root, "CHANGELOG.md"), VERSIONS.replace(/\n/g, "\r\n"));
+      expect(notes("0.6.0").stdout).toBe("### Added\n\n- **Six.**\n\n### Fixed\n\n- **Six fixed.**\n");
+    });
+
+    test("on the repository's own CHANGELOG: every version has notes, and none holds another version or a compare link", () => {
+      const real = readFileSync(path.resolve("CHANGELOG.md"), "utf8");
+      writeFileSync(path.join(root, "CHANGELOG.md"), real);
+      const versions = [...real.matchAll(/^## \[(\d+\.\d+\.\d+[^\]]*)\]/gm)].map((match) => match[1]!);
+      expect(versions.length).toBeGreaterThan(10);
+      for (const version of versions) {
+        const result = notes(version);
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim()).not.toBe("");
+        expect(result.stdout).not.toMatch(/^## \[/m);
+        expect(result.stdout).not.toMatch(/^\[[^\]]+\]: /m);
+      }
+    });
+  });
+
   test("an unknown command, or a CHANGELOG with no [Unreleased], is refused", () => {
     expect(run("publish").status).toBe(2);
     writeFileSync(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## [0.5.0]\n");
