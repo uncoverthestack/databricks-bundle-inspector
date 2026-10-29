@@ -1467,7 +1467,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           has_diagnostics: Boolean(result.error.diagnostics?.length),
           ...(result.error.cliProblem ? { cli_problem: result.error.cliProblem } : {}),
         });
-        console.error("[inspectBundle] validation failed", result.error);
+        // Not the error's text or details, which can carry the CLI's output (#318).
+        console.error("[inspectBundle] validation failed", {
+          bundleDir: result.error.bundleDir,
+          errorCode: result.error.errorCode,
+          cliProblem: result.error.cliProblem,
+          diagnostics: result.error.diagnostics?.length ?? 0,
+        });
         if (result.error.errorCode === "CLI_NOT_FOUND") {
           void showCliNotFound(result.error.error, result.error.cliProblem, () =>
             inspectBundle(requestedTarget, options, bundleDir),
