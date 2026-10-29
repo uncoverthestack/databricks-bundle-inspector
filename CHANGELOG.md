@@ -4,6 +4,18 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-29
+
+### Changed
+
+- **Errors and warnings have different icons, not only different colours** ([#302](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/302)). The Issues panel and the task panel's issue list show an error as a circled X and a warning as a triangle, the shapes of VS Code's Problems panel; notes keep the circled i. Both used the same triangle in red or amber, which look alike with red-green colour blindness.
+- **Copy review says it copies Markdown** ([#298](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/298)). Each item in a job's **Copy review** menu has a small **Markdown** tag; hovering it says GitHub and GitLab show the text formatted. The message after copying says "copied as Markdown", and a pipeline's Copy review button says so on hover.
+
+### Fixed
+
+- **VS Code 1.99 and older no longer install a version that can't start** ([#307](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/307)). The extension needs VS Code 1.100 or newer, the first that can load an extension written as JavaScript modules, but said it supported 1.85. On 1.85 to 1.99, or an editor built on them, it installed and then failed to start. Those versions now say it needs a newer VS Code.
+- **Pop-ups stand out from the panel under them in every theme** ([#300](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/300)). The Copy review menu, the search results and the Issues panel had the same background as the task panel and a faint border, so in themes such as Abyss a pop-up over the task panel had no visible edge. They now have a border mixed from the theme's text colour and VS Code's own widget shadow.
+
 ## [0.6.0] - 2026-10-29
 
 ### Added
@@ -377,6 +389,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.6.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.3.1...v0.4.0
