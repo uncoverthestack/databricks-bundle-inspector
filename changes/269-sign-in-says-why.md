@@ -1,3 +1,0 @@
-Added
-
-- **The sign-in banner says which profile it signs in as, and why** ([#269](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/269)). Before you click **Open Sign-in Terminal**, a line under the banner names the profile and where the name comes from: `DEFAULT` for a target with no workspace address, your Profile setting (with **Change**), `DATABRICKS_CONFIG_PROFILE`, the bundle's `workspace.profile`, your existing profile for that workspace, or a new name made from the address. It is the same name the terminal command then uses. See [docs/usage.md](docs/usage.md#signing-in-for-a-target).
