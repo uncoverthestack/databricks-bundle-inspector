@@ -39,6 +39,11 @@ jobs:
     environment:
       name: vscode-marketplace
       url: https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector
+    permissions:
+      contents: read
+      # Trusted publishing: the Marketplace swaps this job's GitHub OIDC token for a 15-minute
+      # publishing credential. The publisher's policy names this workflow and environment (#74).
+      id-token: write
 
     steps:
       - name: Checkout
@@ -67,11 +72,11 @@ jobs:
           sha256sum --check ./*.vsix.sha256
           echo "package_name=$(ls ./*.vsix)" >> "$GITHUB_OUTPUT"
 
+      # No VSCE_PAT here: vsce reads it as --pat, and --oidc with a token stops with an error.
       - name: Publish VSIX
         env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
           PACKAGE: ${{ steps.vsix.outputs.package_name }}
-        run: npx vsce publish --packagePath "$PACKAGE" --skip-duplicate
+        run: npx vsce publish --packagePath "$PACKAGE" --skip-duplicate --oidc
 
   publish-open-vsx:
     name: Publish to Open VSX
