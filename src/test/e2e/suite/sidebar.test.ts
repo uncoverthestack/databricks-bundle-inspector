@@ -242,7 +242,8 @@ export function sidebarSuite() {
         // A second task whose notebook doesn't exist: a problem in job.yml, next to the one in load.py.
         const extra = "\n        - task_key: extra\n          notebook_task:\n            notebook_path: ../src/missing_notebook.py\n";
         await replaceAll(original.trimEnd() + extra);
-        const two = await sidebarWhen((shown) => shown.bundles[0]?.problems.description === "2 · structural preview");
+        // Saving can start a second check: wait for it too, or the status still reads "checking" (#291).
+        const two = await sidebarWhen((shown) => checked(shown) && shown.bundles[0]?.problems.description === "2 · structural preview");
         assert.equal(two.bundles[0]!.problems.description, "2 · structural preview", JSON.stringify(two.bundles[0]!.problems));
 
         let offered: Array<vscode.QuickPickItem & { problem?: { message: string } }> = [];
