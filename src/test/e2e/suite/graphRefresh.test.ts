@@ -248,6 +248,11 @@ export function graphRefreshSuite() {
         await vscode.env.clipboard.writeText("");
         await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
         await waitFor(async () => await evaluate(`document.querySelectorAll('[role="menuitem"]').length`) === 2, "the Copy review menu");
+        assert.equal(
+          await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].every(b => [...b.querySelectorAll('span')].some(s => s.textContent.trim() === 'Markdown'))`),
+          true,
+          "each Copy review item says it copies Markdown",
+        );
         await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(b => b.textContent.startsWith('Full report')).click()`);
         await waitFor(async () => (await vscode.env.clipboard.readText()).includes("## Databricks Bundle Review: alpha_second"), "the copied full report");
         const report = await vscode.env.clipboard.readText();

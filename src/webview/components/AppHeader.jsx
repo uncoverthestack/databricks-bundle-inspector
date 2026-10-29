@@ -116,7 +116,7 @@ export default function AppHeader({
             type="button"
             onClick={onCopyReviewSummary}
             className={COPY_BUTTON}
-            title="Copy bundle review summary"
+            title="Copy bundle review summary as Markdown"
           >
             <ClipboardCopy size={13} />
             <span>Copy review</span>
@@ -169,16 +169,40 @@ function CopyReviewMenu({ onCopySummary, onCopyReport }) {
           className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-line bg-widget text-xs text-fg shadow-lg"
         >
           <button type="button" role="menuitem" onClick={() => choose(onCopySummary)} className={MENU_ITEM}>
-            <span className="block font-medium">Short summary</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="font-medium">Short summary</span>
+              <MarkdownTag />
+            </span>
             <span className="block text-fg-soft">Problems labelled as errors or warnings. For Slack, Teams or Jira.</span>
           </button>
           <button type="button" role="menuitem" onClick={() => choose(onCopyReport)} className={MENU_ITEM}>
-            <span className="block font-medium">Full report</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="font-medium">Full report</span>
+              <MarkdownTag />
+            </span>
             <span className="block text-fg-soft">Adds a picture of the job and tables. Paste into GitHub or GitLab.</span>
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+/** Says what lands on the clipboard: Markdown, which GitHub and GitLab show formatted. */
+function MarkdownTag() {
+  return (
+    <span
+      title="Markdown text. GitHub and GitLab show it formatted."
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-line px-1 text-[10px] text-fg-soft"
+    >
+      {/* The Markdown mark: an M and a down arrow. lucide-react has no icon for it. */}
+      <svg aria-hidden="true" width="14" height="9" viewBox="0 0 28 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 14V4l4 5 4-5v10" />
+        <path d="M20 4v9" />
+        <path d="m16.5 10 3.5 4 3.5-4" />
+      </svg>
+      Markdown
+    </span>
   );
 }
 

@@ -1624,7 +1624,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
               markdown === undefined
                 ? vscode.window.showWarningMessage("Could not copy the review report: the graph has no checked bundle yet.")
                 : vscode.env.clipboard.writeText(markdown).then(
-                    () => vscode.window.showInformationMessage("Bundle review report copied. Paste it into GitHub or GitLab to see the task graph."),
+                    () => vscode.window.showInformationMessage("Bundle review report copied as Markdown. Paste it into GitHub or GitLab to see the task graph."),
                     (error: unknown) =>
                       vscode.window.showWarningMessage(
                         `Could not copy the review report: ${error instanceof Error ? error.message : String(error)}`,
@@ -1648,7 +1648,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
               .then(
                 () =>
                   vscode.window.showInformationMessage(
-                    "Bundle review summary copied.",
+                    "Bundle review summary copied as Markdown.",
                   ),
                 (error: unknown) =>
                   vscode.window.showWarningMessage(
