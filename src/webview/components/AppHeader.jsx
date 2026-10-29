@@ -166,7 +166,7 @@ function CopyReviewMenu({ onCopySummary, onCopyReport }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-line bg-widget text-xs text-fg shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-line-strong bg-widget text-xs text-fg shadow-popover"
         >
           <button type="button" role="menuitem" onClick={() => choose(onCopySummary)} className={MENU_ITEM}>
             <span className="flex items-center justify-between gap-2">

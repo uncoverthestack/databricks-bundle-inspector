@@ -19,7 +19,7 @@ export default function HeaderChipPanel({ title, items, onClose, onSelectItem })
 
   return (
     // Never taller than the space below the header, so it fits a short webview.
-    <div className="absolute right-4 top-14 z-30 flex max-h-[calc(100%-4.5rem)] w-[360px] flex-col overflow-hidden rounded-lg border border-line bg-widget shadow-2xl">
+    <div className="absolute right-4 top-14 z-30 flex max-h-[calc(100%-4.5rem)] w-[360px] flex-col overflow-hidden rounded-lg border border-line-strong bg-widget shadow-popover">
       <div className="flex shrink-0 items-center justify-between border-b border-line px-3 py-2">
         <div>
           <div className="text-xs font-semibold text-fg">{title}</div>
