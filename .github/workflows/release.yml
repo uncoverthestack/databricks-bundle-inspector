@@ -195,6 +195,9 @@ jobs:
       url: https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector
     permissions:
       contents: read
+      # Trusted publishing: Open VSX swaps this job's GitHub OIDC token for a short-lived
+      # publishing token. Registered for this workflow and the open-vsx environment (#175).
+      id-token: write
 
     steps:
       - name: Checkout
@@ -219,7 +222,7 @@ jobs:
       - name: Verify checksum
         run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
 
+      # No OVSX_PAT here: a token in the environment would be used instead of the OIDC exchange.
+      # publish-release.yml still publishes with OVSX_PAT, to backfill a release if this fails.
       - name: Publish VSIX
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx ovsx publish "${{ needs.package.outputs.package_name }}"
+        run: npx ovsx publish "${{ needs.package.outputs.package_name }}" --trusted-publishing
