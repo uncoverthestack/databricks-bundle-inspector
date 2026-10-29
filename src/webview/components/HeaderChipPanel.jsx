@@ -1,13 +1,8 @@
-import { AlertTriangle, Info, X } from "lucide-react";
+import { X } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
 import { severityMeta } from "../lib/issueSeverity";
 import { hasTextSelection } from "../lib/textSelection";
-
-/** Notes get the info icon, as in the task panel; errors and warnings the triangle. */
-function SeverityIcon({ severity, ...props }) {
-  const Icon = severity === "info" ? Info : AlertTriangle;
-  return <Icon size={13} {...props} />;
-}
+import SeverityIcon from "./SeverityIcon";
 
 export default function HeaderChipPanel({ title, items, onClose, onSelectItem }) {
   const groups = new Map();

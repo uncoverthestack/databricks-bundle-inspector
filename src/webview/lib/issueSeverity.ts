@@ -5,14 +5,19 @@ export interface SeverityMeta {
   label: string;
   /** Tailwind colour class for the icon and label. */
   colorClass: string;
+  /**
+   * The icon's shape, as in VS Code's Problems panel, so it differs without colour too: with
+   * red-green colour blindness the error red and warning amber look the same.
+   */
+  icon: "circle-x" | "triangle-alert" | "info";
   /** Lower comes first. */
   rank: number;
 }
 
 const META: Record<IssueSeverity, SeverityMeta> = {
-  error: { label: "Error", colorClass: "text-error", rank: 0 },
-  warning: { label: "Warning", colorClass: "text-warning", rank: 1 },
-  info: { label: "Note", colorClass: "text-info", rank: 2 },
+  error: { label: "Error", colorClass: "text-error", icon: "circle-x", rank: 0 },
+  warning: { label: "Warning", colorClass: "text-warning", icon: "triangle-alert", rank: 1 },
+  info: { label: "Note", colorClass: "text-info", icon: "info", rank: 2 },
 };
 
 /** How a severity looks. Anything unknown is shown as a warning, as VS Code does. */

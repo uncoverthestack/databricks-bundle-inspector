@@ -8,10 +8,11 @@ import {
   MarkerType,
   useReactFlow,
 } from "@xyflow/react";
-import { AlertTriangle, Info, LocateFixed } from "lucide-react";
+import { Info, LocateFixed } from "lucide-react";
 import AppHeader from "./components/AppHeader";
 import HeaderChipPanel from "./components/HeaderChipPanel";
 import PipelineView from "./components/PipelineView";
+import SeverityIcon from "./components/SeverityIcon";
 import TaskNode from "./components/TaskNode";
 import {
   isVariableResolvedForTarget,
@@ -1608,7 +1609,6 @@ function IssueSummarySection({ items, onOpenFile }) {
         {visibleItems.map((item) => {
           const clickable = Boolean(item.file && onOpenFile);
           const severity = severityMeta(item.severity);
-          const Icon = item.severity === "info" ? Info : AlertTriangle;
           return (
             <div
               key={item.id}
@@ -1636,8 +1636,8 @@ function IssueSummarySection({ items, onOpenFile }) {
                   : "",
               ].join(" ")}
             >
-              <Icon
-                size={13}
+              <SeverityIcon
+                severity={item.severity}
                 className={`mt-0.5 shrink-0 ${severity.colorClass}`}
               />
               <div className="min-w-0 flex-1">

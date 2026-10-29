@@ -10,9 +10,16 @@ describe("severityMeta", () => {
     expect(new Set(colours).size).toBe(3);
   });
 
+  test("gives each severity its own icon shape, as VS Code's Problems panel does, so colour is never the only difference", () => {
+    expect(severityMeta("error").icon).toBe("circle-x");
+    expect(severityMeta("warning").icon).toBe("triangle-alert");
+    expect(severityMeta("info").icon).toBe("info");
+  });
+
   test("shows an unknown or missing severity as a warning", () => {
     expect(severityMeta(undefined).label).toBe("Warning");
     expect(severityMeta("hint").label).toBe("Warning");
+    expect(severityMeta("hint").icon).toBe("triangle-alert");
   });
 });
 
