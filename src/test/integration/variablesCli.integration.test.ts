@@ -147,8 +147,10 @@ describe(`variables: the inspector shows the value the CLI deploys (${cli}, ${mo
   // #230: the CLI gives a target its values, not the ${var...} they came from.
   test.each(TARGETS)("%s: each task lists the variables it uses, as in the preview", async (target) => {
     const dir = path.join(root, "variables");
-    const previewGraph = await extractBundleGraph(await validated("variables"), dir);
-    const targetGraph = await extractBundleGraph(await validated("variables", target), dir);
+    const preview = await validated("variables");
+    const deployed = await validated("variables", target);
+    const previewGraph = await extractBundleGraph(preview, dir);
+    const targetGraph = await extractBundleGraph(deployed, dir);
     const references = (graph: BundleGraph) =>
       Object.fromEntries(
         graph.nodes
@@ -159,7 +161,12 @@ describe(`variables: the inspector shows the value the CLI deploys (${cli}, ${mo
       graph.edges.filter((edge) => edge.kind === "uses" && edge.target.startsWith("var:")).map((edge) => edge.id).sort();
 
     expect(Object.values(references(targetGraph)).flat()).toEqual([]);
-    const shown = withPreviewVariableReferences(targetGraph, previewGraph);
+    const shown = withPreviewVariableReferences(targetGraph, previewGraph, {
+      deployed,
+      preview,
+      resolution: { ...deployed, ...resolutionBundle(preview, deployed) },
+      target,
+    });
     expect(references(shown)).toEqual(references(previewGraph));
     expect(Object.values(references(shown)).flat().length).toBeGreaterThan(10);
     expect(uses(shown)).toEqual(uses(previewGraph));

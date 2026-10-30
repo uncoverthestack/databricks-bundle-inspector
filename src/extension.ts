@@ -1031,11 +1031,17 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     );
     // With a target the CLI has replaced every ${var...}, so the graph has no variable
     // references: take them from the last structural preview for the Variables lists
-    // (#230). After the checks, so what they find is unchanged.
+    // (#230), each only where the target deployed what it resolves to (#332). After the
+    // checks, so what they find is unchanged.
     const previewResources = previousStructuralBundle?.resources;
     const enrichedGraph =
       inspectedTargetMode === "target" && previousStructuralBundle && previewResources
-        ? withPreviewVariableReferences(checkedGraph, await extractBundleGraph(previousStructuralBundle, bundleDir))
+        ? withPreviewVariableReferences(checkedGraph, await extractBundleGraph(previousStructuralBundle, bundleDir), {
+            deployed: bundleData,
+            preview: previousStructuralBundle,
+            resolution: { ...bundleData, ...resolutionBundle },
+            target: inspectedTarget,
+          })
         : checkedGraph;
 
     return {
