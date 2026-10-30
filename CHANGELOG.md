@@ -4,6 +4,20 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-30
+
+### Changed
+
+- **Needs VS Code 1.125 or newer** ([#316](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/316)). 0.6.1 asked for 1.100, the first that can load the extension, but the extension's full set of end-to-end tests can only run on 1.125 and newer, so the oldest version it says it supports is now one it is fully tested on. Older VS Code says it needs a newer version.
+- **Telemetry is checked against its published list before it leaves your machine** ([#320](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/320)). The extension now drops any event or property not listed in [telemetry.json](telemetry.json), or a value outside what it allows, before sending, using the same check the telemetry proxy applies. Until now only the proxy did. What reaches PostHog is unchanged.
+- **The extension's log no longer copies the Databricks CLI's output** ([#318](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/318)). When a CLI command fails, the log line names the CLI, bundle and target, the exit code or signal, and how much output there was, instead of the CLI's whole output and error text, which can include the resolved bundle and its variable values. The graph and the Problems panel show the same messages as before.
+
+### Fixed
+
+- **With a target picked, each task lists the variables it uses** ([#230](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/230)). The task panel's **Variables** section was empty in target mode, and the header's Variables list marked every variable "Not used by this job": the Databricks CLI gives a target its values with every `${var...}` already replaced, so none were found. They now come from the structural preview, which keeps them, and are shown with the target's values. A setting the target overrides in its own `resources` is left out rather than shown with the preview's variable ([#332](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/332)), and a task only the target defines lists none yet. What the checks report is unchanged.
+- **A file opened from the graph must really be in the workspace** ([#326](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/326)). The graph opens a file only when it is inside the bundle or an open workspace folder; that check now also follows symlinks, so a link inside the workspace that leads outside it no longer opens. Links that lead to another file in the workspace still open.
+- **Telemetry sent after a wait no longer loses whole batches** ([#322](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/322)). Events waiting to be sent went 50 at a time, and 50 large events could pass the telemetry proxy's size limit, which refused the request and dropped all 50. Batches now go by size as well as count, at most 32 KB each, so every event is sent whole, in order, in as many requests as it takes.
+
 ## [0.6.1] - 2026-10-29
 
 ### Changed
@@ -389,6 +403,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.6.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.4.0...v0.5.0
