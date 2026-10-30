@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { isOpenFilePathAllowed } from "../../../extension.js";
@@ -91,5 +91,44 @@ describe("isOpenFilePathAllowed", () => {
     expect(isOpenFilePathAllowed(path.join(workspace, "src", "not-there.py"), undefined, folders())).toBe(true);
     expect(isOpenFilePathAllowed(path.join(workspace, "src", "dangling.py"), undefined, folders())).toBe(true);
     expect(isOpenFilePathAllowed(path.join(base, "outside", "credentials"), undefined, folders())).toBe(false);
+  });
+});
+
+// The forms a Windows path can take must not stop an ordinary file opening, and a
+// directory junction (any user can make one) must be followed like a symlink (#326).
+(process.platform === "win32" ? describe : describe.skip)("isOpenFilePathAllowed on Windows", () => {
+  let base: string;
+  let workspace: string;
+  let file: string;
+  beforeAll(() => {
+    base = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "open-file-win-")));
+    workspace = path.join(base, "workspace");
+    mkdirSync(path.join(workspace, "src"), { recursive: true });
+    mkdirSync(path.join(base, "outside"));
+    file = path.join(workspace, "src", "load.py");
+    writeFileSync(file, "print(1)\n");
+    writeFileSync(path.join(base, "outside", "credentials"), "secret\n");
+    symlinkSync(path.join(base, "outside"), path.join(workspace, "linked-out"), "junction");
+    symlinkSync(path.join(workspace, "src"), path.join(workspace, "linked-in"), "junction");
+  });
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+  const folders = () => [{ uri: { fsPath: workspace } }];
+  const lowerDrive = (p: string) => p.replace(/^[A-Z]:/, (drive) => drive.toLowerCase());
+
+  test("opens an ordinary file", () => {
+    expect(isOpenFilePathAllowed(file, workspace, folders())).toBe(true);
+  });
+
+  test("opens it with a lowercase drive letter, as VS Code writes workspace folders", () => {
+    expect(isOpenFilePathAllowed(lowerDrive(file), undefined, [{ uri: { fsPath: lowerDrive(workspace) } }])).toBe(true);
+    expect(isOpenFilePathAllowed(file, undefined, [{ uri: { fsPath: lowerDrive(workspace) } }])).toBe(true);
+  });
+
+  test("refuses a file through a junction that leads out of the workspace", () => {
+    expect(isOpenFilePathAllowed(path.join(workspace, "linked-out", "credentials"), workspace, folders())).toBe(false);
+  });
+
+  test("opens a file through a junction that stays in the workspace", () => {
+    expect(isOpenFilePathAllowed(path.join(workspace, "linked-in", "load.py"), workspace, folders())).toBe(true);
   });
 });
