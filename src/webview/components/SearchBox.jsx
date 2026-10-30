@@ -12,7 +12,7 @@ export default function SearchBox({ value, items, onChange, onSelect }) {
     : [];
 
   return (
-    <div className="relative min-w-56 max-w-96 flex-1">
+    <div className="relative min-w-24 max-w-96 flex-1">
       <Search
         size={14}
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
