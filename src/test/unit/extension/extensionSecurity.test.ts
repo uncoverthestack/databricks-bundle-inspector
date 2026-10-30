@@ -127,11 +127,10 @@ describe("isOpenFilePathAllowed", () => {
 
   test("opens it through the short 8.3 form of the folder, when Windows has one", () => {
     const short = execFileSync("cmd", ["/c", `for %A in ("${workspace}") do @echo %~sA`], { encoding: "utf8" }).trim();
-    expect(isOpenFilePathAllowed(path.join(short, "src", "load.py"), undefined, [{ uri: { fsPath: short } }])).toBe(true);
-    // TEMPORARY diagnostic, to be removed.
+    // TEMPORARY diagnostic, to be removed: what Windows returns for each form.
     const show = (p: string) => { try { return JSON.stringify({ native: realpathSync.native(p), js: realpathSync(p) }); } catch (e) { return String(e); } };
-    console.log(`DIAG tmpdir=${os.tmpdir()} short=${short} file=${file}\nDIAG realpath(short)=${show(short)}\nDIAG realpath(file)=${show(file)}\nDIAG realpath(shortfile)=${show(path.join(short, "src", "load.py"))}`);
-    expect(isOpenFilePathAllowed(file, undefined, [{ uri: { fsPath: short } }])).toBe(true);
+    process.stdout.write(`DIAG short=${short}\nDIAG file=${file}\nDIAG real(short)=${show(short)}\nDIAG real(file)=${show(file)}\nDIAG real(shortfile)=${show(path.join(short, "src", "load.py"))}\n`);
+    expect(isOpenFilePathAllowed(path.join(short, "src", "load.py"), undefined, [{ uri: { fsPath: short } }])).toBe(true);
   });
 
   test("refuses a file through a junction that leads out of the workspace", () => {
