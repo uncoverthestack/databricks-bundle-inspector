@@ -129,6 +129,9 @@ const MEASURE = String.raw`(() => {
   };
 })()`;
 
+/** Whether a `#rrggbb` colour is on the light side, by its average channel. */
+const isLight = (hex: string) => [1, 3, 5].reduce((sum, at) => sum + parseInt(hex.slice(at, at + 2), 16), 0) / 3 > 127;
+
 /** The bar each piece of text has to clear: WCAG AA, 4.5:1, or 3:1 for large text. */
 const failsAa = (text: { ratio: number; large: boolean }) => text.ratio < (text.large ? 3 : 4.5);
 
@@ -243,6 +246,31 @@ export function themesSuite() {
       }
     };
 
+    /**
+     * Measures once the new theme has fully landed (#313). The theme kind changes before
+     * every colour variable does, so a fixed wait once measured Light Modern's text against
+     * Dark Modern's background. Waits until React Flow's mode, the page surface and the
+     * editor background all agree with the theme, and two reads in a row are the same.
+     * On a timeout it returns the last read, so the assertions say what was wrong.
+     */
+    const measureSettled = async (mode: string) => {
+      const deadline = Date.now() + 20_000;
+      let last = "";
+      let measured: any;
+      while (Date.now() < deadline) {
+        measured = await evaluate(MEASURE);
+        const read = JSON.stringify(measured);
+        const landed =
+          measured.flowMode === mode &&
+          measured.surface === measured.editorBackground &&
+          isLight(measured.editorBackground) === (mode === "light");
+        if (landed && read === last) return measured;
+        last = read;
+        await sleep(100);
+      }
+      return measured;
+    };
+
     const clickTask = (name: string) =>
       evaluate(`[...document.querySelectorAll(".react-flow__node")].find(node => node.textContent.includes(${JSON.stringify(name)}))?.click()`);
 
@@ -264,9 +292,7 @@ export function themesSuite() {
       it(`${theme.name}: switched with the graph open`, async () => {
         await setTheme(theme.name);
         await waitFor(async () => (await evaluate(`document.body.dataset.vscodeThemeKind`)) === theme.kind, `theme kind ${theme.kind}`);
-        // Let React commit the new colour mode, and VS Code push the new variables.
-        await sleep(400);
-        const plain = await evaluate(MEASURE);
+        const plain = await measureSettled(theme.mode);
         const onScreen = await painted();
         await screenshot(theme.name);
         await clickTask("missing_step");
