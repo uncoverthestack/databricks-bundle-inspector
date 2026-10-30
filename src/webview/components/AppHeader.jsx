@@ -32,7 +32,7 @@ export default function AppHeader({
       className="flex h-12 shrink-0 items-center gap-3 border-b border-line-soft px-4"
       style={{ backgroundColor: UI_COLOR.panel }}
     >
-      <span className="truncate text-sm font-semibold text-fg">
+      <span className="min-w-0 truncate text-sm font-semibold text-fg">
         {bundleName ?? "Databricks Bundle Inspector"}
       </span>
       {targetOptions.length > 0 ? (
@@ -42,7 +42,7 @@ export default function AppHeader({
           value={selectedTarget ?? ""}
           onChange={(e) => onTargetChange?.(e.target.value || undefined)}
           className={[
-            "hidden cursor-pointer rounded-md border px-2 py-1 text-xs outline-none focus:border-accent md:block",
+            "min-w-0 max-w-44 shrink cursor-pointer truncate rounded-md border px-2 py-1 text-xs outline-none focus:border-accent",
             targetMode === "probe"
               ? "border-line bg-widget text-fg-soft"
               : "border-accent/40 bg-accent/10 text-link-active",
@@ -58,7 +58,7 @@ export default function AppHeader({
       ) : (
         <span
           title={targetTitle}
-          className="hidden shrink-0 rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-fg-soft md:inline-flex"
+          className="inline-flex min-w-0 max-w-44 truncate rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-fg-soft"
         >
           {targetLabel ?? "structural preview"}
         </span>
@@ -69,7 +69,7 @@ export default function AppHeader({
           aria-label="Job or pipeline"
           value={selectedValue ?? ""}
           onChange={(e) => onPickerChange(e.target.value)}
-          className="cursor-pointer rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+          className="min-w-0 max-w-56 shrink cursor-pointer truncate rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
         >
           {pickerGroups.length > 1
             ? pickerGroups.map((group) => (
@@ -117,9 +117,10 @@ export default function AppHeader({
             onClick={onCopyReviewSummary}
             className={COPY_BUTTON}
             title="Copy bundle review summary as Markdown"
+            aria-label="Copy review"
           >
             <ClipboardCopy size={13} />
-            <span>Copy review</span>
+            <span className={COPY_LABEL}>Copy review</span>
           </button>
         )
       )}
@@ -128,7 +129,9 @@ export default function AppHeader({
 }
 
 const COPY_BUTTON =
-  "hidden shrink-0 items-center gap-1.5 rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg-soft outline-none hover:border-line-strong hover:bg-hover hover:text-fg focus:border-accent md:inline-flex";
+  "inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg-soft outline-none hover:border-line-strong hover:bg-hover hover:text-fg focus:border-accent";
+// A narrow panel keeps the button and drops its words; the tooltip still names it.
+const COPY_LABEL = "hidden md:inline";
 
 /** Copy review, as a menu: the short summary, or the full report with the task graph. */
 function CopyReviewMenu({ onCopySummary, onCopyReport }) {
@@ -151,16 +154,18 @@ function CopyReviewMenu({ onCopySummary, onCopyReport }) {
     copy();
   };
   return (
-    <div ref={menu} className="relative hidden shrink-0 md:block">
+    <div ref={menu} className="relative shrink-0">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Copy review"
+        title="Copy review"
         className={COPY_BUTTON}
       >
         <ClipboardCopy size={13} />
-        <span>Copy review</span>
+        <span className={COPY_LABEL}>Copy review</span>
         <ChevronDown size={12} />
       </button>
       {open && (
