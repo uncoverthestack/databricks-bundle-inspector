@@ -25,6 +25,7 @@ import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewS
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
+import { isDrawnDependency, taskLevels } from "./lib/taskLevels";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -748,20 +749,7 @@ function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
   );
 
   // Topological level = max distance from any root
-  const levelCache = new Map();
-  function level(id, visiting = new Set()) {
-    if (levelCache.has(id)) return levelCache.get(id);
-    if (visiting.has(id)) return 0;
-    visiting.add(id);
-    const inc = depEdges.filter((e) => e.target === id);
-    const lv =
-      inc.length === 0
-        ? 0
-        : Math.max(...inc.map((e) => level(e.source, visiting))) + 1;
-    levelCache.set(id, lv);
-    return lv;
-  }
-  allTasks.forEach((t) => level(t.id));
+  const levelCache = taskLevels(allTasks.map((t) => t.id), depEdges);
 
   const taskById = new Map(allTasks.map((task) => [task.id, task]));
   const taskIds = new Set(allTasks.map((task) => task.id));
@@ -873,7 +861,7 @@ function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
   });
 
   depEdges.forEach((e) => {
-    if (!taskById.has(e.source)) return;
+    if (!taskById.has(e.source) || !isDrawnDependency(e, levelCache)) return;
     const outcomeLabel = dependencyOutcomeLabel(e);
     const outcomeTone = dependencyOutcomeTone(outcomeLabel);
     flowEdges.push({

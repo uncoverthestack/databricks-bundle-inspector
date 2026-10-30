@@ -2,6 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import { parse } from "yaml";
 import { findDependencyProblems } from "../../../bundle/jobStructure.js";
 import { parseYamlLocations } from "../../../bundle/sourceLocations.js";
+import { isDrawnDependency, taskLevels } from "../../../webview/lib/taskLevels.js";
 
 // Random jobs checked against a reference written from the definitions, sharing no code
 // with the detection: a task is in a loop if and only if it reaches itself; two tasks are
@@ -125,6 +126,21 @@ describe(`random jobs, seeds ${FIRST_SEED} to ${FIRST_SEED + RUNS - 1}`, () => {
         if (line !== `- task_key: ${f.subject}`) fail(`${f.kind} ${f.taskKey}->${f.subject} located at "${line}"`);
       }
       if (new Set(findings.map((f) => `${f.kind}|${f.taskKey}|${f.subject}`)).size !== findings.length) fail("two findings say the same");
+
+      // The graph leaves out an arrow only inside a loop the check reports, and every
+      // reported loop leaves one out: what is drawn is always a DAG.
+      const keys = [...new Set(tasks.map((t) => t.task_key))];
+      const arrows = tasks.flatMap((t) =>
+        (t.depends_on ?? []).filter((d) => keys.includes(d.task_key)).map((d) => ({ source: d.task_key, target: t.task_key })),
+      );
+      const levels = taskLevels(keys, arrows);
+      const hidden = arrows.filter((a) => !isDrawnDependency(a, levels));
+      for (const a of hidden) {
+        if (!expected.loopOf(a.target).includes(a.source)) fail(`arrow ${a.source}->${a.target} hidden outside a loop`);
+      }
+      const loopsWithHidden = new Set(hidden.map((a) => expected.loopOf(a.target).join()));
+      const loops = new Set([...expected.inLoop].map((k) => expected.loopOf(k).join()));
+      if ([...loops].sort().join("|") !== [...loopsWithHidden].sort().join("|")) fail(`loops ${[...loops].join("|")} but arrows hidden in ${[...loopsWithHidden].join("|")}`);
     }
     expect(failures).toEqual([]);
   });
