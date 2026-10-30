@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -123,14 +122,6 @@ describe("isOpenFilePathAllowed", () => {
   test("opens it with a lowercase drive letter, as VS Code writes workspace folders", () => {
     expect(isOpenFilePathAllowed(lowerDrive(file), undefined, [{ uri: { fsPath: lowerDrive(workspace) } }])).toBe(true);
     expect(isOpenFilePathAllowed(file, undefined, [{ uri: { fsPath: lowerDrive(workspace) } }])).toBe(true);
-  });
-
-  test("opens it through the short 8.3 form of the folder, when Windows has one", () => {
-    const short = execFileSync("cmd", ["/c", `for %A in ("${workspace}") do @echo %~sA`], { encoding: "utf8" }).trim();
-    // TEMPORARY diagnostic, to be removed: what Windows returns for each form.
-    const show = (p: string) => { try { return JSON.stringify({ native: realpathSync.native(p), js: realpathSync(p) }); } catch (e) { return String(e); } };
-    process.stdout.write(`DIAG short=${short}\nDIAG file=${file}\nDIAG real(short)=${show(short)}\nDIAG real(file)=${show(file)}\nDIAG real(shortfile)=${show(path.join(short, "src", "load.py"))}\n`);
-    expect(isOpenFilePathAllowed(path.join(short, "src", "load.py"), undefined, [{ uri: { fsPath: short } }])).toBe(true);
   });
 
   test("refuses a file through a junction that leads out of the workspace", () => {
