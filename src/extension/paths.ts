@@ -30,10 +30,12 @@ function realPath(filePath: string): string | undefined {
 
 /**
  * Whether the graph may open this file: inside the active bundle or an open workspace
- * folder, both as written and, for a file that exists, where it really leads. A symlink
- * inside the workspace can point anywhere (#326); one pointing inside it still opens. The
- * folders are compared by their real locations too (macOS's /var is /private/var). A path
- * that doesn't exist has nothing to follow, and VS Code says so when it opens.
+ * folder. For a file that exists, by where it really leads, every link followed, against
+ * the folders' real locations: a symlink or junction inside the workspace can point
+ * anywhere (#326), one pointing inside it still opens, and the forms a path can take
+ * (macOS's /var for /private/var, Windows' 8.3 short names) don't matter (#330). A path that
+ * doesn't exist has nothing to follow, so it is decided as written, and VS Code says so
+ * when it opens.
  */
 export function isOpenFilePathAllowed(
   filePath: string,
@@ -48,9 +50,7 @@ export function isOpenFilePathAllowed(
     ...(activeBundleDir ? [activeBundleDir] : []),
     ...(workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
   ];
-  if (!roots.some((root) => isPathInDirectory(filePath, root))) return false;
-
   const real = realPath(filePath);
-  if (real === undefined) return true;
+  if (real === undefined) return roots.some((root) => isPathInDirectory(filePath, root));
   return roots.some((root) => isPathInDirectory(real, realPath(root) ?? root));
 }
