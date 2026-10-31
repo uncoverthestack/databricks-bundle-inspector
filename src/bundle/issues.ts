@@ -46,6 +46,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "task_value_key_not_set",
   "secret_scope_name_mismatch",
   "missing_bundle_name",
+  "empty_bundle_name_in_root_path",
   "unresolved_variable",
   "cli_diagnostic",
   "unknown_or_deprecated_field",
@@ -832,6 +833,8 @@ export function buildInspectorIssues(
   issues.push(...jobStructureIssues(graph));
   // With a target the CLI reports it itself.
   if (!targetName) issues.push(...missingBundleNameIssues(parsedBundle, bundleRoot));
+  // With a target the CLI has already replaced ${bundle.name}.
+  if (!targetName) issues.push(...emptyBundleNameInRootPathIssues(parsedBundle, bundleRoot));
 
   return issues;
 }
@@ -1000,6 +1003,49 @@ export function missingBundleNameIssues(parsedBundle: ParsedBundleConfig, bundle
       ...(bundleLine >= 0 ? { line: bundleLine + 1 } : {}),
     },
   ];
+}
+
+/**
+ * Warns where `workspace.root_path` uses `${bundle.name}` and the bundle has no name (#341).
+ * The CLI makes that part empty, `.bundle//dev`, which the workspace stores as `.bundle/dev`,
+ * so every nameless bundle with the same root_path deploys to one folder. A second deploy
+ * there deleted the first bundle's job and exited 0. With `name: ""` the CLI prints nothing.
+ */
+export function emptyBundleNameInRootPathIssues(
+  parsedBundle: ParsedBundleConfig,
+  bundleRoot: string,
+): InspectorIssue[] {
+  if (setText(parsedBundle.bundle.name)) return [];
+  const ownRootPath = (parsedBundle.workspace as { root_path?: unknown } | undefined)?.root_path;
+  const targets = Object.entries(parsedBundle.targets ?? {});
+  const folders = new Map<string, string>();
+  for (const [targetName, target] of targets.length ? targets : [["default", {}] as const]) {
+    const bundle = (target as { bundle?: { name?: unknown } }).bundle;
+    const workspace = (target as { workspace?: { root_path?: unknown } }).workspace;
+    const rootPath = workspace?.root_path ?? ownRootPath;
+    if (setText(bundle?.name) || typeof rootPath !== "string" || !rootPath.includes("${bundle.name}")) continue;
+    const parts = rootPath.replaceAll("${bundle.name}", "").replaceAll("${bundle.target}", targetName).split("/");
+    const empty = parts.findIndex((part, index) => index > 1 && part === "");
+    const folder = empty > 0 ? parts.slice(empty - 1).join("/") : parts.join("/");
+    folders.set(folder, targetName);
+  }
+  if (folders.size === 0) return [];
+
+  const { file: bundleFile, text } = readIncludeEntries(bundleRoot);
+  const rootPathLine = (text ?? "")
+    .split("\n")
+    .findIndex((line) => /^\s*root_path\s*:.*\$\{bundle\.name\}/.test(line));
+  return [...folders].map(([folder, targetName]) => ({
+    id: `bundle:empty-name-root-path:${targetName}`,
+    severity: "warning" as const,
+    kind: "empty_bundle_name_in_root_path" as const,
+    title:
+      `root_path uses \${bundle.name}, but the bundle has no name, so it deploys to "${folder}". ` +
+      "Another bundle with no name and the same root_path deploys to the same folder and can delete this bundle's resources.",
+    fixHint: "Add a name under bundle: in databricks.yml.",
+    file: path.join(bundleRoot, bundleFile ?? "databricks.yml"),
+    ...(rootPathLine >= 0 ? { line: rootPathLine + 1 } : {}),
+  }));
 }
 
 /**
