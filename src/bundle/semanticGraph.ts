@@ -63,7 +63,7 @@ export interface SemanticDetectedReferences {
 }
 
 export interface SemanticBundleGraph {
-  bundle: string;
+  bundle?: string;
   jobs: SemanticJob[];
   issues: SemanticIssue[];
   detectedReferences: SemanticDetectedReferences;
@@ -278,7 +278,7 @@ export function exportSemanticGraph(
   });
 
   return {
-    bundle: parsedBundle.bundle.name,
+    ...(parsedBundle.bundle.name !== undefined ? { bundle: parsedBundle.bundle.name } : {}),
     jobs,
     issues: issues
       .map((issue) => semanticIssue(issue, bundleRoot))

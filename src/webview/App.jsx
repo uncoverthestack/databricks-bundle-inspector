@@ -149,6 +149,7 @@ function issueKindLabel(kind) {
       path_not_checked: "Not checked",
       include_matches_nothing: "Include pattern",
       resource_not_included: "Not included",
+      missing_bundle_name: "Bundle name",
     }[kind] ?? "Issue"
   );
 }
@@ -371,6 +372,7 @@ function buildIssueItems(
             path_not_checked: "Paths Not Checked",
             include_matches_nothing: "Include Patterns",
             resource_not_included: "Resource Files Not Included",
+            missing_bundle_name: "Bundle Name",
           }[issue.kind] ?? "Issues",
         title: issue.detail ?? issue.title,
         subtitle: issue.taskName ?? issue.title,

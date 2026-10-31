@@ -547,6 +547,47 @@ describe("validateBundleWithDependencies", () => {
   });
 });
 
+// What CLI v1.22.1 printed for each file in the structural preview (#340).
+describe("validateBundleWithDependencies: a bundle with no name", () => {
+  const preview = (stdout: string) =>
+    validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => {
+        throw Object.assign(new Error("probe target failed"), {
+          stderr: `Error: ${BUNDLE_PROBE_TARGET}: no such target. Available targets: default`,
+          stdout,
+        });
+      },
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+    });
+
+  test.each([
+    ["no bundle mapping", '{"targets":{"dev":{"default":true}},"resources":{"jobs":{"j":{"name":"j"}}}}'],
+    ["an empty databricks.yml", '{"targets":{"default":{}}}'],
+    ["only bundle:", '{"bundle":null,"targets":{"default":{}}}'],
+  ])("is still read, with an empty bundle mapping: %s", async (_case, stdout) => {
+    const result = await preview(stdout);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.bundle).toEqual({});
+  });
+
+  test("a config the CLI could not load still fails, with the CLI's error", async () => {
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => {
+        throw Object.assign(new Error("load failed"), {
+          stderr: "Error: failed to load /workspace/demo/databricks.yml: yaml: line 1: did not find expected key\n",
+          stdout: "{}",
+        });
+      },
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.errorCode).toBe("VALIDATION_FAILED");
+    expect(result.error.diagnostics?.[0]?.message).toContain("did not find expected key");
+  });
+});
+
 describe("validateBundleWithDependencies: large output and time limits", () => {
   const cli = async () => ({ ok: true as const, candidate: "databricks", versionOutput: undefined });
 
