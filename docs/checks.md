@@ -14,7 +14,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -218,6 +218,15 @@ Code reads a secret using a secret scope's resource key from the bundle instead 
 - **Example:** a `databricks.yml` with `targets:` and `resources:`, but no `bundle:`.
 - **Fix:** add a name, for example `bundle: name: my_bundle`.
 - **Limits:** not reported for a target that sets its own `bundle: name:` or `workspace: root_path:`. The CLI deploys those and only warns that the name is not set. With a target selected, the CLI's own message is shown instead.
+
+### `empty_bundle_name_in_root_path`
+
+`workspace: root_path:` uses `${bundle.name}`, but the bundle has no name, or `name: ""`. The Databricks CLI makes that part of the path empty, so `.bundle/${bundle.name}/${bundle.target}` becomes `.bundle//dev`, which the workspace stores as `.bundle/dev`. Every bundle with no name and the same `root_path` deploys to that one folder. A deploy there can delete the resources another bundle deployed, and the CLI still reports success. With `name: ""` the CLI prints no warning at all.
+
+- **Severity:** warning.
+- **Example:** no `bundle: name:`, and `root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}`.
+- **Fix:** add a name, for example `bundle: name: my_bundle`.
+- **Limits:** only `${bundle.name}` is checked, not other variables that may be empty. Bundles that share a folder for another reason, or that are deployed from other machines or CI, are not compared. With a target selected it shows in the Problems panel only, not in the graph.
 
 ### `unresolved_variable`
 

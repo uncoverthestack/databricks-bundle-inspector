@@ -1,0 +1,3 @@
+Added
+
+- **Warn when bundles with no name share a deploy folder** ([#341](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/341)). When `workspace: root_path:` uses `${bundle.name}` and the bundle has no name, or `name: ""`, the Databricks CLI makes that part of the path empty, so `.bundle/${bundle.name}/dev` becomes `.bundle//dev`. Every nameless bundle with the same `root_path` deploys to that folder, and a deploy there can delete another bundle's resources while still reporting success. The new `empty_bundle_name_in_root_path` warning says so. With `name: ""` the CLI itself prints no warning.
