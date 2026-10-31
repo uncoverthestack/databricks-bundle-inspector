@@ -189,7 +189,8 @@ export interface Job {
 }
 
 export interface Bundle {
-  name: string;
+  /** Required by the docs, but the CLI deploys without it when root_path is set (#340). */
+  name?: string;
   environment?: string;
   uuid?: string;
   mode?: string;

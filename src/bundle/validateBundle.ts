@@ -109,11 +109,15 @@ export type BundleResult =
 // Zod v4 requires both key and value schemas for z.record().
 const ParsedBundleConfigSchema = z
   .object({
+    // The CLI deploys without a name when a target sets workspace.root_path, and an
+    // empty `bundle:` comes out as null (#340). buildInspectorIssues says when it fails.
     bundle: z
       .object({
-        name: z.string(),
+        name: z.string().optional(),
       })
-      .loose(),
+      .loose()
+      .nullish()
+      .transform((bundle) => bundle ?? {}),
     resources: z
       .record(z.string(), z.record(z.string(), z.unknown()))
       .optional(),
@@ -129,6 +133,12 @@ const ParsedBundleConfigSchema = z
 function parseBundleConfig(
   raw: unknown,
 ): { ok: true; data: ParsedBundleConfig } | { ok: false; error: string } {
+  // A config the CLI could not load prints as `{}`. A loaded one has `bundle` for a target,
+  // and `targets` in the structural preview, where the CLI adds `default` if there are none.
+  const loaded = raw as { bundle?: unknown; targets?: unknown } | null;
+  if (loaded?.bundle === undefined && loaded?.targets === undefined) {
+    return { ok: false, error: "bundle: the Databricks CLI output has neither bundle nor targets" };
+  }
   const result = ParsedBundleConfigSchema.safeParse(raw);
   if (!result.success) {
     return {

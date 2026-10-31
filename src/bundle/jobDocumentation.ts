@@ -31,7 +31,7 @@ interface TaskDocumentation {
 }
 
 interface JobDocumentation {
-  bundleName: string;
+  bundleName: string | undefined;
   jobKey: string;
   jobName: string;
   purpose?: string;
@@ -308,7 +308,7 @@ function renderOverview(doc: JobDocumentation): string {
   return [
     "| Field | Value |",
     "| --- | --- |",
-    `| Bundle | ${escapeMarkdown(doc.bundleName)} |`,
+    `| Bundle | ${escapeMarkdown(doc.bundleName ?? "Unknown bundle")} |`,
     `| Job key | ${escapeMarkdown(doc.jobKey)} |`,
     `| Job name | ${escapeMarkdown(doc.jobName)} |`,
     `| Tasks | ${doc.tasks.length} |`,

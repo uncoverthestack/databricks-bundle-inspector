@@ -45,6 +45,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "task_value_not_upstream",
   "task_value_key_not_set",
   "secret_scope_name_mismatch",
+  "missing_bundle_name",
   "unresolved_variable",
   "cli_diagnostic",
   "unknown_or_deprecated_field",
@@ -829,6 +830,8 @@ export function buildInspectorIssues(
   issues.push(...taskValueIssues(graph));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
+  // With a target the CLI reports it itself.
+  if (!targetName) issues.push(...missingBundleNameIssues(parsedBundle, bundleRoot));
 
   return issues;
 }
@@ -952,6 +955,51 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
   }
 
   return issues;
+}
+
+const setText = (value: unknown): value is string => typeof value === "string" && value !== "";
+
+/**
+ * Reports targets that `bundle deploy` rejects for having no bundle name (#340). The CLI
+ * needs the name for a target's default deploy folder, `.bundle/<name>/<target>`, and stops
+ * with "bundle name not defined" when neither is set. With `workspace.root_path` it only
+ * warns and deploys. The structural preview shows neither, so the inspector says it here.
+ * A target can set its own `bundle.name` and `workspace.root_path`. With no targets the CLI
+ * adds one called `default`, so the bundle's own settings decide.
+ */
+export function missingBundleNameIssues(parsedBundle: ParsedBundleConfig, bundleRoot: string): InspectorIssue[] {
+  const ownRootPath = (parsedBundle.workspace as { root_path?: unknown } | undefined)?.root_path;
+  if (setText(parsedBundle.bundle.name) || setText(ownRootPath)) return [];
+
+  const targets = Object.entries(parsedBundle.targets ?? {});
+  const failing = targets.length
+    ? targets
+        .filter(([, target]) => {
+          const bundle = target.bundle as { name?: unknown } | undefined;
+          const workspace = target.workspace as { root_path?: unknown } | undefined;
+          return !setText(bundle?.name) && !setText(workspace?.root_path);
+        })
+        .map(([name]) => name)
+    : ["default"];
+  if (failing.length === 0) return [];
+
+  const { file: bundleFile, text } = readIncludeEntries(bundleRoot);
+  const bundleLine = (text ?? "").split("\n").findIndex((line) => /^bundle\s*:/.test(line));
+  const named = failing.map((name) => `"${name}"`).join(", ");
+  const every = targets.length === 0 || failing.length === targets.length;
+  return [
+    {
+      id: `bundle:missing-name:${failing.join(",")}`,
+      severity: "error",
+      kind: "missing_bundle_name",
+      title: every
+        ? 'The bundle has no name, so "databricks bundle deploy" fails. The Databricks CLI needs bundle: name: to make the deploy folder.'
+        : `The bundle has no name, so "databricks bundle deploy" fails for ${failing.length === 1 ? "target" : "targets"} ${named}. The Databricks CLI needs bundle: name: to make the deploy folder.`,
+      fixHint: "Add a name under bundle: in databricks.yml, for example bundle: name: my_bundle.",
+      file: path.join(bundleRoot, bundleFile ?? "databricks.yml"),
+      ...(bundleLine >= 0 ? { line: bundleLine + 1 } : {}),
+    },
+  ];
 }
 
 /**

@@ -14,7 +14,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
-- [Bundle configuration](#bundle-configuration): `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -209,6 +209,15 @@ Code reads a secret using a secret scope's resource key from the bundle instead 
 - **Limits:** a scope with that name that exists outside the bundle is fine.
 
 ## Bundle configuration
+
+### `missing_bundle_name`
+
+`databricks.yml` has no `bundle: name:`, so `bundle deploy` fails. The Databricks CLI needs the name to make a target's deploy folder, `.bundle/<name>/<target>`, and stops with "bundle name not defined". An empty `databricks.yml` has the same problem.
+
+- **Severity:** error.
+- **Example:** a `databricks.yml` with `targets:` and `resources:`, but no `bundle:`.
+- **Fix:** add a name, for example `bundle: name: my_bundle`.
+- **Limits:** not reported for a target that sets its own `bundle: name:` or `workspace: root_path:`. The CLI deploys those and only warns that the name is not set. With a target selected, the CLI's own message is shown instead.
 
 ### `unresolved_variable`
 
