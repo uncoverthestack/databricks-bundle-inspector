@@ -4,6 +4,20 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-04
+
+### Added
+
+- **Supported resource coverage guide** ([#350](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/350)). Shows which bundle resource groups the inspector checks, with a status and what it does for each, and links each to the official Databricks bundle resource reference. Find it from the README.
+
+### Fixed
+
+- **Files are checked for a real target in immutable sync mode** ([#344](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/344)). With `workspace.sync_mode: immutable` (Databricks CLI v1.23.0) or `experimental.immutable_folder: true`, picking a target marked every task and pipeline path as "Not checked", because the CLI points them at a snapshot that only exists once you deploy. The inspector now reads them from your local files, as for any other target, so widget, secret, task value and notebook checks run again. Both the current snapshot reference and the older one used by CLI 1.6–1.15 are supported.
+- **Warn when bundles with no name share a deploy folder** ([#341](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/341)). When `workspace: root_path:` uses `${bundle.name}` and the bundle has no name, or `name: ""`, the Databricks CLI makes that part of the path empty, so `.bundle/${bundle.name}/dev` becomes `.bundle//dev`. Every nameless bundle with the same `root_path` deploys to that folder, and a deploy there can delete another bundle's resources while still reporting success. The new `empty_bundle_name_in_root_path` warning says so. With `name: ""` the CLI itself prints no warning. This also applies when a target clears a name inherited from the bundle.
+- **A bundle with no name is checked, and says when deploy will fail** ([#340](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/340)). A `databricks.yml` with no `bundle: name:`, or an empty one, used to show only "Failed to validate Databricks bundle." with no reason and no graph. Now the graph and the other checks run. When no `workspace: root_path:` is set either, the new `missing_bundle_name` error says that `bundle deploy` fails, because the Databricks CLI needs the name to make the deploy folder. A target that sets its own name or `root_path` deploys, so it is not reported. Empty target mappings are checked safely, and a target that clears an inherited name is checked with its own settings.
+- **The task graph no longer shows a stray arrowhead for a dependency loop** ([#338](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/338)). When tasks depend on each other in a loop, or a task depends on itself, the arrow that closes the loop ran under the task boxes and only its arrowhead showed. The graph now leaves that arrow out, so it always reads as a DAG. The loop error and the task's "Depends on" list still name every dependency.
+- **A narrow graph panel keeps the target picker and Copy review** ([#335](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/335)). Below 768px wide, both used to disappear from the header. Now the search box and names shrink instead, and Copy review shows only its icon, with a tooltip. The controls also fit a 350px panel, with tighter spacing and a smaller search box.
+
 ## [0.6.2] - 2026-10-30
 
 ### Changed
@@ -403,6 +417,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.6.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.5.0...v0.6.0
