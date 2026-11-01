@@ -1,0 +1,25 @@
+# Supported resources
+
+The inspector models the 23 resource groups below. Coverage varies: recognising a resource does not mean it has a dedicated view or checks for every setting. The Databricks CLI validates the bundle configuration; the inspector adds the checks described in [Every check](checks.md).
+
+For bundle syntax and configuration examples, see the official [Databricks bundle resource reference](https://docs.databricks.com/aws/en/dev-tools/bundles/resources) and [bundle configuration reference](https://docs.databricks.com/aws/en/dev-tools/bundles/settings). Each resource group in the table links to its Databricks reference. Those pages describe what Databricks can deploy; the coverage column describes what this inspector checks and displays. Databricks may support additional resource types beyond the groups modelled here.
+
+| Resource group (Databricks reference) | Inspector coverage |
+| --- | --- |
+| [`jobs`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#jobs) | Job and task graph, task details, dependency and duplicate-key checks, local file and library checks, and code checks for widgets, task values and secrets. |
+| [`pipelines`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#pipelines) | Dedicated pipeline view, links to jobs that run the pipeline, local library/source checks, and secret references in supported source code and cluster settings. Pipelines without a job are included. Tables defined inside pipeline code are not shown. |
+| [`secret_scopes`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#secret_scopes) | Matches secret references against bundle scope names and reports code that uses a resource key instead of its scope name. No dedicated view. |
+| [`clusters`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#clusters) | Models the resource and associates cluster secret references with tasks that use it. No dedicated view. |
+| [`models`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#models), [`experiments`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#experiments), [`model_serving_endpoints`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#model_serving_endpoints), [`registered_models`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#registered_models), [`quality_monitors`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#quality_monitors) | Models resource definitions; no dedicated views or resource-specific checks. |
+| [`catalogs`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#catalogs), [`schemas`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#schemas), [`volumes`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#volumes), [`external_locations`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#external_locations) | Models resource definitions; no dedicated views or resource-specific checks. |
+| [`dashboards`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#dashboards), [`apps`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#apps), [`alerts`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#alerts), [`sql_warehouses`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#sql_warehouses) | Models resource definitions; no dedicated views or resource-specific checks. |
+| [`database_instances`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#database_instances), [`database_catalogs`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#database_catalogs), [`synced_database_tables`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#synced_database_table) | Models resource definitions; no dedicated views or resource-specific checks. |
+| [`postgres_projects`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#postgres_projects), [`postgres_branches`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#postgres_branches), [`postgres_endpoints`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#postgres_endpoints) | Models resource definitions; no dedicated views or resource-specific checks. |
+
+The graph's resource selector lists jobs and pipelines. Other modelled resources do not get their own selectable view.
+
+Checks on source code read Python and SQL, including supported notebook formats. Scala and R code is not read. Bundle-wide checks, such as include patterns and unresolved variables, are documented in [Every check](checks.md).
+
+The inspector does not run bundle Python or scripts. Resources defined only by bundle Python are not shown. See [How validation works](usage.md#how-it-works) for validation behaviour and [Setup and usage](usage.md) for the views.
+
+The implementation's resource list is [`MODELLED_RESOURCE_GROUPS`](../src/bundle/graph/bundleGraph.ts). A schema coverage test checks that list against the CLI schema; update this page when resource coverage changes.

@@ -2,7 +2,7 @@
 
 Find Databricks bundle problems before you deploy, including ones `databricks bundle validate` misses. See them in your code, at the exact line, and explore how your jobs and tasks connect.
 
-It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel. The graph shows each job's tasks and how they depend on each other. A pipeline appears as a task in the job that runs it; the graph doesn't show the tables inside a pipeline, or a pipeline no job runs.
+It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel. The graph shows each job's tasks and how they depend on each other. Pipelines have their own view, including ones no job runs; the graph doesn't show the tables inside a pipeline.
 
 Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
 
@@ -43,6 +43,10 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 - **Targets**: pick a target in the graph to see its variables and issues resolved for it. The Problems panel keeps showing the structural preview, which needs no login.
 - **Review report**: copy a short summary for chat, or a full report for a pull request with a picture of the job's tasks, its errors and warnings, and tables of tasks, parameters and files.
 - **Sidebar**: the Databricks Bundle Inspector icon in the Activity Bar lists every bundle in the folder with its result, the targets each can be checked against, and the Databricks CLI and sign-in profile the checks use.
+
+## Supported resources
+
+Jobs and pipelines have dedicated views and checks. The inspector also models other bundle resource groups, with different levels of coverage. See [Supported resources](docs/supported-resources.md) for the full list and limits.
 
 ## Getting started
 
