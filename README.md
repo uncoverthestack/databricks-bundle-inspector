@@ -6,14 +6,9 @@ It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) 
 
 Available on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) and on [Open VSX](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector) for Cursor and Windsurf.
 
-<div>
-    <a href="https://www.loom.com/share/634c3b8081f545b198e947ff68f99f3d">
-      <p>Databricks Bundle Inspector Demo - Watch Video</p>
-    </a>
-    <a href="https://www.loom.com/share/634c3b8081f545b198e947ff68f99f3d">
-      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/634c3b8081f545b198e947ff68f99f3d-8b76e3bf25272d13-full-play.gif#t=0.1">
-    </a>
-  </div>
+[![What does Databricks Bundle Inspector do? Watch the 2-minute video](docs/media/what-it-does.png)](https://github.com/user-attachments/assets/05c68943-08c1-4121-b1f2-ddec00a63cd2)
+
+[Watch the 2-minute video](https://github.com/user-attachments/assets/05c68943-08c1-4121-b1f2-ddec00a63cd2): what the inspector checks and shows, feature by feature.
 
 ## What it catches
 
