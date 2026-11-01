@@ -88,7 +88,7 @@ A task or pipeline path uses a variable, such as `${var.nb_dir}/load.py`, so the
 - **Severity:** note.
 - **Example:** `notebook_path: ${var.nb_dir}/load.py`.
 - **Fix:** pick a target in the graph. The Databricks CLI then resolves the variable, with its value from the target, overrides or environment, and the file is checked. Nothing needs to change in the bundle.
-- **Limits:** the inspector doesn't resolve variables itself, as their values can come from places the preview doesn't see (`BUNDLE_VAR_<name>`, `--var`, `.databricks/bundle/<target>/variable-overrides.json`). Remote paths (`/Workspace/...`, `dbfs:/`) and paths in a job with `git_source` get no note.
+- **Limits:** the inspector doesn't resolve variables itself, as their values can come from places the preview doesn't see (`BUNDLE_VAR_<name>`, `--var`, `.databricks/bundle/<target>/variable-overrides.json`). Remote paths (`/Workspace/...`, `dbfs:/`) and paths in a job with `git_source` get no note. With `workspace.sync_mode: immutable`, a target's paths point at the snapshot deploy will upload; they are read from the local files as for any other target.
 
 ## `include`
 
