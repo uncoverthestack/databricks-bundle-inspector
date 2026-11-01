@@ -29,7 +29,7 @@ export default function AppHeader({
   const options = pickerGroups.flatMap((group) => group.options);
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-3 border-b border-line-soft px-4"
+      className="flex h-12 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-3 md:px-4"
       style={{ backgroundColor: UI_COLOR.panel }}
     >
       <span className="min-w-0 truncate text-sm font-semibold text-fg">
@@ -42,7 +42,7 @@ export default function AppHeader({
           value={selectedTarget ?? ""}
           onChange={(e) => onTargetChange?.(e.target.value || undefined)}
           className={[
-            "min-w-0 max-w-44 shrink cursor-pointer truncate rounded-md border px-2 py-1 text-xs outline-none focus:border-accent",
+            "min-w-12 max-w-44 shrink cursor-pointer truncate rounded-md border px-2 py-1 text-xs outline-none focus:border-accent",
             targetMode === "probe"
               ? "border-line bg-widget text-fg-soft"
               : "border-accent/40 bg-accent/10 text-link-active",

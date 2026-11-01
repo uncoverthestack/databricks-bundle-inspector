@@ -26,6 +26,18 @@ const TITLE = (folder: string) =>
 // Each config is the structural preview's output, and each folder what
 // `databricks bundle validate -t <target>` resolved with a login (CLI v1.22.1, #341).
 describe("empty bundle name in root_path", () => {
+  test("a target can clear an inherited name while keeping the base root_path", () => {
+    const root = makeBundle(`bundle: {name: base}\nworkspace:\n  root_path: ${ROOT_PATH}\ntargets: {dev: {bundle: {name: ""}}, prod: {}}\n`);
+    const config = { bundle: { name: "base" }, workspace: { root_path: ROOT_PATH }, targets: { dev: { bundle: { name: "" } }, prod: {} } } as ParsedBundleConfig;
+    expect(emptyBundleNameInRootPathIssues(config, root)).toMatchObject([{ id: "bundle:empty-name-root-path:dev" }]);
+  });
+
+  test("a null target inherits the base root_path", () => {
+    const root = makeBundle(`workspace:\n  root_path: ${ROOT_PATH}\ntargets: {dev: null}\n`);
+    const config = { bundle: {}, workspace: { root_path: ROOT_PATH }, targets: { dev: null } } as unknown as ParsedBundleConfig;
+    expect(emptyBundleNameInRootPathIssues(config, root)).toHaveLength(1);
+  });
+
   test("no name, root_path in the bundle: warns on the root_path line", () => {
     const root = makeBundle(`workspace:\n  root_path: ${ROOT_PATH}\ntargets:\n  dev: {default: true}\n`);
     const config = { bundle: {}, workspace: { root_path: ROOT_PATH }, targets: { dev: {} } } as ParsedBundleConfig;

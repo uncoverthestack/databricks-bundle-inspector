@@ -42,7 +42,16 @@ const GLOB_TAIL = /\/\*\*?(?:\/.*)?$|\/\*[^/]*$/;
  * snapshot whose folder is only known then, so validate leaves this reference in every
  * rewritten path. What follows `/files/` is relative to the sync root, as in normal mode.
  */
-const IMMUTABLE_FILE_PATH = "${resources.internal_immutable_snapshots.immutable.full_path}/files";
+// Older CLIs used a snapshot reference in resource paths while leaving workspace.file_path
+// as the normal absolute folder. Early versions placed the files below src/files.
+const LEGACY_IMMUTABLE_FILE_PATHS = [
+  "${workspace.snapshot_path}/files",
+  "${workspace.snapshot_path}/src/files",
+];
+const IMMUTABLE_FILE_PATHS = new Set([
+  "${resources.internal_immutable_snapshots.immutable.full_path}/files",
+  ...LEGACY_IMMUTABLE_FILE_PATHS,
+]);
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -165,23 +174,26 @@ export function localizeWorkspacePaths(
   const filePath = record(output?.workspace)?.file_path;
   if (
     typeof filePath !== "string" ||
-    (filePath !== IMMUTABLE_FILE_PATH && (!filePath.startsWith("/") || filePath.includes("${")))
+    (!IMMUTABLE_FILE_PATHS.has(filePath) && (!filePath.startsWith("/") || filePath.includes("${")))
   ) {
     return config;
   }
   const base = filePath.replace(/\/+$/, "");
-  const prefix = `${base}/`;
+  const bases = [base, ...(record(output?.experimental)?.immutable_folder === true ? LEGACY_IMMUTABLE_FILE_PATHS : [])];
   // A path can also be the upload folder itself, such as a dbt project written as ".".
-  const isRewritten = (value: string) => value === base || value.startsWith(prefix);
+  const baseFor = (value: string) => bases.find(folder => value === folder || value.startsWith(`${folder}/`));
 
   const copy = structuredClone(config);
   const rewritten = new Map(
     slotsIn(record(copy)?.resources)
-      .filter((slot) => isRewritten(slot.holder[slot.key] as string))
+      .filter((slot) => baseFor(slot.holder[slot.key] as string) !== undefined)
       .map((slot) => [slot.id, slot]),
   );
   if (rewritten.size === 0) return config;
-  const rest = (slot: PathSlot) => (slot.holder[slot.key] as string).slice(prefix.length);
+  const rest = (slot: PathSlot) => {
+    const value = slot.holder[slot.key] as string;
+    return value.slice(baseFor(value)!.length + 1);
+  };
 
   // Anchors: each field as written, in the resource itself or in the selected target.
   const target = record(output?.bundle)?.target;

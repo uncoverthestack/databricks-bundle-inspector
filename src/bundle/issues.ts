@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
-import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
+import type { ParsedBundleConfig, TargetConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
@@ -972,18 +972,17 @@ const setText = (value: unknown): value is string => typeof value === "string" &
  */
 export function missingBundleNameIssues(parsedBundle: ParsedBundleConfig, bundleRoot: string): InspectorIssue[] {
   const ownRootPath = (parsedBundle.workspace as { root_path?: unknown } | undefined)?.root_path;
-  if (setText(parsedBundle.bundle.name) || setText(ownRootPath)) return [];
-
   const targets = Object.entries(parsedBundle.targets ?? {});
-  const failing = targets.length
-    ? targets
-        .filter(([, target]) => {
-          const bundle = target.bundle as { name?: unknown } | undefined;
-          const workspace = target.workspace as { root_path?: unknown } | undefined;
-          return !setText(bundle?.name) && !setText(workspace?.root_path);
-        })
-        .map(([name]) => name)
-    : ["default"];
+  const candidates: ReadonlyArray<readonly [string, TargetConfig | null]> = targets.length ? targets : [["default", {}]];
+  const failing = candidates
+    .filter(([, target]) => {
+      // The preview preserves an empty YAML target as null. An explicit empty
+      // name overrides the base name; an omitted name inherits it.
+      const bundle = target?.bundle as { name?: unknown } | undefined;
+      const workspace = target?.workspace as { root_path?: unknown } | undefined;
+      return !setText(bundle?.name ?? parsedBundle.bundle.name) && !setText(workspace?.root_path ?? ownRootPath);
+    })
+    .map(([name]) => name);
   if (failing.length === 0) return [];
 
   const { file: bundleFile, text } = readIncludeEntries(bundleRoot);
@@ -1015,15 +1014,14 @@ export function emptyBundleNameInRootPathIssues(
   parsedBundle: ParsedBundleConfig,
   bundleRoot: string,
 ): InspectorIssue[] {
-  if (setText(parsedBundle.bundle.name)) return [];
   const ownRootPath = (parsedBundle.workspace as { root_path?: unknown } | undefined)?.root_path;
   const targets = Object.entries(parsedBundle.targets ?? {});
   const folders = new Map<string, string>();
   for (const [targetName, target] of targets.length ? targets : [["default", {}] as const]) {
-    const bundle = (target as { bundle?: { name?: unknown } }).bundle;
-    const workspace = (target as { workspace?: { root_path?: unknown } }).workspace;
+    const bundle = (target as { bundle?: { name?: unknown } } | null)?.bundle;
+    const workspace = (target as { workspace?: { root_path?: unknown } } | null)?.workspace;
     const rootPath = workspace?.root_path ?? ownRootPath;
-    if (setText(bundle?.name) || typeof rootPath !== "string" || !rootPath.includes("${bundle.name}")) continue;
+    if (setText(bundle?.name ?? parsedBundle.bundle.name) || typeof rootPath !== "string" || !rootPath.includes("${bundle.name}")) continue;
     const parts = rootPath.replaceAll("${bundle.name}", "").replaceAll("${bundle.target}", targetName).split("/");
     const empty = parts.findIndex((part, index) => index > 1 && part === "");
     const folder = empty > 0 ? parts.slice(empty - 1).join("/") : parts.join("/");
