@@ -46,7 +46,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 
 ## Supported resources
 
-Jobs and pipelines have dedicated views and checks. Secret scopes and clusters are used by some checks, and other resource groups have no checks yet. See [Supported resources](docs/supported-resources.md) for the full list and limits.
+[Jobs](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#jobs) and [pipelines](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#pipelines) have dedicated views and checks. [Secret scopes](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#secret_scopes) and [clusters](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#clusters) are used by some checks, and other resource groups have no checks yet. See [Supported resources](docs/supported-resources.md) for the full list and limits.
 
 ## Getting started
 
