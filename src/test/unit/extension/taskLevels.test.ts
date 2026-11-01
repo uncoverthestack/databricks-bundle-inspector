@@ -14,6 +14,20 @@ function drawn(taskIds: string[], arrows: DependencyEdge[]): string[] {
 }
 
 describe("taskLevels", () => {
+  test.each([false, true])("a reversed 1000-task chain, closed into a loop: %s", (closed) => {
+    const keys = Array.from({ length: 1000 }, (_, index) => `t${index}`);
+    const arrows = keys.slice(1).map((key, index) => ({ source: keys[index]!, target: key }));
+    if (closed) arrows.push({ source: keys[999]!, target: keys[0]! });
+    const levels = taskLevels([...keys].reverse(), arrows);
+    expect(levels.size).toBe(1000);
+    const hidden = arrows.filter(arrow => !isDrawnDependency(arrow, levels));
+    expect(hidden).toHaveLength(closed ? 1 : 0);
+    for (const arrow of arrows.filter(arrow => isDrawnDependency(arrow, levels))) {
+      expect(levels.get(arrow.source)).toBeLessThan(levels.get(arrow.target)!);
+    }
+    if (!closed) expect(levels.get("t999")).toBe(999);
+  });
+
   test("a task's column is its longest run of upstream tasks", () => {
     const levels = taskLevels(["a", "b", "c", "d"], edges("a>b", "b>c", "a>c", "c>d"));
     expect(Object.fromEntries(levels)).toEqual({ a: 0, b: 1, c: 2, d: 3 });

@@ -64,6 +64,7 @@ describe("localizeWorkspacePaths: normal cases", () => {
   test.each([
     ["the bundle's files folder", FILES],
     ["an immutable snapshot (#344)", SNAPSHOT_FILES],
+    ["an immutable snapshot from CLI 1.6–1.15", "${workspace.snapshot_path}/files"],
   ])("maps every field the inspector reads back to the file as written, uploaded to %s", async (_case, FILES) => {
     await touch("src/inner.py", "# Databricks notebook source\n");
     await touch("src/script.py");
@@ -236,6 +237,12 @@ describe("localizeWorkspacePaths: how a path was written", () => {
 
 describe("localizeWorkspacePaths: immutable sync mode (#344)", () => {
   const immutable = (resources: unknown) => output(resources, { workspace: { file_path: SNAPSHOT_FILES } });
+
+  test.each(["${workspace.snapshot_path}/files", "${workspace.snapshot_path}/src/files"])("legacy resource prefix %s with an unchanged workspace.file_path", (prefix) => {
+    const cli = output(job([notebookTask("t", `${prefix}/src/nb`)]), { experimental: { immutable_folder: true } });
+    const out = localizeWorkspacePaths(cli, writtenInResources(job([notebookTask("t", "../src/nb.py")])), dirOf);
+    expect(notebookPathOf(out)).toBe("../src/nb.py");
+  });
 
   test("a parent folder (sync.paths outside the bundle)", () => {
     const out = localizeWorkspacePaths(

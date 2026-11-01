@@ -14,6 +14,7 @@ module.exports = {
     ],
   },
   testMatch: [
+    "<rootDir>/src/test/integration/releaseChanges.integration.test.ts",
     "<rootDir>/src/test/integration/semanticCli.integration.test.ts",
     "<rootDir>/src/test/integration/bundleCodeNotRun.integration.test.ts",
     "<rootDir>/src/test/integration/bundleFolderUntouched.integration.test.ts",

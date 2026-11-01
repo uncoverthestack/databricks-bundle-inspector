@@ -70,6 +70,34 @@ export function graphRefreshSuite() {
           return false;
         }, "the rendered job dropdown");
         assert.ok(graph);
+        // #335: controls must remain usable, not just present, below the 768px breakpoint.
+        const { targetInfos: windowTargets } = await browser.call("Target.getTargets");
+        const windowPage = windowTargets.find((target: any) => target.type === "page");
+        assert.ok(windowPage);
+        const { sessionId: windowSession } = await browser.call("Target.attachToTarget", { targetId: windowPage.targetId, flatten: true });
+        const originalWidth = await evaluate("innerWidth", graph.sessionId, graph.contextId);
+        const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, windowSession)).result.value;
+        const measurements = [];
+        try {
+          for (const width of [350, 400, 600, 767, 768]) {
+            await browser.call("Emulation.setDeviceMetricsOverride", { width: width + windowWidth - originalWidth, height: 800, deviceScaleFactor: 1, mobile: false }, windowSession);
+            await waitFor(async () => Math.abs(await evaluate("innerWidth", graph!.sessionId, graph!.contextId) - width) <= 2, `a ${width}px graph`);
+            measurements.push(await evaluate(`(() => {
+              const target = document.querySelector('header select[aria-label="Target"]').getBoundingClientRect();
+              const copy = document.querySelector('header button[aria-label="Copy review"]').getBoundingClientRect();
+              return { width: innerWidth, targetWidth: target.width, copyWidth: copy.width, copyRight: copy.right, scrollWidth: document.scrollingElement.scrollWidth };
+            })()`, graph.sessionId, graph.contextId));
+          }
+        } finally {
+          await browser.call("Emulation.clearDeviceMetricsOverride", {}, windowSession);
+          await browser.call("Target.detachFromTarget", { sessionId: windowSession });
+        }
+        for (const measurement of measurements) {
+          assert.ok(measurement.targetWidth >= 24, `target picker remains usable: ${JSON.stringify(measurement)}`);
+          assert.ok(measurement.copyWidth >= 24 && measurement.copyRight <= measurement.width, `Copy review remains visible: ${JSON.stringify(measurement)}`);
+          assert.ok(measurement.scrollWidth <= measurement.width, `no horizontal page overflow: ${JSON.stringify(measurement)}`);
+        }
+        await waitFor(async () => await evaluate("innerWidth", graph!.sessionId, graph!.contextId) === originalWidth, "the original graph width");
         const issuesOpen = `Boolean(document.querySelector('button[aria-label="Close Issues in This Job"]'))`;
         assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true);
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`, graph.sessionId, graph.contextId);

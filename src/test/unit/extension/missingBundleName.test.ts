@@ -21,6 +21,18 @@ afterEach(() => {
 // Each config is the structural preview's output, and each expectation what
 // `databricks bundle validate -t <target>` did with a login (CLI v1.22.1, #340).
 describe("missing bundle name", () => {
+  test("a target can clear an inherited name", () => {
+    const root = makeBundle('bundle: {name: base}\ntargets: {dev: {bundle: {name: ""}}, prod: {}}\n');
+    const config = { bundle: { name: "base" }, targets: { dev: { bundle: { name: "" } }, prod: {} } } as ParsedBundleConfig;
+    expect(missingBundleNameIssues(config, root)[0]?.title).toContain('fails for target "dev".');
+  });
+
+  test("a null target from the CLI's structural preview inherits the base settings", () => {
+    const root = makeBundle("targets: {dev: null}\n");
+    const config = { bundle: {}, targets: { dev: null } } as unknown as ParsedBundleConfig;
+    expect(missingBundleNameIssues(config, root)).toHaveLength(1);
+  });
+
   test("no name and no root_path: deploy fails, reported on databricks.yml", () => {
     const root = makeBundle("targets:\n  dev:\n    default: true\n");
     const config = { bundle: {}, targets: { dev: { default: true } } } as ParsedBundleConfig;
