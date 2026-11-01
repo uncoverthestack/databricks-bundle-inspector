@@ -5,13 +5,32 @@ import { MODELLED_RESOURCE_GROUPS } from "../../../bundle/graph/bundleGraph.js";
 
 const supportedDoc = readFileSync(path.resolve(__dirname, "../../../../docs/supported-resources.md"), "utf8");
 
-/** The groups the table links to its Databricks reference, written as [`group`](...resources#anchor). */
-const documented = [...supportedDoc.matchAll(/\[`([a-z_]+)`\]\(https:\/\/docs\.databricks\.com\/[^)]*\/bundles\/resources#/g)].map(
-  (match) => match[1]!,
-);
+const STATUSES = ["View and checks", "Some checks", "Not checked"];
 
-describe("resource groups and docs/supported-resources.md", () => {
-  test("the table names every modelled resource group exactly once, and nothing else", () => {
-    expect([...documented].sort()).toEqual([...MODELLED_RESOURCE_GROUPS].sort());
+// The groups that have a view or checks today. Add a group here and to the page when it gets one.
+const CHECKED_GROUPS = ["jobs", "pipelines", "secret_scopes", "clusters"];
+
+/** Table rows after the header and separator, split into cells. */
+const rows = supportedDoc
+  .split("\n")
+  .filter((line) => line.startsWith("| "))
+  .slice(2)
+  .map((line) => line.slice(2, -2).split(" | "));
+
+/** The group a row links to its Databricks reference, written as [`group`](...resources#anchor). */
+const groupOf = (cell: string) =>
+  /^\[`([a-z_]+)`\]\(https:\/\/docs\.databricks\.com\/[^)]*\/bundles\/resources#[a-z_]+\)$/.exec(cell)?.[1];
+
+describe("docs/supported-resources.md", () => {
+  test("the table lists exactly the checked groups, then one row for every other group", () => {
+    expect(rows.map(([first]) => groupOf(first!) ?? first)).toEqual([...CHECKED_GROUPS, "Every other resource group"]);
+  });
+
+  test("every listed group is one the inspector models", () => {
+    for (const group of CHECKED_GROUPS) expect(MODELLED_RESOURCE_GROUPS).toContain(group);
+  });
+
+  test("every row has one of the documented statuses", () => {
+    for (const [first, status] of rows) expect({ first, status: STATUSES.includes(status!) }).toEqual({ first, status: true });
   });
 });
