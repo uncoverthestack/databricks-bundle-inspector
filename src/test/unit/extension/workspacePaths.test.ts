@@ -10,6 +10,9 @@ import { buildInspectorIssues } from "../../../bundle/issues.js";
 // 1.21.0, checked against a workspace): local paths become paths under
 // workspace.file_path, relative to the sync root, and notebooks lose their extension.
 const FILES = "/Workspace/Users/someone@example.com/.bundle/demo/dev/files";
+// With `workspace.sync_mode: immutable` (CLI 1.23.0, checked against a workspace), the same
+// paths come under a reference to the snapshot that deploy uploads (#344).
+const SNAPSHOT_FILES = "${resources.internal_immutable_snapshots.immutable.full_path}/files";
 
 let parent: string;
 let bundleRoot: string;
@@ -58,7 +61,10 @@ afterEach(async () => {
 });
 
 describe("localizeWorkspacePaths: normal cases", () => {
-  test("maps every field the inspector reads back to the file as written", async () => {
+  test.each([
+    ["the bundle's files folder", FILES],
+    ["an immutable snapshot (#344)", SNAPSHOT_FILES],
+  ])("maps every field the inspector reads back to the file as written, uploaded to %s", async (_case, FILES) => {
     await touch("src/inner.py", "# Databricks notebook source\n");
     await touch("src/script.py");
     await touch("src/query.sql");
@@ -99,7 +105,7 @@ describe("localizeWorkspacePaths: normal cases", () => {
       inner: `${FILES}/src/inner`, pnb: `${FILES}/pipelines/nb`, pfile: `${FILES}/pipelines/p1.py`, glob: `${FILES}/pipelines/glob/**`,
     });
 
-    const out = localizeWorkspacePaths(output(cli), writtenInResources(written), dirOf);
+    const out = localizeWorkspacePaths(output(cli, { workspace: { file_path: FILES } }), writtenInResources(written), dirOf);
 
     expect((out as any).resources).toEqual(written.resources);
   });
@@ -225,6 +231,39 @@ describe("localizeWorkspacePaths: how a path was written", () => {
     const sources = [{ file: path.join(bundleRoot, "databricks.yml"), doc: dbt(".") }];
     const out = localizeWorkspacePaths(output(dbt(FILES)), sources, () => bundleRoot) as any;
     expect(out.resources.jobs.j.tasks[0].dbt_task.project_directory).toBe(".");
+  });
+});
+
+describe("localizeWorkspacePaths: immutable sync mode (#344)", () => {
+  const immutable = (resources: unknown) => output(resources, { workspace: { file_path: SNAPSHOT_FILES } });
+
+  test("a parent folder (sync.paths outside the bundle)", () => {
+    const out = localizeWorkspacePaths(
+      immutable(job([notebookTask("t", `${SNAPSHOT_FILES}/proj/src/nb`)])),
+      writtenInResources(job([notebookTask("t", "../src/nb.py")])),
+      dirOf,
+    );
+    expect(notebookPathOf(out)).toBe("../src/nb.py");
+  });
+
+  test("only that exact reference: the snapshot's artifacts folder or another reference maps nothing", () => {
+    for (const filePath of [
+      "${resources.internal_immutable_snapshots.immutable.full_path}/artifacts",
+      "${resources.internal_immutable_snapshots.other.full_path}/files",
+    ]) {
+      const cli = output(job([notebookTask("t", `${filePath}/src/nb`)]), { workspace: { file_path: filePath } });
+      expect(localizeWorkspacePaths(cli, writtenInResources(job([notebookTask("t", "../src/nb.py")])), dirOf)).toBe(cli);
+    }
+  });
+
+  test("end to end: the file is checked for the target, with no path_not_checked note", async () => {
+    await writeFile(path.join(resourcesDir, "job.yml"), "resources:\n  jobs:\n    j:\n      tasks:\n        - task_key: nb\n          notebook_task:\n            notebook_path: ../src/nb.py\n");
+    await writeFile(path.join(bundleRoot, "databricks.yml"), "bundle:\n  name: demo\nworkspace:\n  sync_mode: immutable\ninclude:\n  - resources/*.yml\n");
+    const reported = { ...immutable(job([notebookTask("nb", `${SNAPSHOT_FILES}/src/nb`)])), include: ["resources/job.yml"] } as unknown as ParsedBundleConfig;
+    const graph = await extractBundleGraph(reported, bundleRoot);
+    const task = graph.nodes.find((node) => node.nodeType === "task");
+    expect(task?.taskData?.fileReferences[0]).toMatchObject({ path: "../src/nb.py", exists: true });
+    expect(buildInspectorIssues(graph, reported, [], bundleRoot, "dev").map((issue) => issue.kind)).not.toContain("path_not_checked");
   });
 });
 

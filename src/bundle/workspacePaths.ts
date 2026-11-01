@@ -37,6 +37,13 @@ export interface SourceDocument {
 
 const GLOB_TAIL = /\/\*\*?(?:\/.*)?$|\/\*[^/]*$/;
 
+/**
+ * `workspace.file_path` with `workspace.sync_mode: immutable` (#344). Deploy uploads one
+ * snapshot whose folder is only known then, so validate leaves this reference in every
+ * rewritten path. What follows `/files/` is relative to the sync root, as in normal mode.
+ */
+const IMMUTABLE_FILE_PATH = "${resources.internal_immutable_snapshots.immutable.full_path}/files";
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -156,7 +163,10 @@ export function localizeWorkspacePaths(
 ): ParsedBundleConfig {
   const output = record(config);
   const filePath = record(output?.workspace)?.file_path;
-  if (typeof filePath !== "string" || !filePath.startsWith("/") || filePath.includes("${")) {
+  if (
+    typeof filePath !== "string" ||
+    (filePath !== IMMUTABLE_FILE_PATH && (!filePath.startsWith("/") || filePath.includes("${")))
+  ) {
     return config;
   }
   const base = filePath.replace(/\/+$/, "");
