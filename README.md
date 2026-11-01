@@ -46,7 +46,7 @@ The inspector also reports **Not checked** when a variable prevents it from chec
 
 ## Supported resources
 
-Jobs and pipelines have dedicated views and checks. The inspector also models other bundle resource groups, with different levels of coverage. See [Supported resources](docs/supported-resources.md) for the full list and limits.
+Jobs and pipelines have dedicated views and checks. The inspector also reads other bundle resource groups, most without a view or checks of their own. See [Supported resources](docs/supported-resources.md) for the full list and limits.
 
 ## Getting started
 
