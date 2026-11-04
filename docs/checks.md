@@ -205,6 +205,7 @@ Code reads a secret using a secret scope's resource key from the bundle instead 
 
 - **Severity:** warning.
 - **Example:** `dbutils.secrets.get(scope="app_secrets", ...)`, where `resources.secret_scopes.app_secrets` has `name: prod-app-secrets`.
+- **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings.
 - **Fix:** use the scope's `name`.
 - **Limits:** a scope with that name that exists outside the bundle is fine.
 
