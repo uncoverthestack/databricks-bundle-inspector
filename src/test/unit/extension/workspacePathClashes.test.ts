@@ -151,17 +151,23 @@ describe("the finding", () => {
 });
 
 describe("stress", () => {
+  // Only files that share a name are opened, so only those 1,000 are written to disk; the
+  // other 19,000 are names, as the folder walk would list them.
   test("20,000 files with 500 shared names: only real clashes, quickly", () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 500; i++) {
       files[`d${i % 50}/n${i}.py`] = PY;
-      // Every other pair is a plain .py without the header, which deploys fine.
+      // Every other pair is a plain .sql without the header, which deploys fine.
       files[`d${i % 50}/n${i}.sql`] = i % 2 === 0 ? SQL : "SELECT 1\n";
     }
-    for (let i = 0; Object.keys(files).length < 20_000; i++) files[`data/part-${i}.csv`] = "a,b\n";
     write(files);
+    const names = Object.keys(files).map((name) => path.join(root, name));
+    // Unshared names, including notebook extensions, which must not be opened.
+    for (let i = 0; names.length < 20_000; i++) {
+      names.push(path.join(root, "data", i % 2 === 0 ? `part-${i}.csv` : `job-${i}.py`));
+    }
     const started = Date.now();
-    const found = clashes();
+    const found = findWorkspacePathClashes(root, names, createSyncFilter(root), "contains");
     expect(Date.now() - started).toBeLessThan(3000);
     expect(found).toHaveLength(250);
     expect(found.every((clash) => clash.kind === "files" && clash.files.length === 2)).toBe(true);
