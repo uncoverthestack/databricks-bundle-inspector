@@ -178,6 +178,48 @@ describe("getBytes variant", () => {
   });
 });
 
+// `list` by a scope that doesn't exist fails the run like `get` (#236, CLI 1.23.0).
+describe("list variant", () => {
+  test("detects dbutils.secrets.list(scope=...) with no key", async () => {
+    const file = await py("list-keyword", `names = dbutils.secrets.list(scope="my-scope")`);
+    const results = await detectSecretInNotebook(file);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.scope).toBe("my-scope");
+    expect(results[0]?.key).toBeNull();
+  });
+
+  test("list with a positional scope", async () => {
+    const file = await py("list-positional", `dbutils.secrets.list("my-scope")`);
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBe("my-scope");
+    expect(result?.key).toBeNull();
+  });
+
+  test("list with the scope in a variable is found, scope unknown", async () => {
+    const file = await py("list-dynamic", `scope = "s"\ndbutils.secrets.list(scope)`);
+    const [result] = await detectSecretInNotebook(file);
+    expect(result?.scope).toBeNull();
+  });
+
+  test("list in a comment or string is ignored", async () => {
+    const file = await py(
+      "list-comment",
+      `# dbutils.secrets.list("my-scope")\ntext = 'dbutils.secrets.list("my-scope")'`,
+    );
+    expect(await detectSecretInNotebook(file)).toHaveLength(0);
+  });
+
+  test("listScopes() is not a secret read", async () => {
+    const file = await py("list-scopes", `dbutils.secrets.listScopes()`);
+    expect(await detectSecretInNotebook(file)).toHaveLength(0);
+  });
+
+  test("list on an object that isn't dbutils is ignored", async () => {
+    const file = await py("list-other", `settings.secrets.list("my-scope")`);
+    expect(await detectSecretInNotebook(file)).toHaveLength(0);
+  });
+});
+
 describe("detection metadata", () => {
   test("reports the correct 1-based line number", async () => {
     const file = await py(

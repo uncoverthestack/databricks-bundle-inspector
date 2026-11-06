@@ -13,7 +13,7 @@ import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sql
 
 /**
  * A single detected use of a Databricks secret-access call within a file.
- * Covers `dbutils.secrets.get` in Python/Jupyter notebook/Source format notebooks and `secret()`/`try_secret()`
+ * Covers `dbutils.secrets.get`, `getBytes` and `list` in Python/Jupyter notebook/Source format notebooks and `secret()`/`try_secret()`
  * in Databricks SQL.
  */
 export interface SecretDetection {
@@ -268,10 +268,11 @@ function viewsFor(
 }
 
 /**
- * `dbutils.secrets.get(...)` and `dbutils.secrets.getBytes(...)` calls in Python code
+ * `dbutils.secrets.get(...)`, `dbutils.secrets.getBytes(...)` and `dbutils.secrets.list(...)` calls in Python code
  * (not comments or strings, including multi-line and triple-quoted ones). Scope and
  * key come from `scope=` / `key=` or the first and second positional arguments, and
- * are `null` when not a string literal.
+ * are `null` when not a string literal. `list` takes only a scope, so its key is `null`;
+ * it fails the same way as `get` when the scope does not exist (#236).
  */
 function scanPythonSecrets(view: string, document: string): SecretDetection[] {
   const tokens = tokenizePython(view);
@@ -285,7 +286,7 @@ function scanPythonSecrets(view: string, document: string): SecretDetection[] {
   // Only calls on something traceable to dbutils: `settings.secrets.get("db", "pw")`
   // on a plain object has the same shape. In Databricks' own examples every
   // `.secrets.get` is called on `dbutils` itself.
-  const secretCalls = dbutilsCalls(tokens, "secrets", ["get", "getBytes"], names).filter(
+  const secretCalls = dbutilsCalls(tokens, "secrets", ["get", "getBytes", "list"], names).filter(
     (call) => call.knownReceiver,
   );
   return [...secretCalls, ...sdkSecretCalls(tokens, names)]
@@ -609,7 +610,7 @@ function byLine<T extends { line: number }>(a: T, b: T): number {
  *
  * | Code                  | Detected call                          |
  * |-----------------------|----------------------------------------|
- * | Python (`.py`, `.ipynb`, `%python` cells) | `dbutils.secrets.get()`, `.getBytes()` |
+ * | Python (`.py`, `.ipynb`, `%python` cells) | `dbutils.secrets.get()`, `.getBytes()`, `.list()` |
  * | SQL (`.sql`, `%sql` cells)                | `secret()`, `try_secret()`             |
  *
  * Notebooks are read cell by cell in each cell's language, so a `%sql` cell in a
