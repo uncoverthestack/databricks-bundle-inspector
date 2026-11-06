@@ -1,0 +1,74 @@
+resources:
+  jobs:
+    run_targets:
+      name: run_targets
+      tasks:
+        - task_key: run_ok
+          notebook_task:
+            notebook_path: ../src/jobs/run_ok.py
+        - task_key: run_missing
+          notebook_task:
+            notebook_path: ../src/jobs/run_missing.py
+        - task_key: run_typo
+          notebook_task:
+            notebook_path: ../src/jobs/run_typo.py
+        - task_key: run_plain_file
+          notebook_task:
+            notebook_path: ../src/jobs/run_plain_file.py
+        - task_key: run_with_ext
+          notebook_task:
+            notebook_path: ../src/jobs/run_with_ext.py
+        - task_key: run_parent
+          notebook_task:
+            notebook_path: ../src/jobs/run_parent.py
+        - task_key: run_sql_nb
+          notebook_task:
+            notebook_path: ../src/jobs/run_sql_nb.py
+        - task_key: run_ipynb
+          notebook_task:
+            notebook_path: ../src/jobs/run_ipynb.py
+        - task_key: run_gitignored
+          notebook_task:
+            notebook_path: ../src/jobs/run_gitignored.py
+        - task_key: run_folder
+          notebook_task:
+            notebook_path: ../src/jobs/run_folder.py
+        - task_key: run_absolute
+          notebook_task:
+            notebook_path: ../src/jobs/run_absolute.py
+        - task_key: run_bare
+          notebook_task:
+            notebook_path: ../src/jobs/run_bare.py
+        - task_key: run_commented
+          notebook_task:
+            notebook_path: ../src/jobs/run_commented.py
+        - task_key: nbrun_ok
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_ok.py
+        - task_key: nbrun_missing
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_missing.py
+        - task_key: nbrun_with_ext
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_with_ext.py
+        - task_key: nbrun_plain_file
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_plain_file.py
+        - task_key: nbrun_parent
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_parent.py
+        - task_key: nbrun_keyword
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_keyword.py
+        - task_key: nbrun_dynamic
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_dynamic.py
+        - task_key: nbrun_other_object
+          notebook_task:
+            notebook_path: ../src/jobs/nbrun_other_object.py
+        - task_key: run_quoted
+          notebook_task:
+            notebook_path: ../src/jobs/run_quoted.py
+        - task_key: run_quoted_missing
+          notebook_task:
+            notebook_path: ../src/jobs/run_quoted_missing.py

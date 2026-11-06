@@ -13,7 +13,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
@@ -213,6 +213,23 @@ Code reads a secret using a secret scope's resource key from the bundle instead 
 - **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings.
 - **Fix:** use the scope's `name`.
 - **Limits:** a scope with that name that exists outside the bundle is fine.
+
+### `run_target_not_found`
+
+A notebook task's notebook runs another notebook with `%run` or `dbutils.notebook.run`, and the path doesn't lead to a notebook the bundle deploys. `bundle validate` and deploy pass, and the job fails when it runs: `Notebook not found` for `%run`, `Unable to access the notebook` for `notebook.run`.
+
+Checked by running a job on a serverless workspace (Databricks CLI v1.24.0), one task per case. A notebook runs with or without its extension in the path (`./helper` or `./helper.py`), from `./` or `../`, including a SQL or `.ipynb` notebook. These fail, and each gets this finding:
+
+- nothing at the path (with a "Did you mean" when a notebook in that folder has a close name);
+- a plain file without the Databricks notebook header, which deploys as a file;
+- a folder.
+
+A notebook that exists but that `bundle deploy` doesn't upload, for example because `.gitignore` matches it, gets [`excluded_from_sync`](#excluded_from_sync) instead.
+
+- **Severity:** error.
+- **Example:** `%run ./shared/helpers`, with no `shared/helpers.py` (or `.sql`, `.scala`, `.r`, `.ipynb`) next to the notebook.
+- **Fix:** point it at a notebook in the bundle, with a relative path (`./name` or `../folder/name`).
+- **Limits:** only paths written out as relative paths are checked, with or without quotes (`%run "./helper"`). Absolute workspace paths (`/Workspace/...`), bare names, and paths built at run time (`dbutils.notebook.run(name, ...)`, f-strings) aren't. Only the task's own notebook is checked, not notebooks it pulls in with `%run`, whose own paths may resolve from the calling notebook's folder. Jobs with a `git_source` aren't checked.
 
 ## Bundle configuration
 
