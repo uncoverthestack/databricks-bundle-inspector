@@ -1,0 +1,7 @@
+bundle:
+  name: run_targets
+include:
+  - resources/*.yml
+targets:
+  dev:
+    default: true

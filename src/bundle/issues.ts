@@ -15,6 +15,8 @@ import { writtenValueAt } from "./quickFix.js";
 import { filesUnder, movedFileSuggestion, type ExpectedFile, type FileList } from "./pathSuggestions.js";
 import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
+import { checkRunTarget, unquote } from "./runTargets.js";
+import type { RunTarget } from "./taskFileDetections.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -45,6 +47,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "task_value_not_upstream",
   "task_value_key_not_set",
   "secret_scope_name_mismatch",
+  "run_target_not_found",
   "missing_bundle_name",
   "empty_bundle_name_in_root_path",
   "unresolved_variable",
@@ -316,6 +319,75 @@ function notebookProblemIssue(
 }
 
 /**
+ * `%run` and `dbutils.notebook.run` targets that aren't a notebook the bundle deploys
+ * (#233): `bundle validate` passes and the run fails. See runTargets.ts for the rule.
+ * A notebook that exists but isn't uploaded gets the usual `excluded_from_sync`.
+ */
+function runTargetIssues(
+  graph: BundleGraph,
+  task: BundleGraphNode,
+  taskData: TaskNodeData,
+  syncExclusionOf: (file: string) => SyncExclusion | undefined,
+  bundleRoot: string,
+): InspectorIssue[] {
+  const issues: InspectorIssue[] = [];
+  for (const ref of taskData.fileReferences) {
+    if (ref.referenceType !== "notebook" || ref.source === "GIT" || !ref.exists) continue;
+    const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
+    const runs = (fileNode?.data.runTargets as RunTarget[] | undefined) ?? [];
+    for (const run of runs) {
+      // Only the task's own notebook: how a notebook reached with %run resolves its
+      // own %run paths wasn't tested.
+      if (ref.resolvedPath && path.resolve(run.file) !== path.resolve(ref.resolvedPath)) continue;
+      const check = checkRunTarget(run.file, run.target, graph.notebookRule);
+      const how = run.kind === "run" ? "%run" : "dbutils.notebook.run";
+      const shown = run.target === null ? "" : unquote(run.target);
+      const base = {
+        id: `run-target:${task.id}:${run.file}:${run.line}`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        ...issueLocation(run.file, run.line),
+      };
+      if (check.status === "notebook") {
+        const exclusion = syncExclusionOf(check.file);
+        if (exclusion) issues.push({ ...base, severity: "warning", ...syncExclusionIssue(shown, exclusion, bundleRoot) });
+        continue;
+      }
+      if (check.status === "unchecked") continue;
+      const fix =
+        "Point it at a notebook in the bundle: a relative path (./name or ../folder/name), with or without the file extension.";
+      if (check.status === "missing") {
+        issues.push({
+          ...base,
+          severity: "error",
+          kind: "run_target_not_found",
+          title: `${how} target "${shown}" may not exist.${check.suggestion ? ` Did you mean "${check.suggestion}"?` : ""}`,
+          fixHint: `No notebook is at that path next to this one, so the run fails with "Notebook not found". ${fix}`,
+        });
+      } else if (check.status === "file") {
+        issues.push({
+          ...base,
+          severity: "error",
+          kind: "run_target_not_found",
+          title: `${how} target "${shown}" may be a file, not a notebook.`,
+          fixHint: `${path.basename(check.file)} has no Databricks notebook header, so it deploys as a plain file and ${how} can't run it. Add the header as its first line, or import it as Python code instead.`,
+        });
+      } else {
+        issues.push({
+          ...base,
+          severity: "error",
+          kind: "run_target_not_found",
+          title: `${how} target "${shown}" may be a folder, not a notebook.`,
+          fixHint: `${how} runs one notebook. ${fix}`,
+        });
+      }
+    }
+  }
+  return issues;
+}
+
+/**
  * Compares the widgets a notebook task's notebook reads with the parameters the task
  * receives: its `base_parameters` and the job's parameters, which Databricks pushes
  * down to notebook tasks. A widget read with no parameter and no default fails the run.
@@ -562,6 +634,7 @@ export function buildInspectorIssues(
       const jobParameterNames = new Set(taskData.jobParameterReferences.map((p) => p.name));
       for (const data of checkedTaskData) {
         issues.push(...widgetParameterIssues(graph, task, data, jobParameterNames));
+        issues.push(...runTargetIssues(graph, task, data, syncExclusionOf, bundleRoot));
       }
     }
 

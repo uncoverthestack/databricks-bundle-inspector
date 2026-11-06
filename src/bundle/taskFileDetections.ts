@@ -870,3 +870,50 @@ export async function getNotebookType(
       : undefined;
   }
 }
+
+/**
+ * A notebook another notebook runs: `%run ./helper` (a magic line) or
+ * `dbutils.notebook.run("./child", 60)`. `target` is the path as written, or `null` when
+ * it isn't a string literal (built at run time).
+ */
+export interface RunTarget {
+  kind: "run" | "notebook_run";
+  target: string | null;
+  line: number;
+  /** The notebook the line is in: the task's own, or one it reaches with `%run`. */
+  file: string;
+}
+
+/**
+ * Every `%run` and `dbutils.notebook.run` in a notebook, following `%run` into the
+ * local notebooks it runs (which run in the same context, so theirs run too). Calls on
+ * something that isn't traceable to dbutils are left out, as for secrets.
+ */
+export async function detectRunTargetsInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+  visited: ReadonlySet<string> = new Set([path.resolve(filePath)]),
+): Promise<RunTarget[]> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const file = path.resolve(filePath);
+  const found: RunTarget[] = views.runs.map((run) => ({ kind: "run", target: run.target, line: run.line, file }));
+  const tokens = tokenizePython(views.python);
+  for (const call of dbutilsCalls(tokens, "notebook", ["run"]).filter((c) => c.knownReceiver)) {
+    found.push({
+      kind: "notebook_run",
+      target: literalValue(argument(call.args, "path", 0)),
+      line: getStartLine(views.document, call.offset),
+      file,
+    });
+  }
+  for (const run of views.runs) {
+    const child = resolveRunTarget(filePath, run.target);
+    if (!child || visited.has(child) || visited.size > MAX_RUN_DEPTH) continue;
+    try {
+      found.push(...(await detectRunTargetsInFile(child, undefined, new Set([...visited, child]))));
+    } catch {
+      // A notebook that can't be read has nothing to report.
+    }
+  }
+  return found.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file === file ? -1 : b.file === file ? 1 : a.file.localeCompare(b.file)));
+}
