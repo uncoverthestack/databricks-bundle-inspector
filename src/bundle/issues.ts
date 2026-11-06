@@ -546,6 +546,15 @@ function syncExclusionIssue(
       fixHint: `bundle deploy skips gitignored files. Add the file to sync.include in databricks.yml, or remove it from ${gitignore}.`,
     };
   }
+  if (exclusion.rule === "symlink") {
+    const link = path.relative(bundleRoot, exclusion.link).split(path.sep).join("/");
+    const linked = exclusion.folder ? `it is in "${link}", a symbolic link` : "it is a symbolic link";
+    return {
+      kind: "excluded_from_sync",
+      title: `"${filePath}" may not be deployed: ${linked}.`,
+      fixHint: "bundle deploy skips symbolic links, files and folders alike. Point the path at the real file, or replace the link with a copy.",
+    };
+  }
   if (exclusion.rule === "sync_exclude") {
     return {
       kind: "excluded_from_sync",

@@ -79,11 +79,13 @@ A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline 
 
 ### `excluded_from_sync`
 
-A task or pipeline points at a file that `bundle deploy` won't upload: it matches a `.gitignore` rule, a `sync.exclude` pattern, or sits in `.databricks` or `.git`, which are never synced.
+A task or pipeline points at a file that `bundle deploy` won't upload: it matches a `.gitignore` rule, a `sync.exclude` pattern, or sits in `.databricks` or `.git`, which are never synced. A `%run` or `dbutils.notebook.run` target gets it too.
+
+A symbolic link isn't uploaded either, whether it is the file or a folder above it: the Databricks CLI skips links, and `sync.include` doesn't bring them back. Checked by deploying a bundle (Databricks CLI v1.24.0): a task on a linked notebook, and a `%run` of one, deploy and then fail when the job runs, with "Unable to access the notebook" and "Notebook not found". A link above the bundle folder, or the bundle folder itself, is fine.
 
 - **Severity:** warning.
 - **Example:** `notebook_path: ../scripts/report.py`, with `scripts/` in `.gitignore`.
-- **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule.
+- **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule. For a symbolic link, point the path at the real file, or replace the link with a copy.
 - **Limits:** not checked when `sync.paths` reaches outside the bundle folder, which makes the Databricks CLI sync from a different root. The default, `sync.paths: ["."]`, is checked.
 
 ### `path_not_checked`
