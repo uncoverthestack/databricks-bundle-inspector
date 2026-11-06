@@ -1160,6 +1160,7 @@ function getTaskSubtitleLabel(node) {
   if (taskType === "ai_runtime") return "Code source";
   if (taskType === "gen_ai_compute") return "Training script";
   if (taskType === "python_operator") return "Main";
+  if (taskType === "ai_function") return "Function";
   if (taskType === "unknown") return "Task type";
   return "Target";
 }

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 import { MODELLED_RESOURCE_GROUPS } from "../../bundle/graph/bundleGraph.js";
 import { TASK_PAYLOAD_KEYS } from "../../bundle/resources/task.js";
@@ -11,16 +13,21 @@ import { TASK_PAYLOAD_KEYS } from "../../bundle/resources/task.js";
  *
  * Types missing from an older CLI's schema are fine: the inspector may support
  * types newer than the CLI a user runs.
+ *
+ * It also fails when a resource group is in neither table of
+ * docs/supported-resources.md, so the "Not supported yet" list stays complete.
  */
 
 // Resource types in the schema that the inspector does not model yet. They still
 // render as generic nodes. Remove an entry once it is added to MODELLED_RESOURCE_GROUPS.
 const KNOWN_RESOURCE_GAPS = [
   "cluster_policies",
+  "data_quality_monitors",
   "features",
   "genie_spaces",
   "instance_pools",
   "job_runs",
+  "materialization_sets",
   "mcp_services",
   "model_provider_services",
   "model_services",
@@ -35,6 +42,33 @@ const KNOWN_RESOURCE_GAPS = [
 ];
 
 const execFileAsync = promisify(execFile);
+
+const NOT_SUPPORTED_HEADING = "## Not supported yet";
+
+/**
+ * The resource groups named in the first cell of each table row in
+ * docs/supported-resources.md, split into the supported table (before the
+ * "Not supported yet" heading) and the not supported list (after it).
+ */
+function documentedResourceGroups(): { supported: string[]; notSupported: string[] } {
+  const doc = readFileSync(path.resolve(__dirname, "../../../docs/supported-resources.md"), "utf8");
+  const headingAt = doc.indexOf(NOT_SUPPORTED_HEADING);
+  if (headingAt === -1) throw new Error(`docs/supported-resources.md has no "${NOT_SUPPORTED_HEADING}" heading`);
+  const groupsIn = (text: string) =>
+    text
+      .split("\n")
+      .filter((line) => line.startsWith("| "))
+      .map((line) => /^\| \[?`([a-z_]+)`/.exec(line)?.[1])
+      .filter((group): group is string => group !== undefined);
+  return { supported: groupsIn(doc.slice(0, headingAt)), notSupported: groupsIn(doc.slice(headingAt)) };
+}
+
+async function schemaResourceGroups(): Promise<string[]> {
+  const schema = await bundleSchema();
+  const resources = schema.properties?.resources;
+  if (!resources) throw new Error("bundle schema has no resources property");
+  return propertyNames(schema, resources);
+}
 
 type JsonSchema = {
   $ref?: string;
@@ -104,11 +138,24 @@ describe("bundle schema coverage", () => {
     expect(taskKeys.filter((key) => !recognised.has(key))).toEqual([]);
   });
 
+  test("no resource group is in both tables of docs/supported-resources.md", () => {
+    const { supported, notSupported } = documentedResourceGroups();
+    expect(supported).toEqual(["jobs", "pipelines", "secret_scopes", "clusters"]);
+    expect(notSupported.length).toBeGreaterThan(0);
+    expect(notSupported.filter((group) => supported.includes(group))).toEqual([]);
+  });
+
+  test("every resource group in the schema is in docs/supported-resources.md", async () => {
+    const groups = await schemaResourceGroups();
+    const { supported, notSupported } = documentedResourceGroups();
+    const documented = new Set<string>([...supported, ...notSupported]);
+
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.filter((group) => !documented.has(group))).toEqual([]);
+  });
+
   test("every resource type in the schema is modelled or a known gap", async () => {
-    const schema = await bundleSchema();
-    const resources = schema.properties?.resources;
-    if (!resources) throw new Error("bundle schema has no resources property");
-    const groups = propertyNames(schema, resources);
+    const groups = await schemaResourceGroups();
     const covered = new Set<string>([...MODELLED_RESOURCE_GROUPS, ...KNOWN_RESOURCE_GAPS]);
 
     expect(groups.length).toBeGreaterThan(0);
