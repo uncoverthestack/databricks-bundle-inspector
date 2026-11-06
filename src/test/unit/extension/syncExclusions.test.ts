@@ -88,10 +88,22 @@ describe("files excluded from sync", () => {
     expect(issues.every((issue) => issue.severity === "warning")).toBe(true);
   });
 
-  test("are not checked when sync.paths changes what is synced", async () => {
+  // #374: a real target's output always has sync.paths, as the CLI fills in ["."] when
+  // the bundle sets none (sync_default_path.go). Forms from `bundle validate -o json`,
+  // CLI v1.24.0, 2026-11-06.
+  test('are checked with sync.paths ["."], the bundle root, which every real target has', async () => {
     const config = fixtureConfig();
-    expect(
-      await syncIssues({ ...config, sync: { ...config.sync, paths: ["."] } }),
-    ).toEqual([]);
+    const withDefault = await syncIssues({ ...config, sync: { ...config.sync, paths: ["."] } });
+    expect(withDefault).toEqual(issues);
+    expect(withDefault.length).toBeGreaterThan(0);
+    expect(await syncIssues({ ...config, sync: { ...config.sync, paths: ["./", "src/.."] } })).toEqual(issues);
+  });
+
+  test("are not checked when sync.paths moves the sync root", async () => {
+    const config = fixtureConfig();
+    // A real target writes [".", "../common"] relative to the new root.
+    for (const paths of [["sync-exclusions", "common"], [".", "../common"], [".."]]) {
+      expect(await syncIssues({ ...config, sync: { ...config.sync, paths } })).toEqual([]);
+    }
   });
 });

@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
@@ -84,7 +84,7 @@ A task or pipeline points at a file that `bundle deploy` won't upload: it matche
 - **Severity:** warning.
 - **Example:** `notebook_path: ../scripts/report.py`, with `scripts/` in `.gitignore`.
 - **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule.
-- **Limits:** not checked in bundles that use `sync.paths`, which sync from a different root.
+- **Limits:** not checked when `sync.paths` reaches outside the bundle folder, which makes the Databricks CLI sync from a different root. The default, `sync.paths: ["."]`, is checked.
 
 ### `path_not_checked`
 
@@ -94,6 +94,17 @@ A task or pipeline path uses a variable, such as `${var.nb_dir}/load.py`, so the
 - **Example:** `notebook_path: ${var.nb_dir}/load.py`.
 - **Fix:** pick a target in the graph. The Databricks CLI then resolves the variable, with its value from the target, overrides or environment, and the file is checked. Nothing needs to change in the bundle.
 - **Limits:** the inspector doesn't resolve variables itself, as their values can come from places the preview doesn't see (`BUNDLE_VAR_<name>`, `--var`, `.databricks/bundle/<target>/variable-overrides.json`). Remote paths (`/Workspace/...`, `dbfs:/`) and paths in a job with `git_source` get no note. With `workspace.sync_mode: immutable`, a target's paths point at the snapshot deploy will upload; they are read from the local files as for any other target.
+
+### `same_workspace_path`
+
+Two files `bundle deploy` uploads get the same workspace path, because a notebook loses its file extension when deployed: `src/dup.py` and `src/dup.sql` both become `src/dup`. `bundle validate` passes, and `bundle deploy` stops with "both src/dup.py and src/dup.sql point to the same remote file location src/dup". A notebook whose workspace path is also a folder, such as `src/foo.py` next to a folder `src/foo/`, stops the deploy with "type mismatch (asked: NOTEBOOK, actual: DIRECTORY)".
+
+Checked by deploying one bundle per case (Databricks CLI v1.24.0). These fail: two notebooks with one name (`.py` and `.sql`, `.py` and `.ipynb`, also with an upper-case extension such as `.PY`), a notebook and a plain file with no extension (`foo.py` and `foo`), a notebook and a folder, and each of them with `sync_mode: immutable`. These deploy, and get no finding: a pair where `.gitignore` or `sync.exclude` leaves one file out, names that differ only in upper and lower case (`dup.py` and `Dup.sql`), and a plain `.py` file without the notebook header next to a notebook `.sql`.
+
+- **Severity:** error.
+- **Example:** `src/load.py` and `src/load.sql`, both starting with the Databricks notebook header.
+- **Fix:** rename or remove one of the files, or leave one out of the deploy with `sync.exclude`.
+- **Limits:** not checked when `sync.paths` is set, as the inspector doesn't follow a different sync root (see [`excluded_from_sync`](#excluded_from_sync)). Folders the inspector never reads, such as `node_modules` and `.venv`, aren't checked.
 
 ## `include`
 
