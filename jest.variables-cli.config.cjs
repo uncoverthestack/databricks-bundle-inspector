@@ -5,6 +5,10 @@
  */
 module.exports = {
   ...require("./jest.semantic-cli.config.cjs"),
-  testMatch: ["<rootDir>/src/test/integration/variablesCli.integration.test.ts"],
+  testMatch: [
+    "<rootDir>/src/test/integration/variablesCli.integration.test.ts",
+    // Variable loops (#228), each case against the CLI itself.
+    "<rootDir>/src/test/integration/variableLoopsCli.integration.test.ts",
+  ],
   testTimeout: 120_000,
 };
