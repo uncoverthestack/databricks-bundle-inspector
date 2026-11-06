@@ -78,7 +78,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
         fileNode.data.referenceType === "notebook"
-          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => undefined)
           : undefined,
         // Notebooks and Python files set and read task values.
         referenceType === "notebook" || referenceType === "python_script"

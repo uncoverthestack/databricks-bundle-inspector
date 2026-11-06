@@ -117,3 +117,61 @@ other.notebook.run("./other", 60)
     expect(checks).toBe(192);
   });
 });
+
+// Each case was run as a job task on a serverless workspace (Databricks CLI v1.24.0,
+// 2026-11-06): "Notebook not found" for ./Helper, ./helper/ runs helper, and a %run
+// cell is read whole, so "%run" further down a cell is not a run.
+describe("run-target cases checked on a workspace", () => {
+  const header = "# Databricks notebook source\n";
+
+  test("%run text in a %md cell is not a run; lower in a Python cell it is", async () => {
+    const file = path.join(root, "main.py");
+    await writeFile(
+      file,
+      header +
+        "# MAGIC %md\n# MAGIC Load helpers with:\n# MAGIC %run ./not_real\n\n# COMMAND ----------\n\n" +
+        "x = 1\n# MAGIC %run ./mid_python\n\n# COMMAND ----------\n\n\n# MAGIC %run ./starts_cell\n",
+    );
+    expect((await detectRunTargetsInFile(file)).map((run) => run.target)).toEqual(["./mid_python", "./starts_cell"]);
+  });
+
+  test("%run lower in a SQL cell is not a run", async () => {
+    const file = path.join(root, "main.sql");
+    await writeFile(file, "-- Databricks notebook source\nSELECT 1;\n-- MAGIC %run ./mid_sql\n\n-- COMMAND ----------\n\n-- MAGIC %run ./starts_cell\n");
+    expect((await detectRunTargetsInFile(file)).map((run) => run.target)).toEqual(["./starts_cell"]);
+  });
+
+  test("the widget scan follows the notebook %run runs, not a plain file of the same name", async () => {
+    const file = path.join(root, "main.py");
+    await writeFile(file, header + "# MAGIC %run ./two\n");
+    await writeFile(path.join(root, "two.py"), "import os\n");
+    await writeFile(path.join(root, "two.sql"), "-- Databricks notebook source\nCREATE WIDGET TEXT region DEFAULT 'eu';\n");
+    const usage = await detectWidgetUsageInFile(file);
+    expect(usage.defaults).toContain("region");
+    expect(usage.hasUnresolvedRuns).toBe(false);
+  });
+
+  test("a %run of a plain file, or of an R notebook, leaves the widget checks to the run-target error", async () => {
+    const file = path.join(root, "main.py");
+    await writeFile(file, header + "# MAGIC %run ./plain\n\n# COMMAND ----------\n\n# MAGIC %run ./child_r\n");
+    await writeFile(path.join(root, "plain.py"), 'dbutils.widgets.text("from_plain", "x")\n');
+    await writeFile(path.join(root, "child_r.r"), "# Databricks notebook source\nx <- 1\n");
+    const usage = await detectWidgetUsageInFile(file);
+    expect(usage.defaults).not.toContain("from_plain");
+    expect(usage.hasUnresolvedRuns).toBe(true);
+  });
+
+  test("a path in the wrong case is missing on every disk, with the right spelling offered", async () => {
+    const file = path.join(root, "jobs", "main.py");
+    await mkdir(path.join(root, "jobs", "lib"), { recursive: true });
+    await writeFile(path.join(root, "jobs", "helper.py"), header);
+    await writeFile(path.join(root, "jobs", "lib", "util.py"), header);
+    expect(checkRunTarget(file, "./Helper")).toEqual({ status: "missing", suggestion: "./helper" });
+    expect(checkRunTarget(file, "./helper.PY").status).toBe("missing");
+    expect(checkRunTarget(file, "./Lib/util").status).toBe("missing");
+    expect(checkRunTarget(file, "../Jobs/helper").status).toBe("missing");
+    expect(checkRunTarget(file, "./helper").status).toBe("notebook");
+    expect(checkRunTarget(file, "../jobs/lib/../helper").status).toBe("notebook");
+    expect(checkRunTarget(file, "./helper/").status).toBe("notebook");
+  });
+});
