@@ -117,6 +117,11 @@ export interface JobTask {
   python_operator_task?: {
     main?: string;
   };
+  ai_function_task?: {
+    ai_classify?: unknown;
+    ai_extract?: unknown;
+    ai_parse_document?: unknown;
+  };
   sql_task?: {
     file?: {
       path?: string;
@@ -490,6 +495,7 @@ const TASK_BADGE: Record<TaskPayloadKey, string> = {
   ai_runtime_task: "AIR",
   gen_ai_compute_task: "GAI",
   python_operator_task: "PYOP",
+  ai_function_task: "AIF",
 };
 
 // Keyed by every recognised payload key, so adding a task type in task.ts fails
@@ -540,7 +546,17 @@ const TASK_PRESENTATION: Record<TaskPayloadKey, (task: JobTask) => TaskPresentat
     ),
   python_operator_task: (task) =>
     withOptionalSubtitle("script", "Python operator", task.python_operator_task?.main),
+  ai_function_task: (task) =>
+    withOptionalSubtitle("script", "AI function", aiFunctionName(task.ai_function_task)),
 };
+
+/** The AI function an `ai_function_task` applies, such as `ai_classify`. */
+function aiFunctionName(task: JobTask["ai_function_task"]): string | undefined {
+  if (!task) return undefined;
+  return (["ai_classify", "ai_extract", "ai_parse_document"] as const).find(
+    (name) => task[name] !== undefined,
+  );
+}
 
 /** The label the graph shows for a task's type, such as "Notebook" or "If/else". */
 export function taskTypeLabel(task: JobTask): string {

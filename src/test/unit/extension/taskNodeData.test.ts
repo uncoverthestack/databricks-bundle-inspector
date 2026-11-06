@@ -875,6 +875,7 @@ describe("buildTaskNodeData: taskType covers every schema task type", () => {
     ["ai_runtime_task", "ai_runtime"],
     ["gen_ai_compute_task", "gen_ai_compute"],
     ["python_operator_task", "python_operator"],
+    ["ai_function_task", "ai_function"],
   ];
 
   test.each(cases)("%s → %s", (payloadKey, expected) => {

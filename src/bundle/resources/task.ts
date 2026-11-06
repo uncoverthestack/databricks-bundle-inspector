@@ -43,10 +43,11 @@ export type TaskType =
   | "ai_runtime"
   | "gen_ai_compute"
   | "python_operator"
+  | "ai_function"
   | "unknown";
 
 /**
- * Every job task payload key in the bundle schema (`databricks bundle schema`, CLI 1.17.0),
+ * Every job task payload key in the bundle schema (`databricks bundle schema`, CLI 1.24.0),
  * mapped to the inspector's task type. This is the single list of supported task types:
  * labels, parameters and classification all derive from it.
  */
@@ -71,6 +72,7 @@ const TASK_TYPE_BY_PAYLOAD_KEY = {
   ai_runtime_task: "ai_runtime",
   gen_ai_compute_task: "gen_ai_compute",
   python_operator_task: "python_operator",
+  ai_function_task: "ai_function",
 } as const satisfies Record<string, Exclude<TaskType, "unknown">>;
 
 export type TaskPayloadKey = keyof typeof TASK_TYPE_BY_PAYLOAD_KEY;

@@ -749,6 +749,8 @@ describe("extractBundleGraph: task labels", () => {
       { task_key: "ai_runtime", ai_runtime_task: { code_source_path: "../src/ai" } },
       { task_key: "gen_ai", gen_ai_compute_task: { training_script_path: "../src/train.py" } },
       { task_key: "python_operator", python_operator_task: { main: "../src/op.py" } },
+      { task_key: "ai_function", ai_function_task: { ai_extract: {}, output: { table: "t" } } },
+      { task_key: "ai_function_bare", ai_function_task: { output: { table: "t" } } },
     ]);
 
     expect(
@@ -762,6 +764,8 @@ describe("extractBundleGraph: task labels", () => {
       ["ai_runtime", "AI Runtime", "../src/ai"],
       ["gen_ai", "Gen AI compute", "../src/train.py"],
       ["python_operator", "Python operator", "../src/op.py"],
+      ["ai_function", "AI function", "ai_extract"],
+      ["ai_function_bare", "AI function", undefined],
     ]);
   });
 
@@ -773,6 +777,7 @@ describe("extractBundleGraph: task labels", () => {
       { task_key: "power_bi", power_bi_task: {} },
       { task_key: "ai_runtime", ai_runtime_task: {} },
       { task_key: "python_operator", python_operator_task: {} },
+      { task_key: "ai_function", ai_function_task: {} },
       { task_key: "future", brand_new_task: {} },
     ]);
 
@@ -783,6 +788,7 @@ describe("extractBundleGraph: task labels", () => {
       ["power_bi", "PBI"],
       ["ai_runtime", "AIR"],
       ["python_operator", "PYOP"],
+      ["ai_function", "AIF"],
       ["future", "?"],
     ]);
   });
