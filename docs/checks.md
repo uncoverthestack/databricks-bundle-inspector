@@ -14,7 +14,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -259,6 +259,15 @@ A `${var.*}` reference to a variable with no default and no value for the select
 - **Example:** `warehouse_id: ${var.warehouse_id}` with no default, and no value under the target.
 - **Fix:** give the variable a default, or a value for the target.
 - **Limits:** values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
+
+### `variable_reference_loop`
+
+Variable values refer to each other in a loop, or a variable refers to itself, so the Databricks CLI can never work out their values. It fails a target even when nothing uses the variables. The inspector follows each `${var.*}` in the defaults and in each target's overrides, field by field, as the CLI does: `a.x: ${var.b}` with `b: ${var.a.x}` is a loop, while `a.y: ${var.b}` with `b: ${var.a.x}` is not when `a.x` is a plain value.
+
+- **Severity:** error. A warning when the loop passes through a whole complex value (`${var.a}` where `a` is a mapping or list): the CLI then stops after 11 rounds with `Variables references are too deep` instead of failing, and the `${var.*}` text may stay in what it deploys.
+- **Example:** `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`. `bundle validate` and deploy fail with `cycle detected in field resolution: variables.catalog.default -> var.env_catalog -> var.catalog -> var.env_catalog` (CLI v1.24.0). The finding names every variable in the loop, appears at each one's value, and says which targets fail: a target's override can make a loop, or break one.
+- **Fix:** give one of the variables in the loop a value that doesn't refer back.
+- **Limits:** reported in the structural preview only; with a target picked, the CLI's own error shows. A `BUNDLE_VAR_<name>` environment variable, `--var` or `variable-overrides.json` can set one of the variables and break the loop, which the inspector doesn't see.
 
 ### `cli_diagnostic`
 

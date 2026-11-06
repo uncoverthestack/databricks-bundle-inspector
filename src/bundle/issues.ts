@@ -17,6 +17,8 @@ import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
 import { checkRunTarget, unquote } from "./runTargets.js";
 import type { RunTarget } from "./taskFileDetections.js";
+import { findVariableLoops } from "./variableLoops.js";
+import type { VariableSources } from "./variableSources.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -51,6 +53,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "missing_bundle_name",
   "empty_bundle_name_in_root_path",
   "unresolved_variable",
+  "variable_reference_loop",
   "cli_diagnostic",
   "unknown_or_deprecated_field",
   "unknown_task_type",
@@ -913,6 +916,8 @@ export function buildInspectorIssues(
   if (!targetName) issues.push(...missingBundleNameIssues(parsedBundle, bundleRoot));
   // With a target the CLI has already replaced ${bundle.name}.
   if (!targetName) issues.push(...emptyBundleNameInRootPathIssues(parsedBundle, bundleRoot));
+  // With a target the CLI reports its own "cycle detected" error.
+  if (!targetName) issues.push(...variableLoopIssues(parsedBundle, graph.variableSources ?? {}));
 
   return issues;
 }
@@ -1080,6 +1085,45 @@ export function missingBundleNameIssues(parsedBundle: ParsedBundleConfig, bundle
       ...(bundleLine >= 0 ? { line: bundleLine + 1 } : {}),
     },
   ];
+}
+
+/**
+ * Variable values that refer to each other in a loop (#228). The structural preview never
+ * resolves variables, so without this the loop shows only once a target is picked. One
+ * finding per variable in the loop, at the line its value comes from, as task loops have.
+ * See variableLoops.ts for what the CLI does with each kind of loop.
+ */
+export function variableLoopIssues(
+  parsedBundle: ParsedBundleConfig,
+  sources: Record<string, VariableSources>,
+): InspectorIssue[] {
+  return findVariableLoops(parsedBundle).flatMap((loop) => {
+    const chain = loop.path.join(" → ");
+    const named = loop.targets.map((name) => `"${name}"`).join(", ");
+    const where = loop.everyTarget
+      ? "every target"
+      : `${loop.targets.length === 1 ? "target" : "targets"} ${named}`;
+    const title = loop.complex
+      ? `Variables refer to each other in a loop through a complex value: ${chain}.`
+      : `Variables refer to each other in a loop: ${chain}.`;
+    const fixHint = loop.complex
+      ? `The Databricks CLI stops resolving them after 11 rounds and warns "Variables references are too deep", so \${var...} text may stay in the deployed values, on ${where}. Give one of them a value that doesn't refer back.`
+      : `The Databricks CLI can't resolve them, so validate and deploy fail on ${where} with "cycle detected in field resolution". Give one of them a value that doesn't refer back. A BUNDLE_VAR_ environment variable or --var could also set one, which the inspector doesn't see.`;
+    return loop.variables.map((name) => {
+      const override = loop.overrideTarget[name];
+      const location = override ? sources[name]?.targets[override] : sources[name]?.definition;
+      return {
+        id: `variable-loop:${chain}:${JSON.stringify(loop.overrideTarget)}:${name}`,
+        severity: loop.complex ? ("warning" as const) : ("error" as const),
+        kind: "variable_reference_loop" as const,
+        title,
+        detail: name,
+        yamlPath: override ? `targets.${override}.variables.${name}` : `variables.${name}`,
+        fixHint,
+        ...issueLocation(location?.file, location?.line, location?.column),
+      };
+    });
+  });
 }
 
 /**

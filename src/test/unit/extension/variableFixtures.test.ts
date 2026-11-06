@@ -130,5 +130,13 @@ describe("variable-mistakes fixture, structural preview", () => {
     expect(panel("required_never_set", "needs_value")).toMatchObject({ source: "no_default", problem: false });
   });
 
-  test.todo("a cycle between defaults (loop_a, loop_b) is reported, as the CLI fails every target on it (#228)");
+  test("a cycle between defaults (loop_a, loop_b) is reported at each default, as the CLI fails every target on it (#228)", async () => {
+    const { issues, lineOf } = await load("variable-mistakes");
+    const loop = issues.filter((issue) => issue.kind === "variable_reference_loop");
+    expect(loop.map((issue) => [issue.severity, issue.detail, `databricks.yml:${issue.line}`])).toEqual([
+      ["error", "loop_a", lineOf("databricks.yml", "default: ${var.loop_b}")],
+      ["error", "loop_b", lineOf("databricks.yml", "default: ${var.loop_a}")],
+    ]);
+    expect(loop[0]?.title).toBe("Variables refer to each other in a loop: loop_a → loop_b → loop_a.");
+  });
 });
