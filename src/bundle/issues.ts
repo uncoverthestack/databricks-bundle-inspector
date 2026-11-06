@@ -18,6 +18,7 @@ import { closestName } from "./closestName.js";
 import { checkRunTarget, unquote } from "./runTargets.js";
 import type { RunTarget } from "./taskFileDetections.js";
 import { findVariableLoops } from "./variableLoops.js";
+import { findWorkspacePathClashes } from "./workspacePathClashes.js";
 import type { VariableSources } from "./variableSources.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
@@ -37,6 +38,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "file_is_a_notebook",
   "excluded_from_sync",
   "path_not_checked",
+  "same_workspace_path",
   "include_matches_nothing",
   "resource_not_included",
   "unknown_task_dependency",
@@ -912,6 +914,10 @@ export function buildInspectorIssues(
   issues.push(...taskValueIssues(graph));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
+  // The files deploy uploads are the same with or without a target.
+  if (!parsedBundle.sync?.paths?.length) {
+    issues.push(...workspacePathClashIssues(bundleRoot, bundleFiles().files, (file) => !excludedFromSync(file), graph.notebookRule));
+  }
   // With a target the CLI reports it itself.
   if (!targetName) issues.push(...missingBundleNameIssues(parsedBundle, bundleRoot));
   // With a target the CLI has already replaced ${bundle.name}.
@@ -920,6 +926,40 @@ export function buildInspectorIssues(
   if (!targetName) issues.push(...variableLoopIssues(parsedBundle, graph.variableSources ?? {}));
 
   return issues;
+}
+
+/**
+ * Files deploy can't both upload, as they get the same workspace path (#370). See
+ * workspacePathClashes.ts for the CLI's rule and the cases checked on a workspace.
+ */
+export function workspacePathClashIssues(
+  bundleRoot: string,
+  files: readonly string[],
+  uploaded: (file: string) => boolean,
+  rule: NotebookHeaderRule = "contains",
+): InspectorIssue[] {
+  const quoted = (name: string) => `"${name}"`;
+  return findWorkspacePathClashes(bundleRoot, files, uploaded, rule).map((clash) =>
+    clash.kind === "files"
+      ? {
+          id: `workspace-path:${clash.workspacePath}`,
+          severity: "error",
+          kind: "same_workspace_path",
+          title: `${clash.files.map(quoted).join(" and ")} both deploy to ${quoted(clash.workspacePath)}, so bundle deploy may fail.`,
+          fixHint:
+            'Notebooks lose their file extension when deployed, so these files get one workspace path, and the Databricks CLI stops with "point to the same remote file location". Rename or remove one of them, or leave one out with sync.exclude.',
+          ...issueLocation(path.join(bundleRoot, clash.files[0]!), 1),
+        }
+      : {
+          id: `workspace-path:${clash.workspacePath}`,
+          severity: "error",
+          kind: "same_workspace_path",
+          title: `Notebook ${quoted(clash.notebook)} deploys to ${quoted(clash.workspacePath)}, which is also a folder, so bundle deploy may fail.`,
+          fixHint:
+            'Notebooks lose their file extension when deployed, so this notebook would take the folder\'s place, and the upload fails with "type mismatch". Rename the notebook or the folder.',
+          ...issueLocation(path.join(bundleRoot, clash.notebook), 1),
+        },
+  );
 }
 
 /** Task graph and duplicate key mistakes in jobs (#135). Deploy rejects the first two. */
