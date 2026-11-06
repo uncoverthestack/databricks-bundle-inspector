@@ -30,6 +30,31 @@ export function unquote(value: string): string {
   return quoted ? quoted[2]! : value;
 }
 
+/**
+ * Whether each name in the path is spelled with the same case as on disk. The workspace
+ * tells `./Helper` and `./helper` apart (`Notebook not found`, checked on a workspace,
+ * CLI v1.24.0, 2026-11-06), but macOS and Windows disks find either one.
+ */
+function sameCaseOnDisk(fromFile: string, target: string, found: string): boolean {
+  const segments = target.split("/").filter((segment) => segment !== "" && segment !== ".");
+  let dir = path.dirname(fromFile);
+  for (const [index, segment] of segments.entries()) {
+    if (segment === "..") {
+      dir = path.dirname(dir);
+      continue;
+    }
+    // The last name may have gained an extension: `./helper` found as helper.py.
+    const name = index === segments.length - 1 ? path.basename(found) : segment;
+    try {
+      if (!readdirSync(dir).includes(name)) return false;
+    } catch {
+      return true;
+    }
+    dir = path.join(dir, name);
+  }
+  return true;
+}
+
 function kindOf(file: string): "file" | "folder" | undefined {
   try {
     const stats = statSync(file);
@@ -66,11 +91,15 @@ export function checkRunTarget(fromFile: string, written: string | null, rule: N
   const candidates = CLI_NOTEBOOK_EXTENSIONS.includes(extension)
     ? [base]
     : CLI_NOTEBOOK_EXTENSIONS.map((extension) => base + extension);
-  const files = candidates.filter((candidate) => kindOf(candidate) === "file");
+  const kind = (file: string) => {
+    const found = kindOf(file);
+    return found && sameCaseOnDisk(fromFile, target, file) ? found : undefined;
+  };
+  const files = candidates.filter((candidate) => kind(candidate) === "file");
   const notebook = files.find((file) => isNotebookFile(file, rule) === true);
   if (notebook) return { status: "notebook", file: notebook };
   if (files[0]) return { status: "file", file: files[0] };
-  const atBase = kindOf(base);
+  const atBase = kind(base);
   if (atBase === "folder") return { status: "folder" };
   if (atBase === "file") return { status: "file", file: base };
   const wanted = path.basename(base, CLI_NOTEBOOK_EXTENSIONS.includes(extension) ? path.extname(base) : "");

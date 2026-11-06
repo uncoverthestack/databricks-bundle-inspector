@@ -4,6 +4,19 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-10
+
+### Added
+
+- **The docs list every bundle resource group the inspector doesn't support yet** ([#359](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/359)). [Supported resources](docs/supported-resources.md#not-supported-yet) now names each one, with the first Databricks CLI release that has it, instead of "every other resource group". A test fails when a new CLI release adds a group that isn't listed, so the list stays complete. Job tasks of the new `ai_function_task` type (Databricks CLI v1.24.0, Private Preview) are shown as "AI function" with the function they use, instead of as an unknown task.
+
+### Fixed
+
+- **Notebook checks follow your Databricks CLI version** ([#361](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/361)). From CLI v1.24.0, a `.py`, `.sql`, `.scala` or `.r` file is a notebook when its first line contains `Databricks notebook source`, so a header after an invisible byte order mark, or with other text on its line, now counts. The inspector used the older rule, where the line must be exactly the header, and on v1.24.0 it warned that such a file "may not be a notebook" in a notebook task, and missed it in a task that takes a file. It now uses the rule of the CLI that validated the bundle. On older CLIs, the hint says when a header is close but not exact, and why. See [`not_a_notebook`](docs/checks.md#not_a_notebook).
+- **`dbutils.secrets.list` is checked for the wrong secret scope name, like `get`** ([#236](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/236)). Code that lists a bundle secret scope by its resource key instead of its `name`, such as `dbutils.secrets.list(scope="app_secrets")` for a scope named `prod-app-secrets`, deploys and then fails when the job runs with "Scope does not exist". The `secret_scope_name_mismatch` warning now covers `list` as well as `get` and `getBytes`.
+- **`%run` and `dbutils.notebook.run` targets that aren't a notebook in the bundle are reported** ([#233](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/233)). A notebook task whose notebook runs `%run ./missing_helper` or `dbutils.notebook.run("./missing_child", 60)` deploys, then fails when the job runs with "Notebook not found". The new `run_target_not_found` error appears at that line, with "Did you mean" when a notebook in the same folder has a close name. It also says when the path leads to a plain file without the notebook header, or to a folder, which fail the same way, and when its upper and lower case don't match the file's, as the workspace tells them apart. A target that exists but isn't uploaded, for example because `.gitignore` matches it, gets the existing `excluded_from_sync` warning. Checked by running a job on a serverless workspace: a notebook runs with or without its extension in the path.
+- **Variables that refer to each other in a loop are reported before you pick a target** ([#228](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/228)). With `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`, `bundle validate` and deploy fail on every target with "cycle detected in field resolution", but the structural preview never resolves variables, so the Problems panel showed nothing. The new `variable_reference_loop` error names every variable in the loop, appears at each one's value, and says which targets fail, as a target's override can make a loop or break one. Variables are followed field by field, as the Databricks CLI does. A loop through a whole complex value is a warning, as the CLI only warns and stops resolving.
+
 ## [0.6.3] - 2026-11-04
 
 ### Added
@@ -417,6 +430,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.6.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.0...v0.6.1

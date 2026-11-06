@@ -272,7 +272,13 @@ function pictureSection(tasks: readonly ReportTask[], startNode: string): string
     ...lines,
     "```",
     "",
-    "Red: the task has an error. Amber: a warning. Rounded: runs a pipeline. Diamond: an if/else condition. Dashed box: a for-each loop.",
+    "| In the picture | Means |",
+    "|---|---|",
+    "| Red | The task has an error |",
+    "| Amber | The task has a warning |",
+    "| Rounded | Runs a pipeline |",
+    "| Diamond | An if/else condition |",
+    "| Dashed box | A for-each loop |",
   ].join("\n");
 }
 
