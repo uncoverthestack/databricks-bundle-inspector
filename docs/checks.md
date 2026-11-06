@@ -206,7 +206,7 @@ A task reads a key that the other task's code never sets. Databricks reports a m
 
 ### `secret_scope_name_mismatch`
 
-Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which fails at runtime.
+Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which may fail at runtime.
 
 - **Severity:** warning.
 - **Example:** `dbutils.secrets.get(scope="app_secrets", ...)`, where `resources.secret_scopes.app_secrets` has `name: prod-app-secrets`.
