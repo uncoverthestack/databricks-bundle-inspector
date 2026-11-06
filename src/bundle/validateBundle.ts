@@ -94,6 +94,8 @@ export type BundleResult =
       data: ParsedBundleConfig;
       issues?: ValidationIssue[];
       targetOptions?: string[];
+      /** The version of the CLI that validated, such as `v1.24.0`, when it could be read. */
+      cliVersion?: string;
     }
   | {
       ok: false;
@@ -306,6 +308,8 @@ export async function validateBundleWithDependencies(
     };
   }
   const cliPath = cliResult.candidate;
+  const cliVersion = cliResult.versionOutput;
+  const versionField = cliVersion ? { cliVersion } : {};
   const readDiagnostics = (stderr: string, probeTarget: string) =>
     explainCodeNotRun(parseBundleDiagnostics(stderr, probeTarget), resolvedBundleDir);
   const args = ["bundle", "validate", "--output", "json"];
@@ -368,6 +372,7 @@ export async function validateBundleWithDependencies(
     return {
       ok: true,
       data: parsed.data,
+      ...versionField,
       ...(issues ? { issues } : {}),
       ...(targetOptions.length > 0 ? { targetOptions } : {}),
     };
@@ -460,6 +465,7 @@ export async function validateBundleWithDependencies(
           return {
             ok: true,
             data: parsed.data,
+            ...versionField,
             issues: [
               {
                 code: "AUTH_NOT_CONFIGURED",
@@ -509,6 +515,7 @@ export async function validateBundleWithDependencies(
           return {
             ok: true,
             data: parsed.data,
+            ...versionField,
             ...(issues ? { issues } : {}),
             ...(targetOptions.length > 0 ? { targetOptions } : {}),
           };

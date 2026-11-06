@@ -364,6 +364,7 @@
     "test:variables:cli": "jest --config jest.variables-cli.config.cjs",
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
     "test:schema-coverage": "jest --config jest.schema-coverage.config.cjs",
+    "test:notebook-rule:cli": "jest --config jest.notebook-rule.config.cjs",
     "verify": "npm run test:unit && npm run test:semantic && npm run typecheck && npm run lint && npm run changelog:check",
     "changelog:check": "node scripts/changelog.mjs check",
     "changelog:preview": "node scripts/changelog.mjs preview",

@@ -9,6 +9,7 @@ import { enrichGraphWithFileContent } from "../bundle/graph/enrichGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "../bundle/bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
+import { notebookHeaderRuleFor } from "../bundle/notebookFiles.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
 import { issueDocsUrl } from "../bundle/issueDocs.js";
 import type { InspectorIssueKind } from "../bundle/issues.js";
@@ -347,7 +348,7 @@ export async function updateBundleDiagnostics(
       // Read file contents as the inspector panel does, so issues found in code
       // (e.g. a secret scope named by its resource key) also reach the Problems panel.
       graph = await enrichGraphWithFileContent(
-        await extractBundleGraph(result.data, bundleRoot),
+        await extractBundleGraph(result.data, bundleRoot, { notebookRule: notebookHeaderRuleFor(result.cliVersion) }),
       );
       const inspectorIssues = buildInspectorIssues(
         graph,

@@ -89,6 +89,11 @@ jobs:
       - name: Bundle schema coverage
         run: npm run test:schema-coverage
 
+      # Against a fake workspace on 127.0.0.1. Fails when this CLI tells notebooks from
+      # files differently from the rule the inspector picks for its version.
+      - name: Notebook header rule
+        run: npm run test:notebook-rule:cli
+
       # The random task-graph test with 20,000 jobs instead of the 400 every push runs
       # (about 2 minutes). It doesn't use the CLI, so once per run, not per CLI version.
       # Weekly and by hand only, not for each pull request in the merge queue.

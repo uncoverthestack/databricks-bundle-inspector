@@ -8,7 +8,7 @@ import {
   type ParsedBundleConfig,
 } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../../../bundle/issues.js";
-import { checkNotebookPath, isNotebookFile } from "../../../bundle/notebookFiles.js";
+import { checkNotebookPath, isNotebookFile, notebookHeaderRuleFor, type NotebookHeaderRule } from "../../../bundle/notebookFiles.js";
 import { locateFix } from "../../../bundle/quickFix.js";
 import { JUPYTER_CASES } from "../../jupyterCases.js";
 
@@ -40,21 +40,47 @@ function fixtureConfig(): ParsedBundleConfig {
   } as ParsedBundleConfig;
 }
 
-describe("isNotebookFile", () => {
-  // Expected values match the CLI; see the fixture README.
+describe("notebookHeaderRuleFor", () => {
   test.each([
-    ["nb_ok.sql", true],
-    ["nb_crlf.py", true],
-    ["nb_ok.ipynb", true],
-    ["script_nb.py", true],
-    ["nb_plain.sql", false],
-    ["nb_bom.py", false],
-    ["nb_trailing_space.py", false],
-    ["nb_old.ipynb", false],
-    ["plain.py", false],
-  ])("%s is a notebook: %s", (file, expected) => {
-    expect(isNotebookFile(src(file))).toBe(expected);
+    ["v0.299.2", "exact"],
+    ["v1.23.0", "exact"],
+    ["v1.24.0", "contains"],
+    ["v1.25.3", "contains"],
+    ["v2.0.0", "contains"],
+    [undefined, "contains"],
+    ["not a version", "contains"],
+  ])("CLI %s uses the %s rule", (version, rule) => {
+    expect(notebookHeaderRuleFor(version)).toBe(rule);
   });
+});
+
+describe("isNotebookFile", () => {
+  // Expected values match the CLI before v1.24.0 (exact) and from it (contains); see the
+  // fixture README. notebookRule.integration.test.ts checks them against the CLI itself.
+  test.each([
+    ["nb_ok.sql", true, true],
+    ["nb_crlf.py", true, true],
+    ["nb_ok.ipynb", true, true],
+    ["script_nb.py", true, true],
+    ["nb_plain.sql", false, false],
+    ["nb_bom.py", false, true],
+    ["nb_trailing_space.py", false, true],
+    ["nb_extra_text.py", false, true],
+    ["nb_other_comment.py", false, true],
+    ["nb_marker_in_code.py", false, true],
+    ["nb_marker_at_190.py", false, true],
+    ["nb_marker_past_200.py", false, false],
+    ["nb_old.ipynb", false, false],
+    ["plain.py", false, false],
+  ])("%s is a notebook: exact %s, contains %s", (file, exact, contains) => {
+    expect(isNotebookFile(src(file), "exact")).toBe(exact);
+    expect(isNotebookFile(src(file), "contains")).toBe(contains);
+  });
+
+  test("the newer rule is the default", () => {
+    expect(isNotebookFile(src("nb_bom.py"))).toBe(true);
+  });
+
 
   test.each(JUPYTER_CASES)("Jupyter file $name is a notebook: $inspector", ({ text, inspector }) => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-jupyter-"));
@@ -85,15 +111,19 @@ describe("checkNotebookPath", () => {
   });
 });
 
-describe("notebook path issues on the fixture bundle", () => {
+async function fixtureIssues(notebookRule: NotebookHeaderRule): Promise<InspectorIssue[]> {
+  const config = fixtureConfig();
+  const graph = await extractBundleGraph(config, bundleRoot, { notebookRule });
+  return buildInspectorIssues(graph, config, [], bundleRoot).filter(
+    (issue) => ["notebook_missing_extension", "not_a_notebook", "file_is_a_notebook"].includes(issue.kind),
+  );
+}
+
+describe("notebook path issues on the fixture bundle, CLI before v1.24.0", () => {
   let issues: InspectorIssue[];
 
   beforeAll(async () => {
-    const config = fixtureConfig();
-    const graph = await extractBundleGraph(config, bundleRoot);
-    issues = buildInspectorIssues(graph, config, [], bundleRoot).filter(
-      (issue) => ["notebook_missing_extension", "not_a_notebook", "file_is_a_notebook"].includes(issue.kind),
-    );
+    issues = await fixtureIssues("exact");
   });
 
   function titleAt(yamlPathEnd: string): string | undefined {
@@ -126,6 +156,9 @@ describe("notebook path issues on the fixture bundle", () => {
     expect(titleAt("tasks.trailing_space.notebook_task.notebook_path")).toBe(
       '"../src/nb_trailing_space.py" may not be a notebook.',
     );
+    for (const key of ["extra_text", "other_comment", "marker_in_code", "marker_at_190", "marker_past_200"]) {
+      expect(kindAt(`tasks.${key}.notebook_task.notebook_path`)).toBe("not_a_notebook");
+    }
     expect(titleAt("tasks.old_ipynb.notebook_task.notebook_path")).toBe(
       '"../src/nb_old.ipynb" may not be a notebook.',
     );
@@ -175,15 +208,64 @@ describe("notebook path issues on the fixture bundle", () => {
       "tasks.crlf.notebook_task.notebook_path",
       "tasks.ok_ipynb.notebook_task.notebook_path",
       "tasks.python_file_ok.spark_python_task.python_file",
+      "tasks.python_file_bom.spark_python_task.python_file",
       "tasks.from_git.notebook_task.notebook_path",
       "libraries[3].notebook.path",
     ]) {
       expect(titleAt(ok)).toBeUndefined();
     }
-    expect(issues).toHaveLength(10);
+    expect(issues).toHaveLength(15);
+  });
+
+  test("a header that is close but not exact says why, and that a newer CLI takes it", () => {
+    const issue = issues.find((i) => i.yamlPath?.endsWith("tasks.bom.notebook_task.notebook_path"));
+    expect(issue?.fixHint).toBe(
+      'Its first line has "Databricks notebook source" but isn\'t exactly "# Databricks notebook source". Databricks CLI versions before v1.24.0 need it exact, so an invisible byte order mark or other text on that line makes it a plain file. Make the first line exactly "# Databricks notebook source", or update the Databricks CLI.',
+    );
   });
 
   test("the missing header hint names the header to add", () => {
+    const issue = issues.find((i) => i.yamlPath?.endsWith("tasks.plain_sql.notebook_task.notebook_path"));
+    expect(issue?.fixHint).toBe(
+      'Add "-- Databricks notebook source" as its first line, or run it from a task that takes a file.',
+    );
+  });
+});
+
+describe("notebook path issues on the fixture bundle, CLI v1.24.0 and later", () => {
+  let issues: InspectorIssue[];
+
+  beforeAll(async () => {
+    issues = await fixtureIssues("contains");
+  });
+
+  function kindAt(yamlPathEnd: string): string | undefined {
+    return issues.find((issue) => issue.yamlPath?.endsWith(yamlPathEnd))?.kind;
+  }
+
+  test("a first line that contains the marker makes a notebook", () => {
+    for (const key of ["bom", "trailing_space", "extra_text", "other_comment", "marker_in_code", "marker_at_190"]) {
+      expect(kindAt(`tasks.${key}.notebook_task.notebook_path`)).toBeUndefined();
+    }
+  });
+
+  test("only the first 200 bytes are read, so a marker after them doesn't count", () => {
+    expect(kindAt("tasks.marker_past_200.notebook_task.notebook_path")).toBe("not_a_notebook");
+  });
+
+  test("so a file task on such a file is a notebook, not a file", () => {
+    expect(kindAt("tasks.python_file_bom.spark_python_task.python_file")).toBe("file_is_a_notebook");
+  });
+
+  test("the other mix-ups are unchanged", () => {
+    expect(kindAt("tasks.no_extension.notebook_task.notebook_path")).toBe("notebook_missing_extension");
+    expect(kindAt("tasks.plain_sql.notebook_task.notebook_path")).toBe("not_a_notebook");
+    expect(kindAt("tasks.old_ipynb.notebook_task.notebook_path")).toBe("not_a_notebook");
+    expect(kindAt("tasks.python_file_is_notebook.spark_python_task.python_file")).toBe("file_is_a_notebook");
+    expect(issues).toHaveLength(10);
+  });
+
+  test("the missing header hint is the plain one", () => {
     const issue = issues.find((i) => i.yamlPath?.endsWith("tasks.plain_sql.notebook_task.notebook_path"));
     expect(issue?.fixHint).toBe(
       'Add "-- Databricks notebook source" as its first line, or run it from a task that takes a file.',

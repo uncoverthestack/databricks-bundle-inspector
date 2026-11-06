@@ -22,6 +22,7 @@ import { findVariableSources, type VariableSources } from "../variableSources.js
 import { findDependencyProblems, findDuplicateKeys, type JobStructureFinding } from "../jobStructure.js";
 import { resolveExpressionForTarget } from "../targetResolution.js";
 import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
+import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -353,6 +354,13 @@ export interface BundleGraph {
   variableSources?: Record<string, VariableSources>;
   /** Task graph and duplicate key mistakes in jobs (#135), for the issue list. */
   jobStructureFindings?: JobStructureFinding[];
+  /** The CLI version's rule for notebook headers, used again by the issue list's suggestions. */
+  notebookRule?: NotebookHeaderRule;
+}
+
+export interface ExtractBundleGraphOptions {
+  /** The rule of the CLI that validated the bundle (see notebookHeaderRuleFor). */
+  notebookRule?: NotebookHeaderRule;
 }
 
 // --- helpers ---
@@ -1123,7 +1131,9 @@ function loadOrder(bundleRoot: string | undefined, include: unknown): string[] {
 export async function extractBundleGraph(
   cliOutput: ParsedBundleConfig,
   bundleRoot?: string,
+  options: ExtractBundleGraphOptions = {},
 ): Promise<BundleGraph> {
+  const notebookRule = options.notebookRule ?? "contains";
   const nodeMap = new Map<string, BundleGraphNode>();
   const edgeIds = new Set<string>();
   const edges: BundleEdge[] = [];
@@ -1206,6 +1216,7 @@ export async function extractBundleGraph(
                 yamlLocationMaps
                   .get(sourceFilePath)
                   ?.get(`resources.pipelines.${resourceNode.resourceKey}.${yamlPath}`),
+              notebookRule,
             )
           : undefined;
       const definedAt =
@@ -1314,6 +1325,7 @@ export async function extractBundleGraph(
             sourceFilePath,
             sourceFileDir,
             resolveSourceLocation,
+            notebookRule,
           )
         : undefined;
 
@@ -1393,6 +1405,7 @@ export async function extractBundleGraph(
   return {
     nodes: [...nodeMap.values()],
     edges,
+    notebookRule,
     variableSources: findVariableSources(
       loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
         const text = sourceIndex.sourceTexts.get(file);

@@ -21,6 +21,21 @@ resources:
         - task_key: trailing_space
           notebook_task:
             notebook_path: ../src/nb_trailing_space.py
+        - task_key: extra_text
+          notebook_task:
+            notebook_path: ../src/nb_extra_text.py
+        - task_key: other_comment
+          notebook_task:
+            notebook_path: ../src/nb_other_comment.py
+        - task_key: marker_in_code
+          notebook_task:
+            notebook_path: ../src/nb_marker_in_code.py
+        - task_key: marker_at_190
+          notebook_task:
+            notebook_path: ../src/nb_marker_at_190.py
+        - task_key: marker_past_200
+          notebook_task:
+            notebook_path: ../src/nb_marker_past_200.py
         - task_key: ok_ipynb
           notebook_task:
             notebook_path: ../src/nb_ok.ipynb
@@ -38,4 +53,6 @@ resources:
         - task_key: python_file_ok
           spark_python_task:
             python_file: ../src/plain.py
-
+        - task_key: python_file_bom
+          spark_python_task:
+            python_file: ../src/nb_bom.py

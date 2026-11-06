@@ -1,0 +1,3 @@
+Fixed
+
+- **Notebook checks follow your Databricks CLI version** ([#361](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/361)). From CLI v1.24.0, a `.py`, `.sql`, `.scala` or `.r` file is a notebook when its first line contains `Databricks notebook source`, so a header after an invisible byte order mark, or with other text on its line, now counts. The inspector used the older rule, where the line must be exactly the header, and on v1.24.0 it warned that such a file "may not be a notebook" in a notebook task, and missed it in a task that takes a file. It now uses the rule of the CLI that validated the bundle. On older CLIs, the hint says when a header is close but not exact, and why. See [`not_a_notebook`](docs/checks.md#not_a_notebook).

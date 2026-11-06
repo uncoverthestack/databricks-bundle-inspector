@@ -8,6 +8,7 @@ import {
   extractBundleGraph,
 } from "./bundle/validateBundle.js";
 import type { BundleResult } from "./bundle/validateBundle.js";
+import { notebookHeaderRuleFor } from "./bundle/notebookFiles.js";
 import { targetFallback, type FallbackCode, type TargetFallback } from "./bundle/fallbackReason.js";
 import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
 import { withPreviewVariableReferences } from "./bundle/graph/previewVariableReferences.js";
@@ -1018,7 +1019,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       ...(mergedVariables ? { variables: mergedVariables } : {}),
       ...(mergedTargets ? { targets: mergedTargets } : {}),
     };
-    const graph = await extractBundleGraph(bundleData, bundleDir);
+    // The CLI that validated decides which notebook header rule applies.
+    const graphOptions = { notebookRule: notebookHeaderRuleFor(result.cliVersion) };
+    const graph = await extractBundleGraph(bundleData, bundleDir, graphOptions);
     const checkedGraph = await enrichGraphWithFileContent(graph);
     const inspectorIssues = buildInspectorIssues(
       checkedGraph,
@@ -1036,7 +1039,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     const previewResources = previousStructuralBundle?.resources;
     const enrichedGraph =
       inspectedTargetMode === "target" && previousStructuralBundle && previewResources
-        ? withPreviewVariableReferences(checkedGraph, await extractBundleGraph(previousStructuralBundle, bundleDir), {
+        ? withPreviewVariableReferences(checkedGraph, await extractBundleGraph(previousStructuralBundle, bundleDir, graphOptions), {
             deployed: bundleData,
             preview: previousStructuralBundle,
             resolution: { ...bundleData, ...resolutionBundle },

@@ -51,6 +51,21 @@ function versionParts(version: string): number[] | undefined {
 }
 
 /**
+ * Whether `version` is `minimum` or newer, such as `v1.24.0` against `v1.24.0`.
+ *
+ * @returns `undefined` when either version can't be read.
+ */
+export function isAtLeastVersion(version: string, minimum: string): boolean | undefined {
+  const parts = versionParts(version);
+  const min = versionParts(minimum);
+  if (!parts || !min) return undefined;
+  for (let i = 0; i < 3; i += 1) {
+    if (parts[i]! !== min[i]!) return parts[i]! > min[i]!;
+  }
+  return true;
+}
+
+/**
  * Whether a Databricks CLI version is older than {@link MIN_SUPPORTED_CLI_VERSION}.
  *
  * @param version A version such as `v0.250.0`, as returned by {@link extractDatabricksVersion}.

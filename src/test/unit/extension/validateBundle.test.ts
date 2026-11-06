@@ -28,6 +28,16 @@ function createBundle(): ParsedBundleConfig {
   };
 }
 describe("validateBundleWithDependencies", () => {
+  test("leaves out the CLI version when it can't be read", async () => {
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => ({ stdout: JSON.stringify(createBundle()), stderr: "" }),
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("cliVersion" in result).toBe(false);
+  });
+
   test("tells the CLI not to run code the bundle defines", async () => {
     let env: NodeJS.ProcessEnv | undefined;
     await validateBundleWithDependencies("/workspace/demo", undefined, {
@@ -218,6 +228,8 @@ describe("validateBundleWithDependencies", () => {
     if (!result.ok) return;
 
     expect(result.data).toEqual(bundle);
+    // The notebook header rule is picked from it.
+    expect(result.cliVersion).toBe("v0.295.0");
     expect(calls).toEqual([
       {
         file: "databricks",
