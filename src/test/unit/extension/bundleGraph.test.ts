@@ -97,7 +97,7 @@ describe("extractBundleGraph", () => {
     expect(jobNode?.trigger).toBe("Every 2 days");
     expect(jobNode?.runAs).toBe("Service Principal / spn-demo");
     expect(jobNode?.compute).toEqual([
-      { kind: "cluster", label: "etl-cluster" },
+      { kind: "cluster", label: "etl-cluster", jobCluster: true },
       { kind: "sqlWarehouse", label: "0123456789" },
     ]);
 
@@ -502,6 +502,7 @@ describe("extractBundleGraph", () => {
       {
         kind: "cluster",
         label: "job_cluster",
+        jobCluster: true,
         details: [
           { label: "Spark", value: "15.4.x-scala2.12" },
           {
