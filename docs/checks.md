@@ -84,7 +84,7 @@ A task or pipeline points at a file that `bundle deploy` won't upload: it matche
 - **Severity:** warning.
 - **Example:** `notebook_path: ../scripts/report.py`, with `scripts/` in `.gitignore`.
 - **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule.
-- **Limits:** not checked in bundles that use `sync.paths`, which sync from a different root.
+- **Limits:** not checked when `sync.paths` reaches outside the bundle folder, which makes the Databricks CLI sync from a different root. The default, `sync.paths: ["."]`, is checked.
 
 ### `path_not_checked`
 

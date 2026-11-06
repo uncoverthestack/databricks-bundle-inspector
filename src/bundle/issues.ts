@@ -8,7 +8,7 @@ import type { FileReference, TaskNodeData } from "./resources/task.js";
 import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
-import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
+import { createSyncExclusion, syncsFromBundleRoot, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
@@ -601,10 +601,11 @@ export function buildInspectorIssues(
 ): InspectorIssue[] {
   const issues: InspectorIssue[] = [];
   const tasks = graph.nodes.filter((node) => node.nodeType === "task");
-  // With sync.paths the CLI syncs from a different root, which is not modelled.
-  const syncExclusionOf = parsedBundle.sync?.paths?.length
-    ? () => undefined
-    : createSyncExclusion(bundleRoot, parsedBundle.sync);
+  // With sync.paths outside the bundle the CLI syncs from a different root, which is not
+  // modelled. The default ["."], which the CLI fills in for a real target, is the bundle root.
+  const syncExclusionOf = syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
+    ? createSyncExclusion(bundleRoot, parsedBundle.sync)
+    : () => undefined;
   // The bundle's files, read once and only when a path is missing.
   let bundleFileList: FileList | undefined;
   const bundleFiles = () => (bundleFileList ??= filesUnder(bundleRoot));
