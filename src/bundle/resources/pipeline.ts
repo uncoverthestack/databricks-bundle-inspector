@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { checkNotebookPath, type NotebookPathProblem } from "../notebookFiles.js";
+import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import {
   containsTemplate,
   isRemotePath,
@@ -95,6 +95,7 @@ export function getPipelineLibraryReferences(
   sourceFileDir: string,
   bundleRoot: string,
   resolveSourceLocation?: SourceLocationResolver,
+  notebookRule: NotebookHeaderRule = "contains",
 ): PipelineLibraryReference[] {
   const libraries = Array.isArray(pipeline.libraries) ? pipeline.libraries : [];
   const refs: PipelineLibraryReference[] = [];
@@ -124,7 +125,7 @@ export function getPipelineLibraryReferences(
             };
       const notebookProblem =
         kind !== "glob" && result.resolvedPath
-          ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file")
+          ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file", notebookRule)
           : undefined;
       refs.push({
         kind,

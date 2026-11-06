@@ -7,7 +7,7 @@ import type { ValidationIssue } from "./validateBundle.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
 import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
-import { notebookHeaderFor, type NotebookPathProblem } from "./notebookFiles.js";
+import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
@@ -198,11 +198,12 @@ function missingPathSuggestion(
   expects: ExpectedFile | undefined,
   bundleFiles: () => FileList,
   excluded: (file: string) => boolean,
+  notebookRule: NotebookHeaderRule | undefined,
 ): Pick<InspectorIssue, "detail" | "fix"> {
   // A path from `/` is a workspace path to the CLI, which never looks for it locally
   // (checked on CLI 0.299.0 and 1.21.0): a local file is no answer to it.
   if (!expects || !resolvedPath || !file || rawPath.startsWith("/") || path.isAbsolute(rawPath)) return { detail: rawPath };
-  const suggestion = movedFileSuggestion({ rawPath, resolvedPath, sourceFile: file, expects, files: bundleFiles, excluded });
+  const suggestion = movedFileSuggestion({ rawPath, resolvedPath, sourceFile: file, expects, files: bundleFiles, excluded, ...(notebookRule ? { notebookRule } : {}) });
   if (!suggestion) return { detail: rawPath };
   const written = writtenPathAt(resolvedPath, file, line, column);
   return {
@@ -304,7 +305,9 @@ function notebookProblemIssue(
   return {
     kind: "not_a_notebook",
     title: `"${path}" may not be a notebook.`,
-    fixHint: header
+    fixHint: header && problem.kind === "not_a_notebook" && problem.markerNotExact
+      ? `Its first line has "Databricks notebook source" but isn't exactly "${header}". Databricks CLI versions before ${NOTEBOOK_MARKER_RULE_CLI_VERSION} need it exact, so an invisible byte order mark or other text on that line makes it a plain file. Make the first line exactly "${header}", or update the Databricks CLI.`
+      : header
       ? `Add "${header}" as its first line, or run it from a task that takes a file.`
       : /\.ipynb$/i.test(path)
         ? "It is not a valid Jupyter notebook: it needs cells and metadata, at nbformat 4 or later."
@@ -669,6 +672,7 @@ export function buildInspectorIssues(
           expectedFileFor(ref),
           bundleFiles,
           excludedFromSync,
+          graph.notebookRule,
         ),
         taskId: task.id,
         taskName: task.displayName,
@@ -793,6 +797,7 @@ export function buildInspectorIssues(
               ref.kind,
               bundleFiles,
               excludedFromSync,
+              graph.notebookRule,
             )),
         resourceId: pipeline.id,
         yamlPath: `${pipeline.id}.${ref.yamlPath}`,

@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { SKIPPED_FOLDERS } from "./bundleDiscovery.js";
-import { isNotebookFile } from "./notebookFiles.js";
+import { isNotebookFile, type NotebookHeaderRule } from "./notebookFiles.js";
 
 /**
  * "Did you mean" for a local path that doesn't exist: the one file in the bundle with
@@ -58,9 +58,9 @@ export function filesUnder(root: string, maxFiles = MAX_FILES): FileList {
   return { files, complete: readable && pending.length === 0 };
 }
 
-function fitsField(file: string, expects: ExpectedFile): boolean {
+function fitsField(file: string, expects: ExpectedFile, rule: NotebookHeaderRule): boolean {
   if (expects === "any") return true;
-  const notebook = isNotebookFile(file);
+  const notebook = isNotebookFile(file, rule);
   return expects === "notebook" ? notebook === true : notebook === false;
 }
 
@@ -78,6 +78,8 @@ export function movedFileSuggestion(options: {
   expects: ExpectedFile;
   files: () => FileList;
   excluded: (file: string) => boolean;
+  /** The CLI version's notebook header rule. The newer rule when left out. */
+  notebookRule?: NotebookHeaderRule;
 }): string | undefined {
   const name = path.basename(options.resolvedPath);
   const listed = options.files();
@@ -87,7 +89,7 @@ export function movedFileSuggestion(options: {
       path.basename(file) === name &&
       file !== options.resolvedPath &&
       !options.excluded(file) &&
-      fitsField(file, options.expects),
+      fitsField(file, options.expects, options.notebookRule ?? "contains"),
   );
   if (matches.length !== 1) return undefined;
   const relative = path.relative(path.dirname(options.sourceFile), matches[0]!).split(path.sep).join("/");

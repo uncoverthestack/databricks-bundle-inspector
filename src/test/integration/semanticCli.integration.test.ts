@@ -9,6 +9,7 @@ import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { exportSemanticGraph } from "../../bundle/semanticGraph.js";
+import { notebookHeaderRuleFor } from "../../bundle/notebookFiles.js";
 import type { SemanticBundleGraph } from "../../bundle/semanticGraph.js";
 import { validateBundle as validateBundleWithCli } from "../../bundle/validateBundle.js";
 import type { ValidationIssue } from "../../bundle/validateBundle.js";
@@ -131,7 +132,8 @@ describe("live Databricks CLI semantic compatibility", () => {
         databricksVersion(cli),
         validateBundle(cli, fixtureRoot, target),
       ]);
-    const graph = await extractBundleGraph(parsedBundle, fixtureRoot);
+    // As the extension does: the rule of the CLI that validated.
+    const graph = await extractBundleGraph(parsedBundle, fixtureRoot, { notebookRule: notebookHeaderRuleFor(cliVersion) });
     const enrichedGraph = await enrichGraphWithFileContent(graph);
     const issues = buildInspectorIssues(
       enrichedGraph,

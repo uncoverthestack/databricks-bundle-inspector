@@ -58,7 +58,12 @@ A task installs a local wheel or JAR that isn't there.
 
 ### `not_a_notebook`
 
-A notebook task, or a pipeline `notebook` library, points at a file that the CLI won't treat as a notebook, following the CLI's rules: a `.py`, `.sql`, `.scala` or `.r` file needs the Databricks notebook header as its first line, and a `.ipynb` file must be a Jupyter notebook as the CLI reads it: `cells` a list, `metadata` an object, and `nbformat` a whole number, 4 or more.
+A notebook task, or a pipeline `notebook` library, points at a file that the CLI won't treat as a notebook, following the CLI's rules for a `.py`, `.sql`, `.scala` or `.r` file, which depend on the CLI version:
+
+- **Databricks CLI v1.24.0 and later:** the first line must contain `Databricks notebook source`, within the first 200 bytes of the file.
+- **Before v1.24.0:** the first line must be exactly the header for the file type, such as `# Databricks notebook source` for `.py`. An invisible byte order mark at the start of the file, or other text on that line, makes it a plain file.
+
+The inspector uses the rules of the CLI that validated the bundle, and the newer ones when it can't read the version. A `.ipynb` file must be a Jupyter notebook as the CLI reads it: `cells` a list, `metadata` an object, and `nbformat` a whole number, 4 or more.
 
 - **Severity:** error.
 - **Example:** `notebook_path: ../src/query.sql`, where the file has no `-- Databricks notebook source` line.
@@ -66,7 +71,7 @@ A notebook task, or a pipeline `notebook` library, points at a file that the CLI
 
 ### `file_is_a_notebook`
 
-A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline `file` library, points at a notebook. The CLI treats a file whose first line is the notebook header as a notebook.
+A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline `file` library, points at a notebook. The CLI treats a file whose first line is the notebook header as a notebook. From Databricks CLI v1.24.0, a first line that only contains `Databricks notebook source` is enough, so a file with a byte order mark or other text on that line is a notebook too (see [`not_a_notebook`](#not_a_notebook)).
 
 - **Severity:** error.
 - **Example:** `python_file: ../src/job.py`, where the first line is `# Databricks notebook source`.

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { checkNotebookPath, type NotebookPathProblem } from "../notebookFiles.js";
+import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import { isAbsolute, resolve } from "node:path";
 
 export interface TaskNodeData {
@@ -387,6 +387,7 @@ function getFileReferences(
   bundleRoot: string,
   sourceFile: string,
   resolveSourceLocation?: SourceLocationResolver,
+  notebookRule: NotebookHeaderRule = "contains",
 ): FileReference[] {
   const refs: FileReference[] = [];
 
@@ -415,7 +416,7 @@ function getFileReferences(
     const sourceLocation = resolveSourceLocation?.(yamlPath);
     const notebookProblem =
       expects && resolvedPath
-        ? checkNotebookPath(rawPath, resolvedPath, expects)
+        ? checkNotebookPath(rawPath, resolvedPath, expects, notebookRule)
         : undefined;
     refs.push({
       path: rawPath,
@@ -751,6 +752,7 @@ export function buildTaskNodeData(
   sourceFile: string = "",
   sourceFileDir: string = "",
   resolveSourceLocation?: SourceLocationResolver,
+  notebookRule: NotebookHeaderRule = "contains",
 ): TaskNodeData {
   const taskType = getTaskType(rawTask);
   const resolveBase = sourceFileDir || bundleRoot;
@@ -761,6 +763,7 @@ export function buildTaskNodeData(
     bundleRoot,
     sourceFile,
     resolveSourceLocation,
+    notebookRule,
   );
   const libraryReferences = getLibraryReferences(
     rawTask,
@@ -813,6 +816,7 @@ export function buildTaskNodeData(
         sourceFile,
         sourceFileDir,
         resolveSourceLocation,
+        notebookRule,
       );
     }
   }
