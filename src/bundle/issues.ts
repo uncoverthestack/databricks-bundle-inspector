@@ -603,10 +603,10 @@ export function buildInspectorIssues(
   const tasks = graph.nodes.filter((node) => node.nodeType === "task");
   // With sync.paths outside the bundle the CLI syncs from a different root, which is not
   // modelled. The default ["."], which the CLI fills in for a real target, is the bundle root.
-  const syncExclusionOf = syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
-    ? createSyncExclusion(bundleRoot, parsedBundle.sync)
-    : () => undefined;
-  // The bundle's files, read once and only when a path is missing.
+  // Decided once: every check that uses the sync rules asks this.
+  const syncRulesApply = syncsFromBundleRoot(bundleRoot, parsedBundle.sync);
+  const syncExclusionOf = syncRulesApply ? createSyncExclusion(bundleRoot, parsedBundle.sync) : () => undefined;
+  // The bundle's files, read once.
   let bundleFileList: FileList | undefined;
   const bundleFiles = () => (bundleFileList ??= filesUnder(bundleRoot));
   const excludedFromSync = (file: string) => syncExclusionOf(file) !== undefined;
@@ -916,7 +916,7 @@ export function buildInspectorIssues(
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
   // The files deploy uploads are the same with or without a target.
-  if (!parsedBundle.sync?.paths?.length) {
+  if (syncRulesApply) {
     issues.push(...workspacePathClashIssues(bundleRoot, bundleFiles().files, (file) => !excludedFromSync(file), graph.notebookRule));
   }
   // With a target the CLI reports it itself.

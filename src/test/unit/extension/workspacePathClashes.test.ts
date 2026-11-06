@@ -147,6 +147,8 @@ describe("the finding", () => {
     expect(kinds(config)).toHaveLength(1);
     expect(kinds(config, "dev")).toHaveLength(1);
     expect(kinds({ ...config, sync: { paths: [".."] } } as ParsedBundleConfig)).toEqual([]);
+    // #374: a real target's output always has the default sync.paths ["."].
+    expect(kinds({ ...config, sync: { paths: ["."] } } as ParsedBundleConfig, "dev")).toHaveLength(1);
   });
 });
 
