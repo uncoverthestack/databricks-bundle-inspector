@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "@jest/globals";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
@@ -89,6 +89,18 @@ describe("edge cases from the CLI's rule", () => {
 
   test("a .designer.ipynb file keeps its full name", () => {
     write({ "flow.designer.ipynb": IPYNB, "flow.designer.py": PY });
+    expect(clashes()).toEqual([]);
+  });
+
+  // The CLI's walk skips anything that isn't a regular file or folder ("Skip non-regular
+  // files (e.g. symlinks)", libs/fileset/fileset.go, v1.24.0). Deployed on a workspace
+  // 2026-11-06: notebook dup.py with a symlinked dup.sql, and notebook foo.py with a
+  // symlinked folder foo, both deploy. If the CLI starts uploading symlinks, this fails.
+  // Windows needs extra rights to create symlinks, so it skips this.
+  (process.platform === "win32" ? test.skip : test)("a symlinked file or folder isn't uploaded, so it doesn't clash", () => {
+    write({ "src/dup.py": PY, "src/foo.py": PY, "shared/x.sql": SQL, "shared/y.txt": "y" });
+    symlinkSync("../shared/x.sql", path.join(root, "src/dup.sql"));
+    symlinkSync("../shared", path.join(root, "src/foo"), "dir");
     expect(clashes()).toEqual([]);
   });
 
