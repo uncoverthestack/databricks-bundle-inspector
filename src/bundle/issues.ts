@@ -1205,7 +1205,8 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
     const used = String(scopeNode.data.scope ?? scopeNode.displayName);
     issues.set(id, {
       id,
-      severity: "warning",
+      // A note: a scope by that name may exist outside the bundle, which isn't seen.
+      severity: "info",
       kind: "secret_scope_name_mismatch",
       title: `Secret scope "${used}" may not exist. Did you mean "${misuse.scopeName}"?`,
       ...(taskId ? { taskId, taskName: nodeById.get(taskId)?.displayName ?? taskId } : {}),

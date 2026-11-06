@@ -97,7 +97,7 @@ describe("secret scope name warning", () => {
     expect(buildInspectorIssues(graph, { bundle: { name: "b" } }, [], "/b")).toEqual([
       {
         id: "secret-scope-name:secret:app_scope:/b/src/nb.py:2",
-        severity: "warning",
+        severity: "info",
         kind: "secret_scope_name_mismatch",
         title: 'Secret scope "app_scope" may not exist. Did you mean "app-secrets"?',
         taskId: "resources.jobs.j.tasks.t",

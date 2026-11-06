@@ -206,9 +206,9 @@ A task reads a key that the other task's code never sets. Databricks reports a m
 
 ### `secret_scope_name_mismatch`
 
-Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which fails at runtime.
+Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which may fail at runtime.
 
-- **Severity:** warning.
+- **Severity:** note. A scope with that name may exist outside the bundle, made with the CLI, a script or the UI, which the inspector can't see.
 - **Example:** `dbutils.secrets.get(scope="app_secrets", ...)`, where `resources.secret_scopes.app_secrets` has `name: prod-app-secrets`.
 - **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings.
 - **Fix:** use the scope's `name`.
