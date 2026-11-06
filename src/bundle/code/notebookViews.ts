@@ -41,7 +41,7 @@ export interface NotebookRun {
  */
 function parseRun(text: string, line: number): NotebookRun | undefined {
   // No `$` anchor: a CRLF file leaves "\r" at the end of the line, which `.` can't match.
-  const match = /%run\s+(\S+)(.*)/.exec(text);
+  const match = /%run\s+("[^"\r\n]*"|'[^'\r\n]*'|[^\s"']\S*)(.*)/.exec(text);
   if (!match) return undefined;
   const args: Record<string, string> = {};
   const argument = /\$(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
