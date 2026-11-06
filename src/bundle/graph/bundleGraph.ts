@@ -293,6 +293,8 @@ export interface GraphCompute {
   expression?: string;
   variableName?: string;
   details?: GraphComputeDetail[];
+  /** A cluster defined in the job itself, named by `job_cluster_key`. */
+  jobCluster?: boolean;
 }
 
 export interface GraphComputeDetail {
@@ -822,6 +824,7 @@ function getTaskCompute(
     compute.push({
       kind: "cluster",
       label: task.job_cluster_key,
+      jobCluster: true,
       ...(details ? { details } : {}),
     });
   }
@@ -957,6 +960,7 @@ function addTaskReferenceGraph(
           ...(item.expression ? { expression: item.expression } : {}),
           ...(item.variableName ? { variableName: item.variableName } : {}),
           ...(item.details ? { details: item.details } : {}),
+          ...(item.jobCluster ? { jobCluster: true } : {}),
         },
       });
       addEdge({ id: `${taskId}->uses->${nodeId}`, source: taskId, target: nodeId, kind: "uses" });

@@ -14,6 +14,7 @@ import HeaderChipPanel from "./components/HeaderChipPanel";
 import PipelineView from "./components/PipelineView";
 import SeverityIcon from "./components/SeverityIcon";
 import TaskNode from "./components/TaskNode";
+import UsesRow from "./components/UsesRow";
 import {
   isVariableResolvedForTarget,
   resolveExpressionForTarget,
@@ -26,6 +27,7 @@ import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { isDrawnDependency, taskLevels } from "./lib/taskLevels";
+import { buildJobUses } from "./lib/jobUses";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -2927,6 +2929,25 @@ export default function App({
     () => buildParameterFlowsForJob(graph, jobNode),
     [graph, jobNode],
   );
+  // The Uses row: the warehouses, clusters and secret scopes the job's tasks use (issue 363).
+  const jobUses = useMemo(
+    () =>
+      graph && jobNode && !pipelineView
+        ? buildJobUses(graph, jobNode.id, (value) =>
+            displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+          )
+        : [],
+    [graph, jobNode, pipelineView, effectiveResolutionBundle, effectiveTargetName],
+  );
+  const [usesHoverId, setUsesHoverId] = useState(null);
+  // A kept chip belongs to the job it was clicked in, so another job starts with none.
+  const [usesPin, setUsesPin] = useState({ job: "", id: null });
+  const usesPinnedId = usesPin.job === selectedJobKey ? usesPin.id : null;
+  const activeUses = jobUses.find((item) => item.id === (usesHoverId ?? usesPinnedId));
+  const usesTaskIds = useMemo(
+    () => (activeUses ? new Set(activeUses.taskIds) : null),
+    [activeUses],
+  );
   const issueTaskIds = useMemo(() => {
     const ids = new Set();
     for (const node of flowNodes) {
@@ -2941,9 +2962,10 @@ export default function App({
   }, [flowNodes, inspectorIssues]);
 
   const focusedTaskIds = useMemo(() => {
+    if (usesTaskIds) return usesTaskIds;
     if (graphMode !== "issues" || issueTaskIds.size === 0) return null;
     return issueTaskIds;
-  }, [graphMode, issueTaskIds]);
+  }, [graphMode, issueTaskIds, usesTaskIds]);
 
   const displayFlowNodes = useMemo(
     () =>
@@ -2980,8 +3002,9 @@ export default function App({
   const displayFlowEdges = useMemo(
     () =>
       flowEdges.map((edge) => {
+        // Tasks sharing a warehouse aren't linked by that, so a Uses chip fades every arrow.
         const highlighted =
-          focusedTaskIds?.has(edge.source) && focusedTaskIds?.has(edge.target);
+          !usesTaskIds && focusedTaskIds?.has(edge.source) && focusedTaskIds?.has(edge.target);
         const dimmed = focusedTaskIds && !highlighted;
         return {
           ...edge,
@@ -3001,7 +3024,7 @@ export default function App({
           },
         };
       }),
-    [flowEdges, focusedTaskIds],
+    [flowEdges, focusedTaskIds, usesTaskIds],
   );
 
   const nonJobResourceTypes = useMemo(() => {
@@ -3186,6 +3209,18 @@ export default function App({
             Choose profile
           </button>
         </div>
+      )}
+
+      {!pipelineView && (
+        <UsesRow
+          items={jobUses}
+          activeId={usesHoverId ?? usesPinnedId}
+          pinnedId={usesPinnedId}
+          onHover={setUsesHoverId}
+          onTogglePin={(id) =>
+            setUsesPin({ job: selectedJobKey, id: usesPinnedId === id ? null : id })
+          }
+        />
       )}
 
       {activeHeaderPanel && (
