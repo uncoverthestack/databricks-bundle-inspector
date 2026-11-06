@@ -85,5 +85,10 @@ afterEach(() => rmSync(base, { recursive: true, force: true }));
       ["task_in_linked_dir", '"./src/linked_dir/helper.py" may not be deployed: it is in "src/linked_dir", a symbolic link.'],
       ["task_on_link", '"./src/linked_nb.py" may not be deployed: it is a symbolic link.'],
     ]);
+    // A real target's output has the default sync.paths ["."] (#374): still checked.
+    const withTarget = { ...config, sync: { paths: ["."] } } as ParsedBundleConfig;
+    expect(
+      buildInspectorIssues(graph, withTarget, [], root, "dev").filter((issue) => issue.kind === "excluded_from_sync"),
+    ).toHaveLength(3);
   });
 });

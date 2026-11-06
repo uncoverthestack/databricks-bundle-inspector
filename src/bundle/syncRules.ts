@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import type { Sync } from "./graph/bundleGraph.js";
 
@@ -55,6 +55,21 @@ export type SyncExclusion =
   | { rule: "gitignore"; gitignoreFile: string }
   | { rule: "sync_exclude" }
   | { rule: "always" };
+
+/**
+ * Whether the deploy uploads from the bundle root, as these rules assume. The CLI fills
+ * in `sync.paths: ["."]` when the bundle sets none (`sync_default_path.go`, v1.24.0), so a
+ * real target's output always has it (#374). Any entry that isn't the bundle root moves
+ * the sync root (`sync_infer_root.go`), and the CLI then writes every entry relative to
+ * the new root: `[".", "../common"]` comes back as `["<bundle folder>", "common"]`.
+ * Checked with `bundle validate -o json` on a workspace, 2026-11-06. In the preview,
+ * an entry in an included file is relative to that file, so `[".."]` in
+ * `resources/sync.yml` reads as outside, and the rules stay off there.
+ */
+export function syncsFromBundleRoot(bundleRoot: string, sync?: Sync): boolean {
+  const root = resolve(bundleRoot);
+  return (sync?.paths ?? []).every((entry) => resolve(root, entry) === root);
+}
 
 export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
   const exclusionOf = createSyncExclusion(bundleRoot, sync);
