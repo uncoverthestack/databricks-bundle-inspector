@@ -4,6 +4,8 @@ How the inspector applies the Databricks CLI's notebook rules. The CLI stops at 
 
 From v1.24.0 the CLI counts a `.py`, `.r`, `.scala` or `.sql` file as a notebook when its first line, read from the first 200 bytes, contains `Databricks notebook source`. Before, the line, from the first 32 bytes, had to be exactly the header for the extension. The inspector uses the rule of the CLI that validated the bundle, and the newer rule when the version can't be read.
 
+The newer rule doesn't need a comment: `nb_marker_in_code.py`, whose first line is `print("Databricks notebook source")`, is a notebook. This is the workspace's own import rule (databricks/cli#7290). Checked on 2026-11-06 with `databricks workspace import --format AUTO` (CLI v1.24.0): the workspace stored `nb_marker_in_code.py` and `nb_bom.py` as Python notebooks, and `plain.py` as a file.
+
 | Bundle path | File | CLI before v1.24.0 | CLI v1.24.0 and later |
 |---|---|---|---|
 | `notebook_task` `../src/nb_noext` | `nb_noext.sql` exists | `notebook "src/nb_noext" not found. Did you mean "src/nb_noext.sql"?` | same |
