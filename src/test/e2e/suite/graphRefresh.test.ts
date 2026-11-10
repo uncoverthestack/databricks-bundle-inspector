@@ -389,6 +389,30 @@ export function graphRefreshSuite() {
         await evaluate(`(()=>{const s=${select};s.value='overview';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         await waitFor(async () => { const now = await read(); return now.place === "overview" && now.boxes.length > 0; }, "the overview from the picker");
         assert.deepEqual((await read()).pressed, [JOB], "the selection is kept");
+
+        // A short window makes the overview scroll. Coming back from a job keeps the place.
+        const { targetInfos: windows } = await browser.call("Target.getTargets");
+        const workbench = windows.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+        const { sessionId: windowSession } = await browser.call("Target.attachToTarget", { targetId: workbench.targetId, flatten: true });
+        const scroller = `document.querySelector("[data-overview-scroller]")`;
+        try {
+          const width = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, windowSession)).result.value;
+          await browser.call("Emulation.setDeviceMetricsOverride", { width, height: 420, deviceScaleFactor: 1, mobile: false }, windowSession);
+          await waitFor(async () => await evaluate(`${scroller}.scrollHeight > ${scroller}.clientHeight + 40`), "an overview that scrolls");
+          await evaluate(`${scroller}.scrollTop = ${scroller}.scrollHeight; ${scroller}.dispatchEvent(new Event("scroll"))`);
+          await sleep(200);
+          const scrolledTo = await evaluate(`${scroller}.scrollTop`);
+          assert.ok(scrolledTo > 20, `the overview scrolled down: ${scrolledTo}`);
+          await evaluate(`document.querySelector('[data-overview-open="resources.jobs.alpha_first"]').click()`);
+          await waitFor(async () => (await read()).taskGraph, "alpha_first's graph");
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await read()).place === "overview", "the overview again");
+          await sleep(200);
+          assert.ok(Math.abs((await evaluate(`${scroller}.scrollTop`)) - scrolledTo) <= 2, "the overview is scrolled where it was left");
+        } finally {
+          await browser.call("Emulation.clearDeviceMetricsOverride", {}, windowSession);
+          await browser.call("Target.detachFromTarget", { sessionId: windowSession });
+        }
       } finally {
         browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");

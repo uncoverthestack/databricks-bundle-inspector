@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { kindMeta } from "../lib/kindMeta";
 import {
   findMatches,
@@ -243,6 +243,8 @@ export default function BundleOverview({
   // The header's Issues switch: only boxes with a problem, and what they link to.
   problemsOnly = false,
   onShowAll,
+  // Holds how far the overview was scrolled, kept by the panel while a job or pipeline is open.
+  scrollMemoryRef,
 }) {
   const [hoverId, setHoverId] = useState(null);
   const setSelectedId = onSelect;
@@ -283,7 +285,11 @@ export default function BundleOverview({
     if (!canvas) return;
     const origin = canvas.getBoundingClientRect();
     const next = [];
-    for (const link of overview.links) {
+    // Stacked columns (a narrow panel) get no lines at all, not even within one column:
+    // the boxes' notes and details say what they are linked to.
+    const [left, right] = [...canvas.querySelectorAll(":scope > section")].map((column) => column.getBoundingClientRect());
+    const stacked = Boolean(left && right && right.top >= left.bottom);
+    for (const link of stacked ? [] : overview.links) {
       const from = rowElements.current.get(link.from)?.getBoundingClientRect();
       const to = rowElements.current.get(link.to)?.getBoundingClientRect();
       if (!from || !to) continue;
@@ -331,9 +337,12 @@ export default function BundleOverview({
 
   const toggle = (id) => setSelectedId(selectedId === id ? null : id);
 
-  // Back from a job or pipeline: the box that was selected is in view again.
-  useEffect(() => {
-    if (selectedId) rowElements.current.get(selectedId)?.scrollIntoView?.({ block: "nearest" });
+  const scrollerRef = useRef(null);
+  // Back from a job or pipeline: where it was scrolled to, else the selected box in view.
+  useLayoutEffect(() => {
+    const saved = scrollMemoryRef?.current ?? 0;
+    if (saved > 0 && scrollerRef.current) scrollerRef.current.scrollTop = saved;
+    else if (selectedId) rowElements.current.get(selectedId)?.scrollIntoView?.({ block: "nearest" });
     // Only when the overview appears, not on every selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -349,8 +358,15 @@ export default function BundleOverview({
         }
       }}
     >
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div ref={canvasRef} data-overview-canvas className="relative grid grid-cols-1 gap-x-28 gap-y-8 px-10 py-6 @3xl:grid-cols-2">
+      <div
+        ref={scrollerRef}
+        data-overview-scroller
+        onScroll={(event) => {
+          if (scrollMemoryRef) scrollMemoryRef.current = event.currentTarget.scrollTop;
+        }}
+        className="min-h-0 flex-1 overflow-auto"
+      >
+        <div ref={canvasRef} data-overview-canvas className="relative grid grid-cols-1 gap-x-28 gap-y-8 px-4 py-6 @3xl:grid-cols-2 @3xl:px-10">
           <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
             <defs>
               <marker id="overview-runs" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">

@@ -178,5 +178,61 @@ export function overviewSuite() {
       await evaluate(`document.querySelector("[data-overview-show-all]").click()`);
       await waitFor(async () => (await read()).boxes.length === 6, "every box again");
     });
+
+    it("a narrow panel stacks the columns, draws no lines and never scrolls sideways", async () => {
+      const { targetInfos } = await browser.call("Target.getTargets");
+      const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+      const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+      // An earlier test opened the YAML beside the panel; it would take the room the panel needs.
+      for (const group of vscode.window.tabGroups.all) {
+        const texts = group.tabs.filter((tab) => tab.input instanceof vscode.TabInputText);
+        if (texts.length > 0) await vscode.window.tabGroups.close(texts);
+      }
+      await sleep(500);
+      const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, pageSession)).result.value;
+      const panelWidth = await evaluate("innerWidth");
+      const measured: any[] = [];
+      try {
+        for (const width of [350, 420, 600]) {
+          // Other editors beside the panel share what the window loses, so measure and adjust.
+          let windowAt = width + windowWidth - panelWidth;
+          for (let attempt = 0; attempt < 6; attempt++) {
+            await browser.call("Emulation.setDeviceMetricsOverride", { width: windowAt, height: 800, deviceScaleFactor: 1, mobile: false }, pageSession);
+            await sleep(400);
+            const now = await evaluate("innerWidth");
+            if (Math.abs(now - width) <= 2) break;
+            windowAt += width - now;
+          }
+          console.log("narrow panel", width, "->", await evaluate("innerWidth"), "window", windowAt);
+          await sleep(300);
+          measured.push(await evaluate(`(() => {
+            const columns = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect());
+            const boxes = [...document.querySelectorAll("[data-overview-item]")].map((box) => box.getBoundingClientRect());
+            const header = document.querySelector("header");
+            return {
+              width: innerWidth,
+              stacked: columns.length === 2 && columns[1].top >= columns[0].bottom,
+              lines: document.querySelectorAll("[data-overview-link]").length,
+              sideways: document.scrollingElement.scrollWidth > innerWidth || [...document.querySelectorAll("[data-overview-canvas]")].some((el) => el.scrollWidth > el.clientWidth + 1),
+              boxesInside: boxes.every((box) => box.left >= 0 && box.right <= innerWidth),
+              narrowestBox: Math.round(Math.min(...boxes.map((box) => box.width))),
+              headerFits: header.scrollWidth <= header.clientWidth + 1,
+            };
+          })()`));
+          await screenshot(`overview-narrow-${width}`);
+        }
+      } finally {
+        await browser.call("Emulation.clearDeviceMetricsOverride", {}, pageSession);
+        await browser.call("Target.detachFromTarget", { sessionId: pageSession });
+      }
+      for (const shown of measured) {
+        assert.deepEqual(
+          { stacked: shown.stacked, lines: shown.lines, sideways: shown.sideways, boxesInside: shown.boxesInside, headerFits: shown.headerFits },
+          { stacked: true, lines: 0, sideways: false, boxesInside: true, headerFits: true },
+          `at ${shown.width}px: ${JSON.stringify(shown)}`,
+        );
+        assert.ok(shown.narrowestBox >= 200, `boxes stay readable at ${shown.width}px: ${JSON.stringify(shown)}`);
+      }
+    });
   });
 }
