@@ -237,3 +237,27 @@ describe("overview edge cases from review", () => {
     expect(groupOfSelected(shown({ errors: 0, warnings: 0 }), "gone")).toBeUndefined();
   });
 });
+
+describe("search matches type words (issue 395)", () => {
+  const box = (id: string, label: string, kind: string, resourceGroup?: string): OverviewItem =>
+    ({ id, groupId: "g", column: "uses", kind, label, source: "bundle", resourceGroup, problems: { errors: 0, warnings: 0 }, hasChecks: true }) as OverviewItem;
+  const shown = {
+    groups: [{ id: "g", name: "Compute", column: "uses", items: [
+      box("c", "shared_etl", "cluster", "clusters"),
+      box("w", "analytics", "warehouse", "sql_warehouses"),
+      box("s", "sales", "schemas", "schemas"),
+    ] }],
+    links: [],
+    bundleWide: { errors: 0, warnings: 0 },
+  } as unknown as BundleOverview;
+
+  test("a type finds its boxes, as the search list does", () => {
+    expect([...findMatches(shown, "cluster")!]).toEqual(["c"]);
+    expect([...findMatches(shown, "SQL warehouse")!]).toEqual(["w"]);
+    expect([...findMatches(shown, "schema")!]).toEqual(["s"]);
+  });
+
+  test("names still match", () => {
+    expect([...findMatches(shown, "etl")!]).toEqual(["c"]);
+  });
+});

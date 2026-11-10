@@ -411,6 +411,23 @@ export function graphRefreshSuite() {
         assert.deepEqual((await read()).boxes, kept, "closing the list keeps the view on Issues");
         await evaluate(`${issues}.click()`);
         await waitFor(async () => (await evaluate(listOpen)) === true, "the third press to open the list again");
+        // Picking a healthy job from the search while Issues is on selects it and shows it
+        // (issue 395): Issues keeps the selected box.
+        assert.ok(!kept.includes("resources.jobs.alpha_first"), "alpha_first is hidden by Issues, or this proves nothing");
+        await evaluate(`(() => {
+          const input = document.querySelector('header input[aria-label="Find a resource"]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "alpha_first");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        await waitFor(async () => await evaluate(`[...document.querySelectorAll("header button")].some((button) => button.textContent.includes("alpha_first"))`), "the search list");
+        await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes("alpha_first")).click()`);
+        await waitFor(async () => (await read()).pressed.includes("resources.jobs.alpha_first"), "alpha_first selected and shown under Issues");
+        await evaluate(`document.querySelector("[data-overview-details] [aria-label='Close details']")?.click()`);
+        await evaluate(`(() => {
+          const input = document.querySelector('header input[aria-label="Find a resource"]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
         await evaluate(`document.querySelector('[data-graph-mode="all"]').click()`);
         await waitFor(async () => (await read()).boxes.length === everyBox, "every box again");
 

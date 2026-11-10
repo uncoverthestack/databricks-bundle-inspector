@@ -57,6 +57,14 @@ export function overviewSuite() {
       unchecked: string[];
       details: string | null;
     }>;
+    /** Types into the header's search box as a person would, and leaves focus there. */
+    const typeSearch = (text: string) => evaluate(`(() => {
+      const input = document.querySelector('header input[aria-label="Find a resource"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(text)});
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    })()`);
+    const fadedIds = async () => (await read()).boxes.filter((box) => box.faded).map((box) => box.id);
     const panelSize = () => evaluate("({ width: innerWidth, height: innerHeight })") as Promise<PanelSize>;
     const click = (id: string) =>
       evaluate(`document.querySelector('[data-overview-item="${id}"]').click()`);
@@ -282,6 +290,115 @@ export function overviewSuite() {
       assert.ok(Math.abs(shown.height - short.height) <= 2, `the panel reached ${short.height}px tall: ${JSON.stringify(shown)}`);
       assert.ok(shown.overview >= 40, `part of the overview stays in view: ${JSON.stringify(shown)}`);
       assert.ok(shown.detailsBottom <= shown.height + 1, `the details stay inside the panel: ${JSON.stringify(shown)}`);
+    });
+
+    it("searching a type lights its boxes, and a search beats an existing selection (issue 395)", async () => {
+      await showPanel();
+      await typeSearch("cluster");
+      await waitFor(async () => !(await fadedIds()).includes(CLUSTER), "the cluster lit by searching its type");
+      assert.ok((await fadedIds()).length > 0, "the other boxes fade");
+      await typeSearch("");
+      await waitFor(async () => (await fadedIds()).length === 0, "the search cleared");
+      // With the secret scope selected, searching for the warehouse lights the warehouse.
+      await click(SCOPE);
+      await waitFor(async () => (await read()).details === SCOPE, "the scope selected");
+      await typeSearch("analytics");
+      await waitFor(async () => !(await fadedIds()).includes("resources.sql_warehouses.analytics"), "the warehouse lit despite the selection");
+      assert.equal((await read()).boxes.find((box) => box.id === SCOPE)?.pressed, true, "the selection stays marked");
+      await typeSearch("");
+      await click(SCOPE);
+      await waitFor(async () => (await read()).details === null, "the selection cleared");
+    });
+
+    it("in a wide, short panel the details sit beside the boxes and the overview stays in view (issue 395)", async () => {
+      await showPanel();
+      await click(CLUSTER);
+      await waitFor(async () => (await read()).details === CLUSTER, "the cluster's details");
+      let shown: any;
+      try {
+        await sizer.set({ width: 1280, height: 200 });
+        await sleep(300);
+        shown = await evaluate(`(() => {
+          const scroller = document.querySelector("[data-overview-scroller]").getBoundingClientRect();
+          const details = document.querySelector("[data-overview-details]").getBoundingClientRect();
+          return { overview: Math.round(scroller.height), beside: details.left >= scroller.right - 1, detailsBottom: Math.round(details.bottom), height: innerHeight };
+        })()`);
+      } finally {
+        await click(CLUSTER);
+        await sizer.set(STANDARD_PANEL);
+      }
+      assert.deepEqual({ beside: shown.beside, inside: shown.detailsBottom <= shown.height + 1 }, { beside: true, inside: true }, JSON.stringify(shown));
+      assert.ok(shown.overview >= 100, `the overview keeps its height: ${JSON.stringify(shown)}`);
+    });
+
+    it("a search result picked from the list comes into view (issue 395)", async () => {
+      await showPanel();
+      const scroller = `document.querySelector("[data-overview-scroller]")`;
+      try {
+        await sizer.set({ width: 700, height: 260 });
+        await sleep(300);
+        await evaluate(`${scroller}.scrollTop = 0`);
+        // The lowest box, out of view at the top of a short panel.
+        const lowest = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0].dataset.overviewItem`);
+        const label = await evaluate(`document.querySelector('[data-overview-item="${lowest}"] .truncate').textContent`);
+        const inView = `(() => { const box = document.querySelector('[data-overview-item="${lowest}"]').getBoundingClientRect(); const view = ${scroller}.getBoundingClientRect(); return box.top >= view.top - 1 && box.bottom <= view.bottom + 1; })()`;
+        assert.equal(await evaluate(inView), false, "the box starts out of view, or this proves nothing");
+        await typeSearch(label);
+        await waitFor(async () => await evaluate(`[...document.querySelectorAll("header button")].some((button) => button.textContent.includes(${JSON.stringify(label)}))`), "the search list");
+        await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes(${JSON.stringify(label)})).click()`);
+        await waitFor(async () => (await read()).details === lowest, "the picked box selected");
+        await waitFor(async () => (await evaluate(inView)) === true, "the picked box in view");
+      } finally {
+        await typeSearch("");
+        await evaluate(`document.querySelector("[data-overview-details] [aria-label='Close details']")?.click()`);
+        await sizer.set(STANDARD_PANEL);
+      }
+    });
+
+    it("removing the resource that has focus leaves the other boxes lit (issue 395)", async () => {
+      await showPanel();
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const file = vscode.Uri.file(path.join(root, "databricks.yml"));
+      const original = Buffer.from(await vscode.workspace.fs.readFile(file)).toString("utf8");
+      const VOLUME = "resources.volumes.raw_files";
+      await evaluate(`document.querySelector('[data-overview-item="${VOLUME}"]').focus()`);
+      await browser.call("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
+      try {
+        await evaluate(`document.querySelector('[data-overview-item="${VOLUME}"]').focus()`);
+        await waitFor(async () => (await fadedIds()).length > 0, "the focused volume lighting its links");
+        const withoutVolume = original.replace(/\n  volumes:\n(    .*\n|      .*\n)+/, "\n");
+        assert.notEqual(withoutVolume, original, "the fixture still has its volume");
+        await vscode.workspace.fs.writeFile(file, Buffer.from(withoutVolume, "utf8"));
+        await waitFor(async () => !(await read()).boxes.some((box) => box.id === VOLUME), "the volume gone after the save");
+        await sleep(300);
+        assert.deepEqual(await fadedIds(), [], "no box fades for a resource that is gone");
+      } finally {
+        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
+        await vscode.workspace.fs.writeFile(file, Buffer.from(original, "utf8"));
+        await waitFor(async () => (await read()).boxes.some((box) => box.id === VOLUME), "the volume back");
+      }
+    });
+
+    it("a long file name in the details wraps instead of scrolling sideways (issue 395)", async () => {
+      await showPanel();
+      await click(CLUSTER);
+      await waitFor(async () => (await read()).details === CLUSTER, "the cluster's details");
+      let shown: any;
+      try {
+        await sizer.set({ width: 350, height: STANDARD_PANEL.height });
+        await sleep(300);
+        // A valid 160-character file name, put in the link the details show.
+        shown = await evaluate(`(() => {
+          const link = document.querySelector("[data-overview-open-file]");
+          link.textContent = "${"a".repeat(150)}.yml:12";
+          const details = document.querySelector("[data-overview-details]");
+          return { width: innerWidth, details: details.scrollWidth, room: details.clientWidth, page: document.scrollingElement.scrollWidth };
+        })()`);
+      } finally {
+        await click(CLUSTER);
+        await sizer.set(STANDARD_PANEL);
+      }
+      assert.ok(shown.details <= shown.room + 1 && shown.page <= shown.width + 1, `no sideways scroll: ${JSON.stringify(shown)}`);
     });
   });
 }
