@@ -40,6 +40,8 @@ The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipel
 
 The graph doesn't show the tables inside a pipeline. In a job's graph, a pipeline task's **Pipeline** row opens its pipeline.
 
+Above a job's graph, the **Uses** row lists the SQL warehouses, clusters and secret scopes the job's tasks use, each with how many tasks use it: `analytics · 2 tasks`. A solid chip is defined in the bundle (a `${resources...}` reference, a job cluster, a `secret_scopes` resource). A dashed one is named by a variable or an ID, is a secret scope the bundle doesn't define, or is **Serverless or inherited**, for tasks with no compute set. Secret scopes count both cluster settings and secrets read in a task's code. Point at a chip to light up the tasks that use it; click it to keep them lit, and click again to stop. Its tooltip lists those tasks. In the structural preview a variable shows as written, such as `${var.reporting_wh}`; pick a target to see its value.
+
 **Copy review**, at the right of the graph's header, copies a Markdown review of the job or pipeline the graph shows, for a pull request or a chat. For a job it's a menu, each item tagged **Markdown**:
 
 - **Short summary**: the bundle, target and job, up to 12 problems, each labelled **Error** or **Warning** with errors first, the parameter flow, the schedule and file counts. For Slack, Teams or Jira, which don't draw diagrams.
