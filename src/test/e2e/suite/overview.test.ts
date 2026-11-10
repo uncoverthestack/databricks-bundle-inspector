@@ -385,7 +385,7 @@ export function overviewSuite() {
       }
     });
 
-    it("a long file name in the details wraps instead of scrolling sideways (issue 395)", async () => {
+    it("long file and resource names in the details never scroll them sideways (issue 395)", async () => {
       await showPanel();
       await click(CLUSTER);
       await waitFor(async () => (await read()).details === CLUSTER, "the cluster's details");
@@ -397,13 +397,17 @@ export function overviewSuite() {
         shown = await evaluate(`(() => {
           const link = document.querySelector("[data-overview-open-file]");
           link.textContent = "${"a".repeat(150)}.yml:12";
+          // And a very long resource name in the Uses list, found by a random-action stress run.
+          const used = document.querySelector("[data-overview-details] button:not([data-overview-open-file]):not([aria-label]):not([data-overview-details-open]) span");
+          if (used) used.textContent = "${"n".repeat(150)}";
           const details = document.querySelector("[data-overview-details]");
-          return { width: innerWidth, details: details.scrollWidth, room: details.clientWidth, page: document.scrollingElement.scrollWidth };
+          return { width: innerWidth, details: details.scrollWidth, room: details.clientWidth, page: document.scrollingElement.scrollWidth, usesRow: Boolean(used) };
         })()`);
       } finally {
         await click(CLUSTER);
         await sizer.set(STANDARD_PANEL);
       }
+      assert.equal(shown.usesRow, true, "the cluster's details list what it uses, or the long name went nowhere");
       assert.ok(shown.details <= shown.room + 1 && shown.page <= shown.width + 1, `no sideways scroll: ${JSON.stringify(shown)}`);
     });
   });
