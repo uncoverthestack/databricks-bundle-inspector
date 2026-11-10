@@ -384,6 +384,22 @@ export function themesSuite() {
         const faint = [...plain.boxes, ...selected.boxes].filter((box: any) => !box.dimmed && box.border < 3);
         assert.deepEqual(faint, [], "task box borders against the canvas");
 
+        // Each box reads the problem list Issues uses (issue 393): its colour follows its
+        // worst problem, and the boxes add up to the Issues count.
+        const problems = await evaluate(`(() => {
+          const boxes = [...document.querySelectorAll(".react-flow__node")].map((node) => ({
+            name: node.querySelector("[title]")?.getAttribute("title") ?? node.textContent,
+            tone: node.querySelector("[data-problem-tone]")?.dataset.problemTone,
+            count: Number(node.querySelector('[title$=" issue"], [title$=" issues"]')?.textContent ?? 0),
+          }));
+          const issues = document.querySelector('[data-graph-mode="issues"]');
+          return { boxes, issuesCount: Number(issues?.querySelector("span")?.textContent ?? 0) };
+        })()`);
+        const toneOf = Object.fromEntries(problems.boxes.map((box: any) => [box.name, box.tone]));
+        assert.equal(toneOf.missing_step, "error", `the task with a missing file is red: ${JSON.stringify(problems.boxes)}`);
+        assert.ok(problems.boxes.some((box: any) => box.tone === "warning"), `a task with only a warning is amber: ${JSON.stringify(problems.boxes)}`);
+        assert.equal(problems.boxes.reduce((sum: number, box: any) => sum + box.count, 0), problems.issuesCount, `the boxes add up to Issues: ${JSON.stringify(problems)}`);
+
         assert.ok(overview.overviewBoxes.length >= 2, "the overview shows its boxes");
         // The run must measure the line too, so the window has to fit the two columns.
         assert.equal(sideBySide, true, "the overview's two columns are side by side");

@@ -29,6 +29,7 @@ import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { isDrawnDependency, taskLevels } from "./lib/taskLevels";
 import { buildBundleOverview } from "./lib/bundleOverview";
+import { countsFor, problemTone, taskProblemCounts } from "./lib/taskProblems";
 import { typeWords } from "./lib/overviewView";
 import { buildJobUses } from "./lib/jobUses";
 import { variableSourceLocation } from "./lib/variableSource";
@@ -738,9 +739,26 @@ function buildSearchItems(graph, jobNode, parsedBundle, targetName) {
   });
 }
 
+/**
+ * A task box's problem count and border colour. From the inspector's problem list when
+ * there is one, as Issues does; without it (an old or partial result), the box's own
+ * recount of missing files, libraries and variables, which are all errors.
+ */
+function taskBoxProblems(task, parsedBundle, targetName, inspectorIssues, problemsByTask) {
+  if (inspectorIssues.length > 0) {
+    const counts = countsFor(problemsByTask, task.id);
+    return { issueCounts: counts, problemTone: problemTone(counts) };
+  }
+  const recount = getTaskIssueCounts(task, parsedBundle, targetName);
+  const counts = { errors: recount.total, warnings: 0, infos: 0, total: recount.total };
+  return { issueCounts: counts, problemTone: problemTone(counts) };
+}
+
 // ── DAG layout: left → right ──────────────────────────────────
 
-function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
+function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName, inspectorIssues = []) {
+  // Each box reads the problem list Issues uses, so the boxes add up to its count (issue 393).
+  const problemsByTask = taskProblemCounts(inspectorIssues);
   const empty = { flowNodes: [], flowEdges: [], jobNode: null, taskCount: 0 };
 
   const jobNode = graph.nodes.find(
@@ -864,8 +882,7 @@ function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName) {
           badge: task.taskTypeBadge,
           subtitle: task.subtitle,
           branchOutcomes: [...new Set(branchOutcomesByTask.get(task.id) ?? [])],
-          hasMissingFile: task.hasMissingFile,
-          issueCounts: getTaskIssueCounts(task, parsedBundle, targetName),
+          ...taskBoxProblems(task, parsedBundle, targetName, inspectorIssues, problemsByTask),
         },
       });
     });
@@ -2858,9 +2875,10 @@ export default function App({
             selectedJobKey,
             effectiveResolutionBundle,
             effectiveTargetName,
+            inspectorIssues,
           )
         : { flowNodes: [], flowEdges: [], jobNode: null },
-    [graph, selectedJobKey, effectiveResolutionBundle, effectiveTargetName],
+    [graph, selectedJobKey, effectiveResolutionBundle, effectiveTargetName, inspectorIssues],
   );
 
   const searchItems = useMemo(
@@ -3425,14 +3443,18 @@ export default function App({
                 nodeBorderRadius={4}
                 nodeStrokeWidth={2}
                 nodeStrokeColor={(node) =>
-                  node.data?.issueCounts?.total > 0
+                  node.data?.problemTone === "error"
                     ? UI_COLOR.error
-                    : kindMeta(node.data?.kind).color
+                    : node.data?.problemTone === "warning"
+                      ? UI_COLOR.warning
+                      : kindMeta(node.data?.kind).color
                 }
                 nodeColor={(node) =>
-                  node.data?.issueCounts?.total > 0
+                  node.data?.problemTone === "error"
                     ? UI_COLOR.error
-                    : kindMeta(node.data?.kind).color
+                    : node.data?.problemTone === "warning"
+                      ? UI_COLOR.warning
+                      : kindMeta(node.data?.kind).color
                 }
                 pannable
                 zoomable
