@@ -28,7 +28,7 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
         }}
         aria-label={placeholder}
         placeholder={placeholder}
-        className="h-7 w-full rounded-md border border-line bg-input pl-8 pr-2 text-xs text-fg outline-none placeholder:text-muted focus:border-accent"
+        className="h-7 w-full rounded-md border border-line bg-input pl-8 pr-2 text-xs text-fg outline-none placeholder:text-transparent focus:border-accent md:placeholder:text-muted"
       />
       {matches.length > 0 && (
         <div className="absolute left-0 right-0 top-8 z-20 max-h-[calc(100vh-4rem)] overflow-auto overscroll-contain rounded-md border border-line-strong bg-widget shadow-popover">

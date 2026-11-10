@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
-import { connectBrowser } from "./browser.js";
+import { connectBrowser, panelSizer, STANDARD_PANEL, type PanelSizer } from "./browser.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const jobSelector = 'header select:not([aria-label="Target"])';
@@ -311,6 +311,8 @@ export function graphRefreshSuite() {
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
 
       const browser = await connectBrowser(process.env.E2E_CDP_PORT);
+      // The panel's size for this test, so it does not depend on the window this machine opened.
+      let sizer: PanelSizer | undefined;
       try {
         let graph: { sessionId: string; contextId: number } | undefined;
         const evaluate = async (expression: string) => {
@@ -350,6 +352,11 @@ export function graphRefreshSuite() {
         }, "the bundle overview");
 
         // The bundle has jobs and a pipeline, and still opens on its overview.
+        await waitFor(async () => (await read()).boxes.includes(PIPELINE), "the overview's boxes");
+        // Lines need the two columns side by side. A small window (as on CI) would stack
+        // them and draw none, so the test sets the panel's size itself.
+        sizer = await panelSizer(browser, () => evaluate("({ width: innerWidth, height: innerHeight })"));
+        await sizer.set(STANDARD_PANEL);
         await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
         const opened = await read();
         assert.equal(opened.place, "overview");
@@ -389,7 +396,42 @@ export function graphRefreshSuite() {
         await evaluate(`(()=>{const s=${select};s.value='overview';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         await waitFor(async () => { const now = await read(); return now.place === "overview" && now.boxes.length > 0; }, "the overview from the picker");
         assert.deepEqual((await read()).pressed, [JOB], "the selection is kept");
+
+        // A short panel makes the overview scroll. Coming back from a job keeps the place.
+        const scroller = `document.querySelector("[data-overview-scroller]")`;
+        {
+          await sizer.set({ width: STANDARD_PANEL.width, height: 320 });
+          await waitFor(async () => await evaluate(`${scroller}.scrollHeight > ${scroller}.clientHeight + 40`), "an overview that scrolls");
+          await evaluate(`${scroller}.scrollTop = ${scroller}.scrollHeight; ${scroller}.dispatchEvent(new Event("scroll"))`);
+          await sleep(200);
+          const scrolledTo = await evaluate(`${scroller}.scrollTop`);
+          assert.ok(scrolledTo > 20, `the overview scrolled down: ${scrolledTo}`);
+          await evaluate(`document.querySelector('[data-overview-open="resources.jobs.alpha_first"]').click()`);
+          await waitFor(async () => (await read()).taskGraph, "alpha_first's graph");
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await read()).place === "overview", "the overview again");
+          await sleep(200);
+          assert.ok(Math.abs((await evaluate(`${scroller}.scrollTop`)) - scrolledTo) <= 2, "the overview is scrolled where it was left");
+
+          // The top is a place too: left at the top with the selected box out of view below,
+          // coming back stays at the top instead of jumping to the box.
+          const lowest = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0].dataset.overviewItem`);
+          await evaluate(`document.querySelector('[data-overview-item="${lowest}"]').click()`);
+          await waitFor(async () => (await read()).pressed.includes(lowest), "the lowest box selected");
+          await evaluate(`${scroller}.scrollTop = 0; ${scroller}.dispatchEvent(new Event("scroll"))`);
+          await sleep(200);
+          const below = await evaluate(`document.querySelector('[data-overview-item="${lowest}"]').getBoundingClientRect().top >= ${scroller}.getBoundingClientRect().bottom`);
+          assert.equal(below, true, "the selected box is out of view below, or this proves nothing");
+          await evaluate(`document.querySelector('[data-overview-open="resources.jobs.alpha_first"]').click()`);
+          await waitFor(async () => (await read()).taskGraph, "alpha_first's graph again");
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await read()).place === "overview", "the overview once more");
+          await sleep(200);
+          assert.equal(await evaluate(`${scroller}.scrollTop`), 0, "the overview is still at the top");
+          assert.deepEqual((await read()).pressed, [lowest], "the selection is kept");
+        }
       } finally {
+        await sizer?.release().catch(() => undefined);
         browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       }
