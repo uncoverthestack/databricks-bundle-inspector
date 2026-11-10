@@ -29,6 +29,7 @@ import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { isDrawnDependency, taskLevels } from "./lib/taskLevels";
 import { buildBundleOverview } from "./lib/bundleOverview";
+import { typeWords } from "./lib/overviewView";
 import { buildJobUses } from "./lib/jobUses";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
@@ -3052,6 +3053,23 @@ export default function App({
   // going back shows the overview as it was left.
   const [overviewSelectedId, setOverviewSelectedId] = useState(null);
   const atOverview = !selection && bundleOverview !== null;
+  // On the overview, the header's search finds boxes instead of tasks.
+  const overviewSearchItems = useMemo(
+    () =>
+      atOverview
+        ? bundleOverview.groups.flatMap((group) =>
+            group.items.map((item) => ({
+              id: `overview:${item.id}`,
+              overviewId: item.id,
+              label: item.label,
+              subtitle: typeWords(item),
+              kind: item.kind,
+              issueCount: item.problems.errors + item.problems.warnings,
+            })),
+          )
+        : [],
+    [atOverview, bundleOverview],
+  );
 
   if (!graph) {
     return (
@@ -3107,6 +3125,10 @@ export default function App({
   function handleSearchSelect(item) {
     onTelemetry?.("search_result_selected");
     setSearchValue(item.label);
+    if (item.overviewId) {
+      setOverviewSelectedId(item.overviewId);
+      return;
+    }
     selectTaskNode(item.taskId);
   }
 
@@ -3200,9 +3222,9 @@ export default function App({
         overviewValue={bundleOverview ? OVERVIEW_VALUE : undefined}
         onBack={selection && bundleOverview ? showOverview : undefined}
         showTaskTools={!pipelineView}
-        showSearch={!atOverview}
+        searchPlaceholder={atOverview ? "Find a resource" : undefined}
         searchValue={searchValue}
-        searchItems={searchItems}
+        searchItems={atOverview ? overviewSearchItems : searchItems}
         onSearchChange={setSearchValue}
         onSearchSelect={handleSearchSelect}
         graphMode={graphMode}
@@ -3306,6 +3328,9 @@ export default function App({
               onSelect={setOverviewSelectedId}
               onOpen={openFromOverview}
               onOpenFile={onOpenFile}
+              find={searchValue}
+              problemsOnly={graphMode === "issues"}
+              onShowAll={() => handleGraphModeChange("all")}
             />
           ) : flowNodes.length === 0 ? (
             <div

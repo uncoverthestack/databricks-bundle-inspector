@@ -1,11 +1,15 @@
 import { describe, expect, test } from "@jest/globals";
-import { buildBundleOverview, type BundleOverview, type OverviewGraph, type OverviewItem } from "../../../webview/lib/bundleOverview.js";
+import { buildBundleOverview, type BundleOverview, type OverviewGraph, type OverviewItem, type OverviewLink } from "../../../webview/lib/bundleOverview.js";
 import {
+  findMatches,
   foldedGroupIds,
   isUnchecked,
+  litByFind,
   itemNote,
   linkedIds,
   namedOutside,
+  problemContext,
+  problemsFirst,
   resourceGroupWords,
   showsAllLines,
   SMALL_BUNDLE_MAX_ITEMS,
@@ -158,5 +162,54 @@ describe("overview lighting and folding", () => {
   test("a group with a problem on one of its boxes stays open", () => {
     const large = withSchemas(SMALL_BUNDLE_MAX_ITEMS, [{ severity: "warning", resourceId: "resources.schemas.s3" }]);
     expect(foldedGroupIds(large).size).toBe(0);
+  });
+});
+
+describe("large bundles: find, problems only, problems first", () => {
+  const item = (id: string, label: string, errors = 0, warnings = 0, extra: Partial<OverviewItem> = {}): OverviewItem =>
+    ({ id, groupId: "g", column: "workloads", kind: "job", label, source: "bundle", problems: { errors, warnings }, hasChecks: true, ...extra }) as OverviewItem;
+  const overview = (items: OverviewItem[], links: OverviewLink[] = []): BundleOverview =>
+    ({ groups: [{ id: "g", name: "Workflows", column: "workloads", items }], links, bundleWide: { errors: 0, warnings: 0 } }) as unknown as BundleOverview;
+  const link = (from: string, to: string): OverviewLink => ({ from, to, kind: "uses", taskIds: [], taskNames: [] }) as OverviewLink;
+
+  test("problems first: errors, then warnings, then the rest, keeping their order", () => {
+    const items = [item("a", "a"), item("b", "b", 0, 1), item("c", "c", 2), item("d", "d"), item("e", "e", 0, 3), item("f", "f", 1, 1)];
+    expect(problemsFirst(items).map((entry) => entry.id)).toEqual(["c", "f", "b", "e", "a", "d"]);
+  });
+
+  test("problems first leaves a group with no problems as it was", () => {
+    const items = [item("z", "z"), item("a", "a")];
+    expect(problemsFirst(items).map((entry) => entry.id)).toEqual(["z", "a"]);
+  });
+
+  test("find matches the name or the bundle key, ignoring case and spaces around it", () => {
+    const shown = overview([
+      item("1", "Orders Daily"),
+      item("2", "nightly", 0, 0, { resourceKey: "orders_backfill" }),
+      item("3", "customers"),
+    ]);
+    expect([...findMatches(shown, "  ORDERS ")!].sort()).toEqual(["1", "2"]);
+    expect(findMatches(shown, "nothing")).toEqual(new Set());
+  });
+
+  test("an empty search finds nothing to filter by", () => {
+    expect(findMatches(overview([item("1", "a")]), "   ")).toBeNull();
+  });
+
+  test("a match keeps what it links to lit", () => {
+    const shown = overview([item("job", "orders"), item("wh", "warehouse"), item("other", "other")], [link("job", "wh")]);
+    expect([...litByFind(shown, findMatches(shown, "orders")!)].sort()).toEqual(["job", "wh"]);
+  });
+
+  test("problems only keeps boxes with a problem and what they link to", () => {
+    const shown = overview(
+      [item("bad", "bad", 1), item("warn", "warn", 0, 1), item("wh", "wh"), item("fine", "fine"), item("scope", "scope")],
+      [link("bad", "wh"), link("fine", "scope")],
+    );
+    expect([...problemContext(shown)].sort()).toEqual(["bad", "warn", "wh"]);
+  });
+
+  test("problems only is empty for a bundle with no problems", () => {
+    expect(problemContext(overview([item("a", "a"), item("b", "b")]))).toEqual(new Set());
   });
 });

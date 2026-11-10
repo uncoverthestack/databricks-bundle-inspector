@@ -152,5 +152,31 @@ export function overviewSuite() {
       await waitFor(async () => (await read()).details === null, "the details to close");
       assert.equal((await read()).boxes.some((box) => box.pressed), false);
     });
+
+    it("typing in the header's search lights the matching box and fades the rest; Esc clears it", async () => {
+      const type = (text: string) => evaluate(`(() => {
+        const input = document.querySelector('header input[aria-label="Find a resource"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(text)});
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.focus();
+      })()`);
+      await type("shared");
+      await waitFor(async () => (await read()).boxes.filter((box) => box.faded).length === 4, "the search to fade the other boxes");
+      const shown = Object.fromEntries((await read()).boxes.map((box) => [box.id, box]));
+      assert.equal(shown[CLUSTER]!.faded, false, "the match stays lit");
+      assert.equal(shown[SCOPE]!.faded, false, "what the match links to stays lit");
+      await evaluate(`document.querySelector('header input[aria-label="Find a resource"]').dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+      await waitFor(async () => (await read()).boxes.every((box) => !box.faded), "Esc to clear the search");
+    });
+
+    it("Issues on a bundle with no problems says so, and Show all brings every box back", async () => {
+      const issues = `[...document.querySelectorAll('header button')].find((button) => button.textContent.trim().startsWith('Issues'))`;
+      await evaluate(`${issues}.click()`);
+      await waitFor(async () => (await read()).boxes.length === 0, "Issues to keep only boxes with a problem");
+      assert.equal(await evaluate(`document.body.textContent.includes("No problems found in this bundle.")`), true);
+      assert.match(await evaluate(`document.querySelector("[data-overview-show-all]").textContent`), /^6 resources with no problems/);
+      await evaluate(`document.querySelector("[data-overview-show-all]").click()`);
+      await waitFor(async () => (await read()).boxes.length === 6, "every box again");
+    });
   });
 }

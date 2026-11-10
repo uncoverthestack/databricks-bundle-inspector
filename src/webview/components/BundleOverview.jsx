@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { kindMeta } from "../lib/kindMeta";
 import {
+  findMatches,
   foldedGroupIds,
   isUnchecked,
   itemNote,
   linkedIds,
   linksOf,
+  litByFind,
   namedOutside,
+  problemContext,
+  problemsFirst,
   showsAllLines,
   sourceSentence,
   typeWords,
@@ -227,7 +231,19 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
  * them. Pointing at a box, or focusing it, lights up what it is linked to; clicking keeps
  * it lit and shows its details. In a narrow panel the columns stack and no lines are drawn.
  */
-export default function BundleOverview({ overview, background, selectedId, onSelect, onOpen, onOpenFile }) {
+export default function BundleOverview({
+  overview,
+  background,
+  selectedId,
+  onSelect,
+  onOpen,
+  onOpenFile,
+  // Typed in the header's search box: matching boxes stay lit, the rest fade.
+  find = "",
+  // The header's Issues switch: only boxes with a problem, and what they link to.
+  problemsOnly = false,
+  onShowAll,
+}) {
   const [hoverId, setHoverId] = useState(null);
   const setSelectedId = onSelect;
   const [opened, setOpened] = useState(() => new Set());
@@ -242,7 +258,19 @@ export default function BundleOverview({ overview, background, selectedId, onSel
   const selected = selectedId ? itemById.get(selectedId) : undefined;
   const activeId = hoverId ?? (selected ? selected.id : null);
   const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : new Set()), [overview, activeId]);
-  const folded = useMemo(() => foldedGroupIds(overview), [overview]);
+  const matches = useMemo(() => findMatches(overview, find), [overview, find]);
+  const foundLit = useMemo(() => (matches ? litByFind(overview, matches) : null), [overview, matches]);
+  const kept = useMemo(() => (problemsOnly ? problemContext(overview) : null), [overview, problemsOnly]);
+  const hiddenCount = kept ? overview.groups.reduce((sum, group) => sum + group.items.filter((item) => !kept.has(item.id)).length, 0) : 0;
+  const baseFolded = useMemo(() => foldedGroupIds(overview), [overview]);
+  // A folded group with a match, or with a box kept by Issues, opens.
+  const folded = useMemo(() => {
+    const keep = foundLit ?? kept;
+    if (!keep) return baseFolded;
+    return new Set(
+      [...baseFolded].filter((id) => !overview.groups.find((group) => group.id === id)?.items.some((item) => keep.has(item.id))),
+    );
+  }, [baseFolded, foundLit, kept, overview]);
   const allLines = showsAllLines(overview);
 
   const register = useCallback((id, element) => {
@@ -292,11 +320,11 @@ export default function BundleOverview({ overview, background, selectedId, onSel
     const observer = new ResizeObserver(measure);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [measure, opened]);
+  }, [measure, opened, find, problemsOnly]);
 
   const stateOf = (item) => {
     if (selected?.id === item.id) return "selected";
-    if (!activeId) return "plain";
+    if (!activeId) return foundLit && !foundLit.has(item.id) ? "dimmed" : "plain";
     if (item.id === activeId || lit.has(item.id)) return "related";
     return "dimmed";
   };
@@ -330,7 +358,10 @@ export default function BundleOverview({ overview, background, selectedId, onSel
               </marker>
             </defs>
             {paths.map((path) => {
-              const active = activeId !== null && (path.from === activeId || path.to === activeId);
+              const active =
+                activeId !== null
+                  ? path.from === activeId || path.to === activeId
+                  : Boolean(matches) && (matches.has(path.from) || matches.has(path.to));
               if (!allLines && !active) return null;
               return (
                 <path
@@ -340,20 +371,29 @@ export default function BundleOverview({ overview, background, selectedId, onSel
                   data-overview-link={path.key}
                   stroke={active ? UI_COLOR.accent : UI_COLOR.boxLine}
                   strokeWidth={active ? 1.75 : 1.25}
-                  opacity={activeId !== null && !active ? 0.3 : 1}
+                  opacity={(activeId !== null || matches) && !active ? 0.3 : 1}
                   markerEnd={path.kind === "runs" ? "url(#overview-runs)" : undefined}
                 />
               );
             })}
           </svg>
           {COLUMNS.map((column) => {
-            const groups = overview.groups.filter((group) => group.column === column.id);
+            const groups = overview.groups
+              .filter((group) => group.column === column.id)
+              .map((group) => ({
+                ...group,
+                items: problemsFirst(kept ? group.items.filter((item) => kept.has(item.id)) : group.items),
+              }))
+              .filter((group) => group.items.length > 0);
             const open = groups.filter((group) => !folded.has(group.id) || opened.has(group.id));
             const closed = groups.filter((group) => folded.has(group.id) && !opened.has(group.id));
             return (
               <section key={column.id} aria-label={column.title} className="flex min-w-0 flex-col gap-4">
                 <h2 className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{column.title}</h2>
-                {groups.length === 0 && <div className="text-xs text-muted">{column.empty}</div>}
+                {groups.length === 0 && !kept && <div className="text-xs text-muted">{column.empty}</div>}
+                {column.id === "workloads" && kept && kept.size === 0 && (
+                  <div className="text-xs text-muted">No problems found in this bundle.</div>
+                )}
                 {open.map((group) => (
                   <div
                     key={group.id}
@@ -379,6 +419,19 @@ export default function BundleOverview({ overview, background, selectedId, onSel
                     ))}
                   </div>
                 ))}
+                {column.id === "workloads" && hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    data-overview-show-all
+                    onClick={onShowAll}
+                    className="relative z-10 flex h-8 items-center gap-2 rounded-lg border border-line px-3 text-left text-xs text-muted hover:bg-hover hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {hiddenCount} {hiddenCount === 1 ? "resource" : "resources"} with no problems
+                    </span>
+                    <span className="shrink-0">Show all ›</span>
+                  </button>
+                )}
                 {closed.length > 0 && (
                   <div className="flex flex-col gap-2">
                     <h3 className="text-xs text-muted">Not checked yet</h3>
