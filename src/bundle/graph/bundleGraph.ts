@@ -326,7 +326,7 @@ export interface BundleGraphNode {
   taskTypeBadge?: string;
   /** Local sources in a pipeline's `libraries` (pipeline nodes only, when bundleRoot is known). */
   pipelineLibraries?: PipelineLibraryReference[];
-  /** Where a pipeline is defined: its YAML file and the line of its key (pipeline nodes only). */
+  /** Where a resource is defined: its YAML file and the line of its key (job and resource nodes, when bundleRoot is known). */
   sourceFile?: string;
   sourceLine?: number;
   subtitle?: string;
@@ -1006,6 +1006,8 @@ interface SourceIndex {
    * output is not its position in the file.
    */
   taskPositions: Map<string, Map<string, number>>;
+  /** Per `group.key`, the line its key is written on in its file. */
+  resourceKeyLines: Map<string, number>;
   /** Every YAML file read, as written: the anchors for mapping a real target's workspace paths back. */
   sourceDocuments: SourceDocument[];
   /** Every YAML file read, as text. */
@@ -1029,6 +1031,7 @@ async function buildSourceIndex(
   const resourceSourceMap = new Map<string, string>();
   const yamlLocationMaps = new Map<string, YamlLocationMap>();
   const taskPositions = new Map<string, Map<string, number>>();
+  const resourceKeyLines = new Map<string, number>();
   const sourceDocuments: SourceDocument[] = [];
   const sourceTexts = new Map<string, string>();
 
@@ -1036,7 +1039,8 @@ async function buildSourceIndex(
     try {
       const content = await readFile(filePath, "utf-8");
       sourceTexts.set(filePath, content);
-      yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content));
+      const keyLocations: YamlLocationMap = new Map();
+      yamlLocationMaps.set(filePath, parseYamlLocations(filePath, content, keyLocations));
       const yaml = parseYaml(content) as Record<string, unknown> | null;
       // With `<<` merge keys resolved, as the CLI does, so jobs built from YAML anchors are found.
       sourceDocuments.push({ file: filePath, doc: parseYaml(content, { merge: true }) });
@@ -1046,6 +1050,8 @@ async function buildSourceIndex(
           const key = `${resourceGroup}.${resourceKey}`;
           if (resourceSourceMap.has(key)) continue;
           resourceSourceMap.set(key, filePath);
+          const keyLine = keyLocations.get(`resources.${key}`)?.line;
+          if (keyLine) resourceKeyLines.set(key, keyLine);
           const tasks = toRecord(resource).tasks;
           if (Array.isArray(tasks)) taskPositions.set(key, positionsByTaskKey(tasks));
         }
@@ -1078,7 +1084,7 @@ async function buildSourceIndex(
     await parseResourceFile(p);
   }
 
-  return { resourceSourceMap, yamlLocationMaps, taskPositions, sourceDocuments, sourceTexts };
+  return { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines, sourceDocuments, sourceTexts };
 }
 
 /**
@@ -1162,10 +1168,11 @@ export async function extractBundleGraph(
         resourceSourceMap: new Map<string, string>(),
         yamlLocationMaps: new Map<string, YamlLocationMap>(),
         taskPositions: new Map<string, Map<string, number>>(),
+        resourceKeyLines: new Map<string, number>(),
         sourceDocuments: [],
         sourceTexts: new Map<string, string>(),
       };
-  const { resourceSourceMap, yamlLocationMaps, taskPositions } = sourceIndex;
+  const { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines } = sourceIndex;
 
   // A fully resolved real target has workspace paths; read the local files instead.
   const dirOf = (group: string, key: string) => {
@@ -1223,10 +1230,7 @@ export async function extractBundleGraph(
               notebookRule,
             )
           : undefined;
-      const definedAt =
-        resourceNode.resourceGroup === "pipelines" && sourceFilePath
-          ? yamlLocationMaps.get(sourceFilePath)?.get(`resources.pipelines.${resourceNode.resourceKey}`)
-          : undefined;
+      const definedAtLine = resourceKeyLines.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
       addNode({
         id: resourceNode.id,
         kind: resourceKind(resourceNode.resourceGroup),
@@ -1236,8 +1240,8 @@ export async function extractBundleGraph(
         resourceKey: resourceNode.resourceKey,
         data: resourceNode.data,
         ...(pipelineLibraries?.length ? { pipelineLibraries } : {}),
-        ...(resourceNode.resourceGroup === "pipelines" && sourceFilePath ? { sourceFile: sourceFilePath } : {}),
-        ...(definedAt ? { sourceLine: definedAt.line } : {}),
+        ...(sourceFilePath ? { sourceFile: sourceFilePath } : {}),
+        ...(definedAtLine ? { sourceLine: definedAtLine } : {}),
       });
       return;
     }
@@ -1245,6 +1249,8 @@ export async function extractBundleGraph(
     const job = resourceNode.data as Job;
     const tasks = Array.isArray(job.tasks) ? job.tasks : [];
     const jobId = resourceNode.id;
+    const jobSourceFile = resourceSourceMap.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
+    const jobDefinedAtLine = resourceKeyLines.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
 
     addNode({
       id: jobId,
@@ -1273,6 +1279,8 @@ export async function extractBundleGraph(
       compute: getJobComputeSummary(job, tasks, parsedBundle.resources),
       resourceGroup: resourceNode.resourceGroup,
       resourceKey: resourceNode.resourceKey,
+      ...(jobSourceFile ? { sourceFile: jobSourceFile } : {}),
+      ...(jobDefinedAtLine ? { sourceLine: jobDefinedAtLine } : {}),
       data: resourceNode.data,
     });
 

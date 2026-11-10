@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { MODELLED_RESOURCE_GROUPS } from "../../bundle/graph/bundleGraph.js";
 import { TASK_PAYLOAD_KEYS } from "../../bundle/resources/task.js";
+import { OTHER_GROUP, overviewGroupOf } from "../../webview/lib/bundleOverview.js";
 
 /**
  * Fails when `databricks bundle schema` contains a job task type or resource
@@ -123,6 +124,12 @@ async function bundleSchema(): Promise<JsonSchema> {
 }
 
 describe("bundle schema coverage", () => {
+  test("every resource type in the schema has a named group in the bundle overview", async () => {
+    const groups = await schemaResourceGroups();
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.filter((group) => overviewGroupOf(group) === OTHER_GROUP)).toEqual([]);
+  });
+
   test("known gaps are not also listed as modelled", () => {
     const modelled = new Set<string>(MODELLED_RESOURCE_GROUPS);
     expect(KNOWN_RESOURCE_GAPS.filter((group) => modelled.has(group))).toEqual([]);

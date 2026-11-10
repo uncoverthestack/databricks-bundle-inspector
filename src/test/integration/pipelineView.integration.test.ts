@@ -56,7 +56,7 @@ describe(`pipeline view (${cli})`, () => {
     expect(broken).toMatchObject({
       name: "broken_pipeline",
       file: pipelinesFile,
-      line: 15,
+      line: 14,
       catalog: "main",
       schema: "silver",
       mode: "Triggered",
