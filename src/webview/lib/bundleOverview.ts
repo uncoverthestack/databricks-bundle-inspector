@@ -136,6 +136,8 @@ export interface OverviewItem {
   resourceKey?: string;
   /** The value as written, when it differs from the label. */
   expression?: string;
+  /** Its id in the job's Uses row, when that differs from `id` (a job cluster). */
+  usesId?: string;
   /** The job a job cluster belongs to. */
   definedIn?: string;
   /** True when the inspector has checks for this resource group. */
@@ -307,7 +309,7 @@ export function buildBundleOverview(
         // Two jobs can each have a job cluster with the same key. They are different clusters.
         to = `${job.id}.job_clusters.${use.label}`;
         addItem(
-          { id: to, kind: "cluster", label: use.label, source: "job_cluster", definedIn: job.id, hasChecks: false },
+          { id: to, kind: "cluster", label: use.label, source: "job_cluster", definedIn: job.id, usesId: use.id, hasChecks: false },
           group,
         );
       } else if (bundleItemIds.has(use.id)) {

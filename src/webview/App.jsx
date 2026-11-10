@@ -22,7 +22,7 @@ import {
   resolveVariableForTarget,
 } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
-import { parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
+import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
@@ -3040,14 +3040,18 @@ export default function App({
     return [...seen];
   }, [graph, jobKeys]);
 
-  // A bundle with no job or pipeline opens on its overview: every resource it has.
+  // Every bundle opens on its overview: each resource it has, and what uses what.
   const bundleOverview = useMemo(() => {
-    if (!graph || jobKeys.length > 0 || pipelineKeys.length > 0) return null;
+    if (!graph) return null;
     const overview = buildBundleOverview(graph, inspectorIssues, (value) =>
       displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
     );
     return overview.groups.length > 0 ? overview : null;
-  }, [graph, jobKeys, pipelineKeys, inspectorIssues, effectiveResolutionBundle, effectiveTargetName]);
+  }, [graph, inspectorIssues, effectiveResolutionBundle, effectiveTargetName]);
+  // The box kept selected on the overview. It stays while a job or pipeline is open, so
+  // going back shows the overview as it was left.
+  const [overviewSelectedId, setOverviewSelectedId] = useState(null);
+  const atOverview = !selection && bundleOverview !== null;
 
   if (!graph) {
     return (
@@ -3088,6 +3092,10 @@ export default function App({
   function selectPanelItem(item) {
     onTelemetry?.("issue_item_selected");
     if (item.taskId) {
+      // From the overview, a task's problem opens the task's job first.
+      const jobId = graph.nodes.find((node) => node.id === item.taskId)?.parentId;
+      const job = graph.nodes.find((node) => node.id === jobId);
+      if (!selectedJobKey && job?.resourceKey) setUserSelection({ group: "jobs", key: job.resourceKey });
       selectTaskNode(item.taskId);
     }
     if (item.file && onOpenFile) {
@@ -3110,6 +3118,32 @@ export default function App({
     setSearchValue("");
     setActiveHeaderPanel(null);
     setGraphMode("all");
+  }
+
+  function showOverview() {
+    setUserSelection({ group: "overview" });
+    setSelectedNodeId(null);
+    setFocusRequest(null);
+    setSearchValue("");
+    setActiveHeaderPanel(null);
+    setGraphMode("all");
+  }
+
+  /** Opens a job or pipeline from its box on the overview. */
+  function openFromOverview(item) {
+    if (!item.resourceKey || (item.kind !== "job" && item.kind !== "pipeline")) return;
+    if (item.kind === "job") {
+      // A selected warehouse, cluster or secret scope the job uses stays lit in its Uses row.
+      const kept = overviewSelectedId
+        ? bundleOverview?.groups.flatMap((group) => group.items).find((entry) => entry.id === overviewSelectedId)
+        : undefined;
+      const usesIt =
+        kept && bundleOverview.links.some((link) => link.from === item.id && link.to === kept.id && link.kind === "uses");
+      if (usesIt) setUsesPin({ job: item.resourceKey, id: kept.usesId ?? kept.id });
+    }
+    // With nothing selected, the opened box is the one selected on the way back.
+    if (!overviewSelectedId) setOverviewSelectedId(item.id);
+    handleSelectionChange({ group: item.kind === "job" ? "jobs" : "pipelines", key: item.resourceKey });
   }
 
   function handleGraphModeChange(value) {
@@ -3159,9 +3193,14 @@ export default function App({
         selectedTarget={inspectedTargetMode === "target" ? requestedTarget : undefined}
         onTargetChange={onSelectTarget}
         pickerGroups={pickerGroups}
-        selectedValue={selection ? selectionValue(selection) : ""}
-        onPickerChange={(value) => handleSelectionChange(parseSelectionValue(value))}
+        selectedValue={selection ? selectionValue(selection) : atOverview ? OVERVIEW_VALUE : ""}
+        onPickerChange={(value) =>
+          value === OVERVIEW_VALUE ? showOverview() : handleSelectionChange(parseSelectionValue(value))
+        }
+        overviewValue={bundleOverview ? OVERVIEW_VALUE : undefined}
+        onBack={selection && bundleOverview ? showOverview : undefined}
         showTaskTools={!pipelineView}
+        showSearch={!atOverview}
         searchValue={searchValue}
         searchItems={searchItems}
         onSearchChange={setSearchValue}
@@ -3224,7 +3263,7 @@ export default function App({
         </div>
       )}
 
-      {!pipelineView && (
+      {!pipelineView && !atOverview && (
         <UsesRow
           items={jobUses}
           activeId={usesHoverId ?? usesPinnedId}
@@ -3259,8 +3298,15 @@ export default function App({
                 displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName)
               }
             />
-          ) : bundleOverview ? (
-            <BundleOverview overview={bundleOverview} background={rfStyle} onOpenFile={onOpenFile} />
+          ) : atOverview ? (
+            <BundleOverview
+              overview={bundleOverview}
+              background={rfStyle}
+              selectedId={overviewSelectedId}
+              onSelect={setOverviewSelectedId}
+              onOpen={openFromOverview}
+              onOpenFile={onOpenFile}
+            />
           ) : flowNodes.length === 0 ? (
             <div
               className="flex h-full flex-col items-center justify-center gap-2 text-center"
