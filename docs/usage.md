@@ -31,6 +31,8 @@ To see the graph:
 
 The graph opens in a new editor panel, on the [bundle overview](#bundle-overview). From a resource file, it opens on the job or pipeline your cursor is in, otherwise the file's first job, or its first pipeline when it has no jobs. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
 
+In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The number on a task counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count.
+
 The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipelines**. A bundle with only pipelines opens on its first pipeline. A pipeline shows what its YAML says, with nothing read from its table code:
 
 - **Run by a job in this bundle**: each job with a `pipeline_task` that points at it. Click one to see that job's tasks. Jobs outside the bundle that run it aren't known.
