@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react";
 import { Info, LocateFixed } from "lucide-react";
 import AppHeader from "./components/AppHeader";
+import BundleOverview from "./components/BundleOverview";
 import HeaderChipPanel from "./components/HeaderChipPanel";
 import PipelineView from "./components/PipelineView";
 import SeverityIcon from "./components/SeverityIcon";
@@ -27,6 +28,7 @@ import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { isDrawnDependency, taskLevels } from "./lib/taskLevels";
+import { buildBundleOverview } from "./lib/bundleOverview";
 import { buildJobUses } from "./lib/jobUses";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
@@ -3038,6 +3040,15 @@ export default function App({
     return [...seen];
   }, [graph, jobKeys]);
 
+  // A bundle with no job or pipeline opens on its overview: every resource it has.
+  const bundleOverview = useMemo(() => {
+    if (!graph || jobKeys.length > 0 || pipelineKeys.length > 0) return null;
+    const overview = buildBundleOverview(graph, inspectorIssues, (value) =>
+      displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+    );
+    return overview.groups.length > 0 ? overview : null;
+  }, [graph, jobKeys, pipelineKeys, inspectorIssues, effectiveResolutionBundle, effectiveTargetName]);
+
   if (!graph) {
     return (
       <div
@@ -3248,6 +3259,8 @@ export default function App({
                 displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName)
               }
             />
+          ) : bundleOverview ? (
+            <BundleOverview overview={bundleOverview} background={rfStyle} onOpenFile={onOpenFile} />
           ) : flowNodes.length === 0 ? (
             <div
               className="flex h-full flex-col items-center justify-center gap-2 text-center"

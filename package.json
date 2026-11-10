@@ -390,7 +390,8 @@
     "test:e2e:targets:watch": "npm run test:e2e:targets -- --pause-ms 8000",
     "test:e2e:sidebar": "npm run test:e2e -- --suite sidebar --fixture src/test/e2e/fixtures/targets",
     "test:e2e:workspace-changes": "npm run test:e2e -- --suite workspaceChanges --fixture src/test/e2e/fixtures/workspace-changes",
-    "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes"
+    "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes",
+    "test:e2e:overview": "npm run test:e2e -- --suite overview --fixture src/test/e2e/fixtures/overview"
   },
   "lint-staged": {
     "*.ts": "eslint --fix"

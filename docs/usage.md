@@ -49,6 +49,14 @@ Above a job's graph, the **Uses** row lists the SQL warehouses, clusters and sec
 
 A pipeline has the short summary only.
 
+### Bundle overview
+
+A bundle with no jobs and no pipelines opens on the **bundle overview**: every resource in the bundle as a box, in two columns. **Workloads**, on the left, holds what runs or shows data, such as dashboards and apps. **What they use**, on the right, holds compute, secrets and data.
+
+A line joins two boxes where the bundle's own settings link them, such as a cluster whose settings read a secret scope. Point at a box to light up what it is linked to; click it to keep that lit and see its details, with a link to the line that defines it. Click it again, or press Esc, to clear.
+
+A group marked **not checked yet** holds resource types the inspector shows but has no checks for; see [Supported resources](supported-resources.md). `databricks bundle validate` still checks their settings. A bundle with more than 15 boxes folds those groups to one line each, and draws lines only for the box you point at or select. In a narrow panel the two columns stack and no lines are drawn.
+
 ## Sidebar
 
 The **Databricks Bundle Inspector** icon in the Activity Bar (a cube with a magnifier) opens a sidebar with two sections.
