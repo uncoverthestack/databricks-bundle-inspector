@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
-import { connectBrowser } from "./browser.js";
+import { connectBrowser, panelSizer, STANDARD_PANEL, type PanelSizer } from "./browser.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const jobSelector = 'header select:not([aria-label="Target"])';
@@ -311,6 +311,8 @@ export function graphRefreshSuite() {
       await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
 
       const browser = await connectBrowser(process.env.E2E_CDP_PORT);
+      // The panel's size for this test, so it does not depend on the window this machine opened.
+      let sizer: PanelSizer | undefined;
       try {
         let graph: { sessionId: string; contextId: number } | undefined;
         const evaluate = async (expression: string) => {
@@ -351,22 +353,11 @@ export function graphRefreshSuite() {
 
         // The bundle has jobs and a pipeline, and still opens on its overview.
         await waitFor(async () => (await read()).boxes.includes(PIPELINE), "the overview's boxes");
-        // Lines need the two columns side by side; a small window (as on CI) stacks them and
-        // draws none. Widen the panel just for this check.
-        {
-          const { targetInfos: pages } = await browser.call("Target.getTargets");
-          const workbench = pages.find((item: any) => item.type === "page" && item.url.includes("workbench"));
-          const { sessionId: wideSession } = await browser.call("Target.attachToTarget", { targetId: workbench.targetId, flatten: true });
-          try {
-            const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, wideSession)).result.value;
-            const panelWidth = await evaluate("innerWidth");
-            await browser.call("Emulation.setDeviceMetricsOverride", { width: 1200 + windowWidth - panelWidth, height: 900, deviceScaleFactor: 1, mobile: false }, wideSession);
-            await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
-          } finally {
-            await browser.call("Emulation.clearDeviceMetricsOverride", {}, wideSession);
-            await browser.call("Target.detachFromTarget", { sessionId: wideSession });
-          }
-        }
+        // Lines need the two columns side by side. A small window (as on CI) would stack
+        // them and draw none, so the test sets the panel's size itself.
+        sizer = await panelSizer(browser, () => evaluate("({ width: innerWidth, height: innerHeight })"));
+        await sizer.set(STANDARD_PANEL);
+        await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
         const opened = await read();
         assert.equal(opened.place, "overview");
         for (const id of ["resources.jobs.alpha_first", JOB, PIPELINE]) assert.ok(opened.boxes.includes(id), `a box for ${id}`);
@@ -406,14 +397,10 @@ export function graphRefreshSuite() {
         await waitFor(async () => { const now = await read(); return now.place === "overview" && now.boxes.length > 0; }, "the overview from the picker");
         assert.deepEqual((await read()).pressed, [JOB], "the selection is kept");
 
-        // A short window makes the overview scroll. Coming back from a job keeps the place.
-        const { targetInfos: windows } = await browser.call("Target.getTargets");
-        const workbench = windows.find((item: any) => item.type === "page" && item.url.includes("workbench"));
-        const { sessionId: windowSession } = await browser.call("Target.attachToTarget", { targetId: workbench.targetId, flatten: true });
+        // A short panel makes the overview scroll. Coming back from a job keeps the place.
         const scroller = `document.querySelector("[data-overview-scroller]")`;
-        try {
-          const width = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, windowSession)).result.value;
-          await browser.call("Emulation.setDeviceMetricsOverride", { width, height: 420, deviceScaleFactor: 1, mobile: false }, windowSession);
+        {
+          await sizer.set({ width: STANDARD_PANEL.width, height: 320 });
           await waitFor(async () => await evaluate(`${scroller}.scrollHeight > ${scroller}.clientHeight + 40`), "an overview that scrolls");
           await evaluate(`${scroller}.scrollTop = ${scroller}.scrollHeight; ${scroller}.dispatchEvent(new Event("scroll"))`);
           await sleep(200);
@@ -442,11 +429,9 @@ export function graphRefreshSuite() {
           await sleep(200);
           assert.equal(await evaluate(`${scroller}.scrollTop`), 0, "the overview is still at the top");
           assert.deepEqual((await read()).pressed, [lowest], "the selection is kept");
-        } finally {
-          await browser.call("Emulation.clearDeviceMetricsOverride", {}, windowSession);
-          await browser.call("Target.detachFromTarget", { sessionId: windowSession });
         }
       } finally {
+        await sizer?.release().catch(() => undefined);
         browser.close();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       }

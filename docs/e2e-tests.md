@@ -29,6 +29,14 @@ bundle, switching during a save refresh, and closing a graph during an inspectio
 It restores its settings and files, and is skipped on Windows because the wrapper
 requires `/bin/sh`.
 
+A test that reads the panel's layout (columns, lines, what fits) must set the panel's
+size itself with `panelSizer` from `src/test/e2e/suite/browser.ts`, and never rely on the
+window VS Code opens. The CI machines' windows are small enough to stack the bundle
+overview's columns, so a test that passes in a wide local window can fail there. The
+overview suite runs at `STANDARD_PANEL` and each test that needs another size goes back to
+it. Before queueing a change to such a test, run the E2E workflow on the branch
+(Actions, E2E, Run workflow).
+
 For target tests that need a login, pass a profile from your Databricks config:
 
 ```sh

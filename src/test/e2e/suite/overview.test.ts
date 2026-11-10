@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
-import { connectBrowser, type Browser } from "./browser.js";
+import { connectBrowser, panelSizer, STANDARD_PANEL, type Browser, type PanelSize, type PanelSizer } from "./browser.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -43,6 +43,7 @@ export function overviewSuite() {
     let browser: Browser;
     let sessionId = "";
     let contextId = 0;
+    let sizer: PanelSizer;
     const shots = path.resolve(__dirname, "../overview");
 
     const evaluate = async (expression: string) => {
@@ -56,6 +57,7 @@ export function overviewSuite() {
       unchecked: string[];
       details: string | null;
     }>;
+    const panelSize = () => evaluate("({ width: innerWidth, height: innerHeight })") as Promise<PanelSize>;
     const click = (id: string) =>
       evaluate(`document.querySelector('[data-overview-item="${id}"]').click()`);
 
@@ -77,7 +79,8 @@ export function overviewSuite() {
             const world = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-overview-test" }, attached.sessionId);
             sessionId = attached.sessionId;
             contextId = world.executionContextId;
-            if (await evaluate(`document.querySelectorAll("[data-overview-item]").length`) > 0) return true;
+            // Not a hidden copy: a frame that is not on screen has the browser's default 300x150.
+            if (await evaluate(`document.querySelectorAll("[data-overview-item]").length > 0 && !(innerWidth === 300 && innerHeight === 150)`)) return true;
           }
           await browser.call("Target.detachFromTarget", { sessionId: attached.sessionId });
         }
@@ -96,13 +99,31 @@ export function overviewSuite() {
       await browser.call("Target.detachFromTarget", { sessionId: pageSession });
     };
 
+    /**
+     * Brings the panel back to the front and attaches to the page on screen. A test that
+     * opens the YAML leaves a text editor over the panel, and VS Code may rebuild the
+     * panel's page when it shows it again.
+     */
+    const showPanel = async () => {
+      for (const group of vscode.window.tabGroups.all) {
+        const texts = group.tabs.filter((tab) => tab.input instanceof vscode.TabInputText);
+        if (texts.length > 0) await vscode.window.tabGroups.close(texts);
+      }
+      await openOverview();
+    };
+
     before(async function () {
       assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:overview");
       browser = await connectBrowser(process.env.E2E_CDP_PORT);
       await openOverview();
+      // Every test runs at one panel size, whatever window this machine opened. Tests that
+      // need another size set it, and go back to this one.
+      sizer = await panelSizer(browser, panelSize);
+      await sizer.set(STANDARD_PANEL);
     });
 
     after(async () => {
+      await sizer?.release().catch(() => undefined);
       browser?.close();
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
@@ -180,34 +201,11 @@ export function overviewSuite() {
     });
 
     it("a narrow panel stacks the columns, draws no lines and never scrolls sideways", async () => {
-      const { targetInfos } = await browser.call("Target.getTargets");
-      const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
-      const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
-      // An earlier test opened the YAML beside the panel; it would take the room the panel needs.
-      for (const group of vscode.window.tabGroups.all) {
-        const texts = group.tabs.filter((tab) => tab.input instanceof vscode.TabInputText);
-        if (texts.length > 0) await vscode.window.tabGroups.close(texts);
-      }
-      // VS Code may rebuild the panel's page as it shows it again, leaving the one attached
-      // to hidden at the browser's default 300x150. Attach again to the page on screen.
-      await openOverview();
-      await waitFor(async () => (await evaluate("innerWidth !== 300 || innerHeight !== 150")) === true, "the panel shown again");
-      await sleep(300);
-      const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, pageSession)).result.value;
-      const panelWidth = await evaluate("innerWidth");
+      await showPanel();
       const measured: any[] = [];
       try {
         for (const width of [350, 420, 600]) {
-          // Other editors beside the panel share what the window loses, so measure and adjust.
-          let windowAt = width + windowWidth - panelWidth;
-          for (let attempt = 0; attempt < 6; attempt++) {
-            await browser.call("Emulation.setDeviceMetricsOverride", { width: windowAt, height: 800, deviceScaleFactor: 1, mobile: false }, pageSession);
-            await sleep(400);
-            const now = await evaluate("innerWidth");
-            if (Math.abs(now - width) <= 2) break;
-            windowAt += width - now;
-          }
-          console.log("narrow panel", width, "->", await evaluate("innerWidth"), "window", windowAt);
+          await sizer.set({ width, height: STANDARD_PANEL.height });
           await sleep(300);
           measured.push(await evaluate(`(() => {
             const columns = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect());
@@ -226,8 +224,7 @@ export function overviewSuite() {
           await screenshot(`overview-narrow-${width}`);
         }
       } finally {
-        await browser.call("Emulation.clearDeviceMetricsOverride", {}, pageSession);
-        await browser.call("Target.detachFromTarget", { sessionId: pageSession });
+        await sizer.set(STANDARD_PANEL);
       }
       assert.deepEqual(measured.map((shown) => shown.width), [350, 420, 600], "the panel reached each width");
       for (const shown of measured) {
@@ -241,36 +238,15 @@ export function overviewSuite() {
     });
 
     it("in a short panel, the details never push the overview out of view", async () => {
-      const { targetInfos } = await browser.call("Target.getTargets");
-      const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
-      const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
-      // A text editor opened by an earlier test covers the panel and would take the room it needs.
-      for (const group of vscode.window.tabGroups.all) {
-        const texts = group.tabs.filter((tab) => tab.input instanceof vscode.TabInputText);
-        if (texts.length > 0) await vscode.window.tabGroups.close(texts);
-      }
-      // VS Code may rebuild the panel's page as it shows it again, leaving the one attached
-      // to hidden at the browser's default 300x150. Attach again to the page on screen.
-      await openOverview();
-      await waitFor(async () => (await evaluate("innerWidth !== 300 || innerHeight !== 150")) === true, "the panel shown again");
-      await sleep(300);
+      await showPanel();
       await click(CLUSTER);
       await waitFor(async () => (await read()).details === CLUSTER, "the cluster's details");
-      const window = (await browser.call("Runtime.evaluate", { expression: "({ width: innerWidth, height: innerHeight })", returnByValue: true }, pageSession)).result.value;
-      const panelHeight = await evaluate("innerHeight");
-      const target = 200;
+      // A panel 200px tall, as with the Problems panel open below a small editor, and under
+      // 1024px wide, so the details sit below the boxes and not beside them.
+      const short = { width: 700, height: 200 };
       let shown: any;
       try {
-        // A panel 200px tall, as with the Problems panel open below a small editor. Other
-        // parts of the window share what it loses, so measure and adjust.
-        let windowHeight = target + window.height - panelHeight;
-        for (let attempt = 0; attempt < 6; attempt++) {
-          await browser.call("Emulation.setDeviceMetricsOverride", { width: window.width, height: windowHeight, deviceScaleFactor: 1, mobile: false }, pageSession);
-          await sleep(400);
-          const now = await evaluate("innerHeight");
-          if (Math.abs(now - target) <= 2) break;
-          windowHeight += target - now;
-        }
+        await sizer.set(short);
         await sleep(300);
         shown = await evaluate(`(() => {
           const scroller = document.querySelector("[data-overview-scroller]");
@@ -279,11 +255,10 @@ export function overviewSuite() {
         })()`);
         await screenshot("overview-short-selected");
       } finally {
-        await browser.call("Emulation.clearDeviceMetricsOverride", {}, pageSession);
-        await browser.call("Target.detachFromTarget", { sessionId: pageSession });
         await click(CLUSTER);
+        await sizer.set(STANDARD_PANEL);
       }
-      assert.ok(Math.abs(shown.height - target) <= 2, `the panel reached ${target}px tall: ${JSON.stringify(shown)}`);
+      assert.ok(Math.abs(shown.height - short.height) <= 2, `the panel reached ${short.height}px tall: ${JSON.stringify(shown)}`);
       assert.ok(shown.overview >= 40, `part of the overview stays in view: ${JSON.stringify(shown)}`);
       assert.ok(shown.detailsBottom <= shown.height + 1, `the details stay inside the panel: ${JSON.stringify(shown)}`);
     });
