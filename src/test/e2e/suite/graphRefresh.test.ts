@@ -350,7 +350,23 @@ export function graphRefreshSuite() {
         }, "the bundle overview");
 
         // The bundle has jobs and a pipeline, and still opens on its overview.
-        await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
+        await waitFor(async () => (await read()).boxes.includes(PIPELINE), "the overview's boxes");
+        // Lines need the two columns side by side; a small window (as on CI) stacks them and
+        // draws none. Widen the panel just for this check.
+        {
+          const { targetInfos: pages } = await browser.call("Target.getTargets");
+          const workbench = pages.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+          const { sessionId: wideSession } = await browser.call("Target.attachToTarget", { targetId: workbench.targetId, flatten: true });
+          try {
+            const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, wideSession)).result.value;
+            const panelWidth = await evaluate("innerWidth");
+            await browser.call("Emulation.setDeviceMetricsOverride", { width: 1200 + windowWidth - panelWidth, height: 900, deviceScaleFactor: 1, mobile: false }, wideSession);
+            await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
+          } finally {
+            await browser.call("Emulation.clearDeviceMetricsOverride", {}, wideSession);
+            await browser.call("Target.detachFromTarget", { sessionId: wideSession });
+          }
+        }
         const opened = await read();
         assert.equal(opened.place, "overview");
         for (const id of ["resources.jobs.alpha_first", JOB, PIPELINE]) assert.ok(opened.boxes.includes(id), `a box for ${id}`);
