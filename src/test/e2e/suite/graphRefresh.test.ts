@@ -403,8 +403,15 @@ export function graphRefreshSuite() {
         const kept = (await read()).boxes;
         assert.ok(kept.includes(PIPELINE), `the box with the problem stays: ${JSON.stringify(kept)}`);
         assert.ok(kept.includes(JOB), `the job that runs it stays too: ${JSON.stringify(kept)}`);
+        // Pressing Issues again opens or closes its list, as the list's x does; the view stays filtered.
+        const listOpen = `Boolean(document.querySelector('button[aria-label="Close Bundle Issues"]'))`;
+        assert.equal(await evaluate(listOpen), true, "the first press opens the Issues list");
+        await evaluate(`${issues}.click()`);
+        await waitFor(async () => (await evaluate(listOpen)) === false, "the second press to close the list");
+        assert.deepEqual((await read()).boxes, kept, "closing the list keeps the view on Issues");
+        await evaluate(`${issues}.click()`);
+        await waitFor(async () => (await evaluate(listOpen)) === true, "the third press to open the list again");
         await evaluate(`document.querySelector('[data-graph-mode="all"]').click()`);
-        await evaluate(`[...document.querySelectorAll('button[aria-label^="Close"]')].forEach((button) => button.click())`);
         await waitFor(async () => (await read()).boxes.length === everyBox, "every box again");
 
         // The Open link on a job's box goes to that job's graph.

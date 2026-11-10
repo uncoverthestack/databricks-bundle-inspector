@@ -3188,6 +3188,12 @@ export default function App({
   function handleGraphModeChange(value) {
     if (value !== graphMode) onTelemetry?.("graph_mode_changed", { mode: value });
     setGraphMode(value);
+    // Issues pressed again while on Issues: open or close its list, as the list's x does.
+    // The view stays on Issues either way.
+    if (value === "issues" && graphMode === "issues") {
+      setActiveHeaderPanel((panel) => (panel === "issues" ? null : "issues"));
+      return;
+    }
     setActiveHeaderPanel(value === "issues" ? "issues" : null);
   }
 
