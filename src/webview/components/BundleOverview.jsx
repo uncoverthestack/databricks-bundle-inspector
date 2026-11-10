@@ -159,10 +159,12 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
               key={`${link.from}->${link.to}`}
               type="button"
               onClick={() => onSelect(other.id)}
-              className="flex items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-xs text-fg hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              title={other.label}
+              className="flex min-w-0 max-w-full items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-xs text-fg hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <span className="shrink-0 font-medium">{other.label}</span>
-              <span className="min-w-0 truncate text-muted">
+              {/* A long name is cut short and never widens the details; the title has it in full. */}
+              <span className="min-w-0 max-w-[65%] shrink-0 truncate font-medium">{other.label}</span>
+              <span className="min-w-0 flex-1 truncate text-muted">
                 {link.taskNames.length > 0 ? link.taskNames.join(", ") : typeWords(other)}
               </span>
             </button>
@@ -272,11 +274,6 @@ export default function BundleOverview({
     [overview],
   );
   const selected = selectedId ? itemById.get(selectedId) : undefined;
-  // A box can go away while pointed at or focused (a save removed it); it then gets no
-  // blur, so ignore an id the overview no longer has, or every box would fade.
-  const hovered = hoverId && itemById.has(hoverId) ? hoverId : null;
-  const activeId = hovered ?? (selected ? selected.id : null);
-  const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : new Set()), [overview, activeId]);
   const matches = useMemo(() => findMatches(overview, find), [overview, find]);
   const foundLit = useMemo(() => (matches ? litByFind(overview, matches) : null), [overview, matches]);
   // Issues keeps the selected box too, so picking a search result never selects a hidden box.
@@ -296,6 +293,20 @@ export default function BundleOverview({
       [...baseFolded].filter((id) => !overview.groups.find((group) => group.id === id)?.items.some((item) => keep.has(item.id))),
     );
   }, [baseFolded, foundLit, kept, overview]);
+  // The boxes on screen: not filtered out by Issues, and not inside a group still folded.
+  const shownIds = useMemo(() => {
+    const ids = new Set();
+    for (const group of overview.groups) {
+      if (folded.has(group.id) && !opened.has(group.id)) continue;
+      for (const item of group.items) if (!kept || kept.has(item.id)) ids.add(item.id);
+    }
+    return ids;
+  }, [overview, folded, opened, kept]);
+  // A box can leave the screen while pointed at or focused (a save removed it, Issues
+  // filtered it out); it then gets no blur. Ignore it, or every other box would fade.
+  const hovered = hoverId && shownIds.has(hoverId) ? hoverId : null;
+  const activeId = hovered ?? (selected ? selected.id : null);
+  const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : new Set()), [overview, activeId]);
   const allLines = showsAllLines(overview);
 
   const register = useCallback((id, element) => {

@@ -403,6 +403,23 @@ export function graphRefreshSuite() {
         const kept = (await read()).boxes;
         assert.ok(kept.includes(PIPELINE), `the box with the problem stays: ${JSON.stringify(kept)}`);
         assert.ok(kept.includes(JOB), `the job that runs it stays too: ${JSON.stringify(kept)}`);
+        // A box with keyboard focus that Issues filters out must not leave the rest faded
+        // (found by a random-action stress run): go back to All, focus a healthy job, press Issues.
+        await evaluate(`document.querySelector('[data-graph-mode="all"]').click()`);
+        await waitFor(async () => (await read()).boxes.length === everyBox, "All again");
+        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: true }, graph!.sessionId);
+        try {
+          await evaluate(`document.querySelector('[data-overview-item="resources.jobs.alpha_first"]').focus()`);
+          await sleep(200);
+          await evaluate(`${issues}.click()`);
+          await waitFor(async () => (await read()).boxes.length < everyBox, "Issues filtering again");
+          await sleep(200);
+          const fadedCount = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].filter((box) => Number(getComputedStyle(box).opacity) < 1).length`);
+          assert.equal(fadedCount, 0, "no box fades for a focused box that Issues filtered out");
+        } finally {
+          await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, graph!.sessionId);
+        }
+
         // Pressing Issues again opens or closes its list, as the list's x does; the view stays filtered.
         const listOpen = `Boolean(document.querySelector('button[aria-label="Close Bundle Issues"]'))`;
         assert.equal(await evaluate(listOpen), true, "the first press opens the Issues list");
