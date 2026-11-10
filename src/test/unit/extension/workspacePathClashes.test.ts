@@ -104,6 +104,17 @@ describe("edge cases from the CLI's rule", () => {
     expect(clashes()).toEqual([]);
   });
 
+  // #378: paths are made relative by cutting the root prefix; a root with a trailing
+  // separator, or a path the walk didn't produce, must give the same answer.
+  test("a root with a trailing separator, and a path outside the root, give the same result", () => {
+    write({ "src/dup.py": PY, "src/dup.sql": SQL });
+    const files = filesUnder(root).files;
+    const expected = [{ kind: "files", workspacePath: "src/dup", files: ["src/dup.py", "src/dup.sql"] }];
+    expect(findWorkspacePathClashes(root + path.sep, files, () => true, "contains")).toEqual(expected);
+    const outside = path.join(path.dirname(root), "elsewhere", "dup.py");
+    expect(findWorkspacePathClashes(root, [...files, outside], () => true, "contains")).toEqual(expected);
+  });
+
   test("the same names in different folders don't clash", () => {
     write({ "a/load.py": PY, "b/load.sql": SQL });
     expect(clashes()).toEqual([]);

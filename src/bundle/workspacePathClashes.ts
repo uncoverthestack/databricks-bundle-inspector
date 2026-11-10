@@ -41,13 +41,26 @@ export function findWorkspacePathClashes(
   uploaded: (file: string) => boolean,
   rule: NotebookHeaderRule,
 ): WorkspacePathClash[] {
-  const relativeOf = (file: string) => path.relative(bundleRoot, file).split(path.sep).join("/");
+  // Each path is made relative once. The walk only returns paths under the bundle root, so
+  // cutting that prefix matches path.relative at a fraction of the cost (#378: 87 ms to 6 ms
+  // for 13,000 files).
+  const prefix = bundleRoot.endsWith(path.sep) ? bundleRoot : bundleRoot + path.sep;
+  const toRelative = (file: string) =>
+    (file.startsWith(prefix) ? file.slice(prefix.length) : path.relative(bundleRoot, file)).split(path.sep).join("/");
+  const relativeByFile = new Map(files.map((file) => [file, toRelative(file)]));
+  const relativeOf = (file: string) => relativeByFile.get(file) ?? toRelative(file);
+  // Appending, not copying: a copy per insert grows with the square of the files under one name.
+  const add = (map: Map<string, string[]>, key: string, file: string) => {
+    const list = map.get(key);
+    if (list) list.push(file);
+    else map.set(key, [file]);
+  };
   // Names first: only files that could share a workspace path are filtered by the sync
   // rules and have their first line read.
   const byWorkspacePath = new Map<string, string[]>();
   for (const file of files) {
     const candidate = notebookWorkspacePath(relativeOf(file));
-    if (candidate !== undefined) byWorkspacePath.set(candidate, [...(byWorkspacePath.get(candidate) ?? []), file]);
+    if (candidate !== undefined) add(byWorkspacePath, candidate, file);
   }
   if (byWorkspacePath.size === 0) return [];
   const plainByPath = new Map<string, string>();
@@ -56,7 +69,7 @@ export function findWorkspacePathClashes(
     const relative = relativeOf(file);
     if (byWorkspacePath.has(relative)) plainByPath.set(relative, file);
     for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) {
-      if (byWorkspacePath.has(dir)) folders.set(dir, [...(folders.get(dir) ?? []), file]);
+      if (byWorkspacePath.has(dir)) add(folders, dir, file);
     }
   }
 
