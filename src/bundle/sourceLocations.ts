@@ -49,6 +49,7 @@ function walkYamlNode(
   filePath: string,
   lineCounter: LineCounter,
   locations: YamlLocationMap,
+  keyLocations?: YamlLocationMap,
 ): void {
   if (!node || !currentPath) return;
 
@@ -61,12 +62,16 @@ function walkYamlNode(
     for (const item of node.items) {
       const keyValue = scalarValue(item.key);
       if (!keyValue) continue;
+      const path = childPath(currentPath, keyValue);
+      const keyLocation = keyLocations ? getLocation(filePath, lineCounter, item.key as Node) : undefined;
+      if (keyLocation) keyLocations!.set(path, keyLocation);
       walkYamlNode(
         item.value as Node | null | undefined,
-        childPath(currentPath, keyValue),
+        path,
         filePath,
         lineCounter,
         locations,
+        keyLocations,
       );
     }
     return;
@@ -80,14 +85,22 @@ function walkYamlNode(
         filePath,
         lineCounter,
         locations,
+        keyLocations,
       );
     });
   }
 }
 
+/**
+ * Where each value in a YAML file starts, by its path (`resources.jobs.daily.tasks[0]`).
+ *
+ * @param keyLocations When given, filled with where each key is written. A value's own
+ *   location is where its content starts, which for a block is the line after its key.
+ */
 export function parseYamlLocations(
   filePath: string,
   content: string,
+  keyLocations?: YamlLocationMap,
 ): YamlLocationMap {
   const lineCounter = new LineCounter();
   const document = parseDocument(content, { lineCounter });
@@ -105,6 +118,7 @@ export function parseYamlLocations(
       filePath,
       lineCounter,
       locations,
+      keyLocations,
     );
   }
 

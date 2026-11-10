@@ -27,6 +27,8 @@ export interface UsesItem {
   /** Tasks in this job that use it, in graph order. */
   taskIds: string[];
   taskNames: string[];
+  /** A cluster defined in the job itself (`job_clusters`), so it belongs to that job only. */
+  jobCluster?: true;
 }
 
 interface GraphNode {
@@ -58,7 +60,10 @@ const KIND_ORDER: Record<UsesKind, number> = { warehouse: 0, cluster: 1, secret_
  *
  * @param resolve Turns a `${var.*}` expression into the value for the shown target, when known.
  */
-function computeName(node: GraphNode, resolve: (value: string) => string): { label: string; source: UsesSource; expression?: string } {
+function computeName(
+  node: GraphNode,
+  resolve: (value: string) => string,
+): { label: string; source: UsesSource; expression?: string; jobCluster?: true } {
   const expression = typeof node.data?.expression === "string" ? node.data.expression : undefined;
   if (node.data?.serverless === true) return { label: "Serverless or inherited", source: "default" };
   if (expression) {
@@ -71,7 +76,7 @@ function computeName(node: GraphNode, resolve: (value: string) => string): { lab
     return { label: resolve(expression), source: "fixed", expression };
   }
   // A job cluster, named by `job_cluster_key`, is defined in the job itself.
-  if (node.data?.jobCluster === true) return { label: node.displayName, source: "bundle" };
+  if (node.data?.jobCluster === true) return { label: node.displayName, source: "bundle", jobCluster: true };
   return { label: node.displayName, source: "fixed" };
 }
 
