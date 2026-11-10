@@ -115,17 +115,35 @@ const MEASURE = String.raw`(() => {
     return { text: text.textContent, ratio: ratio(over(rgba(getComputedStyle(text).fill), bg), bg) };
   });
 
+  // The bundle overview: its boxes' borders and its lines, against the canvas they sit on.
+  const overviewCanvas = document.querySelector("[data-overview-canvas]");
+  const overviewBg = overviewCanvas ? backgroundOf(overviewCanvas) : { r: 0, g: 0, b: 0, a: 1 };
+  const overviewBoxes = [...document.querySelectorAll("[data-overview-item]")].map((box) => ({
+    name: box.dataset.overviewItem,
+    border: ratio(over(rgba(getComputedStyle(box).borderTopColor), overviewBg), overviewBg),
+    dimmed: opacityOf(box) < 1,
+  }));
+  const overviewLines = [...document.querySelectorAll("[data-overview-link]")].map((line) => {
+    const stroke = rgba(getComputedStyle(line).stroke);
+    return {
+      name: line.dataset.overviewLink,
+      ratio: ratio(over({ ...stroke, a: stroke.a * Number(getComputedStyle(line).opacity) }, overviewBg), overviewBg),
+    };
+  });
+
   return {
     kind: document.body.dataset.vscodeThemeKind,
     flowMode: pane?.classList.contains("light") ? "light" : pane?.classList.contains("dark") ? "dark" : "none",
     surface: hex(rgba(getComputedStyle(document.body).backgroundColor)),
     header: hex(rgba(getComputedStyle(document.querySelector("header")).backgroundColor)),
-    canvas: hex(rgba(getComputedStyle(pane).backgroundColor)),
+    canvas: pane ? hex(rgba(getComputedStyle(pane).backgroundColor)) : null,
     panelVar: getComputedStyle(document.documentElement).getPropertyValue("--vscode-sideBar-background"),
     editorBackground: hex(rgba(getComputedStyle(document.documentElement).getPropertyValue("--vscode-editor-background"))),
     texts,
     boxes,
     edgeLabels,
+    overviewBoxes,
+    overviewLines,
   };
 })()`;
 
@@ -273,6 +291,28 @@ export function themesSuite() {
       return measured;
     };
 
+    /**
+     * Runs `measure` with the panel 1200px wide, then puts the window back. The overview
+     * needs that room for its two columns and the line between them; the CI machines'
+     * windows are too small for it otherwise.
+     */
+    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => {
+      const width = 1200;
+      const { targetInfos } = await browser.call("Target.getTargets");
+      const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+      const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+      try {
+        const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, pageSession)).result.value;
+        const panelWidth = await evaluate("innerWidth");
+        await browser.call("Emulation.setDeviceMetricsOverride", { width: width + windowWidth - panelWidth, height: 900, deviceScaleFactor: 1, mobile: false }, pageSession);
+        await waitFor(async () => Math.abs((await evaluate("innerWidth")) - width) <= 2, `a ${width}px panel`);
+        return await measure();
+      } finally {
+        await browser.call("Emulation.clearDeviceMetricsOverride", {}, pageSession);
+        await browser.call("Target.detachFromTarget", { sessionId: pageSession });
+      }
+    };
+
     const clickTask = (name: string) =>
       evaluate(`[...document.querySelectorAll(".react-flow__node")].find(node => node.textContent.includes(${JSON.stringify(name)}))?.click()`);
 
@@ -303,7 +343,34 @@ export function themesSuite() {
         await screenshot(`${theme.name} selected`);
         await clickTask("missing_step");
         await sleep(200);
-        report[theme.name] = { plain, selected, onScreen };
+
+        // The same bars for the bundle overview: back to it, measure, select a box, measure.
+        const overviewJob = `document.querySelector('[data-overview-item="resources.jobs.theme_job"]')`;
+        const { overview, overviewSelected, sideBySide } = await atOverviewWidth(async () => {
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await evaluate(`document.querySelectorAll("[data-overview-link]").length`)) > 0, "the overview and its line");
+          // Going back selects the job that was open. Clear it for the plain picture.
+          await evaluate(`${overviewJob}.getAttribute("aria-pressed") === "true" && ${overviewJob}.click()`);
+          await waitFor(async () => (await evaluate(`document.querySelector("[data-overview-details]") === null`)) === true, "the plain overview");
+          // The boxes fade from one colour to the next. Measure once that has finished.
+          await sleep(300);
+          const overview = await evaluate(MEASURE);
+          const sideBySide = await evaluate(`(() => {
+            const [left, right] = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect().left);
+            return right > left;
+          })()`);
+          await screenshot(`${theme.name} overview`);
+          await evaluate(`${overviewJob}.click()`);
+          await waitFor(async () => (await evaluate(`Boolean(document.querySelector("[data-overview-details]"))`)) === true, "the job's details");
+          // The boxes fade from one colour to the next. Measure once that has finished.
+          await sleep(300);
+          const overviewSelected = await evaluate(MEASURE);
+          await screenshot(`${theme.name} overview selected`);
+          return { overview, overviewSelected, sideBySide };
+        });
+        await evaluate(`document.querySelector("[data-overview-open]").click()`);
+        await waitFor(async () => (await evaluate(`document.querySelectorAll(".react-flow__node").length`)) >= 5, "the job's graph again");
+        report[theme.name] = { plain, selected, onScreen, overview, overviewSelected };
 
         assert.equal(plain.flowMode, theme.mode, "React Flow's colour mode");
         assert.equal(plain.surface, plain.editorBackground, "the page uses the editor background");
@@ -316,6 +383,17 @@ export function themesSuite() {
         // WCAG 1.4.11: a component's outline needs 3:1 against what is next to it.
         const faint = [...plain.boxes, ...selected.boxes].filter((box: any) => !box.dimmed && box.border < 3);
         assert.deepEqual(faint, [], "task box borders against the canvas");
+
+        assert.ok(overview.overviewBoxes.length >= 2, "the overview shows its boxes");
+        // The run must measure the line too, so the window has to fit the two columns.
+        assert.equal(sideBySide, true, "the overview's two columns are side by side");
+        assert.ok(overview.overviewLines.length > 0, "the overview draws its line");
+        const overviewTexts = [...overview.texts, ...overviewSelected.texts].filter((text: any) => !text.dimmed && failsAa(text));
+        assert.deepEqual(overviewTexts, [], "overview text below WCAG AA");
+        const faintBoxes = [...overview.overviewBoxes, ...overviewSelected.overviewBoxes].filter((box: any) => !box.dimmed && box.border < 3);
+        assert.deepEqual(faintBoxes, [], "overview box borders against the canvas");
+        const faintLines = [...overview.overviewLines, ...overviewSelected.overviewLines].filter((line: any) => line.ratio < 3);
+        assert.deepEqual(faintLines, [], "overview lines against the canvas");
       });
     }
 
