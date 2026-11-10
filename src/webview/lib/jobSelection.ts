@@ -1,27 +1,34 @@
-/** What the graph shows: one job's tasks, or one pipeline. */
+/** One job's tasks, or one pipeline. */
 export interface GraphSelection {
   group: "jobs" | "pipelines";
   key: string;
 }
 
+/** Where the panel is: the bundle overview, or inside one job or pipeline. */
+export type PanelPlace = GraphSelection | { group: "overview" };
+
+/** The picker's value for the bundle overview. */
+export const OVERVIEW_VALUE = "overview";
+
 /**
- * What the graph shows: the user's pick, else what the extension asked for (the resource
- * under the cursor), else the first job, else the first pipeline. Each only while the
- * bundle still has it. `undefined` when the bundle has neither jobs nor pipelines.
+ * The job or pipeline the panel is inside, or `undefined` for the bundle overview.
+ * The user's pick comes first, else what the extension asked for (the resource under
+ * the cursor), each only while the bundle still has it. Otherwise the panel shows the
+ * overview: every bundle opens there.
  */
 export function resolveSelection(
   jobKeys: string[],
   pipelineKeys: string[],
-  userSelection?: GraphSelection,
+  userSelection?: PanelPlace,
   initialSelection?: GraphSelection,
 ): GraphSelection | undefined {
-  const exists = (selection?: GraphSelection) =>
+  const exists = (selection?: PanelPlace): selection is GraphSelection =>
     selection !== undefined &&
+    selection.group !== "overview" &&
     (selection.group === "jobs" ? jobKeys : pipelineKeys).includes(selection.key);
+  if (userSelection?.group === "overview") return undefined;
   if (exists(userSelection)) return userSelection;
   if (exists(initialSelection)) return initialSelection;
-  if (jobKeys.length > 0) return { group: "jobs", key: jobKeys[0]! };
-  if (pipelineKeys.length > 0) return { group: "pipelines", key: pipelineKeys[0]! };
   return undefined;
 }
 

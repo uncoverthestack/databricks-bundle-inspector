@@ -171,6 +171,8 @@ export function themesSuite() {
             sessionId = attached.sessionId;
             contextId = world.executionContextId;
             if (await evaluate(`document.querySelectorAll(".react-flow__node").length`) >= 5) return true;
+            // The panel opens on the bundle overview. The job's Open link goes to its graph.
+            await evaluate(`document.querySelector("[data-overview-open]")?.click()`);
           }
           await browser.call("Target.detachFromTarget", { sessionId: attached.sessionId });
         }

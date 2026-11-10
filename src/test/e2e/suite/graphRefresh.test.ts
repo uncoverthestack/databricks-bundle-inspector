@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
 import { connectBrowser } from "./browser.js";
@@ -297,6 +298,103 @@ export function graphRefreshSuite() {
       }
     });
 
+    it("opens on the bundle overview from the bundle file, goes into a job and comes back", async function () {
+      assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      await waitFor(
+        async () => !vscode.window.tabGroups.all.some((group) => group.tabs.some((tab) => tab.input instanceof vscode.TabInputWebview)),
+        "the previous graph to close",
+      );
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
+      await idle();
+      await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+
+      const browser = await connectBrowser(process.env.E2E_CDP_PORT);
+      try {
+        let graph: { sessionId: string; contextId: number } | undefined;
+        const evaluate = async (expression: string) => {
+          const result = await browser.call("Runtime.evaluate", { expression, contextId: graph!.contextId, returnByValue: true }, graph!.sessionId);
+          assert.ok(!result.exceptionDetails, "graph script must execute");
+          return result.result?.value;
+        };
+        const select = `document.querySelector(${JSON.stringify(jobSelector)})`;
+        const JOB = "resources.jobs.alpha_second";
+        const PIPELINE = "resources.pipelines.alpha_pipeline";
+        const read = () => evaluate(`({
+          place: ${select}?.value,
+          boxes: [...document.querySelectorAll("[data-overview-item]")].map((box) => box.dataset.overviewItem),
+          pressed: [...document.querySelectorAll('[data-overview-item][aria-pressed="true"]')].map((box) => box.dataset.overviewItem),
+          links: [...document.querySelectorAll("[data-overview-link]")].map((link) => link.dataset.overviewLink),
+          back: Boolean(document.querySelector("[data-back-to-overview]")),
+          search: Boolean(document.querySelector("header input")),
+          taskGraph: Boolean(document.querySelector(".react-flow")),
+          pipelineDetails: Boolean(document.querySelector('[aria-label="Pipeline details"]')),
+        })`);
+        await waitFor(async () => {
+          const { targetInfos } = await browser.call("Target.getTargets");
+          for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {
+            const { sessionId } = await browser.call("Target.attachToTarget", { targetId: target.targetId, flatten: true });
+            const { frameTree } = await browser.call("Page.getFrameTree", {}, sessionId);
+            const frames: any[] = [];
+            const visit = (node: any) => { frames.push(node.frame); for (const child of node.childFrames ?? []) visit(child); };
+            visit(frameTree);
+            for (const frame of frames) {
+              const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-overview-place-test" }, sessionId);
+              graph = { sessionId, contextId: executionContextId };
+              if (await evaluate(`document.querySelectorAll("[data-overview-item]").length`) > 0) return true;
+            }
+            await browser.call("Target.detachFromTarget", { sessionId });
+          }
+          return false;
+        }, "the bundle overview");
+
+        // The bundle has jobs and a pipeline, and still opens on its overview.
+        await waitFor(async () => (await read()).links.includes(`${JOB}->${PIPELINE}`), "the line from the job to the pipeline it runs");
+        const opened = await read();
+        assert.equal(opened.place, "overview");
+        for (const id of ["resources.jobs.alpha_first", JOB, PIPELINE]) assert.ok(opened.boxes.includes(id), `a box for ${id}`);
+        assert.deepEqual(
+          { pressed: opened.pressed, back: opened.back, search: opened.search, taskGraph: opened.taskGraph },
+          { pressed: [], back: false, search: false, taskGraph: false },
+        );
+
+        // A picture of the overview on a bundle with jobs, for a look by eye. Not compared.
+        const { targetInfos: pages } = await browser.call("Target.getTargets");
+        const page = pages.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+        if (page) {
+          const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+          const { data } = await browser.call("Page.captureScreenshot", { format: "png" }, pageSession);
+          const shots = path.resolve(__dirname, "../overview");
+          mkdirSync(shots, { recursive: true });
+          writeFileSync(path.join(shots, "overview-with-jobs.png"), Buffer.from(data, "base64"));
+          await browser.call("Target.detachFromTarget", { sessionId: pageSession });
+        }
+
+        // The Open link on a job's box goes to that job's graph.
+        await evaluate(`document.querySelector('[data-overview-open="${JOB}"]').click()`);
+        await waitFor(async () => { const now = await read(); return now.place === "jobs:alpha_second" && now.taskGraph; }, "alpha_second's graph");
+        const inJob = await read();
+        assert.deepEqual({ back: inJob.back, search: inJob.search, boxes: inJob.boxes }, { back: true, search: true, boxes: [] });
+
+        // The back arrow returns to the overview, with the job that was open selected.
+        await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+        await waitFor(async () => (await read()).place === "overview", "the overview again");
+        const back = await read();
+        assert.deepEqual({ pressed: back.pressed, taskGraph: back.taskGraph, back: back.back }, { pressed: [JOB], taskGraph: false, back: false });
+
+        // The picker goes to a pipeline and back to the overview too.
+        await evaluate(`(()=>{const s=${select};s.value='pipelines:alpha_pipeline';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => (await read()).pipelineDetails, "the pipeline view");
+        await evaluate(`(()=>{const s=${select};s.value='overview';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await waitFor(async () => { const now = await read(); return now.place === "overview" && now.boxes.length > 0; }, "the overview from the picker");
+        assert.deepEqual((await read()).pressed, [JOB], "the selection is kept");
+      } finally {
+        browser.close();
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      }
+    });
+
     it("a short webview never scrolls the page: the Issues list fits, and its items scroll inside it", async function () {
       assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
       const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
@@ -319,7 +417,8 @@ export function graphRefreshSuite() {
           assert.ok(!result.exceptionDetails, "graph script must execute");
           return result.result?.value;
         };
-        const panel = `document.querySelector('[aria-label="Close Issues in This Job"]')?.closest('div.absolute')`;
+        // Opened from the bundle file, so the panel is on the bundle overview with every issue listed.
+        const panel = `document.querySelector('[aria-label="Close Bundle Issues"]')?.closest('div.absolute')`;
         await waitFor(async () => {
           const { targetInfos } = await browser.call("Target.getTargets");
           for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {

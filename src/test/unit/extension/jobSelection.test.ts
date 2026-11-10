@@ -19,15 +19,20 @@ describe("resolveSelection", () => {
     expect(resolveSelection(["job-a"], ["p", "q"], undefined, pipeline("q"))).toEqual(pipeline("q"));
   });
 
-  test("falls back to the first job, then the first pipeline", () => {
-    expect(resolveSelection(["job-a", "job-b"], ["p"], job("gone"), pipeline("gone"))).toEqual(job("job-a"));
-    expect(resolveSelection([], ["p", "q"], job("gone"), job("gone"))).toEqual(pipeline("p"));
+  test("opens on the overview when nothing is picked or asked for", () => {
+    expect(resolveSelection(["job-a", "job-b"], ["p"])).toBeUndefined();
+    expect(resolveSelection(["job-a"], [], job("gone"), pipeline("gone"))).toBeUndefined();
+    expect(resolveSelection([], ["p", "q"], job("gone"), job("gone"))).toBeUndefined();
+  });
+
+  test("going back to the overview beats what the extension asked for", () => {
+    expect(resolveSelection(["job-a"], [], { group: "overview" }, job("job-a"))).toBeUndefined();
   });
 
   test("a key in the other group doesn't count", () => {
     // A job and a pipeline may share a key; the group decides which one is meant.
-    expect(resolveSelection(["shared"], ["other"], pipeline("shared"))).toEqual(job("shared"));
-    expect(resolveSelection(["a"], ["shared"], job("shared"))).toEqual(job("a"));
+    expect(resolveSelection(["shared"], ["other"], pipeline("shared"))).toBeUndefined();
+    expect(resolveSelection(["a"], ["shared"], job("shared"), job("a"))).toEqual(job("a"));
   });
 
   test("gives nothing when the bundle has neither", () => {
