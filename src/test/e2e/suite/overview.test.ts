@@ -366,7 +366,13 @@ export function overviewSuite() {
       try {
         await evaluate(`document.querySelector('[data-overview-item="${VOLUME}"]').focus()`);
         await waitFor(async () => (await fadedIds()).length > 0, "the focused volume lighting its links");
-        const withoutVolume = original.replace(/\n  volumes:\n(    .*\n|      .*\n)+/, "\n");
+        // Line by line, keeping the file's own line endings: Windows checks it out with \r\n.
+        const eol = original.includes("\r\n") ? "\r\n" : "\n";
+        const lines = original.split(/\r?\n/);
+        const start = lines.findIndex((line) => line === "  volumes:");
+        let end = start + 1;
+        while (start >= 0 && end < lines.length && /^ {4}/.test(lines[end]!)) end++;
+        const withoutVolume = start < 0 ? original : [...lines.slice(0, start), ...lines.slice(end)].join(eol);
         assert.notEqual(withoutVolume, original, "the fixture still has its volume");
         await vscode.workspace.fs.writeFile(file, Buffer.from(withoutVolume, "utf8"));
         await waitFor(async () => !(await read()).boxes.some((box) => box.id === VOLUME), "the volume gone after the save");
