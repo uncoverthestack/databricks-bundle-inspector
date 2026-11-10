@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { kindMeta } from "../lib/kindMeta";
 import {
   foldedGroupIds,
@@ -19,6 +19,11 @@ const COLUMNS = [
   { id: "uses", title: "What they use", empty: "No compute, secrets or data in this bundle." },
 ];
 
+/** A job or pipeline of this bundle has its own graph to open. */
+function opens(item) {
+  return (item.kind === "job" || item.kind === "pipeline") && item.source === "bundle" && Boolean(item.resourceKey);
+}
+
 function problemCount(item) {
   return item.problems.errors + item.problems.warnings;
 }
@@ -34,12 +39,13 @@ function problemWords(item) {
 }
 
 /** One box: a resource, or something the bundle names from outside. */
-function OverviewRow({ item, note, state, onHover, onToggle, register }) {
+function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register }) {
   const meta = kindMeta(item.kind);
   const problems = problemCount(item);
   const selected = state === "selected";
   const related = state === "related";
-  return (
+  const canOpen = Boolean(onOpen) && opens(item);
+  const row = (
     <button
       ref={(element) => register(item.id, element)}
       type="button"
@@ -53,6 +59,17 @@ function OverviewRow({ item, note, state, onHover, onToggle, register }) {
       onFocus={() => onHover(item.id)}
       onBlur={() => onHover(null)}
       onClick={() => onToggle(item.id)}
+      onDoubleClick={canOpen ? () => onOpen(item) : undefined}
+      onKeyDown={
+        canOpen
+          ? (event) => {
+              // Enter opens the job or pipeline. Space selects it, as on every box.
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              onOpen(item);
+            }
+          : undefined
+      }
       style={{
         borderColor: item.problems.errors
           ? UI_COLOR.error
@@ -66,9 +83,9 @@ function OverviewRow({ item, note, state, onHover, onToggle, register }) {
           : UI_COLOR.widget,
         opacity: state === "dimmed" ? 0.48 : 1,
       }}
-      className={`relative z-10 flex h-10 w-full items-center gap-2.5 rounded-xl border px-3 text-left transition-colors hover:border-fg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        namedOutside(item) ? "border-dashed" : "border-solid"
-      }`}
+      className={`relative z-10 flex h-10 w-full items-center gap-2.5 rounded-xl border pl-3 text-left transition-colors hover:border-fg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        canOpen ? "pr-[4.25rem]" : "pr-3"
+      } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       {TAGGED_KINDS.has(item.kind) && (
         <span
@@ -78,8 +95,8 @@ function OverviewRow({ item, note, state, onHover, onToggle, register }) {
           {meta.code}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{item.label}</span>
-      {note && <span className="max-w-[55%] shrink-0 truncate text-[11px] text-muted">{note}</span>}
+      <span className="max-w-[65%] shrink-0 truncate text-[13px] font-medium text-fg">{item.label}</span>
+      <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
       {problems > 0 && (
         <span
           title={problemWords(item)}
@@ -92,10 +109,30 @@ function OverviewRow({ item, note, state, onHover, onToggle, register }) {
       )}
     </button>
   );
+  if (!canOpen) return row;
+  // The Open link sits on the box, not in it: a button cannot hold another button.
+  return (
+    <div className="relative">
+      {row}
+      <button
+        type="button"
+        data-overview-open={item.id}
+        aria-label={`Open ${typeWords(item)} ${item.label}`}
+        title={`Open the ${typeWords(item)}'s graph`}
+        onClick={() => onOpen(item)}
+        onMouseEnter={() => onHover(item.id)}
+        onMouseLeave={() => onHover(null)}
+        style={{ opacity: state === "dimmed" ? 0.48 : 1 }}
+        className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-md px-1.5 py-1 text-[11px] text-link hover:bg-hover hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        Open ›
+      </button>
+    </div>
+  );
 }
 
 /** What the selected box is, where it is defined, and what it is linked to. */
-function OverviewDetails({ overview, item, itemById, onSelect, onOpenFile, onClose }) {
+function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFile, onClose }) {
   const links = linksOf(overview, item.id);
   const uses = links.filter((link) => link.from === item.id);
   const usedBy = links.filter((link) => link.to === item.id);
@@ -146,6 +183,16 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpenFile, onClo
         </button>
       </div>
       <div className="text-xs leading-5 text-fg-soft">{sourceSentence(item)}</div>
+      {onOpen && opens(item) && (
+        <button
+          type="button"
+          data-overview-details-open
+          onClick={() => onOpen(item)}
+          className="self-start rounded-md border border-line bg-widget px-2.5 py-1 text-xs font-medium text-fg hover:border-line-strong hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          Open {typeWords(item)} graph
+        </button>
+      )}
       {item.file && (
         <button
           type="button"
@@ -176,9 +223,9 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpenFile, onClo
  * them. Pointing at a box, or focusing it, lights up what it is linked to; clicking keeps
  * it lit and shows its details. In a narrow panel the columns stack and no lines are drawn.
  */
-export default function BundleOverview({ overview, background, onOpenFile }) {
+export default function BundleOverview({ overview, background, selectedId, onSelect, onOpen, onOpenFile }) {
   const [hoverId, setHoverId] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  const setSelectedId = onSelect;
   const [opened, setOpened] = useState(() => new Set());
   const [paths, setPaths] = useState([]);
   const canvasRef = useRef(null);
@@ -250,7 +297,14 @@ export default function BundleOverview({ overview, background, onOpenFile }) {
     return "dimmed";
   };
 
-  const toggle = (id) => setSelectedId((current) => (current === id ? null : id));
+  const toggle = (id) => setSelectedId(selectedId === id ? null : id);
+
+  // Back from a job or pipeline: the box that was selected is in view again.
+  useEffect(() => {
+    if (selectedId) rowElements.current.get(selectedId)?.scrollIntoView?.({ block: "nearest" });
+    // Only when the overview appears, not on every selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -315,6 +369,7 @@ export default function BundleOverview({ overview, background, onOpenFile }) {
                         state={stateOf(item)}
                         onHover={setHoverId}
                         onToggle={toggle}
+                        onOpen={onOpen}
                         register={register}
                       />
                     ))}
@@ -350,6 +405,7 @@ export default function BundleOverview({ overview, background, onOpenFile }) {
           item={selected}
           itemById={itemById}
           onSelect={setSelectedId}
+          onOpen={onOpen}
           onOpenFile={onOpenFile}
           onClose={() => setSelectedId(null)}
         />

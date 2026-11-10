@@ -29,7 +29,7 @@ To see the graph:
 1. Open the bundle file, or a resource file it loads through `include` (for example `resources/etl_job.yml`).
 2. Click **Open Graph** (the cube and magnifier button in the editor title bar), or right-click and choose **Open Graph**. In the Command Palette it is **Databricks Bundle Inspector: Open Graph**.
 
-The graph opens in a new editor panel. From a resource file, it opens on the job or pipeline your cursor is in, otherwise the file's first job, or its first pipeline when it has no jobs. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
+The graph opens in a new editor panel, on the [bundle overview](#bundle-overview). From a resource file, it opens on the job or pipeline your cursor is in, otherwise the file's first job, or its first pipeline when it has no jobs. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
 
 The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipelines**. A bundle with only pipelines opens on its first pipeline. A pipeline shows what its YAML says, with nothing read from its table code:
 
@@ -51,7 +51,9 @@ A pipeline has the short summary only.
 
 ### Bundle overview
 
-A bundle with no jobs and no pipelines opens on the **bundle overview**: every resource in the bundle as a box, in two columns. **Workloads**, on the left, holds what runs or shows data, such as dashboards and apps. **What they use**, on the right, holds compute, secrets and data.
+Every bundle opens on the **bundle overview**: every resource in the bundle as a box, in two columns. **Workloads**, on the left, holds what runs or shows data, such as jobs, pipelines, dashboards and apps. **What they use**, on the right, holds compute, secrets and data.
+
+A job or pipeline box has an **Open** link that goes to its graph; double-click the box, or press Enter on it, to do the same. Inside a job or pipeline, the arrow beside the bundle name goes back to the overview, with the box you left selected. The picker in the header lists **Bundle overview** above the jobs and pipelines. A warehouse, cluster or secret scope selected on the overview stays lit in the Uses row of a job you open that uses it. On the overview, **Issues** lists every problem in the bundle; picking a task's problem opens its job.
 
 A line joins two boxes where the bundle's own settings link them, such as a cluster whose settings read a secret scope. Point at a box to light up what it is linked to; click it to keep that lit and see its details, with a link to the line that defines it. Click it again, or press Esc, to clear.
 

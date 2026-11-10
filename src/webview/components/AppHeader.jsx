@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ClipboardCopy } from "lucide-react";
+import { ArrowLeft, ChevronDown, ClipboardCopy } from "lucide-react";
 import GraphModeToggle from "./GraphModeToggle";
 import SearchBox from "./SearchBox";
 import { UI_COLOR } from "../lib/vscodeTheme";
@@ -15,7 +15,12 @@ export default function AppHeader({
   pickerGroups = [],
   selectedValue,
   onPickerChange,
+  // The picker's value for the bundle overview, when the bundle has one.
+  overviewValue,
+  // Set inside a job or pipeline: goes back to the bundle overview.
+  onBack,
   showTaskTools = true,
+  showSearch = true,
   searchValue,
   searchItems,
   onSearchChange,
@@ -32,9 +37,23 @@ export default function AppHeader({
       className="flex h-12 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-3 md:px-4"
       style={{ backgroundColor: UI_COLOR.panel }}
     >
-      <span className="min-w-0 truncate text-sm font-semibold text-fg">
-        {bundleName ?? "Databricks Bundle Inspector"}
-      </span>
+      {onBack ? (
+        <button
+          type="button"
+          onClick={onBack}
+          data-back-to-overview
+          aria-label="Back to bundle overview"
+          title="Back to bundle overview"
+          className="-ml-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold text-fg outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <ArrowLeft size={14} className="shrink-0 text-fg-soft" />
+          <span className="truncate">{bundleName ?? "Databricks Bundle Inspector"}</span>
+        </button>
+      ) : (
+        <span className="min-w-0 truncate text-sm font-semibold text-fg">
+          {bundleName ?? "Databricks Bundle Inspector"}
+        </span>
+      )}
       {targetOptions.length > 0 ? (
         <select
           aria-label="Target"
@@ -64,14 +83,15 @@ export default function AppHeader({
         </span>
       )}
       {options.length > 0 && <span className="text-xs text-muted">·</span>}
-      {options.length > 1 ? (
+      {options.length > 1 || (options.length === 1 && overviewValue) ? (
         <select
           aria-label="Job or pipeline"
           value={selectedValue ?? ""}
           onChange={(e) => onPickerChange(e.target.value)}
           className="min-w-0 max-w-56 shrink cursor-pointer truncate rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
         >
-          {pickerGroups.length > 1
+          {overviewValue && <option value={overviewValue}>Bundle overview</option>}
+          {pickerGroups.length > 1 || overviewValue
             ? pickerGroups.map((group) => (
                 <optgroup key={group.label} label={group.label}>
                   {group.options.map((o) => (
@@ -93,12 +113,17 @@ export default function AppHeader({
       {/* Search and the Issues toggle work on a job's tasks; a pipeline has none. */}
       {showTaskTools ? (
         <>
-          <SearchBox
-            value={searchValue}
-            items={searchItems}
-            onChange={onSearchChange}
-            onSelect={onSearchSelect}
-          />
+          {/* Search finds a job's tasks, so the bundle overview has none. */}
+          {showSearch ? (
+            <SearchBox
+              value={searchValue}
+              items={searchItems}
+              onChange={onSearchChange}
+              onSelect={onSearchSelect}
+            />
+          ) : (
+            <div className="flex-1" />
+          )}
           <GraphModeToggle
             value={graphMode}
             onChange={onGraphModeChange}
