@@ -166,8 +166,16 @@ export function alwaysOnSuite() {
         );
         assert.equal(shown.view?.tooltipList, undefined);
       } finally {
-        // The bundle stays forgotten for the rest of the run: only opening a folder looks for new ones.
+        // The extension finds a bundle file that appears while the folder is open, so the
+        // restored one comes back. Wait for that here: otherwise the next test starts with
+        // one bundle or two depending on timing (#386).
         await vscode.workspace.fs.writeFile(bundleUri, original);
+        let back = await statusBar();
+        for (let waited = 0; !back.view?.text?.includes(" 2 bundles: ") && waited < 30_000; waited += 250) {
+          await sleep(250);
+          back = await statusBar();
+        }
+        assert.match(back.view?.text ?? "", / 2 bundles: /, "the restored bundle is found again");
       }
     });
 
@@ -175,8 +183,14 @@ export function alwaysOnSuite() {
       const openTabs = () => vscode.window.tabGroups.all.flatMap((group) => group.tabs);
       assert.deepEqual(openTabs(), [], "this test starts with every editor closed");
 
-      await vscode.commands.executeCommand("databricksBundleInspector.statusBarAction");
-      for (let waited = 0; openTabs().length === 0 && waited < 15_000; waited += 250) await sleep(250);
+      // The folder has two bundles, so the item first asks which one. Not awaited: the
+      // command waits for that answer, which the loop gives by taking the first in the list.
+      const clicked = vscode.commands.executeCommand("databricksBundleInspector.statusBarAction");
+      for (let waited = 0; openTabs().length === 0 && waited < 15_000; waited += 250) {
+        await sleep(250);
+        await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+      }
+      await clicked;
       if (PAUSE_MS > 0) await sleep(PAUSE_MS);
 
       assert.ok(
