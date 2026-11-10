@@ -98,6 +98,12 @@ async function main() {
       "--disable-extensions",
       // Keeps test runs out of PostHog.
       "--disable-telemetry",
+      // Keep drawing while another window covers this one. Chromium pauses a covered window,
+      // so layout tests that resize the panel time out when someone works on the machine
+      // while the tests run (seen on 2026-11-10).
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
+      "--disable-background-timer-throttling",
       ...(debuggingPort ? [`--remote-debugging-port=${debuggingPort}`] : []),
       // Otherwise VS Code reads the PATH back from the login shell.
       ...(suite === "cliNotFound" ? ["--force-disable-user-env"] : []),

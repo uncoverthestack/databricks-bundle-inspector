@@ -29,6 +29,8 @@ export default function AppHeader({
   graphMode,
   onGraphModeChange,
   issueCount,
+  // Set when Issues has nothing to filter: it is dimmed, and this says why (issue 390).
+  nothingToFilterNote,
   onCopyReviewSummary,
   onCopyReviewReport,
 }) {
@@ -130,6 +132,7 @@ export default function AppHeader({
             value={graphMode}
             onChange={onGraphModeChange}
             issueCount={issueCount}
+            nothingToFilterNote={nothingToFilterNote}
           />
         </>
       ) : (

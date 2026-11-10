@@ -2930,6 +2930,21 @@ export default function App({
       issues: selectedJobKey ? "Issues in This Job" : "Bundle Issues",
     }[activeHeaderPanel] ?? "";
   const selectedJobIssueCount = headerPanelItems.issues?.length ?? 0;
+  // With no problem in view, Issues has nothing to filter: it is dimmed and says why, and a
+  // panel that opened on Issues (from the status bar) shows All instead. A save that adds a
+  // problem makes Issues available again without switching to it (issue 390).
+  const nothingToFilterNote =
+    graph && selectedJobIssueCount === 0
+      ? selectedJobKey
+        ? "No problems found in this job."
+        : "No problems found in this bundle."
+      : undefined;
+  // Adjusted while rendering, as React advises for state that follows other state: the
+  // guard makes it run once, and the panel never shows a frame in the empty Issues view.
+  if (nothingToFilterNote && (graphMode === "issues" || activeHeaderPanel === "issues")) {
+    if (graphMode === "issues") setGraphMode("all");
+    if (activeHeaderPanel === "issues") setActiveHeaderPanel(null);
+  }
   const parameterFlowsForJob = useMemo(
     () => buildParameterFlowsForJob(graph, jobNode),
     [graph, jobNode],
@@ -3173,6 +3188,12 @@ export default function App({
   function handleGraphModeChange(value) {
     if (value !== graphMode) onTelemetry?.("graph_mode_changed", { mode: value });
     setGraphMode(value);
+    // Issues pressed again while on Issues: open or close its list, as the list's x does.
+    // The view stays on Issues either way.
+    if (value === "issues" && graphMode === "issues") {
+      setActiveHeaderPanel((panel) => (panel === "issues" ? null : "issues"));
+      return;
+    }
     setActiveHeaderPanel(value === "issues" ? "issues" : null);
   }
 
@@ -3232,6 +3253,7 @@ export default function App({
         graphMode={graphMode}
         onGraphModeChange={handleGraphModeChange}
         issueCount={selectedJobIssueCount}
+        nothingToFilterNote={nothingToFilterNote}
         onCopyReviewSummary={
           onCopyReviewSummary ? handleCopyReviewSummary : undefined
         }
