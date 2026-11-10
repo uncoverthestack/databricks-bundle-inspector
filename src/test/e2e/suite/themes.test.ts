@@ -291,6 +291,28 @@ export function themesSuite() {
       return measured;
     };
 
+    /**
+     * Runs `measure` with the panel 1200px wide, then puts the window back. The overview
+     * needs that room for its two columns and the line between them; the CI machines'
+     * windows are too small for it otherwise.
+     */
+    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => {
+      const width = 1200;
+      const { targetInfos } = await browser.call("Target.getTargets");
+      const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
+      const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+      try {
+        const windowWidth = (await browser.call("Runtime.evaluate", { expression: "innerWidth", returnByValue: true }, pageSession)).result.value;
+        const panelWidth = await evaluate("innerWidth");
+        await browser.call("Emulation.setDeviceMetricsOverride", { width: width + windowWidth - panelWidth, height: 900, deviceScaleFactor: 1, mobile: false }, pageSession);
+        await waitFor(async () => Math.abs((await evaluate("innerWidth")) - width) <= 2, `a ${width}px panel`);
+        return await measure();
+      } finally {
+        await browser.call("Emulation.clearDeviceMetricsOverride", {}, pageSession);
+        await browser.call("Target.detachFromTarget", { sessionId: pageSession });
+      }
+    };
+
     const clickTask = (name: string) =>
       evaluate(`[...document.querySelectorAll(".react-flow__node")].find(node => node.textContent.includes(${JSON.stringify(name)}))?.click()`);
 
@@ -324,21 +346,28 @@ export function themesSuite() {
 
         // The same bars for the bundle overview: back to it, measure, select a box, measure.
         const overviewJob = `document.querySelector('[data-overview-item="resources.jobs.theme_job"]')`;
-        await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
-        await waitFor(async () => (await evaluate(`document.querySelectorAll("[data-overview-link]").length`)) > 0, "the overview and its line");
-        // Going back selects the job that was open. Clear it for the plain picture.
-        await evaluate(`${overviewJob}.getAttribute("aria-pressed") === "true" && ${overviewJob}.click()`);
-        await waitFor(async () => (await evaluate(`document.querySelector("[data-overview-details]") === null`)) === true, "the plain overview");
-        // The boxes fade from one colour to the next. Measure once that has finished.
-        await sleep(300);
-        const overview = await evaluate(MEASURE);
-        await screenshot(`${theme.name} overview`);
-        await evaluate(`${overviewJob}.click()`);
-        await waitFor(async () => (await evaluate(`Boolean(document.querySelector("[data-overview-details]"))`)) === true, "the job's details");
-        // The boxes fade from one colour to the next. Measure once that has finished.
-        await sleep(300);
-        const overviewSelected = await evaluate(MEASURE);
-        await screenshot(`${theme.name} overview selected`);
+        const { overview, overviewSelected, sideBySide } = await atOverviewWidth(async () => {
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await evaluate(`document.querySelectorAll("[data-overview-link]").length`)) > 0, "the overview and its line");
+          // Going back selects the job that was open. Clear it for the plain picture.
+          await evaluate(`${overviewJob}.getAttribute("aria-pressed") === "true" && ${overviewJob}.click()`);
+          await waitFor(async () => (await evaluate(`document.querySelector("[data-overview-details]") === null`)) === true, "the plain overview");
+          // The boxes fade from one colour to the next. Measure once that has finished.
+          await sleep(300);
+          const overview = await evaluate(MEASURE);
+          const sideBySide = await evaluate(`(() => {
+            const [left, right] = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect().left);
+            return right > left;
+          })()`);
+          await screenshot(`${theme.name} overview`);
+          await evaluate(`${overviewJob}.click()`);
+          await waitFor(async () => (await evaluate(`Boolean(document.querySelector("[data-overview-details]"))`)) === true, "the job's details");
+          // The boxes fade from one colour to the next. Measure once that has finished.
+          await sleep(300);
+          const overviewSelected = await evaluate(MEASURE);
+          await screenshot(`${theme.name} overview selected`);
+          return { overview, overviewSelected, sideBySide };
+        });
         await evaluate(`document.querySelector("[data-overview-open]").click()`);
         await waitFor(async () => (await evaluate(`document.querySelectorAll(".react-flow__node").length`)) >= 5, "the job's graph again");
         report[theme.name] = { plain, selected, onScreen, overview, overviewSelected };
@@ -356,6 +385,9 @@ export function themesSuite() {
         assert.deepEqual(faint, [], "task box borders against the canvas");
 
         assert.ok(overview.overviewBoxes.length >= 2, "the overview shows its boxes");
+        // The run must measure the line too, so the window has to fit the two columns.
+        assert.equal(sideBySide, true, "the overview's two columns are side by side");
+        assert.ok(overview.overviewLines.length > 0, "the overview draws its line");
         const overviewTexts = [...overview.texts, ...overviewSelected.texts].filter((text: any) => !text.dimmed && failsAa(text));
         assert.deepEqual(overviewTexts, [], "overview text below WCAG AA");
         const faintBoxes = [...overview.overviewBoxes, ...overviewSelected.overviewBoxes].filter((box: any) => !box.dimmed && box.border < 3);
