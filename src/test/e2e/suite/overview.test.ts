@@ -190,14 +190,35 @@ export function overviewSuite() {
       await waitFor(async () => (await read()).boxes.every((box) => !box.faded), "Esc to clear the search");
     });
 
-    it("Issues on a bundle with no problems says so, and Show all brings every box back", async () => {
-      const issues = `[...document.querySelectorAll('header button')].find((button) => button.textContent.trim().startsWith('Issues'))`;
+    it("with no problems, Issues is dimmed, does nothing, and says why when reached", async () => {
+      await showPanel();
+      const issues = `document.querySelector('[data-graph-mode="issues"]')`;
+      const note = `document.querySelector("[data-nothing-to-filter]")`;
+      assert.equal(await evaluate(`${issues}.getAttribute("aria-disabled")`), "true", "Issues is marked unavailable");
+      assert.equal(await evaluate(`${note}.hidden`), true, "the note waits until Issues is reached");
       await evaluate(`${issues}.click()`);
-      await waitFor(async () => (await read()).boxes.length === 0, "Issues to keep only boxes with a problem");
-      assert.equal(await evaluate(`document.body.textContent.includes("No problems found in this bundle.")`), true);
-      assert.match(await evaluate(`document.querySelector("[data-overview-show-all]").textContent`), /^6 resources with no problems/);
-      await evaluate(`document.querySelector("[data-overview-show-all]").click()`);
-      await waitFor(async () => (await read()).boxes.length === 6, "every box again");
+      await sleep(300);
+      assert.equal((await read()).boxes.length, 6, "pressing it changes nothing");
+      // A real pointer over Issues shows the note, and moving away hides it.
+      const spot = await evaluate(`(() => { const r = ${issues}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      await browser.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x, y: spot.y }, sessionId);
+      await waitFor(async () => (await evaluate(`${note}.hidden`)) === false, "the note on hover");
+      assert.equal(await evaluate(`${note}.textContent`), "No problems found in this bundle.");
+      await screenshot("overview-issues-nothing-to-filter");
+      await browser.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: spot.y + 200 }, sessionId);
+      await waitFor(async () => (await evaluate(`${note}.hidden`)) === true, "the note gone when the pointer leaves");
+      // Reachable by keyboard, so the note is not mouse-only. The test window is often not
+      // the focused window on the machine, and a page only gets focus events when it is,
+      // so pretend it is for this check.
+      await browser.call("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
+      try {
+        await evaluate(`${issues}.focus()`);
+        await waitFor(async () => (await evaluate(`${note}.hidden`)) === false, "the note on focus");
+        await evaluate(`${issues}.blur()`);
+        await waitFor(async () => (await evaluate(`${note}.hidden`)) === true, "the note gone on blur");
+      } finally {
+        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
+      }
     });
 
     it("a narrow panel stacks the columns, draws no lines and never scrolls sideways", async () => {

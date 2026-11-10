@@ -30,6 +30,9 @@ export function graphRefreshSuite() {
     this.timeout(120_000);
 
     it("keeps a user-selected job through saves after opening Issues and refreshing the preview", async function () {
+      // alpha_second has no problems, so Open Bundle Issues lands on All with Issues dimmed
+      // (issue 390). The test then gives alpha_first a missing notebook, so Issues becomes
+      // available, and checks saves keep both the job and the open Issues list.
       assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
       const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
       const config = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, "alpha/databricks.yml")));
@@ -100,17 +103,29 @@ export function graphRefreshSuite() {
         }
         await waitFor(async () => await evaluate("innerWidth", graph!.sessionId, graph!.contextId) === originalWidth, "the original graph width");
         const issuesOpen = `Boolean(document.querySelector('button[aria-label="Close Issues in This Job"]'))`;
-        assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), true);
+        const issuesDimmed = `document.querySelector('[data-graph-mode="issues"]')?.getAttribute("aria-disabled") === "true"`;
+        assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), false, "a job with no problems opens on All, with no Issues list");
+        assert.equal(await evaluate(issuesDimmed, graph.sessionId, graph.contextId), true, "Issues is dimmed for a job with no problems");
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`, graph.sessionId, graph.contextId);
         await waitFor(async () => await evaluate(`${select}?.value`, graph!.sessionId, graph!.contextId) === "jobs:alpha_first", "the user's job selection");
-        // Choosing a job closes the panel. Reopen it through the actual Issues button.
-        await evaluate(`[...document.querySelectorAll('header button')].find(button => button.textContent.trim().startsWith('Issues'))?.click()`, graph.sessionId, graph.contextId);
+        // A save that gives alpha_first a problem makes Issues available, without switching to it.
+        const broken = original.replace("notebook_path: ../src/task.py", "notebook_path: ../src/missing_for_issues_test.py");
+        assert.notEqual(broken, original, "the fixture still has alpha_first's notebook path");
+        {
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), broken);
+          await vscode.workspace.applyEdit(edit);
+          await document.save();
+        }
+        await waitFor(async () => await evaluate(issuesDimmed, graph!.sessionId, graph!.contextId) === false, "Issues available once alpha_first has a problem");
+        assert.equal(await evaluate(issuesOpen, graph.sessionId, graph.contextId), false, "the view does not switch to Issues by itself");
+        await evaluate(`document.querySelector('[data-graph-mode="issues"]').click()`, graph.sessionId, graph.contextId);
         await waitFor(async () => await evaluate(issuesOpen, graph!.sessionId, graph!.contextId) === true, "the reopened Issues panel");
 
         for (let round = 0; round < 3; round++) {
           const name = `alpha_first_refresh_${round}`;
           const edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), original.replace("name: alpha_first", `name: ${name}`));
+          edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), broken.replace("name: alpha_first", `name: ${name}`));
           await vscode.workspace.applyEdit(edit);
           await document.save();
           await waitFor(async () => {
@@ -377,6 +392,20 @@ export function graphRefreshSuite() {
           writeFileSync(path.join(shots, "overview-with-jobs.png"), Buffer.from(data, "base64"));
           await browser.call("Target.detachFromTarget", { sessionId: pageSession });
         }
+
+        // This bundle has a problem (on the pipeline), so Issues is available on the overview,
+        // keeps the box with the problem and what it links to, and All brings back the rest.
+        const issues = `document.querySelector('[data-graph-mode="issues"]')`;
+        assert.equal(await evaluate(`${issues}.getAttribute("aria-disabled")`), null, "Issues is available");
+        const everyBox = (await read()).boxes.length;
+        await evaluate(`${issues}.click()`);
+        await waitFor(async () => (await read()).boxes.length < everyBox, "Issues keeping fewer boxes");
+        const kept = (await read()).boxes;
+        assert.ok(kept.includes(PIPELINE), `the box with the problem stays: ${JSON.stringify(kept)}`);
+        assert.ok(kept.includes(JOB), `the job that runs it stays too: ${JSON.stringify(kept)}`);
+        await evaluate(`document.querySelector('[data-graph-mode="all"]').click()`);
+        await evaluate(`[...document.querySelectorAll('button[aria-label^="Close"]')].forEach((button) => button.click())`);
+        await waitFor(async () => (await read()).boxes.length === everyBox, "every box again");
 
         // The Open link on a job's box goes to that job's graph.
         await evaluate(`document.querySelector('[data-overview-open="${JOB}"]').click()`);
