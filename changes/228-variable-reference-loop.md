@@ -1,3 +1,0 @@
-Fixed
-
-- **Variables that refer to each other in a loop are reported before you pick a target** ([#228](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/228)). With `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`, `bundle validate` and deploy fail on every target with "cycle detected in field resolution", but the structural preview never resolves variables, so the Problems panel showed nothing. The new `variable_reference_loop` error names every variable in the loop, appears at each one's value, and says which targets fail, as a target's override can make a loop or break one. Variables are followed field by field, as the Databricks CLI does. A loop through a whole complex value is a warning, as the CLI only warns and stops resolving.

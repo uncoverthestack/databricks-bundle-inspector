@@ -725,14 +725,16 @@ describe("detectWidgetUsageInFile — SQL", () => {
         "-- Databricks notebook source",
         "CREATE WIDGET TEXT catalog DEFAULT 'main';",
         "create widget dropdown `state` default 'CA' choices select * from (values ('CA'))",
+        "-- COMMAND ----------",
         "-- MAGIC %run ./shared_widgets",
+        "-- COMMAND ----------",
         "SELECT * FROM IDENTIFIER(:catalog || '.' || :schema)",
       ].join("\n"),
     );
     expect(await detectWidgetUsageInFile(file)).toEqual({
       reads: [
-        { name: "catalog", line: 5, language: "sql" },
-        { name: "schema", line: 5, language: "sql" },
+        { name: "catalog", line: 7, language: "sql" },
+        { name: "schema", line: 7, language: "sql" },
       ],
       defaults: ["catalog", "state"],
       defaultLanguages: { catalog: ["sql"], state: ["sql"] },

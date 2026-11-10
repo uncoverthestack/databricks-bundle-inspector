@@ -41,7 +41,7 @@ export interface NotebookRun {
  */
 function parseRun(text: string, line: number): NotebookRun | undefined {
   // No `$` anchor: a CRLF file leaves "\r" at the end of the line, which `.` can't match.
-  const match = /%run\s+(\S+)(.*)/.exec(text);
+  const match = /%run\s+("[^"\r\n]*"|'[^'\r\n]*'|[^\s"']\S*)(.*)/.exec(text);
   if (!match) return undefined;
   const args: Record<string, string> = {};
   const argument = /\$(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
@@ -113,7 +113,11 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
       continue;
     }
     const magic = magicLine.exec(text);
-    if (magic?.[1]?.toLowerCase() === "run") {
+    // Checked as job runs on a workspace (CLI v1.24.0, 2026-11-06): a %run that starts a
+    // cell runs, and so does one further down a Python cell. Further down a %md cell it
+    // is text, and further down a SQL cell it is a syntax error, so neither is a run.
+    const startsCell = atCellStart && text.trim() !== "";
+    if (magic?.[1]?.toLowerCase() === "run" && (startsCell || cellLanguage === "python")) {
       const run = parseRun(text, lines.length + 1);
       if (run) runs.push(run);
     }

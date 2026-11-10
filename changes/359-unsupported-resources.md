@@ -1,3 +1,0 @@
-Added
-
-- **The docs list every bundle resource group the inspector doesn't support yet** ([#359](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/359)). [Supported resources](docs/supported-resources.md#not-supported-yet) now names each one, with the first Databricks CLI release that has it, instead of "every other resource group". A test fails when a new CLI release adds a group that isn't listed, so the list stays complete. Job tasks of the new `ai_function_task` type (Databricks CLI v1.24.0, Private Preview) are shown as "AI function" with the function they use, instead of as an unknown task.

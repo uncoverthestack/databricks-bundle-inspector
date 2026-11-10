@@ -235,7 +235,8 @@ Checked by running a job on a serverless workspace (Databricks CLI v1.24.0), one
 
 - nothing at the path (with a "Did you mean" when a notebook in that folder has a close name);
 - a plain file without the Databricks notebook header, which deploys as a file;
-- a folder.
+- a folder;
+- a path whose upper and lower case don't match the file's (`./Helper` for `helper.py`): the workspace tells them apart, even on a computer whose disk doesn't.
 
 A notebook that exists but that `bundle deploy` doesn't upload, for example because `.gitignore` matches it, gets [`excluded_from_sync`](#excluded_from_sync) instead.
 
