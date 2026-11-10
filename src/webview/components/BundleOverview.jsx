@@ -76,7 +76,8 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
           : selected
             ? UI_COLOR.accent
             : related
-              ? `color-mix(in srgb, ${UI_COLOR.accent} 60%, transparent)`
+              ? // Full strength: a paler blue falls under 3:1 against the canvas in most themes.
+                UI_COLOR.accent
               : UI_COLOR.boxLine,
         backgroundColor: selected
           ? `color-mix(in srgb, ${UI_COLOR.accent} 10%, ${UI_COLOR.widget})`
@@ -88,11 +89,14 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       {TAGGED_KINDS.has(item.kind) && (
-        <span
-          style={{ color: meta.color, backgroundColor: meta.bg }}
-          className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none"
-        >
-          {meta.code}
+        // The tag sits on the plain box colour, so a selected box's blue tint does not dull it.
+        <span style={{ backgroundColor: UI_COLOR.widget }} className="flex shrink-0 rounded-md">
+          <span
+            style={{ color: meta.color, backgroundColor: meta.bg }}
+            className="rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none"
+          >
+            {meta.code}
+          </span>
         </span>
       )}
       <span className="max-w-[65%] shrink-0 truncate text-[13px] font-medium text-fg">{item.label}</span>
