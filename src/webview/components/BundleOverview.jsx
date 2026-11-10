@@ -208,7 +208,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
           type="button"
           onClick={() => onOpenFile?.(item.file, item.line)}
           data-overview-open-file
-          className="self-start text-xs text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="max-w-full self-start break-all text-left text-xs text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {fileName}
           {item.line ? `:${item.line}` : ""}
@@ -272,11 +272,20 @@ export default function BundleOverview({
     [overview],
   );
   const selected = selectedId ? itemById.get(selectedId) : undefined;
-  const activeId = hoverId ?? (selected ? selected.id : null);
+  // A box can go away while pointed at or focused (a save removed it); it then gets no
+  // blur, so ignore an id the overview no longer has, or every box would fade.
+  const hovered = hoverId && itemById.has(hoverId) ? hoverId : null;
+  const activeId = hovered ?? (selected ? selected.id : null);
   const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : new Set()), [overview, activeId]);
   const matches = useMemo(() => findMatches(overview, find), [overview, find]);
   const foundLit = useMemo(() => (matches ? litByFind(overview, matches) : null), [overview, matches]);
-  const kept = useMemo(() => (problemsOnly ? problemContext(overview) : null), [overview, problemsOnly]);
+  // Issues keeps the selected box too, so picking a search result never selects a hidden box.
+  const kept = useMemo(() => {
+    if (!problemsOnly) return null;
+    const ids = problemContext(overview);
+    if (selected) ids.add(selected.id);
+    return ids;
+  }, [overview, problemsOnly, selected]);
   const hiddenCount = kept ? overview.groups.reduce((sum, group) => sum + group.items.filter((item) => !kept.has(item.id)).length, 0) : 0;
   const baseFolded = useMemo(() => foldedGroupIds(overview), [overview]);
   // A folded group with a match, or with a box kept by Issues, opens.
@@ -344,7 +353,9 @@ export default function BundleOverview({
 
   const stateOf = (item) => {
     if (selected?.id === item.id) return "selected";
-    if (!activeId) return foundLit && !foundLit.has(item.id) ? "dimmed" : "plain";
+    // While a search is typed it decides what is lit; pointing at a box still lights its links.
+    if (foundLit && !hovered) return foundLit.has(item.id) ? "plain" : "dimmed";
+    if (!activeId) return "plain";
     if (item.id === activeId || lit.has(item.id)) return "related";
     return "dimmed";
   };
@@ -352,6 +363,16 @@ export default function BundleOverview({
   const toggle = (id) => setSelectedId(selectedId === id ? null : id);
 
   const scrollerRef = useRef(null);
+  // A box selected after the overview appears (from search, or from the details' links)
+  // comes into view; a box already in view does not move.
+  const firstSelection = useRef(true);
+  useLayoutEffect(() => {
+    if (firstSelection.current) {
+      firstSelection.current = false;
+      return;
+    }
+    if (selectedId) rowElements.current.get(selectedId)?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedId]);
   // Back from a job or pipeline: where it was scrolled to, else the selected box in view.
   useLayoutEffect(() => {
     const saved = scrollMemoryRef?.current;
@@ -362,9 +383,11 @@ export default function BundleOverview({
   }, []);
 
   return (
+    // The container query reads this wrapper's width, so the layout inside can change with
+    // it; a container query never styles the container itself (issue 395).
+    <div className="@container h-full" style={background}>
     <div
-      className="@container flex h-full flex-col @5xl:flex-row"
-      style={background}
+      className="flex h-full flex-col @5xl:flex-row"
       onKeyDown={(event) => {
         if (event.key === "Escape" && selectedId) {
           event.stopPropagation();
@@ -497,6 +520,7 @@ export default function BundleOverview({
           onClose={() => setSelectedId(null)}
         />
       )}
+    </div>
     </div>
   );
 }

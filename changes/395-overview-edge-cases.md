@@ -1,0 +1,3 @@
+Fixed
+
+- **Bundle overview: details, search and focus in edge cases** ([#395](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/395)). In a wide panel, a resource's details now sit beside the boxes instead of pushing them out of view. Searching a type, such as "cluster", lights its boxes, and a search lights its matches even with a box selected. A search result picked from the list comes into view, and stays shown under **Issues**. Removing the resource that has keyboard focus no longer fades every other box. A long file name in the details wraps instead of scrolling sideways.

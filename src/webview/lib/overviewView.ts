@@ -182,7 +182,7 @@ export function problemsFirst(items: OverviewItem[]): OverviewItem[] {
 }
 
 /**
- * The boxes a search finds, by name or bundle key, ignoring case. `null` while nothing is
+ * The boxes a search finds, by name, bundle key or type, ignoring case. `null` while nothing is
  * typed, so the overview shows as usual.
  */
 export function findMatches(overview: BundleOverview, query: string): Set<string> | null {
@@ -190,7 +190,8 @@ export function findMatches(overview: BundleOverview, query: string): Set<string
   if (!needle) return null;
   return new Set(
     allItems(overview)
-      .filter((item) => `${item.label} ${item.resourceKey ?? ""}`.toLowerCase().includes(needle))
+      // The type words too ("cluster", "SQL warehouse"), as the search list matches them.
+      .filter((item) => `${item.label} ${item.resourceKey ?? ""} ${typeWords(item)}`.toLowerCase().includes(needle))
       .map((item) => item.id),
   );
 }
