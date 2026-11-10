@@ -3052,7 +3052,8 @@ export default function App({
   // The box kept selected on the overview. It stays while a job or pipeline is open, so
   // going back shows the overview as it was left.
   const [overviewSelectedId, setOverviewSelectedId] = useState(null);
-  const overviewScroll = useRef(0);
+  const overviewScroll = useRef(null);
+  const [overviewOpenedGroups, setOverviewOpenedGroups] = useState(() => new Set());
   const atOverview = !selection && bundleOverview !== null;
   // On the overview, the header's search finds boxes instead of tasks.
   const overviewSearchItems = useMemo(
@@ -3333,6 +3334,8 @@ export default function App({
               problemsOnly={graphMode === "issues"}
               onShowAll={() => handleGraphModeChange("all")}
               scrollMemoryRef={overviewScroll}
+              openedGroups={overviewOpenedGroups}
+              onOpenGroup={(id) => setOverviewOpenedGroups((current) => new Set(current).add(id))}
             />
           ) : flowNodes.length === 0 ? (
             <div

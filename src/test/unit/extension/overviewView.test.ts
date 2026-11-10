@@ -3,11 +3,13 @@ import { buildBundleOverview, type BundleOverview, type OverviewGraph, type Over
 import {
   findMatches,
   foldedGroupIds,
+  groupOfSelected,
   isUnchecked,
   litByFind,
   itemNote,
   linkedIds,
   namedOutside,
+  noBoxProblemsWords,
   problemContext,
   problemsFirst,
   resourceGroupWords,
@@ -211,5 +213,27 @@ describe("large bundles: find, problems only, problems first", () => {
 
   test("problems only is empty for a bundle with no problems", () => {
     expect(problemContext(overview([item("a", "a"), item("b", "b")]))).toEqual(new Set());
+  });
+});
+
+describe("overview edge cases from review", () => {
+  const box = (id: string, errors = 0): OverviewItem =>
+    ({ id, groupId: "g", column: "workloads", kind: "job", label: id, source: "bundle", problems: { errors, warnings: 0 }, hasChecks: true }) as OverviewItem;
+  const shown = (bundleWide: { errors: number; warnings: number }, items = [box("a")]): BundleOverview =>
+    ({ groups: [{ id: "g", name: "Workflows", column: "workloads", items }, { id: "h", name: "Apps", column: "workloads", items: [box("app")] }], links: [], bundleWide }) as unknown as BundleOverview;
+
+  test("Issues does not say 'no problems' when the bundle itself has one", () => {
+    expect(noBoxProblemsWords(shown({ errors: 1, warnings: 0 }))).toBe("No resource has a problem. The bundle's own problems are in the Issues list.");
+    expect(noBoxProblemsWords(shown({ errors: 0, warnings: 2 }))).toMatch(/^No resource has a problem/);
+  });
+
+  test("Issues says 'no problems' only when nothing has one", () => {
+    expect(noBoxProblemsWords(shown({ errors: 0, warnings: 0 }))).toBe("No problems found in this bundle.");
+  });
+
+  test("the selected box's group is found, so a folded group can open for it", () => {
+    expect(groupOfSelected(shown({ errors: 0, warnings: 0 }), "app")).toBe("h");
+    expect(groupOfSelected(shown({ errors: 0, warnings: 0 }), null)).toBeUndefined();
+    expect(groupOfSelected(shown({ errors: 0, warnings: 0 }), "gone")).toBeUndefined();
   });
 });

@@ -212,3 +212,19 @@ export function litByFind(overview: BundleOverview, matches: Set<string>): Set<s
   for (const id of matches) for (const linked of linkedIds(overview, id)) ids.add(linked);
   return ids;
 }
+
+/**
+ * What Issues says when no box has a problem. Problems can belong to the bundle itself
+ * (a bundle-wide CLI error, for example), and then "no problems" would be wrong.
+ */
+export function noBoxProblemsWords(overview: BundleOverview): string {
+  return overview.bundleWide.errors + overview.bundleWide.warnings > 0
+    ? "No resource has a problem. The bundle's own problems are in the Issues list."
+    : "No problems found in this bundle.";
+}
+
+/** The folded group holding the selected box, which opens so the box is not hidden. */
+export function groupOfSelected(overview: BundleOverview, selectedId: string | null | undefined): string | undefined {
+  if (!selectedId) return undefined;
+  return overview.groups.find((group) => group.items.some((item) => item.id === selectedId))?.id;
+}

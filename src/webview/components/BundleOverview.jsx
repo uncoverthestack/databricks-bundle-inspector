@@ -6,9 +6,11 @@ import {
   isUnchecked,
   itemNote,
   linkedIds,
+  groupOfSelected,
   linksOf,
   litByFind,
   namedOutside,
+  noBoxProblemsWords,
   problemContext,
   problemsFirst,
   showsAllLines,
@@ -172,7 +174,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
     <aside
       aria-label={`${typeWords(item)} ${item.label}`}
       data-overview-details={item.id}
-      className="flex shrink-0 flex-col gap-3 border-t border-line bg-panel p-4 @5xl:w-80 @5xl:overflow-y-auto @5xl:border-l @5xl:border-t-0"
+      className="flex max-h-[45%] min-h-0 shrink-0 flex-col gap-3 overflow-y-auto border-t border-line bg-panel p-4 @5xl:max-h-none @5xl:w-80 @5xl:border-l @5xl:border-t-0"
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -244,11 +246,23 @@ export default function BundleOverview({
   problemsOnly = false,
   onShowAll,
   // Holds how far the overview was scrolled, kept by the panel while a job or pipeline is open.
+  // `null` until the overview has been scrolled at all; 0 is the top, a real place.
   scrollMemoryRef,
+  // The folded groups the user opened, kept by the panel for the same reason.
+  openedGroups,
+  onOpenGroup,
 }) {
   const [hoverId, setHoverId] = useState(null);
   const setSelectedId = onSelect;
-  const [opened, setOpened] = useState(() => new Set());
+  const [localOpened, setLocalOpened] = useState(() => new Set());
+  const opened = useMemo(() => {
+    const ids = new Set(openedGroups ?? localOpened);
+    // A selected box never hides inside a folded group.
+    const holding = groupOfSelected(overview, selectedId);
+    if (holding) ids.add(holding);
+    return ids;
+  }, [openedGroups, localOpened, overview, selectedId]);
+  const openGroup = (id) => (onOpenGroup ? onOpenGroup(id) : setLocalOpened((current) => new Set(current).add(id)));
   const [paths, setPaths] = useState([]);
   const canvasRef = useRef(null);
   const rowElements = useRef(new Map());
@@ -340,8 +354,8 @@ export default function BundleOverview({
   const scrollerRef = useRef(null);
   // Back from a job or pipeline: where it was scrolled to, else the selected box in view.
   useLayoutEffect(() => {
-    const saved = scrollMemoryRef?.current ?? 0;
-    if (saved > 0 && scrollerRef.current) scrollerRef.current.scrollTop = saved;
+    const saved = scrollMemoryRef?.current;
+    if (typeof saved === "number" && scrollerRef.current) scrollerRef.current.scrollTop = saved;
     else if (selectedId) rowElements.current.get(selectedId)?.scrollIntoView?.({ block: "nearest" });
     // Only when the overview appears, not on every selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -408,7 +422,7 @@ export default function BundleOverview({
                 <h2 className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{column.title}</h2>
                 {groups.length === 0 && !kept && <div className="text-xs text-muted">{column.empty}</div>}
                 {column.id === "workloads" && kept && kept.size === 0 && (
-                  <div className="text-xs text-muted">No problems found in this bundle.</div>
+                  <div data-overview-no-problems className="text-xs text-muted">{noBoxProblemsWords(overview)}</div>
                 )}
                 {open.map((group) => (
                   <div
@@ -456,7 +470,7 @@ export default function BundleOverview({
                         key={group.id}
                         type="button"
                         aria-expanded={false}
-                        onClick={() => setOpened((current) => new Set(current).add(group.id))}
+                        onClick={() => openGroup(group.id)}
                         className="relative z-10 flex h-8 items-center gap-2 rounded-lg border border-line px-3 text-left text-xs text-fg hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         <span className="min-w-0 flex-1 truncate">{group.name}</span>

@@ -425,6 +425,23 @@ export function graphRefreshSuite() {
           await waitFor(async () => (await read()).place === "overview", "the overview again");
           await sleep(200);
           assert.ok(Math.abs((await evaluate(`${scroller}.scrollTop`)) - scrolledTo) <= 2, "the overview is scrolled where it was left");
+
+          // The top is a place too: left at the top with the selected box out of view below,
+          // coming back stays at the top instead of jumping to the box.
+          const lowest = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0].dataset.overviewItem`);
+          await evaluate(`document.querySelector('[data-overview-item="${lowest}"]').click()`);
+          await waitFor(async () => (await read()).pressed.includes(lowest), "the lowest box selected");
+          await evaluate(`${scroller}.scrollTop = 0; ${scroller}.dispatchEvent(new Event("scroll"))`);
+          await sleep(200);
+          const below = await evaluate(`document.querySelector('[data-overview-item="${lowest}"]').getBoundingClientRect().top >= ${scroller}.getBoundingClientRect().bottom`);
+          assert.equal(below, true, "the selected box is out of view below, or this proves nothing");
+          await evaluate(`document.querySelector('[data-overview-open="resources.jobs.alpha_first"]').click()`);
+          await waitFor(async () => (await read()).taskGraph, "alpha_first's graph again");
+          await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+          await waitFor(async () => (await read()).place === "overview", "the overview once more");
+          await sleep(200);
+          assert.equal(await evaluate(`${scroller}.scrollTop`), 0, "the overview is still at the top");
+          assert.deepEqual((await read()).pressed, [lowest], "the selection is kept");
         } finally {
           await browser.call("Emulation.clearDeviceMetricsOverride", {}, windowSession);
           await browser.call("Target.detachFromTarget", { sessionId: windowSession });
