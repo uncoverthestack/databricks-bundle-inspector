@@ -10,7 +10,7 @@ For bundle syntax and configuration examples, see the official [Databricks bundl
 | [`pipelines`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#pipelines) | View and checks | Its own pipeline view, links to jobs that run the pipeline, local library and source checks, and secret references in supported source code and cluster settings. Pipelines without a job are included. Tables defined inside pipeline code are not shown. |
 | [`secret_scopes`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#secret_scopes) | Some checks | Matches secret references against bundle scope names and reports code that uses a resource key instead of its scope name. No view of its own. |
 | [`clusters`](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#clusters) | Some checks | Links secret references in a cluster's settings to the tasks that use that cluster. No view of its own. |
-| Every other resource group | No checks yet | No view or checks. They are listed under [Not supported yet](#not-supported-yet). When a bundle has no jobs, the graph panel names the resource groups it contains. |
+| Every other resource group | No checks yet | No view or checks. They are listed under [Not supported yet](#not-supported-yet). When a bundle has no jobs and no pipelines, the panel shows the [bundle overview](usage.md#bundle-overview), where each of these resources is a box marked "not checked yet". |
 
 The graph's resource selector lists jobs and pipelines only.
 

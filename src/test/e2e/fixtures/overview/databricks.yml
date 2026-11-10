@@ -1,0 +1,33 @@
+# A bundle with no job and no pipeline, for the overview e2e suite: the panel opens on the
+# bundle overview. The cluster reads a secret scope, so one line is drawn.
+bundle:
+  name: overview_check
+
+resources:
+  sql_warehouses:
+    analytics:
+      name: analytics
+      cluster_size: Small
+  clusters:
+    shared_etl:
+      cluster_name: shared-etl
+      spark_version: 15.4.x-scala2.12
+      node_type_id: i3.xlarge
+      num_workers: 1
+      spark_env_vars:
+        TOKEN: "{{secrets/app-secrets/token}}"
+  secret_scopes:
+    app_secrets:
+      name: app-secrets
+  schemas:
+    sales:
+      catalog_name: main
+      name: sales
+  volumes:
+    raw_files:
+      catalog_name: main
+      schema_name: sales
+      name: raw_files
+  experiments:
+    tracking:
+      name: /Shared/overview_check

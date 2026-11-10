@@ -18,6 +18,7 @@ the extension and opens a separate VS Code instance for its suite.
 | Saved files | `npm run test:e2e:saved-file` |
 | Saved files, alternate folder case | `npm run test:e2e:saved-file:other-case` |
 | Targets | `npm run test:e2e:targets` |
+| Bundle overview | `npm run test:e2e:overview` |
 
 The alternate folder case test skips on case-sensitive file systems. Suites that
 use the CLI require it on PATH; see each fixture's README for prerequisites.

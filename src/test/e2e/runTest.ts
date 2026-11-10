@@ -38,7 +38,7 @@ async function main() {
   const suite = options.suite;
   // Only the suites that read the rendered graph need Chromium's loopback debugging interface.
   let debuggingPort: number | undefined;
-  if (suite === "graphRefresh" || suite === "themes") {
+  if (suite === "graphRefresh" || suite === "themes" || suite === "overview") {
     const server = net.createServer();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
