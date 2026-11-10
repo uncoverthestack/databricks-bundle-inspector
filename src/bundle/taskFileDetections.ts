@@ -1,4 +1,3 @@
-import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { notebookViews, type CodeLanguage, type NotebookViews } from "./code/notebookViews.js";
@@ -10,6 +9,8 @@ import {
   type PythonToken,
 } from "./code/pythonTokenizer.js";
 import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sqlTokenizer.js";
+import { checkRunTarget } from "./runTargets.js";
+import type { NotebookHeaderRule } from "./notebookFiles.js";
 
 /**
  * A single detected use of a Databricks secret-access call within a file.
@@ -687,26 +688,19 @@ export interface WidgetUsage {
   unsetRunReads: Array<{ name: string; line: number; file: string; target: string }>;
 }
 
-const NOTEBOOK_FILE_EXTENSIONS = [".py", ".sql", ".ipynb"];
+/** Notebooks the widget scan can read; R and Scala notebooks are not scanned. */
+const SCANNED_NOTEBOOK_EXTENSIONS = [".py", ".sql", ".ipynb"];
 const MAX_RUN_DEPTH = 5;
 
 /**
- * The local file a `%run` path points at. Only relative paths (`./x`, `../x`) are
- * local; `%run` paths name notebooks without their extension.
+ * The local notebook a `%run` path points at, found the same way as the run-target
+ * check (runTargets.ts), so both read the same file: `./two` with a plain two.py and a
+ * notebook two.sql runs two.sql.
  */
-function resolveRunTarget(fromFile: string, target: string): string | undefined {
-  if (!target.startsWith("./") && !target.startsWith("../")) return undefined;
-  const base = path.resolve(path.dirname(fromFile), target);
-  for (const candidate of [base, ...NOTEBOOK_FILE_EXTENSIONS.map((ext) => base + ext)]) {
-    try {
-      if (statSync(candidate).isFile() && NOTEBOOK_FILE_EXTENSIONS.includes(path.extname(candidate).toLowerCase())) {
-        return candidate;
-      }
-    } catch {
-      // Try the next extension.
-    }
-  }
-  return undefined;
+function resolveRunTarget(fromFile: string, target: string, rule: NotebookHeaderRule): string | undefined {
+  const check = checkRunTarget(fromFile, target, rule);
+  if (check.status !== "notebook") return undefined;
+  return SCANNED_NOTEBOOK_EXTENSIONS.includes(path.extname(check.file).toLowerCase()) ? check.file : undefined;
 }
 
 /**
@@ -717,6 +711,7 @@ export async function detectWidgetUsageInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
   visited: ReadonlySet<string> = new Set([path.resolve(filePath)]),
+  rule: NotebookHeaderRule = "contains",
 ): Promise<WidgetUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const python = scanPythonWidgets(views.python, views.document);
@@ -739,7 +734,7 @@ export async function detectWidgetUsageInFile(
   };
 
   for (const run of views.runs) {
-    const target = resolveRunTarget(filePath, run.target);
+    const target = resolveRunTarget(filePath, run.target, rule);
     if (!target || visited.size > MAX_RUN_DEPTH) {
       usage.hasUnresolvedRuns = true;
       continue;
@@ -747,7 +742,7 @@ export async function detectWidgetUsageInFile(
     if (visited.has(target)) continue;
     let child: WidgetUsage;
     try {
-      child = await detectWidgetUsageInFile(target, undefined, new Set([...visited, target]));
+      child = await detectWidgetUsageInFile(target, undefined, new Set([...visited, target]), rule);
     } catch {
       usage.hasUnresolvedRuns = true;
       continue;
@@ -869,4 +864,42 @@ export async function getNotebookType(
         : "PythonSourceNotebook"
       : undefined;
   }
+}
+
+/**
+ * A notebook another notebook runs: `%run ./helper` (a magic line) or
+ * `dbutils.notebook.run("./child", 60)`. `target` is the path as written, or `null` when
+ * it isn't a string literal (built at run time).
+ */
+export interface RunTarget {
+  kind: "run" | "notebook_run";
+  target: string | null;
+  line: number;
+  /** The notebook containing the call. */
+  file: string;
+}
+
+/**
+ * Every `%run` and `dbutils.notebook.run` in this notebook. Child notebooks are not
+ * scanned: their relative run paths may depend on the calling context, and the
+ * run-target check only reports findings in the task's own notebook. Calls on
+ * something that isn't traceable to dbutils are left out, as for secrets.
+ */
+export async function detectRunTargetsInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<RunTarget[]> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const file = path.resolve(filePath);
+  const found: RunTarget[] = views.runs.map((run) => ({ kind: "run", target: run.target, line: run.line, file }));
+  const tokens = tokenizePython(views.python);
+  for (const call of dbutilsCalls(tokens, "notebook", ["run"]).filter((c) => c.knownReceiver)) {
+    found.push({
+      kind: "notebook_run",
+      target: literalValue(argument(call.args, "path", 0)),
+      line: getStartLine(views.document, call.offset),
+      file,
+    });
+  }
+  return found.sort((a, b) => a.line - b.line);
 }

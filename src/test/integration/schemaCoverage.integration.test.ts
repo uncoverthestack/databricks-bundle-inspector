@@ -32,6 +32,7 @@ const KNOWN_RESOURCE_GAPS = [
   "model_provider_services",
   "model_services",
   "postgres_catalogs",
+  "postgres_data_apis",
   "postgres_databases",
   "postgres_roles",
   "postgres_snapshot_schedules",

@@ -1,0 +1,3 @@
+Fixed
+
+- **Symbolic links are reported as not deployed** ([#372](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/372)). `bundle deploy` skips symbolic links, so a task, `%run` or `dbutils.notebook.run` that points at a linked notebook, or at a file in a linked folder, deploys and then fails when the job runs with "Unable to access the notebook" or "Notebook not found". The inspector followed the link to the real file and said nothing. These paths now get the `excluded_from_sync` warning, which says the path is a symbolic link. Checked by deploying a bundle and running its job.

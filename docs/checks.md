@@ -10,11 +10,11 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -79,12 +79,14 @@ A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline 
 
 ### `excluded_from_sync`
 
-A task or pipeline points at a file that `bundle deploy` won't upload: it matches a `.gitignore` rule, a `sync.exclude` pattern, or sits in `.databricks` or `.git`, which are never synced.
+A task or pipeline points at a file that `bundle deploy` won't upload: it matches a `.gitignore` rule, a `sync.exclude` pattern, or sits in `.databricks` or `.git`, which are never synced. A `%run` or `dbutils.notebook.run` target gets it too.
+
+A symbolic link isn't uploaded either, whether it is the file or a folder above it: the Databricks CLI skips links, and `sync.include` doesn't bring them back. Checked by deploying a bundle (Databricks CLI v1.24.0): a task on a linked notebook, and a `%run` of one, deploy and then fail when the job runs, with "Unable to access the notebook" and "Notebook not found". A link above the bundle folder, or the bundle folder itself, is fine.
 
 - **Severity:** warning.
 - **Example:** `notebook_path: ../scripts/report.py`, with `scripts/` in `.gitignore`.
-- **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule.
-- **Limits:** not checked in bundles that use `sync.paths`, which sync from a different root.
+- **Fix:** add the file to `sync.include`, or remove the matching rule. The warning names the rule. For a symbolic link, point the path at the real file, or replace the link with a copy.
+- **Limits:** not checked when `sync.paths` reaches outside the bundle folder, which makes the Databricks CLI sync from a different root. The default, `sync.paths: ["."]`, is checked.
 
 ### `path_not_checked`
 
@@ -94,6 +96,17 @@ A task or pipeline path uses a variable, such as `${var.nb_dir}/load.py`, so the
 - **Example:** `notebook_path: ${var.nb_dir}/load.py`.
 - **Fix:** pick a target in the graph. The Databricks CLI then resolves the variable, with its value from the target, overrides or environment, and the file is checked. Nothing needs to change in the bundle.
 - **Limits:** the inspector doesn't resolve variables itself, as their values can come from places the preview doesn't see (`BUNDLE_VAR_<name>`, `--var`, `.databricks/bundle/<target>/variable-overrides.json`). Remote paths (`/Workspace/...`, `dbfs:/`) and paths in a job with `git_source` get no note. With `workspace.sync_mode: immutable`, a target's paths point at the snapshot deploy will upload; they are read from the local files as for any other target.
+
+### `same_workspace_path`
+
+Two files `bundle deploy` uploads get the same workspace path, because a notebook loses its file extension when deployed: `src/dup.py` and `src/dup.sql` both become `src/dup`. `bundle validate` passes, and `bundle deploy` stops with "both src/dup.py and src/dup.sql point to the same remote file location src/dup". A notebook whose workspace path is also a folder, such as `src/foo.py` next to a folder `src/foo/`, stops the deploy with "type mismatch (asked: NOTEBOOK, actual: DIRECTORY)".
+
+Checked by deploying one bundle per case (Databricks CLI v1.24.0). These fail: two notebooks with one name (`.py` and `.sql`, `.py` and `.ipynb`, also with an upper-case extension such as `.PY`), a notebook and a plain file with no extension (`foo.py` and `foo`), a notebook and a folder, and each of them with `sync_mode: immutable`. These deploy, and get no finding: a pair where `.gitignore` or `sync.exclude` leaves one file out, names that differ only in upper and lower case (`dup.py` and `Dup.sql`), and a plain `.py` file without the notebook header next to a notebook `.sql`.
+
+- **Severity:** error.
+- **Example:** `src/load.py` and `src/load.sql`, both starting with the Databricks notebook header.
+- **Fix:** rename or remove one of the files, or leave one out of the deploy with `sync.exclude`.
+- **Limits:** not checked when `sync.paths` is set, as the inspector doesn't follow a different sync root (see [`excluded_from_sync`](#excluded_from_sync)). Folders the inspector never reads, such as `node_modules` and `.venv`, aren't checked.
 
 ## `include`
 
@@ -206,13 +219,31 @@ A task reads a key that the other task's code never sets. Databricks reports a m
 
 ### `secret_scope_name_mismatch`
 
-Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which fails at runtime.
+Code reads a secret using a secret scope's resource key from the bundle instead of the scope's name, which may fail at runtime.
 
 - **Severity:** warning.
 - **Example:** `dbutils.secrets.get(scope="app_secrets", ...)`, where `resources.secret_scopes.app_secrets` has `name: prod-app-secrets`.
 - **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings.
 - **Fix:** use the scope's `name`.
 - **Limits:** a scope with that name that exists outside the bundle is fine.
+
+### `run_target_not_found`
+
+A notebook task's notebook runs another notebook with `%run` or `dbutils.notebook.run`, and the path doesn't lead to a notebook the bundle deploys. `bundle validate` and deploy pass, and the job fails when it runs: `Notebook not found` for `%run`, `Unable to access the notebook` for `notebook.run`.
+
+Checked by running a job on a serverless workspace (Databricks CLI v1.24.0), one task per case. A notebook runs with or without its extension in the path (`./helper` or `./helper.py`), from `./` or `../`, including a SQL or `.ipynb` notebook. These fail, and each gets this finding:
+
+- nothing at the path (with a "Did you mean" when a notebook in that folder has a close name);
+- a plain file without the Databricks notebook header, which deploys as a file;
+- a folder;
+- a path whose upper and lower case don't match the file's (`./Helper` for `helper.py`): the workspace tells them apart, even on a computer whose disk doesn't.
+
+A notebook that exists but that `bundle deploy` doesn't upload, for example because `.gitignore` matches it, gets [`excluded_from_sync`](#excluded_from_sync) instead.
+
+- **Severity:** error.
+- **Example:** `%run ./shared/helpers`, with no `shared/helpers.py` (or `.sql`, `.scala`, `.r`, `.ipynb`) next to the notebook.
+- **Fix:** point it at a notebook in the bundle, with a relative path (`./name` or `../folder/name`).
+- **Limits:** only paths written out as relative paths are checked, with or without quotes (`%run "./helper"`). Absolute workspace paths (`/Workspace/...`), bare names, and paths built at run time (`dbutils.notebook.run(name, ...)`, f-strings) aren't. Only the task's own notebook is checked, not notebooks it pulls in with `%run`, whose own paths may resolve from the calling notebook's folder. Jobs with a `git_source` aren't checked.
 
 ## Bundle configuration
 
@@ -242,6 +273,15 @@ A `${var.*}` reference to a variable with no default and no value for the select
 - **Example:** `warehouse_id: ${var.warehouse_id}` with no default, and no value under the target.
 - **Fix:** give the variable a default, or a value for the target.
 - **Limits:** values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
+
+### `variable_reference_loop`
+
+Variable values refer to each other in a loop, or a variable refers to itself, so the Databricks CLI can never work out their values. It fails a target even when nothing uses the variables. The inspector follows each `${var.*}` in the defaults and in each target's overrides, field by field, as the CLI does: `a.x: ${var.b}` with `b: ${var.a.x}` is a loop, while `a.y: ${var.b}` with `b: ${var.a.x}` is not when `a.x` is a plain value.
+
+- **Severity:** error. A warning when the loop passes through a whole complex value (`${var.a}` where `a` is a mapping or list): the CLI then stops after 11 rounds with `Variables references are too deep` instead of failing, and the `${var.*}` text may stay in what it deploys.
+- **Example:** `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`. `bundle validate` and deploy fail with `cycle detected in field resolution: variables.catalog.default -> var.env_catalog -> var.catalog -> var.env_catalog` (CLI v1.24.0). The finding names every variable in the loop, appears at each one's value, and says which targets fail: a target's override can make a loop, or break one.
+- **Fix:** give one of the variables in the loop a value that doesn't refer back.
+- **Limits:** reported in the structural preview only; with a target picked, the CLI's own error shows. A `BUNDLE_VAR_<name>` environment variable, `--var` or `variable-overrides.json` can set one of the variables and break the loop, which the inspector doesn't see.
 
 ### `cli_diagnostic`
 

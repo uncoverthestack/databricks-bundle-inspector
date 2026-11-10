@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import {
   detectSecretInNotebook,
   detectTaskValuesInFile,
+  detectRunTargetsInFile,
   detectWidgetUsageInFile,
   detectWidgetsInFile,
 } from "../taskFileDetections.js";
@@ -72,25 +73,30 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           : undefined;
 
       const referenceType = fileNode.data.referenceType;
-      const [secrets, widgets, widgetUsage, taskValueUsage] = await Promise.all([
+      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
         fileNode.data.referenceType === "notebook"
-          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => undefined)
           : undefined,
         // Notebooks and Python files set and read task values.
         referenceType === "notebook" || referenceType === "python_script"
           ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
           : undefined,
+        // The notebooks a notebook runs with %run or dbutils.notebook.run (#233).
+        referenceType === "notebook"
+          ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          : undefined,
       ]);
-      if (widgetUsage || taskValueUsage) {
+      if (widgetUsage || taskValueUsage || runTargets?.length) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
           data: {
             ...fileNode.data,
             ...(widgetUsage ? { widgetUsage } : {}),
             ...(taskValueUsage ? { taskValueUsage } : {}),
+            ...(runTargets?.length ? { runTargets } : {}),
           },
         });
       }

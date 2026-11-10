@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import type { Sync } from "./graph/bundleGraph.js";
 
@@ -13,6 +13,11 @@ import type { Sync } from "./graph/bundleGraph.js";
  * - `sync.include` adds back files a `.gitignore` skipped.
  * - `sync.exclude` skips files, and wins over `sync.include`.
  * - Patterns use gitignore syntax: `src/dir` skips the folder, `*.tmp` matches at any depth.
+ * - Symbolic links are skipped, files and folders alike, whatever `sync.include` says:
+ *   the CLI's walk keeps only regular files and folders (`libs/fileset/fileset.go`,
+ *   v1.24.0, "Skip non-regular files (e.g. symlinks)"). Checked on a workspace
+ *   2026-11-06: a task on a symlinked notebook deploys, then fails with "Unable to
+ *   access the notebook" (#372).
  *
  * Files outside the bundle root are reported as synced; they are only uploaded
  * through `sync.paths`, which is not modelled here.
@@ -45,9 +50,26 @@ function toPosix(path: string): string {
 
 /** Why `bundle deploy` would skip a file. */
 export type SyncExclusion =
+  /** `link` is the file itself, or with `folder`, the folder above it that is a link. */
+  | { rule: "symlink"; link: string; folder: boolean }
   | { rule: "gitignore"; gitignoreFile: string }
   | { rule: "sync_exclude" }
   | { rule: "always" };
+
+/**
+ * Whether the deploy uploads from the bundle root, as these rules assume. The CLI fills
+ * in `sync.paths: ["."]` when the bundle sets none (`sync_default_path.go`, v1.24.0), so a
+ * real target's output always has it (#374). Any entry that isn't the bundle root moves
+ * the sync root (`sync_infer_root.go`), and the CLI then writes every entry relative to
+ * the new root: `[".", "../common"]` comes back as `["<bundle folder>", "common"]`.
+ * Checked with `bundle validate -o json` on a workspace, 2026-11-06. In the preview,
+ * an entry in an included file is relative to that file, so `[".."]` in
+ * `resources/sync.yml` reads as outside, and the rules stay off there.
+ */
+export function syncsFromBundleRoot(bundleRoot: string, sync?: Sync): boolean {
+  const root = resolve(bundleRoot);
+  return (sync?.paths ?? []).every((entry) => resolve(root, entry) === root);
+}
 
 export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
   const exclusionOf = createSyncExclusion(bundleRoot, sync);
@@ -93,8 +115,31 @@ export function createSyncExclusion(
   const included = ignore().add(sync?.include ?? []);
   const excluded = ignore().add(sync?.exclude ?? []);
 
+  const linkByPath = new Map<string, boolean>();
+  function isLink(path: string): boolean {
+    let link = linkByPath.get(path);
+    if (link === undefined) {
+      try {
+        link = lstatSync(path).isSymbolicLink();
+      } catch {
+        link = false;
+      }
+      linkByPath.set(path, link);
+    }
+    return link;
+  }
+  /** The file, or a folder between it and the bundle root, that is a symbolic link. */
+  function linkOnTheWay(path: string): string | undefined {
+    for (let current = path; isInside(current, bundleRoot); current = dirname(current)) {
+      if (isLink(current)) return current;
+    }
+    return undefined;
+  }
+
   return (absolutePath) => {
     if (!isInside(absolutePath, bundleRoot)) return undefined;
+    const link = linkOnTheWay(absolutePath);
+    if (link) return { rule: "symlink", link, folder: link !== absolutePath };
     const rel = toPosix(relative(bundleRoot, absolutePath));
     if (alwaysSkipped.ignores(rel)) return { rule: "always" };
     if (excluded.ignores(rel)) return { rule: "sync_exclude" };

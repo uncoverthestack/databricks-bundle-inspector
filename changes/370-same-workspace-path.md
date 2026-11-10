@@ -1,0 +1,3 @@
+Added
+
+- **Two files that deploy to the same workspace path are reported** ([#370](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/370)). A notebook loses its file extension when deployed, so notebooks `src/load.py` and `src/load.sql`, or a notebook `src/load.py` and a plain file `src/load`, both become `src/load`. `bundle validate` passes and `bundle deploy` stops with "point to the same remote file location". A notebook next to a folder of the same name fails the same way. The new `same_workspace_path` error names both files. Files `.gitignore` or `sync.exclude` leave out don't count, and it isn't checked when `sync.paths` is set. Checked by deploying one bundle per case.
