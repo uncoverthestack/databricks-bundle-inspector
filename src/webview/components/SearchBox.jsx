@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
 
-export default function SearchBox({ value, items, onChange, onSelect }) {
+export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {
   const normalized = value.trim().toLowerCase();
   const matches = normalized
     ? items
@@ -20,7 +20,14 @@ export default function SearchBox({ value, items, onChange, onSelect }) {
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Search tasks"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.stopPropagation();
+            onChange("");
+          }
+        }}
+        aria-label={placeholder}
+        placeholder={placeholder}
         className="h-7 w-full rounded-md border border-line bg-input pl-8 pr-2 text-xs text-fg outline-none placeholder:text-muted focus:border-accent"
       />
       {matches.length > 0 && (

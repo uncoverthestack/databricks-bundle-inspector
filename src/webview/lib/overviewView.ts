@@ -166,3 +166,49 @@ export function sourceSentence(item: OverviewItem): string {
       return "";
   }
 }
+
+function problemRank(item: OverviewItem): number {
+  if (item.problems.errors > 0) return 0;
+  if (item.problems.warnings > 0) return 1;
+  return 2;
+}
+
+/** A group's boxes with errors first, then warnings, then the rest, each in the order they had. */
+export function problemsFirst(items: OverviewItem[]): OverviewItem[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => problemRank(a.item) - problemRank(b.item) || a.index - b.index)
+    .map(({ item }) => item);
+}
+
+/**
+ * The boxes a search finds, by name or bundle key, ignoring case. `null` while nothing is
+ * typed, so the overview shows as usual.
+ */
+export function findMatches(overview: BundleOverview, query: string): Set<string> | null {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return null;
+  return new Set(
+    allItems(overview)
+      .filter((item) => `${item.label} ${item.resourceKey ?? ""}`.toLowerCase().includes(needle))
+      .map((item) => item.id),
+  );
+}
+
+/** The boxes with an error or warning, and the boxes linked to those, which give them context. */
+export function problemContext(overview: BundleOverview): Set<string> {
+  const ids = new Set<string>();
+  for (const item of allItems(overview)) {
+    if (item.problems.errors + item.problems.warnings === 0) continue;
+    ids.add(item.id);
+    for (const id of linkedIds(overview, item.id)) ids.add(id);
+  }
+  return ids;
+}
+
+/** The matches and what they link to: what stays lit while a search is typed. */
+export function litByFind(overview: BundleOverview, matches: Set<string>): Set<string> {
+  const ids = new Set(matches);
+  for (const id of matches) for (const linked of linkedIds(overview, id)) ids.add(linked);
+  return ids;
+}

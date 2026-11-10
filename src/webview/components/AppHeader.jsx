@@ -21,6 +21,7 @@ export default function AppHeader({
   onBack,
   showTaskTools = true,
   showSearch = true,
+  searchPlaceholder,
   searchValue,
   searchItems,
   onSearchChange,
@@ -120,6 +121,7 @@ export default function AppHeader({
               items={searchItems}
               onChange={onSearchChange}
               onSelect={onSearchSelect}
+              placeholder={searchPlaceholder}
             />
           ) : (
             <div className="flex-1" />

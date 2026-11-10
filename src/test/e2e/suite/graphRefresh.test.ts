@@ -327,7 +327,7 @@ export function graphRefreshSuite() {
           pressed: [...document.querySelectorAll('[data-overview-item][aria-pressed="true"]')].map((box) => box.dataset.overviewItem),
           links: [...document.querySelectorAll("[data-overview-link]")].map((link) => link.dataset.overviewLink),
           back: Boolean(document.querySelector("[data-back-to-overview]")),
-          search: Boolean(document.querySelector("header input")),
+          search: document.querySelector("header input")?.placeholder ?? null,
           taskGraph: Boolean(document.querySelector(".react-flow")),
           pipelineDetails: Boolean(document.querySelector('[aria-label="Pipeline details"]')),
         })`);
@@ -356,7 +356,7 @@ export function graphRefreshSuite() {
         for (const id of ["resources.jobs.alpha_first", JOB, PIPELINE]) assert.ok(opened.boxes.includes(id), `a box for ${id}`);
         assert.deepEqual(
           { pressed: opened.pressed, back: opened.back, search: opened.search, taskGraph: opened.taskGraph },
-          { pressed: [], back: false, search: false, taskGraph: false },
+          { pressed: [], back: false, search: "Find a resource", taskGraph: false },
         );
 
         // A picture of the overview on a bundle with jobs, for a look by eye. Not compared.
@@ -375,7 +375,7 @@ export function graphRefreshSuite() {
         await evaluate(`document.querySelector('[data-overview-open="${JOB}"]').click()`);
         await waitFor(async () => { const now = await read(); return now.place === "jobs:alpha_second" && now.taskGraph; }, "alpha_second's graph");
         const inJob = await read();
-        assert.deepEqual({ back: inJob.back, search: inJob.search, boxes: inJob.boxes }, { back: true, search: true, boxes: [] });
+        assert.deepEqual({ back: inJob.back, search: inJob.search, boxes: inJob.boxes }, { back: true, search: "Search tasks", boxes: [] });
 
         // The back arrow returns to the overview, with the job that was open selected.
         await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
