@@ -203,7 +203,7 @@ A SQL file run by a SQL file task (`sql_task.file`) reads a named parameter (`:c
 
 ### `schema_renamed_in_target`
 
-Task code or a task's parameters write the name of a schema this bundle defines, and a target deploys that schema under another name. The CLI adds the target's name prefix to every bundle schema: development mode makes `sales` into `dev_<you>_sales`, and `presets.name_prefix` adds its own prefix. Only `${resources.schemas.<key>.name}` follows the rename, so a written name points at a schema that may not exist in that target: deploy succeeds and the run fails with `SCHEMA_NOT_FOUND`.
+Task code or a task's parameters write the name of a schema this bundle defines, and a target deploys that schema under another name. The CLI adds the target's name prefix to every bundle schema: development mode makes `sales` into `dev_<you>_sales`, and `presets.name_prefix` adds its own prefix. Only `${resources.schemas.<key>.name}` follows the rename, so a written name points at a schema that may not exist in that target: deploy succeeds and the run fails with `SCHEMA_NOT_FOUND`. Or it may be a different schema with the same name: when another target, such as production, has already deployed the unprefixed name, a development run reads and writes that schema instead of its own.
 
 - **Severity:** warning.
 - **Example:** `spark.table("workspace.sales.orders")` or `base_parameters: { schema: sales }`, with `resources.schemas.x.name: sales` and a `mode: development` target.
