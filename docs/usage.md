@@ -8,7 +8,7 @@ The inspector runs `databricks bundle validate`, so it needs the [Databricks CLI
 
 If the CLI can't be found, the inspector says why (not installed, a wrong `cliPath`, or the legacy package on your `PATH`) and links to the install steps for your OS. **Locate CLI…** lets you pick the CLI file instead: it is checked, then saved as `databricksBundleInspector.cliPath`.
 
-Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
+Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship. The same weekly check compares the Databricks [pipeline SQL reference](https://docs.databricks.com/gcp/en/ldp/developer/sql-ref) with a saved copy, because the inspector reads pipeline SQL itself.
 
 When `databricks` on VS Code's `PATH` doesn't work, the inspector also tries, in this order:
 

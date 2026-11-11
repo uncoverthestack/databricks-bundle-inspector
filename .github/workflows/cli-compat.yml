@@ -94,6 +94,14 @@ jobs:
       - name: Notebook header rule
         run: npm run test:notebook-rule:cli
 
+      # The inspector reads pipeline SQL with its own parser (src/bundle/pipelineSql.ts), so a
+      # change to Databricks' pipeline SQL reference must fail here, not draw a wrong data flow
+      # (issue 398). It fetches docs.databricks.com, so weekly and by hand only: a slow docs
+      # site must never block a pull request or the merge queue.
+      - name: Pipeline SQL reference unchanged
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.cli == 'latest'
+        run: npm run check:pipeline-sql-reference
+
       # The random task-graph test with 20,000 jobs instead of the 400 every push runs
       # (about 2 minutes). It doesn't use the CLI, so once per run, not per CLI version.
       # Weekly and by hand only, not for each pull request in the merge queue.

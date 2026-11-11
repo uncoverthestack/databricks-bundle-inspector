@@ -95,6 +95,20 @@ describe("pipeline SQL: what each query reads", () => {
     `)).toEqual(["orders -> m"]);
   });
 
+  test("statements without semicolons, as in Databricks' own examples", () => {
+    expect(edges(`-- first\nCREATE MATERIALIZED VIEW a AS SELECT * FROM src\n\n-- second\nCREATE MATERIALIZED VIEW b AS SELECT * FROM a\nAPPLY CHANGES INTO c FROM STREAM(b) KEYS (id) SEQUENCE BY ts`))
+      .toEqual(["src -> a", "a -> b", "b -> c"]);
+  });
+
+  test("AUTO CDC FROM SNAPSHOT reads the snapshot query; the version helpers read no table", () => {
+    const result = readPipelineSql(`CREATE FLOW f AS AUTO CDC INTO orders
+      FROM SNAPSHOT (SELECT * FROM read_files('/Volumes/c/s/in/') WHERE p = (SELECT version.path FROM current_snapshot_version()))
+      WITH VERSION (SELECT struct(t, path) AS version FROM list_files('/Volumes/c/s/in/') WHERE NOT EXISTS (SELECT 1 FROM last_snapshot_version()))
+      KEYS (id) STORED AS SCD TYPE 2`);
+    expect(result.reads.map((r) => `${r.source} -> ${r.target}`)).toEqual(["files:/Volumes/c/s/in/ -> orders"]);
+    expect(result.unread).toEqual([]);
+  });
+
   test("the Databricks notebook source format", () => {
     expect(edges(`-- Databricks notebook source\nCREATE MATERIALIZED VIEW a AS SELECT * FROM b\n\n-- COMMAND ----------\n\nCREATE MATERIALIZED VIEW c AS SELECT * FROM a`))
       .toEqual(["b -> a", "a -> c"]);

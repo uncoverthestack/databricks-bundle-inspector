@@ -1,0 +1,126 @@
+{
+  "checkedOn": "2026-11-11",
+  "source": "https://docs.databricks.com/gcp/en/ldp/developer/sql-ref",
+  "pages": {
+    "/gcp/en/ldp/developer/ldp-sql-ref-apply-changes-into": {
+      "title": "AUTO CDC INTO (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE OR REFRESH STREAMING TABLE table_name;\n\nCREATE FLOW flow_name AS AUTO CDC [ONCE] INTO table_name\nFROM source\nKEYS (keys)\n[IGNORE NULL UPDATES [ON {columnList | * EXCEPT (exceptColumnList)}]]\n[APPLY AS DELETE WHEN condition]\n[APPLY AS TRUNCATE WHEN condition]\nSEQUENCE BY orderByColumn\n[SYSTEM SEQUENCE BY systemOrderByColumn]\n[COLUMNS {columnList | * EXCEPT (exceptColumnList)}]\n[STORED AS {SCD TYPE 1 | SCD TYPE 2 | BITEMPORAL}]\n[TRACK HISTORY ON {columnList | * EXCEPT (exceptColumnList)}]\n[COLUMNS TO UPDATE columnName]"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Create a streaming table, then use AUTO CDC to populate it:\nCREATE OR REFRESH STREAMING TABLE target;\n\nCREATE FLOW flow\nAS AUTO CDC INTO\n  target\nFROM stream(cdc_data.users)\n  KEYS (userId)\n  APPLY AS DELETE WHEN operation = \"DELETE\"\n  SEQUENCE BY sequenceNum\n  COLUMNS * EXCEPT (operation, sequenceNum)\n  STORED AS SCD TYPE 2\n  TRACK HISTORY ON * EXCEPT (city);"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-flow": {
+      "title": "CREATE FLOW (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE FLOW flow_name [COMMENT comment] AS\n{\n  AUTO CDC [ONCE] INTO target_table create_auto_cdc_flow_spec |\n  AUTO CDC [ONCE] INTO target_table create_auto_cdc_from_snapshot_spec |\n  INSERT [ONCE] INTO target_table BY NAME [ replace_using_spec | REPLACE WHERE condition ] query\n}\n\ncreate_auto_cdc_from_snapshot_spec\n  FROM SNAPSHOT ( snapshot_query )\n  [ WITH VERSION ( version_query ) ]\n  KEYS ( key [, ...] )\n  [ STORED AS { SCD TYPE 1 | SCD TYPE 2 } ]\n  [ TRACK HISTORY ON { col_list | * EXCEPT ( col_list ) } ]\n\nreplace_using_spec\n  REPLACE USING ( column_name [, ...] ) SEQUENCE BY sequence_column"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- EXAMPLE 1:\n-- Create a streaming table, and add two flows that append data to it:\nCREATE OR REFRESH STREAMING TABLE users;\n\n-- first flow into target_table:\nCREATE FLOW users_flow AS\nINSERT INTO users BY NAME\nSELECT * FROM stream(raw_data.users);\n\n-- second flow into target_table:\nCREATE FLOW backfill_users AS\nINSERT ONCE INTO users BY NAME\nSELECT * FROM user_backfill_table;\n\n-- EXAMPLE 2:\n-- Create a streaming table, and add a flow that applies CDC changes to it:\nCREATE OR REFRESH STREAMING TABLE admins_cdc_target_table;\n\n-- first flow into target_table:\nCREATE FLOW admin_cdc_flow AS\nAUTO CDC INTO admins_cdc_target_table\nFROM stream(cdc_data.admins)\nKEYS (userId)\nAPPLY AS DELETE WHEN\n  operation = \"DELETE\"\nSEQUENCE BY sequenceNum\nCOLUMNS * EXCEPT (operation, sequenceNum)\nSTORED AS SCD TYPE 2;\n\n-- EXAMPLE 3:\n-- Create a streaming table, and add a REPLACE USING flow that keeps the latest\n-- row for each payment_id from a stream of partial snapshots:\nCREATE OR REFRESH STREAMING TABLE payments_latest;\n\nCREATE FLOW payments_replace_flow AS\nINSERT INTO payments_latest BY NAME\nREPLACE USING (payment_id) SEQUENCE BY payment_date\nSELECT payment_id, booking_id, status, payment_date\nFROM STREAM(samples.wanderbricks.payments);\n\n-- EXAMPLE 4:\n-- AUTO CDC FROM SNAPSHOT without WITH VERSION: a one-time initial load from a snapshot table.\n-- To process later snapshots on each update, add WITH VERSION (see EXAMPLE 5).\nCREATE STREAMING TABLE users (user_id INT, name STRING, email STRING);\n\nCREATE FLOW users_snapshot_flow AS\nAUTO CDC ONCE INTO users\nFROM SNAPSHOT (SELECT * FROM catalog.schema.users_snapshot)\nKEYS (user_id)\nSTORED AS SCD TYPE 1;\n\n-- EXAMPLE 5:\n-- AUTO CDC FROM SNAPSHOT with WITH VERSION: pick the next file, then read it as the snapshot:\nCREATE STREAMING TABLE orders (order_id INT, product STRING, quantity INT, order_date DATE);\n\nCREATE FLOW orders_cdc AS\nAUTO CDC INTO orders\nFROM SNAPSHOT (\n  SELECT order_id, product, quantity, order_date\n  FROM read_files('/Volumes/catalog/schema/landing/orders/', format => 'json')\n  WHERE _metadata.file_path = (SELECT version.path FROM current_snapshot_version())\n)\nWITH VERSION (\n  SELECT struct(modification_time, path) AS version\n  FROM list_files('/Volumes/catalog/schema/landing/orders/')\n  WHERE (\n    NOT EXISTS (SELECT 1 FROM last_snapshot_version())\n    OR struct(modification_time, path) > (SELECT version FROM last_snapshot_version())\n  )\n  ORDER BY modification_time, path\n  LIMIT 1\n)\nKEYS (order_id)\nSTORED AS SCD TYPE 2;\n\n-- EXAMPLE 6:\n-- One-time snapshot backfill plus a streaming CDC flow into the same target.\n-- The backfill omits WITH VERSION, so it uses an implicit timestamp version. The\n-- streaming flow's SEQUENCE BY column (event_ts) must be a TIMESTAMP so its type\n-- matches that implicit version on the shared target.\nCREATE STREAMING TABLE customers (\n  customer_id INT, name STRING, email STRING, address STRING, event_ts TIMESTAMP\n);\n\nCREATE FLOW customers_snapshot_backfill AS\nAUTO CDC ONCE INTO customers\nFROM SNAPSHOT (SELECT * FROM catalog.schema.customers_snapshot)\nKEYS (customer_id)\nSTORED AS SCD TYPE 1;\n\nCREATE FLOW customers_cdc AS\nAUTO CDC INTO customers\nFROM STREAM(customers_cdc_events)\nKEYS (customer_id)\nSEQUENCE BY event_ts\nSTORED AS SCD TYPE 1;\n\n-- EXAMPLE 7:\n-- Create a streaming table, then add a REPLACE WHERE flow that recomputes and\n-- overwrites a targeted window of the target table on each update:\nCREATE STREAMING TABLE payments_latest;\n\nCREATE FLOW payments_latest AS\nINSERT INTO payments_latest BY NAME\nREPLACE WHERE payment_date >= date_add(current_date(), -7)\nSELECT payment_id, booking_id, status, payment_date\nFROM samples.wanderbricks.payments;"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-materialized-view": {
+      "title": "CREATE MATERIALIZED VIEW (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE [OR REFRESH] [PRIVATE] MATERIALIZED VIEW\n  view_name\n  [ column_list ]\n  [ view_clauses ]\n  AS query\n\ncolumn_list\n   ( { column_name column_type column_properties } [, ...]\n    [ CONSTRAINT expectation_name EXPECT (expectation_expr)\n      [ ON VIOLATION { FAIL UPDATE | DROP ROW } ] ] [, ...]\n    [ , table_constraint ] [...] )\n\n   column_properties\n      { NOT NULL | COMMENT column_comment | column_constraint | MASK clause } [ ... ]\n\nview_clauses\n  { USING { DELTA | ICEBERG } |\n    PARTITIONED BY (col [, ...]) |\n    CLUSTER BY clause |\n    LOCATION path |\n    COMMENT view_comment |\n    TBLPROPERTIES clause |\n    REFRESH POLICY refresh_clause |\n    WITH { ROW FILTER clause } } [...]"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Create a materialized view by reading from an external data source, using the default schema:\nCREATE OR REFRESH MATERIALIZED VIEW taxi_raw\nAS SELECT * FROM read_files(\"/databricks-datasets/nyctaxi/sample/json/\")\n\n-- Create a materialized view by reading from a dataset defined in a pipeline:\nCREATE OR REFRESH MATERIALIZED VIEW filtered_data\nAS SELECT\n  ...\nFROM taxi_raw\n\n-- Specify a schema and clustering columns for a table:\nCREATE OR REFRESH MATERIALIZED VIEW sales\n(customer_id STRING,\n  customer_name STRING,\n  number_of_line_items STRING,\n  order_datetime STRING,\n  order_number LONG,\n  order_day_of_week STRING GENERATED ALWAYS AS (dayofweek(order_datetime))\n) CLUSTER BY (order_day_of_week, customer_id)\nCOMMENT \"Raw data on sales\"\nAS SELECT * FROM ...\n\n-- Use automatic liquid clustering to let Databricks choose the clustering columns:\nCREATE OR REFRESH MATERIALIZED VIEW sample_trips\nCLUSTER BY AUTO\nAS SELECT pickup_zip, fare_amount FROM samples.nyctaxi.trips\n\n-- Specify partition columns for a table:\nCREATE OR REFRESH MATERIALIZED VIEW sales\n(customer_id STRING,\n  customer_name STRING,\n  number_of_line_items STRING,\n  order_datetime STRING,\n  order_number LONG,\n  order_day_of_week STRING GENERATED ALWAYS AS (dayofweek(order_datetime))\n) PARTITIONED BY (order_day_of_week)\nCOMMENT \"Raw data on sales\"\nAS SELECT * FROM ...\n\n-- Specify a primary and foreign key constraint for a table:\nCREATE OR REFRESH MATERIALIZED VIEW sales\n(customer_id STRING NOT NULL PRIMARY KEY,\n  customer_name STRING,\n  number_of_line_items STRING,\n  order_datetime STRING,\n  order_number LONG,\n  order_day_of_week STRING GENERATED ALWAYS AS (dayofweek(order_datetime)),\n  CONSTRAINT fk_customer_id FOREIGN KEY (customer_id) REFERENCES main.default.customers(customer_id)\n)\nCOMMENT \"Raw data on sales\"\nAS SELECT * FROM ...\n\n-- Specify a row filter and mask clause for a table:\nCREATE OR REFRESH MATERIALIZED VIEW sales (\n  customer_id STRING MASK catalog.schema.customer_id_mask_fn,\n  customer_name STRING,\n  number_of_line_items STRING COMMENT 'Number of items in the order',\n  order_datetime STRING,\n  order_number LONG,\n  order_day_of_week STRING GENERATED ALWAYS AS (dayofweek(order_datetime))\n)\nCOMMENT \"Raw data on sales\"\nWITH ROW FILTER catalog.schema.order_number_filter_fn ON (order_number)\nAS SELECT * FROM sales_bronze"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-streaming-table": {
+      "title": "CREATE STREAMING TABLE (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE [OR REFRESH] [PRIVATE] STREAMING TABLE\n  table_name\n  [ table_specification ]\n  [ table_clauses ]\n  [ {flow_clause | AS query} ]\n\ntable_specification\n  ( { column_identifier column_type [column_properties] } [, ...]\n    [ column_constraint ] [, ...]\n    [ , table_constraint ] [...] )\n\n   column_properties\n      { NOT NULL | GENERATED ALWAYS AS ( expr ) | GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( [ START WITH start | INCREMENT BY step ] [ ...] ) ] | DEFAULT default_expression | COMMENT column_comment | column_constraint | MASK clause } [ ... ]\n\ntable_clauses\n  { USING DELTA\n    PARTITIONED BY (col [, ...]) |\n    CLUSTER BY clause |\n    LOCATION path |\n    COMMENT view_comment |\n    TBLPROPERTIES clause |\n    WITH { ROW FILTER clause } } [ ... ]\n   } [ ... ]\n\nflow_clause\n  FLOW { { INSERT [ONCE] BY NAME query } |\n  { AUTO CDC auto_cdc_flow_spec } |\n  { AUTO CDC [ONCE] auto_cdc_from_snapshot_spec } |\n  { REPLACE WHERE predicate BY NAME query } |\n  { REPLACE USING ( column_name [, ...] ) SEQUENCE BY sequence_column BY NAME query } }\n\nauto_cdc_from_snapshot_spec\n  FROM SNAPSHOT ( snapshot_query )\n  [ WITH VERSION ( version_query ) ]\n  KEYS ( key [, ...] )\n  [ STORED AS { SCD TYPE 1 | SCD TYPE 2 } ]\n  [ TRACK HISTORY ON { col_list | * EXCEPT ( col_list ) } ]"
+        },
+        {
+          "heading": "Parameters",
+          "code": "CREATE OR REFRESH STREAMING TABLE raw_data\nAS SELECT * FROM STREAM read_files('abfss://my_path');\n\nCREATE OR REFRESH STREAMING TABLE raw_data\nFLOW INSERT BY NAME SELECT * FROM STREAM read_files('abfss://my_path');"
+        },
+        {
+          "heading": "Parameters",
+          "code": "SELECT * FROM STREAM source_table WITH (SKIPCHANGECOMMITS=TRUE, STARTINGVERSION=X)"
+        },
+        {
+          "heading": "Parameters",
+          "code": "SELECT * FROM STREAM source_table WITH (SKIPCHANGECOMMITS)"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Define a streaming table from a volume of files:\nCREATE OR REFRESH STREAMING TABLE customers_bronze\nAS SELECT * FROM STREAM read_files(\"/databricks-datasets/retail-org/customers/*\", format => \"csv\")\n\n-- Define a streaming table from a streaming source table:\nCREATE OR REFRESH STREAMING TABLE customers_silver\nAS SELECT * FROM STREAM(customers_bronze)\n\n-- Use automatic liquid clustering to let Databricks choose the clustering columns:\nCREATE OR REFRESH STREAMING TABLE customers_bronze_auto\nCLUSTER BY AUTO\nAS SELECT * FROM STREAM read_files(\"/databricks-datasets/retail-org/customers/*\", format => \"csv\")\n\n-- Define a table with a row filter and column mask:\nCREATE OR REFRESH STREAMING TABLE customers_silver (\n  id int COMMENT 'This is the customer ID',\n  name string,\n  region string,\n  ssn string MASK catalog.schema.ssn_mask_fn COMMENT 'SSN masked for privacy'\n)\nWITH ROW FILTER catalog.schema.us_filter_fn ON (region)\nAS SELECT * FROM STREAM(customers_bronze)\n\n-- Define a streaming table with an identity column:\nCREATE OR REFRESH STREAMING TABLE customers_with_id (\n  customer_id BIGINT GENERATED ALWAYS AS IDENTITY,\n  name string,\n  region string\n)\nAS SELECT name, region FROM STREAM(customers_bronze)\n\n-- Define a streaming table that you can add flows into:\nCREATE OR REFRESH STREAMING TABLE orders;\n\n-- Define a streaming table with an inline append flow:\nCREATE OR REFRESH STREAMING TABLE raw_data\nFLOW INSERT BY NAME SELECT * FROM STREAM read_files('abfss://my_path');\n\n-- Define a streaming table with an inline AUTO CDC flow:\nCREATE OR REFRESH STREAMING TABLE target\nFLOW AUTO CDC\nFROM stream(cdc_data.users)\nKEYS (userId)\nSEQUENCE BY sequenceNum\nSTORED AS SCD TYPE 1;\n\n-- Define a streaming table with an inline REPLACE USING flow that keeps the latest\n-- row for each payment_id:\nCREATE OR REFRESH STREAMING TABLE payments_current\nFLOW REPLACE USING (payment_id) SEQUENCE BY payment_date BY NAME\nSELECT payment_id, booking_id, status, payment_date\nFROM STREAM(samples.wanderbricks.payments);\n\n-- Define a streaming table with an inline AUTO CDC FROM SNAPSHOT flow that processes\n-- each new snapshot version on every update, using WITH VERSION to pick the next one:\nCREATE STREAMING TABLE users\nFLOW AUTO CDC\nFROM SNAPSHOT (\n  SELECT * FROM read_files('/Volumes/catalog/schema/landing/users/', format => 'json')\n  WHERE _metadata.file_path = (SELECT version.path FROM current_snapshot_version())\n)\nWITH VERSION (\n  SELECT struct(modification_time, path) AS version\n  FROM list_files('/Volumes/catalog/schema/landing/users/')\n  WHERE (\n    NOT EXISTS (SELECT 1 FROM last_snapshot_version())\n    OR struct(modification_time, path) > (SELECT version FROM last_snapshot_version())\n  )\n  ORDER BY modification_time, path\n  LIMIT 1\n)\nKEYS (user_id)\nSTORED AS SCD TYPE 1;\n\n-- Define a streaming table with an inline one-shot AUTO CDC FROM SNAPSHOT backfill:\nCREATE STREAMING TABLE customers\nFLOW AUTO CDC ONCE\nFROM SNAPSHOT (SELECT * FROM catalog.schema.customers_snapshot)\nKEYS (customer_id)\nSTORED AS SCD TYPE 1;"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-table-flow": {
+      "title": "CREATE TABLE ... FLOW (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE TABLE\n  table_name\n  [ table_specification ]\n  [ table_clauses ]\n  [ flow_clause ]\n\ntable_specification\n  ( { column_identifier column_type [column_properties] } [, ...]\n    [ CONSTRAINT expectation_name EXPECT (expectation_expr)\n        [ ON VIOLATION { FAIL UPDATE | DROP ROW } ] ] [, ...] )\n\ntable_clauses\n  { PARTITIONED BY (col [, ...]) |\n    CLUSTER BY clause |\n    LOCATION path |\n    COMMENT table_comment |\n    TBLPROPERTIES clause |\n    WITH { ROW FILTER clause } } [ ... ]\n\nflow_clause\n  FLOW [ IMPORT CHECKPOINT checkpoint_path ] INSERT [ONCE] BY NAME query"
+        },
+        {
+          "heading": "Syntax",
+          "code": "CREATE FLOW flow_name AS INSERT INTO table_name BY NAME query"
+        },
+        {
+          "heading": "Migrate a Structured Streaming checkpoint",
+          "code": "-- Use the existing table your Structured Streaming query writes to; CREATE TABLE adopts it.\nCREATE TABLE streaming_table\n-- Continue from the imported checkpoint instead of reprocessing the source.\nFLOW IMPORT CHECKPOINT '/Volumes/my_catalog/my_schema/checkpoints/my_stream'\nINSERT BY NAME\n  -- The same source your original query read from.\n  SELECT * FROM STREAM(source_table);"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Create a managed table populated by an inline append flow from a streaming table\nCREATE TABLE output\nFLOW INSERT BY NAME SELECT * FROM STREAM(samples.tpch.orders);\n\n-- Create a managed table that ingests files with schema inference and evolution\nCREATE TABLE raw_data\nFLOW INSERT BY NAME\n  SELECT * FROM STREAM read_files('abfss://<container-name>@<storage-account-name>.dfs.core.windows.net/base/path');\n\n-- Create a partitioned managed table from a streaming source\nCREATE TABLE events\nPARTITIONED BY (bucket)\nFLOW INSERT BY NAME\n  SELECT id, bucket FROM STREAM read_files('abfss://my_path', format => 'json');\n\n-- Create a managed table with liquid clustering\nCREATE TABLE orders_clustered\nCLUSTER BY (order_date, customer_id)\nFLOW INSERT BY NAME\n  SELECT\n    o_orderkey   AS order_id,\n    o_custkey    AS customer_id,\n    o_orderdate  AS order_date,\n    o_totalprice AS total_price\n  FROM STREAM(samples.tpch.orders);\n\n-- Create a managed table with a data quality expectation that drops violating rows\nCREATE TABLE valid_events\n  (CONSTRAINT positive_id EXPECT (id > 0) ON VIOLATION DROP ROW)\nFLOW INSERT BY NAME\n  SELECT id FROM STREAM read_files('s3://bucket/path', format => 'json');"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-temporary-view": {
+      "title": "CREATE TEMPORARY VIEW (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE TEMPORARY VIEW view_name\n  [(\n    [ col_name [ COMMENT col_comment ] [, ...] ]\n    [ column_constraint ] [, ...]\n  )]\n  [ COMMENT view_comment ]\n  [ TBLPROPERTIES ]\n  AS query"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Create a temporary view, and use it\nCREATE TEMPORARY VIEW my_view (sales_day, total_sales, sales_rep)\n  AS SELECT date(sales_date) AS sale_day, SUM(sales) AS total_sales, FIRST(sales_rep) FROM sales GROUP BY date(sales_date), sales_rep;\n\nCREATE OR REFRESH MATERIALIZED VIEW sales_by_date\n  AS SELECT * FROM my_view;\n\n-- Create a temporary view with a data quality expectation\nCREATE TEMPORARY VIEW valid_sales (\n  CONSTRAINT valid_total_sales EXPECT (total_sales > 0) ON VIOLATION DROP ROW\n)\n  AS SELECT date(sales_date) AS sales_day, SUM(sales) AS total_sales FROM sales GROUP BY date(sales_date);"
+        }
+      ]
+    },
+    "/gcp/en/ldp/developer/ldp-sql-ref-create-view": {
+      "title": "CREATE VIEW (pipelines)",
+      "blocks": [
+        {
+          "heading": "Syntax",
+          "code": "CREATE VIEW view_name\n  [ COMMENT view_comment ]\n  [ TBLPROPERTIES ]\n  AS query"
+        },
+        {
+          "heading": "Examples",
+          "code": "-- Create a view from an external data source\nCREATE VIEW taxi_raw AS SELECT *\n  FROM read_files(\"/databricks-datasets/nyctaxi/sample/json/\");\n\n-- Use a view to create a filtered view:\nCREATE VIEW taxi_silver AS SELECT *\n  FROM taxi_raw\n  WHERE distance > 0.0;"
+        }
+      ]
+    },
+    "/gcp/en/sql/language-manual/sql-ref-syntax-ddl-alter-materialized-view": {
+      "outsidePipelines": true
+    },
+    "/gcp/en/sql/language-manual/sql-ref-syntax-ddl-alter-streaming-table": {
+      "outsidePipelines": true
+    },
+    "/gcp/en/sql/language-manual/sql-ref-syntax-qry-explain-materialized-view": {
+      "outsidePipelines": true
+    }
+  }
+}

@@ -108,7 +108,28 @@ function tokenize(sql: string): Token[][] {
     i++;
   }
   if (current.length) statements.push(current);
-  return statements;
+  return statements.flatMap(splitAtStatementStarts);
+}
+
+/**
+ * Databricks' own examples, and real files, often leave out the ";" between statements. A
+ * CREATE, or APPLY CHANGES, outside any brackets starts a new one: neither can sit inside a
+ * query. (APPLY AS DELETE WHEN, inside AUTO CDC, is not followed by CHANGES.)
+ */
+function splitAtStatementStarts(tokens: Token[]): Token[][] {
+  const parts: Token[][] = [];
+  let part: Token[] = [];
+  let depth = 0;
+  tokens.forEach((token, k) => {
+    const starts = depth === 0 && part.length > 0 &&
+      (token.upper === "CREATE" || (token.upper === "APPLY" && tokens[k + 1]?.upper === "CHANGES"));
+    if (starts) { parts.push(part); part = []; }
+    if (token.text === "(") depth++;
+    else if (token.text === ")") depth = Math.max(0, depth - 1);
+    part.push(token);
+  });
+  if (part.length) parts.push(part);
+  return parts;
 }
 
 /** `LIVE.x` and `live.x` name `x` in the pipeline; the docs say the LIVE schema is ignored. */
@@ -153,6 +174,9 @@ function readsIn(tokens: Token[], from: number, unread: PipelineUnread[]): { nam
     const next = tokens[k + 1];
     if (next?.text === "(") {
       const fn = t.upper;
+      // AUTO CDC … FROM SNAPSHOT (SELECT …): the query inside is read like any subquery.
+      // The snapshot version helpers pick which snapshot to load; they read no table.
+      if (["SNAPSHOT", "CURRENT_SNAPSHOT_VERSION", "LAST_SNAPSHOT_VERSION", "LIST_FILES"].includes(fn)) return k + 1;
       if (fn === "READ_FILES" || fn === "CLOUD_FILES") {
         const path = tokens[k + 2]?.kind === "string" ? tokens[k + 2]!.text : "";
         reads.push({ name: `files:${path}`, line: t.line, streaming });
