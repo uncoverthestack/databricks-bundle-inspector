@@ -13,7 +13,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
@@ -200,6 +200,19 @@ A SQL file run by a SQL file task (`sql_task.file`) reads a named parameter (`:c
 - **Example:** `FROM IDENTIFIER(:catalog || '.sales.orders')`, with no `catalog` in the task's `parameters` or the job's `parameters`.
 - **Fix:** pass it in the task's `sql_task.parameters` or the job's `parameters`. When the name is close to one that is passed, the warning suggests it.
 - **Limits:** only `:name` markers in code are read: not `::` casts, JSON paths (`raw:owner`), comments or strings. Names are case sensitive: `:Catalog` is not filled by `catalog`. `{{name}}` text is not checked: an unpassed one stays in the SQL as written, so whether the run fails depends on where it is. Legacy `${name}` text is not checked either. A parameter the task passes but the file doesn't read is fine and not reported. SQL files from Git are not read.
+
+### `schema_renamed_in_target`
+
+Task code or a task's parameters write the name of a schema this bundle defines, and a target deploys that schema under another name. The CLI adds the target's name prefix to every bundle schema: development mode makes `sales` into `dev_<you>_sales`, and `presets.name_prefix` adds its own prefix. Only `${resources.schemas.<key>.name}` follows the rename, so a written name points at a schema that may not exist in that target: deploy succeeds and the run fails with `SCHEMA_NOT_FOUND`.
+
+- **Severity:** warning.
+- **Example:** `spark.table("workspace.sales.orders")` or `base_parameters: { schema: sales }`, with `resources.schemas.x.name: sales` and a `mode: development` target.
+- **Fix:** pass `${resources.schemas.<key>.name}` to the task as a parameter and read it in the code, or use it in place of the written name in YAML.
+- **Limits:**
+  - Checked on the structural preview, where names are still as written. With a target picked, the CLI has already renamed the schemas, so the check doesn't run.
+  - In code, a name counts when it is one part of a dotted name, such as `workspace.sales` or `sales.orders`, in SQL code, SQL strings and Python strings. Comments don't count, and neither does a name on its own.
+  - In YAML, task parameter values and job parameter defaults are read. Other places, such as a Python task's command-line `parameters`, are not.
+  - Not reported when `experimental.skip_name_prefix_for_schema` is set, or when the schema's name is a variable.
 
 ### `task_value_unknown_task`
 

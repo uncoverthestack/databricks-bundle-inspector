@@ -1,0 +1,11 @@
+bundle:
+  name: schema_renamed_in_target
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+  staging: {}

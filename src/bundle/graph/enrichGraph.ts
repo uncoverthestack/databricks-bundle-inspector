@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
+  detectQualifiedNamesInFile,
   detectSecretInNotebook,
   detectSqlParameterMarkersInFile,
   detectTaskValuesInFile,
@@ -74,7 +75,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           : undefined;
 
       const referenceType = fileNode.data.referenceType;
-      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers] = await Promise.all([
+      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, qualifiedNames] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
@@ -93,8 +94,12 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         referenceType === "sql"
           ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => undefined)
           : undefined,
+        // Dotted names in task code, to find schemas a target renames (#235).
+        referenceType === "notebook" || referenceType === "python_script" || referenceType === "sql"
+          ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          : undefined,
       ]);
-      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length) {
+      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || qualifiedNames?.length) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
           data: {
@@ -103,6 +108,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
             ...(taskValueUsage ? { taskValueUsage } : {}),
             ...(runTargets?.length ? { runTargets } : {}),
             ...(sqlParameterMarkers?.length ? { sqlParameterMarkers } : {}),
+            ...(qualifiedNames?.length ? { qualifiedNames } : {}),
           },
         });
       }

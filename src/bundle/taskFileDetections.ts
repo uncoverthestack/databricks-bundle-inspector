@@ -650,6 +650,59 @@ export async function detectWidgetsInFile(
   ].sort(byLine);
 }
 
+/** A dotted name written in code, such as `workspace.sales.orders`, split into its parts. */
+export interface QualifiedName {
+  parts: string[];
+  line: number;
+}
+
+const DOTTED_IN_TEXT = /[A-Za-z_`][\w`]*(?:\.[A-Za-z_`][\w`]*)+/g;
+
+/** The dotted names inside a string's text (`"SELECT * FROM main.sales.orders"`). */
+function dottedNamesIn(text: string, offset: number, document: string): QualifiedName[] {
+  return [...text.matchAll(DOTTED_IN_TEXT)].map((match) => ({
+    parts: match[0].split(".").map((part) => part.replace(/`/g, "")),
+    line: getStartLine(document, offset + match.index!),
+  }));
+}
+
+/**
+ * Dotted names written in a file's code, for checks that look for a name the bundle
+ * defines (issue 235): in SQL, names like `main.sales.orders` and those inside strings;
+ * in Python, those inside strings, where table names are written. Never comments.
+ */
+export async function detectQualifiedNamesInFile(
+  filePath: string,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<QualifiedName[]> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const names: QualifiedName[] = [];
+  const sql = tokenizeSql(views.sql);
+  for (let i = 0; i < sql.length; i++) {
+    const token = sql[i]!;
+    if (token.kind === "string") {
+      names.push(...dottedNamesIn(token.value, token.bodyStart ?? token.start, views.document));
+      continue;
+    }
+    if (token.kind !== "word" && token.kind !== "quoted_identifier") continue;
+    // A run of identifiers joined by dots with nothing between them: a.b, `a`.b.c
+    const parts = [token.value];
+    let j = i;
+    while (sql[j + 1]?.value === "." && sql[j + 1]!.kind === "op" && sql[j + 1]!.start === sql[j]!.end) {
+      const next = sql[j + 2];
+      if (!next || (next.kind !== "word" && next.kind !== "quoted_identifier") || next.start !== sql[j + 1]!.end) break;
+      parts.push(next.value);
+      j += 2;
+    }
+    if (parts.length > 1) names.push({ parts, line: getStartLine(views.document, token.start) });
+    i = j;
+  }
+  for (const token of tokenizePython(views.python)) {
+    if (token.kind === "string") names.push(...dottedNamesIn(token.value, token.start, views.document));
+  }
+  return names.sort(byLine);
+}
+
 /**
  * The named parameter markers (`:name`) a SQL file run by a SQL file task reads, in order,
  * one per marker. The task's `sql_task.parameters` and the job's parameters fill them; one

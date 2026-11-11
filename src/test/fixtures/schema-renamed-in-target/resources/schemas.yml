@@ -1,0 +1,47 @@
+resources:
+  schemas:
+    sales:
+      name: dbi_sales
+      catalog_name: workspace
+  jobs:
+    uses_schema:
+      name: uses_schema
+      parameters:
+        - name: target_schema
+          default: dbi_sales
+      tasks:
+        - task_key: python_code
+          notebook_task:
+            notebook_path: ../src/writes_table.py
+            base_parameters:
+              schema: ${resources.schemas.sales.name}
+        - task_key: sql_code
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/reads_table.sql
+        - task_key: comments_only
+          notebook_task:
+            notebook_path: ../src/comments_only.py
+        - task_key: literal_parameter
+          notebook_task:
+            notebook_path: ../src/reads_widget.py
+            base_parameters:
+              schema: dbi_sales
+              table: workspace.dbi_sales.orders
+        - task_key: other_schema
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/other_schema.sql
+    from_git:
+      name: from_git
+      git_source:
+        git_url: https://github.com/databricks/bundle-examples
+        git_provider: gitHub
+        git_branch: main
+      tasks:
+        - task_key: git_notebook
+          notebook_task:
+            notebook_path: src/writes_table
+            source: GIT

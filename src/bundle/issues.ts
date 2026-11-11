@@ -48,6 +48,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
+  "schema_renamed_in_target",
   "task_value_unknown_task",
   "task_value_not_upstream",
   "task_value_key_not_set",
@@ -571,6 +572,120 @@ function sqlParameterIssues(
 }
 
 /**
+ * The targets that deploy the bundle's schemas under another name. The CLI adds the
+ * target's name prefix to every schema (`apply_presets.go`, v0.299.2 to v1.25.0): the
+ * target's `presets.name_prefix`, else the bundle's, and in development mode
+ * `[dev <user>] ` when there is none, shown as `dev_<user>_`. Not when
+ * `experimental.skip_name_prefix_for_schema` is set, which targets can't change.
+ */
+function targetsRenamingSchemas(parsedBundle: ParsedBundleConfig): Array<{ name: string; development: boolean; prefix: string }> {
+  const root = parsedBundle as unknown as {
+    presets?: { name_prefix?: unknown };
+    experimental?: { skip_name_prefix_for_schema?: unknown };
+    targets?: Record<string, { mode?: unknown; presets?: { name_prefix?: unknown } } | null>;
+  };
+  if (root.experimental?.skip_name_prefix_for_schema === true) return [];
+  const renaming: Array<{ name: string; development: boolean; prefix: string }> = [];
+  for (const [name, target] of Object.entries(root.targets ?? {})) {
+    const own = target?.presets?.name_prefix;
+    const prefix = typeof own === "string" ? own : typeof root.presets?.name_prefix === "string" ? root.presets.name_prefix : "";
+    const development = target?.mode === "development";
+    // The CLI keeps letters and numbers of the prefix; one with neither adds nothing.
+    if ((development && prefix === "") || /[\p{L}\p{N}]/u.test(prefix)) renaming.push({ name, development: development && prefix === "", prefix });
+  }
+  return renaming;
+}
+
+/**
+ * Code or task parameters that write the name of a schema this bundle defines, when a
+ * target deploys that schema under a prefixed name: deploy succeeds and the run fails
+ * with SCHEMA_NOT_FOUND, because only `${resources.schemas.<key>.name}` follows the rename
+ * (tested on a serverless workspace, CLI v1.24.0, issue 235). Checked on the structural
+ * preview, where names are still as written.
+ */
+function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig, tasks: BundleGraphNode[]): InspectorIssue[] {
+  const renaming = targetsRenamingSchemas(parsedBundle);
+  if (renaming.length === 0) return [];
+  const schemas = Object.entries((parsedBundle.resources?.schemas ?? {}) as Record<string, { name?: unknown } | null>)
+    .map(([key, schema]) => ({ key, name: typeof schema?.name === "string" ? schema.name : "" }))
+    .filter((schema) => schema.name !== "" && !schema.name.includes("${"));
+  if (schemas.length === 0) return [];
+
+  const quote = (names: string[]) => names.map((n) => `"${n}"`).join(", ");
+  const where = (schema: { name: string }) => {
+    const dev = renaming.filter((t) => t.development).map((t) => t.name);
+    const other = renaming.filter((t) => !t.development).map((t) => t.name);
+    if (dev.length === 1 && other.length === 0) return `in target "${dev[0]}" it deploys as "dev_<you>_${schema.name}"`;
+    if (renaming.length === 1) return `in target "${renaming[0]!.name}" it deploys with the target's name prefix`;
+    return `targets ${quote(renaming.map((t) => t.name))} deploy it with a name prefix`;
+  };
+  const matching = (text: string) => {
+    const parts = text.split(".").map((part) => part.replace(/`/g, "").toLowerCase());
+    return schemas.find((schema) => parts.includes(schema.name.toLowerCase()));
+  };
+  const issues: InspectorIssue[] = [];
+  const add = (issue: InspectorIssue) => {
+    if (!issues.some((existing) => existing.id === issue.id)) issues.push(issue);
+  };
+
+  for (const task of tasks) {
+    const taskData = task.taskData;
+    if (!taskData || parentJobHasGitSource(graph, task)) continue;
+    for (const data of taskData.nestedTask ? [taskData, taskData.nestedTask] : [taskData]) {
+      for (const ref of data.fileReferences) {
+        if (ref.source === "GIT" || !ref.exists) continue;
+        const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
+        const names = (fileNode?.data.qualifiedNames as Array<{ parts: string[]; line: number }> | undefined) ?? [];
+        for (const written of names) {
+          const schema = matching(written.parts.join("."));
+          if (!schema) continue;
+          add({
+            id: `schema-renamed:${task.id}:${ref.resolvedPath}:${schema.key}`,
+            severity: "warning",
+            kind: "schema_renamed_in_target",
+            title: `Code names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+            taskId: task.id,
+            taskName: task.displayName,
+            yamlPath: ref.yamlPath,
+            fixHint: `Pass \${resources.schemas.${schema.key}.name} to the task as a parameter and read it in the code, instead of writing the name.`,
+            ...issueLocation(ref.resolvedPath, written.line),
+          });
+        }
+      }
+      for (const parameter of data.taskParameterReferences) {
+        const schema = parameter.value ? matching(parameter.value) : undefined;
+        if (!schema) continue;
+        add({
+          id: `schema-renamed-parameter:${task.id}:${parameter.yamlPath}`,
+          severity: "warning",
+          kind: "schema_renamed_in_target",
+          title: `Parameter "${parameter.name}" names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: parameter.yamlPath,
+          fixHint: `Use \${resources.schemas.${schema.key}.name} instead of the written name.`,
+          ...issueLocation(sourceFileForTask(task), parameter.sourceLine || undefined, parameter.sourceColumn),
+        });
+      }
+    }
+    for (const parameter of taskData.jobParameterReferences) {
+      const schema = parameter.default ? matching(parameter.default) : undefined;
+      if (!schema) continue;
+      add({
+        id: `schema-renamed-job-parameter:${taskData.parentJobId}:${parameter.name}`,
+        severity: "warning",
+        kind: "schema_renamed_in_target",
+        title: `Job parameter "${parameter.name}" names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+        resourceId: taskData.parentJobId,
+        fixHint: `Use \${resources.schemas.${schema.key}.name} as the default instead of the written name.`,
+        ...issueLocation(sourceFileForTask(task), parameter.sourceLine || undefined, parameter.sourceColumn),
+      });
+    }
+  }
+  return issues;
+}
+
+/**
  * A referenced file that exists locally but that `bundle deploy` would not upload.
  * `bundle validate` passes, so the job or pipeline only fails when it runs.
  */
@@ -979,6 +1094,8 @@ export function buildInspectorIssues(
   if (!targetName) issues.push(...emptyBundleNameInRootPathIssues(parsedBundle, bundleRoot));
   // With a target the CLI reports its own "cycle detected" error.
   if (!targetName) issues.push(...variableLoopIssues(parsedBundle, graph.variableSources ?? {}));
+  // With a target the CLI has already renamed the schemas, so the written names are gone.
+  if (!targetName) issues.push(...schemaRenameIssues(graph, parsedBundle, tasks));
 
   return issues;
 }
