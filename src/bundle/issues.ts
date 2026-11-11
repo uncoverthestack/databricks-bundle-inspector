@@ -47,6 +47,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "duplicate_job_parameter",
   "widget_not_set",
   "unused_parameter",
+  "sql_parameter_not_set",
   "task_value_unknown_task",
   "task_value_not_upstream",
   "task_value_key_not_set",
@@ -527,6 +528,49 @@ function widgetParameterIssues(
 }
 
 /**
+ * A SQL file task's file reads a `:name` parameter that neither the task's
+ * `sql_task.parameters` nor the job's parameters pass. Deploy succeeds and the run fails
+ * with UNBOUND_SQL_PARAMETER; job parameters do reach SQL file tasks (both tested on a
+ * serverless SQL warehouse, CLI v1.24.0, issue 234). A parameter passed but not read is
+ * fine, so nothing is said about it.
+ */
+function sqlParameterIssues(
+  graph: BundleGraph,
+  task: BundleGraphNode,
+  taskData: TaskNodeData,
+  jobParameterNames: ReadonlySet<string>,
+): InspectorIssue[] {
+  const issues: InspectorIssue[] = [];
+  for (const ref of taskData.fileReferences) {
+    if (ref.referenceType !== "sql" || ref.source === "GIT" || !ref.exists) continue;
+    const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
+    const markers = (fileNode?.data.sqlParameterMarkers as Array<{ name: string; line: number }> | undefined) ?? [];
+    const passed = new Set([...taskData.taskParameterReferences.map((p) => p.name), ...jobParameterNames]);
+    const unread = [...passed].filter((name) => !markers.some((marker) => marker.name === name));
+    const reported = new Set<string>();
+    for (const marker of markers) {
+      if (passed.has(marker.name) || reported.has(marker.name)) continue;
+      reported.add(marker.name);
+      const suggestion = closestName(marker.name, unread);
+      issues.push({
+        id: `sql-parameter-not-passed:${task.id}:${ref.resolvedPath}:${marker.name}`,
+        severity: "warning",
+        kind: "sql_parameter_not_set",
+        title: suggestion
+          ? `SQL file reads parameter ":${marker.name}", which this task may not pass. Did you mean "${suggestion}"?`
+          : `SQL file reads parameter ":${marker.name}", which this task may not pass.`,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        fixHint: `Pass "${marker.name}" in the task's sql_task.parameters or the job's parameters.`,
+        ...issueLocation(ref.resolvedPath, marker.line),
+      });
+    }
+  }
+  return issues;
+}
+
+/**
  * A referenced file that exists locally but that `bundle deploy` would not upload.
  * `bundle validate` passes, so the job or pipeline only fails when it runs.
  */
@@ -649,6 +693,7 @@ export function buildInspectorIssues(
       const jobParameterNames = new Set(taskData.jobParameterReferences.map((p) => p.name));
       for (const data of checkedTaskData) {
         issues.push(...widgetParameterIssues(graph, task, data, jobParameterNames));
+        issues.push(...sqlParameterIssues(graph, task, data, jobParameterNames));
         issues.push(...runTargetIssues(graph, task, data, syncExclusionOf, bundleRoot));
       }
     }

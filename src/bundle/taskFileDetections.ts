@@ -651,6 +651,20 @@ export async function detectWidgetsInFile(
 }
 
 /**
+ * The named parameter markers (`:name`) a SQL file run by a SQL file task reads, in order,
+ * one per marker. The task's `sql_task.parameters` and the job's parameters fill them; one
+ * neither passes fails the run with UNBOUND_SQL_PARAMETER (tested on a serverless SQL
+ * warehouse, CLI v1.24.0, issue 234). Not casts (`x::int`), JSON paths, comments or
+ * strings, and not legacy `${name}` text, which this check has not tested.
+ */
+export async function detectSqlParameterMarkersInFile(filePath: string): Promise<Array<{ name: string; line: number }>> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), "sql");
+  return scanSqlWidgets(views.sql, views.document)
+    .reads.filter((read) => read.method === "sqlParameterMarker" && read.name)
+    .map((read) => ({ name: read.name!, line: read.line }));
+}
+
+/**
  * How a notebook reads its parameters: the widgets it reads by name, the widgets it
  * gives a default, and whether it pulls in other notebooks with `%run`, which can
  * define widgets the inspector does not see.

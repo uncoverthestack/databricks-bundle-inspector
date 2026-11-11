@@ -1,0 +1,1 @@
+SELECT :Catalog AS c;

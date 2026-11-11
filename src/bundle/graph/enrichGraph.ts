@@ -2,6 +2,7 @@ import { readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import {
   detectSecretInNotebook,
+  detectSqlParameterMarkersInFile,
   detectTaskValuesInFile,
   detectRunTargetsInFile,
   detectWidgetUsageInFile,
@@ -73,7 +74,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           : undefined;
 
       const referenceType = fileNode.data.referenceType;
-      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets] = await Promise.all([
+      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
@@ -88,8 +89,12 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         referenceType === "notebook"
           ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => undefined)
           : undefined,
+        // SQL file tasks fill the file's :name markers from their parameters (#234).
+        referenceType === "sql"
+          ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => undefined)
+          : undefined,
       ]);
-      if (widgetUsage || taskValueUsage || runTargets?.length) {
+      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
           data: {
@@ -97,6 +102,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
             ...(widgetUsage ? { widgetUsage } : {}),
             ...(taskValueUsage ? { taskValueUsage } : {}),
             ...(runTargets?.length ? { runTargets } : {}),
+            ...(sqlParameterMarkers?.length ? { sqlParameterMarkers } : {}),
           },
         });
       }
