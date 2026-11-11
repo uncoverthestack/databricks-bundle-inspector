@@ -15,6 +15,13 @@ const UNREAD_SHOWN = 5;
 
 const baseName = (file) => file.split(/[\\/]/).pop();
 
+/** "line 5" when the file is named after the table (it would repeat the name), else "file.sql:5". */
+function fileLinkText(node) {
+  const file = baseName(node.file);
+  const stem = file.replace(/\.[^.]+$/, "");
+  return stem.toLowerCase() === node.name.toLowerCase() ? `line ${node.line}` : `${file}:${node.line}`;
+}
+
 /**
  * A pipeline's data flow from its SQL (issue 398): what it reads from outside, the tables and
  * views it creates, and the lines between them. Nothing is guessed: names the inspector could
@@ -124,7 +131,8 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
           </svg>
           <div className="relative flex items-start gap-12">
             {columns.map((column, index) => (
-              <div key={index} className="flex w-56 shrink-0 flex-col gap-3">
+              // A column grows to fit its names, up to a limit, before cutting them short.
+              <div key={index} className="flex w-max min-w-56 max-w-[22rem] shrink-0 flex-col gap-3">
                 {column.map((node) => {
                   const outside = node.kind === "outside" || node.kind === "files";
                   const faded = linked && !linked.has(node.id);
@@ -149,23 +157,22 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
                       {/* No type code: Databricks says "materialized view" and "streaming table",
                           never MV or ST, so the kind is written out on the line below. */}
                       <span className="min-w-0 truncate text-[13px] font-medium text-fg">{name(node.name)}</span>
-                      <span className="flex min-w-0 items-baseline gap-2 text-[11px] text-muted">
-                        <span className="truncate">
-                          {node.maybeSameAs ? `may be the same as ${node.maybeSameAs}` : KIND_WORDS[node.kind]}
-                          {node.pipelineOnly ? " · this pipeline only" : ""}
-                        </span>
-                        {!outside && node.line > 0 && (
-                          <button
-                            type="button"
-                            data-data-flow-open={node.id}
-                            onClick={() => onOpenFile?.(node.file, node.line)}
-                            title={`Open ${baseName(node.file)} on the line that creates it`}
-                            className="ml-auto shrink-0 text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                          >
-                            {baseName(node.file)}:{node.line}
-                          </button>
-                        )}
+                      {/* The kind has its own line, so a long file link can never squeeze it out. */}
+                      <span className="truncate text-[11px] text-muted" data-data-flow-kind-words>
+                        {node.maybeSameAs ? `may be the same as ${node.maybeSameAs}` : KIND_WORDS[node.kind]}
+                        {node.pipelineOnly ? " · this pipeline only" : ""}
                       </span>
+                      {!outside && node.line > 0 && (
+                        <button
+                          type="button"
+                          data-data-flow-open={node.id}
+                          onClick={() => onOpenFile?.(node.file, node.line)}
+                          title={`Open ${node.file} on line ${node.line}`}
+                          className="max-w-full self-start truncate text-left text-[11px] text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          {fileLinkText(node)}
+                        </button>
+                      )}
                       {unreadInto.get(node.id) > 0 && (
                         <span className="text-[11px] text-muted" data-data-flow-unread-into>
                           {unreadInto.get(node.id)} {unreadInto.get(node.id) === 1 ? "read" : "reads"} could not be read

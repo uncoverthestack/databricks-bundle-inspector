@@ -115,7 +115,7 @@ export function pipelineFlowSuite() {
     });
 
     it("shows what the pipeline's SQL creates and reads, with outside sources dashed", async () => {
-      await waitFor(async () => (await read()).links.length === 5, "the five reads");
+      await waitFor(async () => (await read()).links.length === 6, "the six reads");
       const shown = await read();
       const kinds = Object.fromEntries(shown.nodes.map((node) => [node.id, node.kind]));
       assert.deepEqual(kinds, {
@@ -123,6 +123,7 @@ export function pipelineFlowSuite() {
         "dataset:orders_bronze": "streaming_table",
         "dataset:orders_silver": "streaming_table",
         "dataset:orders_by_region": "materialized_view",
+        "dataset:orders_by_region_with_a_long_descriptive_name": "materialized_view",
         "outside:main.archive.orders_2024": "outside",
         // The pipeline's configuration fills ${landing} in the file path.
         "files:/Volumes/main/sales/landing/orders": "files",
@@ -134,6 +135,7 @@ export function pipelineFlowSuite() {
       assert.deepEqual(shown.links.map((link) => link.slice(0, link.lastIndexOf(":"))).sort(), [
         "dataset:orders_bronze->dataset:orders_silver",
         "dataset:orders_silver->dataset:orders_by_region",
+        "dataset:orders_silver->dataset:orders_by_region_with_a_long_descriptive_name",
         "files:/Volumes/main/sales/landing/orders->dataset:orders_bronze",
         "outside:main.archive.orders_2024->dataset:orders_silver",
         "outside:main.reference.regions->dataset:orders_by_region",
@@ -141,6 +143,22 @@ export function pipelineFlowSuite() {
       assert.match(shown.unread ?? "", /1 name could not be read/);
       assert.match(shown.unread ?? "", /backfill\.sql:6/);
       assert.match(shown.notRead ?? "", /1 Python file is not read yet/);
+      // Every table's box shows its type and keeps its name and file link inside it, even
+      // with a long name in a file named after it (seen on Databricks' lakeflow example).
+      const boxes = await evaluate(`[...document.querySelectorAll("[data-data-flow-node]")].map((node) => {
+        const box = node.getBoundingClientRect();
+        const kind = node.querySelector("[data-data-flow-kind-words]");
+        const link = node.querySelector("[data-data-flow-open]");
+        const inside = (el) => !el || (el.getBoundingClientRect().right <= box.right + 1 && el.getBoundingClientRect().left >= box.left - 1);
+        return { id: node.dataset.dataFlowNode, kindWidth: kind ? Math.round(kind.getBoundingClientRect().width) : 0, kindText: kind?.textContent ?? "", linkInside: inside(link), link: link?.textContent ?? null, overflow: node.scrollWidth > node.clientWidth + 1 };
+      })`);
+      for (const box of boxes) {
+        assert.equal(box.linkInside, true, `${box.id} keeps its file link inside: ${JSON.stringify(box)}`);
+        assert.equal(box.overflow, false, `${box.id} has nothing spilling out: ${JSON.stringify(box)}`);
+      }
+      for (const box of boxes) assert.ok(box.kindWidth > 20 && box.kindText.trim(), `${box.id} shows its type: ${JSON.stringify(box)}`);
+      const long = boxes.find((box: any) => box.id === "dataset:orders_by_region_with_a_long_descriptive_name");
+      assert.equal(long?.link, "line 3", "a file named after its table links as just its line");
       // The table whose only read could not be read says so on its own box.
       assert.match(await evaluate(`document.querySelector('[data-data-flow-node="dataset:orders_audit"] [data-data-flow-unread-into]')?.textContent ?? ""`), /^1 read could not be read$/);
       await screenshot("pipeline-flow");
