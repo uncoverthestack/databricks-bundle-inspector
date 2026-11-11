@@ -24,6 +24,7 @@ import { OTHER_GROUP, overviewGroupOf } from "../../webview/lib/bundleOverview.j
 const KNOWN_RESOURCE_GAPS = [
   "cluster_policies",
   "data_quality_monitors",
+  "feature_specs",
   "features",
   "genie_spaces",
   "instance_pools",
