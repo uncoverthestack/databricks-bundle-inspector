@@ -601,7 +601,12 @@ function getLibraryReferences(
 
 function getTaskBaseParameters(
   task: Record<string, unknown>,
-): { params: Record<string, unknown>; payloadKey: string } | null {
+): { params: Record<string, unknown>; payloadKey: string; field: string } | null {
+  // A SQL file task passes `sql_task.parameters`, a map like base_parameters (issue 234).
+  const sql = task.sql_task as Record<string, unknown> | undefined;
+  if (sql && typeof sql.parameters === "object" && sql.parameters !== null && !Array.isArray(sql.parameters)) {
+    return { params: sql.parameters as Record<string, unknown>, payloadKey: "sql_task", field: "parameters" };
+  }
   const payloadKeys = [
     "notebook_task",
     "sql_task",
@@ -624,6 +629,7 @@ function getTaskBaseParameters(
       return {
         params: payload.base_parameters as Record<string, unknown>,
         payloadKey: key,
+        field: "base_parameters",
       };
     }
   }
@@ -656,12 +662,12 @@ function getTaskParameterReferences(
   const result = getTaskBaseParameters(task);
   if (!result) return [];
 
-  const { params, payloadKey } = result;
+  const { params, payloadKey, field } = result;
   const jobParamDefaults = getJobParamDefaults(rawJob);
   const refs: TaskParameterReference[] = [];
 
   for (const [paramName, paramValue] of Object.entries(params)) {
-    const yamlPath = `tasks.${taskKey}.${payloadKey}.base_parameters.${paramName}`;
+    const yamlPath = `tasks.${taskKey}.${payloadKey}.${field}.${paramName}`;
     const sourceLocation = resolveSourceLocation?.(yamlPath);
     const valueStr =
       typeof paramValue === "string" ? paramValue : String(paramValue ?? "");

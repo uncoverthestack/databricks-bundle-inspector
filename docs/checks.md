@@ -13,7 +13,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
@@ -191,6 +191,15 @@ A task passes a parameter that its notebook never reads as a widget. Often harml
 - **Example:** `base_parameters: { layer: raw }`, and the notebook reads no `layer` widget.
 - **Fix:** read it in the notebook, or remove it from `base_parameters`.
 - **Limits:** when the notebook reads widgets by names only known at runtime (a name from a variable, `dbutils.widgets.getAll()`, or `dbutils.widgets` passed to other code), the inspector says it didn't check instead, under this code.
+
+### `sql_parameter_not_set`
+
+A SQL file run by a SQL file task (`sql_task.file`) reads a named parameter (`:catalog`) that neither the task's `sql_task.parameters` nor the job's `parameters` pass. `bundle validate` and `bundle deploy` succeed, and the run fails with `UNBOUND_SQL_PARAMETER`.
+
+- **Severity:** warning.
+- **Example:** `FROM IDENTIFIER(:catalog || '.sales.orders')`, with no `catalog` in the task's `parameters` or the job's `parameters`.
+- **Fix:** pass it in the task's `sql_task.parameters` or the job's `parameters`. When the name is close to one that is passed, the warning suggests it.
+- **Limits:** only `:name` markers in code are read: not `::` casts, JSON paths (`raw:owner`), comments or strings. Names are case sensitive: `:Catalog` is not filled by `catalog`. `{{name}}` text is not checked: an unpassed one stays in the SQL as written, so whether the run fails depends on where it is. Legacy `${name}` text is not checked either. A parameter the task passes but the file doesn't read is fine and not reported. SQL files from Git are not read.
 
 ### `task_value_unknown_task`
 
