@@ -207,5 +207,57 @@ export function pipelineFlowSuite() {
       assert.ok(shown.page <= shown.width + 1, `no sideways page scroll: ${JSON.stringify(shown)}`);
       assert.equal(shown.canvasScrolls, true, `the data flow scrolls inside itself: ${JSON.stringify(shown)}`);
     });
+
+    it("a save that removes the focused table leaves no box faded and no stale scroll width", async () => {
+      // The narrow-panel test before this one left the panel on the pipeline; make sure.
+      await openPipeline();
+      await sizer.set(STANDARD_PANEL);
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const dir = path.join(root, "src/transformations");
+      const files = ["backfill.sql", "silver.sql", "orders_by_region_with_a_long_descriptive_name.sql"].map((name) => vscode.Uri.file(path.join(dir, name)));
+      const original = await Promise.all(files.map(async (file) => Buffer.from(await vscode.workspace.fs.readFile(file)).toString("utf8")));
+      await browser.call("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
+      try {
+        await evaluate(`document.querySelector('[data-data-flow-node="dataset:orders_audit"]').focus()`);
+        await waitFor(async () => (await read()).nodes.some((node) => node.faded), "the focused table lighting its links");
+        // Keep only bronze and silver: orders_audit (focused), the flow and the later tables go.
+        await vscode.workspace.fs.writeFile(files[0]!, Buffer.from("", "utf8"));
+        await vscode.workspace.fs.writeFile(files[1]!, Buffer.from("CREATE OR REFRESH STREAMING TABLE orders_silver\nAS SELECT * FROM STREAM(orders_bronze);\n", "utf8"));
+        await vscode.workspace.fs.writeFile(files[2]!, Buffer.from("", "utf8"));
+        await waitFor(async () => (await read()).nodes.length === 3, "the smaller data flow after the save");
+        await sleep(400);
+        const shown = await read();
+        assert.deepEqual(shown.nodes.filter((node) => node.faded).map((node) => node.id), [], "no box fades for a table that is gone");
+        const widths = await evaluate(`(() => {
+          const canvas = document.querySelector("[data-data-flow-canvas]");
+          const row = canvas.querySelector(":scope > div");
+          const svg = canvas.querySelector("svg");
+          return { canvasScroll: canvas.scrollWidth, canvasClient: canvas.clientWidth, row: row.offsetWidth, svg: svg.getBoundingClientRect().width };
+        })()`);
+        const needed = Math.max(widths.canvasClient, widths.row + 32);
+        assert.ok(widths.canvasScroll <= needed + 2, `no stale scroll width after shrinking: ${JSON.stringify(widths)}`);
+      } finally {
+        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
+        for (let i = 0; i < files.length; i++) await vscode.workspace.fs.writeFile(files[i]!, Buffer.from(original[i]!, "utf8"));
+        await waitFor(async () => (await read()).nodes.length === 8, "the full data flow again");
+      }
+    });
+
+    it("a long file name in the could-not-read list never scrolls a narrow panel sideways", async () => {
+      let shown: any;
+      try {
+        await sizer.set({ width: 350, height: STANDARD_PANEL.height });
+        await sleep(300);
+        shown = await evaluate(`(() => {
+          const link = document.querySelector("[data-data-flow-unread] button span");
+          link.textContent = "${"a".repeat(160)}.sql:6";
+          const list = document.querySelector("[data-data-flow-unread]");
+          return { width: innerWidth, page: document.scrollingElement.scrollWidth, list: list.scrollWidth, room: list.clientWidth };
+        })()`);
+      } finally {
+        await sizer.set(STANDARD_PANEL);
+      }
+      assert.ok(shown.page <= shown.width + 1 && shown.list <= shown.room + 1, `no sideways scroll: ${JSON.stringify(shown)}`);
+    });
   });
 }

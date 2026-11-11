@@ -57,13 +57,47 @@ export interface DataFlowFile {
 }
 
 const key = (name: string) => name.toLowerCase();
-const lastPart = (name: string) => key(name).split(".").pop() ?? key(name);
-const isPlaceholder = (value: string | undefined) => !value || value.includes("${");
+const isPlaceholder = (value: string | null | undefined) => !value || value.includes("${");
+
+/** A name's parts, split at dots outside backticks: `` `a.b`.c `` is ["a.b", "c"]. */
+export function splitName(name: string): string[] {
+  const parts: string[] = [""];
+  let quoted = false;
+  for (const c of name) {
+    if (c === "`") { quoted = !quoted; continue; }
+    if (c === "." && !quoted) { parts.push(""); continue; }
+    parts[parts.length - 1] += c;
+  }
+  return parts;
+}
+
+type Namespace = { catalog?: string | null; schema?: string | null } | undefined;
+
+/**
+ * Where a name points: its full catalog.schema.table when every part is known, from what is
+ * written, the file's USE statements and the pipeline's defaults. Otherwise only the name as
+ * written in its context, which matches the same name written in the same context and
+ * nothing else.
+ */
+function resolveName(name: string, namespace: Namespace, defaults: { catalog?: string; schema?: string }): { key: string; last: string } {
+  const parts = splitName(name).map(key);
+  const last = parts[parts.length - 1]!;
+  const known = (value: string | null | undefined) => (value === null || isPlaceholder(value) ? undefined : key(value!));
+  const catalogOf = () => (namespace && "catalog" in namespace ? known(namespace.catalog) : known(defaults.catalog));
+  const schemaOf = () => (namespace && "schema" in namespace ? known(namespace.schema) : known(defaults.schema));
+  const full =
+    parts.length >= 3 ? parts :
+    parts.length === 2 ? [catalogOf(), ...parts] :
+    [catalogOf(), schemaOf(), ...parts];
+  if (full.every((part) => part !== undefined)) return { key: `full:${full.join("\u0001")}`, last };
+  return { key: `as-written:${JSON.stringify(namespace ?? null)}:${parts.join("\u0001")}`, last };
+}
 
 /**
  * @param defaults The pipeline's catalog and schema, resolved when the bundle gives them. A
- *   read named `catalog.schema.x` or `schema.x` is this pipeline's `x` only when its prefix
- *   matches; with unknown defaults it stays outside, with a "may be" note.
+ *   read is this pipeline's dataset only when both point at the same catalog.schema.table,
+ *   or, when those cannot be known, are written the same way in the same USE context.
+ *   Otherwise it is outside, with a "may be the same as" note when its last part matches.
  */
 export function buildPipelineDataFlow(
   files: DataFlowFile[],
@@ -72,71 +106,90 @@ export function buildPipelineDataFlow(
 ): PipelineDataFlow {
   const nodes = new Map<string, DataFlowNode>();
   const edges: DataFlowEdge[] = [];
+  const edgeKeys = new Set<string>();
   const unread: DataFlowUnread[] = [];
+  const known = { ...(defaults.catalog ? { catalog: defaults.catalog } : {}), ...(defaults.schema ? { schema: defaults.schema } : {}) };
+  /** Each of this pipeline's datasets by where its name points. */
+  const byKey = new Map<string, DataFlowNode>();
+  const byLast = new Map<string, DataFlowNode>();
+  const outsideByKey = new Map<string, DataFlowNode>();
+  const datasetFor = (name: string, namespace: Namespace) => byKey.get(resolveName(name, namespace, known).key);
+  const nodeId = (prefix: string, name: string) => {
+    // The id is the name as written; two different tables written alike get distinct ids.
+    let id = `${prefix}:${key(name)}`;
+    for (let n = 2; nodes.has(id); n++) id = `${prefix}:${key(name)}#${n}`;
+    return id;
+  };
 
   // The datasets first, from every file: a read in one file may name a table made in another.
   for (const { file, result } of files) {
     for (const dataset of result.datasets) {
-      const id = `dataset:${key(dataset.name)}`;
-      const existing = nodes.get(id);
+      const resolved = resolveName(dataset.name, dataset.namespace, known);
+      const existing = byKey.get(resolved.key);
       if (existing) {
         if (existing.kind === "flow_target") Object.assign(existing, { kind: dataset.kind, file, line: dataset.line });
         else existing.definedAgain ??= { file, line: dataset.line };
         continue;
       }
-      nodes.set(id, {
-        id,
+      const node: DataFlowNode = {
+        id: nodeId("dataset", dataset.name),
         name: dataset.name,
         kind: dataset.kind,
         file,
         line: dataset.line,
         ...(dataset.pipelineOnly ? { pipelineOnly: true as const } : {}),
-      });
+      };
+      nodes.set(node.id, node);
+      byKey.set(resolved.key, node);
+      if (!byLast.has(resolved.last)) byLast.set(resolved.last, node);
     }
   }
   for (const { file, result } of files) {
     for (const target of result.flowTargets) {
-      const id = `dataset:${key(target)}`;
-      if (!nodes.has(id)) {
-        const line = result.reads.find((read) => key(read.target) === key(target))?.line ?? 0;
-        nodes.set(id, { id, name: target, kind: "flow_target", file, line });
-      }
+      const resolved = resolveName(target.name, target.namespace, known);
+      if (byKey.has(resolved.key)) continue;
+      const line = result.reads.find((read) => key(read.target) === key(target.name))?.line ?? 0;
+      const node: DataFlowNode = { id: nodeId("dataset", target.name), name: target.name, kind: "flow_target", file, line };
+      nodes.set(node.id, node);
+      byKey.set(resolved.key, node);
+      if (!byLast.has(resolved.last)) byLast.set(resolved.last, node);
     }
   }
 
-  const own = new Map([...nodes.values()].map((node) => [lastPart(node.name), node]));
-  const catalog = isPlaceholder(defaults.catalog) ? undefined : key(defaults.catalog!);
-  const schema = isPlaceholder(defaults.schema) ? undefined : key(defaults.schema!);
-  const sourceId = (name: string): { id: string; outside?: { maybeSameAs?: string } } => {
-    if (name.startsWith("files:")) return { id: `files:${name.slice("files:".length)}`, outside: {} };
-    const parts = key(name).split(".");
-    const local = own.get(parts[parts.length - 1]!);
-    if (parts.length === 1) return local ? { id: local.id } : { id: `outside:${key(name)}`, outside: {} };
-    const prefixMatches =
-      (parts.length === 2 && schema !== undefined && parts[0] === schema) ||
-      (parts.length === 3 && catalog !== undefined && schema !== undefined && parts[0] === catalog && parts[1] === schema);
-    if (local && prefixMatches) return { id: local.id };
-    return { id: `outside:${key(name)}`, outside: local ? { maybeSameAs: local.name } : {} };
-  };
-
   for (const { file, result } of files) {
     for (const read of result.reads) {
-      const target = nodes.get(`dataset:${key(read.target)}`);
+      const target = datasetFor(read.target, read.namespace);
       if (!target) continue;
-      const source = sourceId(read.source);
-      if (source.outside && !nodes.has(source.id)) {
-        const isFiles = read.source.startsWith("files:");
-        nodes.set(source.id, {
-          id: source.id,
-          name: isFiles ? read.source.slice("files:".length) : read.source,
-          kind: isFiles ? "files" : "outside",
-          file,
-          line: read.line,
-          ...(source.outside.maybeSameAs ? { maybeSameAs: source.outside.maybeSameAs } : {}),
-        });
+      let source: DataFlowNode | undefined;
+      if (read.source.startsWith("files:")) {
+        const path = read.source.slice("files:".length);
+        const id = `files:${path}`;
+        source = nodes.get(id) ?? { id, name: path, kind: "files", file, line: read.line };
+        nodes.set(id, source);
+      } else {
+        source = datasetFor(read.source, read.namespace);
+        if (!source) {
+          const resolved = resolveName(read.source, read.namespace, known);
+          source = outsideByKey.get(resolved.key);
+          if (!source) {
+            const maybe = byLast.get(resolved.last);
+            source = {
+              id: nodeId("outside", read.source),
+              name: read.source,
+              kind: "outside",
+              file,
+              line: read.line,
+              ...(maybe ? { maybeSameAs: maybe.name } : {}),
+            };
+            nodes.set(source.id, source);
+            outsideByKey.set(resolved.key, source);
+          }
+        }
       }
       if (source.id === target.id) continue;
-      if (edges.some((edge) => edge.from === source.id && edge.to === target.id && edge.flow === read.flow)) continue;
+      const edgeKey = `${source.id}->${target.id}:${read.flow ?? ""}`;
+      if (edgeKeys.has(edgeKey)) continue;
+      edgeKeys.add(edgeKey);
       edges.push({
         from: source.id,
         to: target.id,
@@ -147,7 +200,9 @@ export function buildPipelineDataFlow(
       });
     }
     for (const item of result.unread) {
-      const target = item.target ? nodes.get(`dataset:${key(item.target)}`)?.id : undefined;
+      const target = item.target
+        ? [...byKey.values()].find((node) => key(node.name) === key(item.target!))?.id
+        : undefined;
       unread.push({ file, line: item.line, reason: item.reason, ...(target ? { target } : {}) });
     }
   }
@@ -167,27 +222,39 @@ export function dataFlowColumns(flow: PipelineDataFlow): DataFlowNode[][] {
   const incoming = new Map<string, string[]>();
   const outgoing = new Map<string, string[]>();
   for (const edge of flow.edges) {
-    incoming.set(edge.to, [...(incoming.get(edge.to) ?? []), edge.from]);
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
+    if (!incoming.has(edge.to)) incoming.set(edge.to, []);
+    incoming.get(edge.to)!.push(edge.from);
+    if (!outgoing.has(edge.from)) outgoing.set(edge.from, []);
+    outgoing.get(edge.from)!.push(edge.to);
   }
   const isSource = (node: DataFlowNode) => node.kind === "outside" || node.kind === "files";
   const byId = new Map(flow.nodes.map((n) => [n.id, n]));
-  const visiting = new Set<string>();
-  const place = (node: DataFlowNode): number => {
-    const known = column.get(node.id);
-    if (known !== undefined) return known;
-    if (isSource(node)) return 0;
-    if (visiting.has(node.id)) return 1;
-    visiting.add(node.id);
-    const from = (incoming.get(node.id) ?? []).map((id) => byId.get(id)).filter((n): n is DataFlowNode => Boolean(n));
-    const datasets = from.filter((n) => !isSource(n));
-    // A dataset that only reads outside sources sits in column 1, after them.
-    const at = datasets.length === 0 ? 1 : Math.max(...datasets.map(place)) + 1;
-    visiting.delete(node.id);
-    column.set(node.id, at);
-    return at;
-  };
-  flow.nodes.filter((n) => !isSource(n)).forEach(place);
+  // Longest path from the sources, without recursion, so a chain of thousands of datasets
+  // cannot overflow the call stack (Kahn's order over the datasets).
+  const datasets = flow.nodes.filter((n) => !isSource(n));
+  const waiting = new Map<string, number>();
+  for (const node of datasets) {
+    waiting.set(node.id, (incoming.get(node.id) ?? []).filter((id) => byId.get(id) && !isSource(byId.get(id)!)).length);
+  }
+  const ready = datasets.filter((node) => waiting.get(node.id) === 0).map((node) => node.id);
+  for (const id of ready) column.set(id, 1);
+  for (let next = 0; next < ready.length; next++) {
+    const id = ready[next]!;
+    for (const to of outgoing.get(id) ?? []) {
+      if (!waiting.has(to)) continue;
+      column.set(to, Math.max(column.get(to) ?? 1, column.get(id)! + 1));
+      const left = waiting.get(to)! - 1;
+      waiting.set(to, left);
+      if (left === 0) ready.push(to);
+    }
+  }
+  // Datasets in a loop (a reads b reads a) never become ready: they sit one column after
+  // the furthest placed dataset they read, or in column 1.
+  for (const node of datasets) {
+    if (column.has(node.id)) continue;
+    const placed = (incoming.get(node.id) ?? []).map((id) => column.get(id)).filter((c): c is number => c !== undefined);
+    column.set(node.id, placed.length ? Math.max(...placed) + 1 : 1);
+  }
   for (const node of flow.nodes.filter(isSource)) {
     const targets = (outgoing.get(node.id) ?? []).map((id) => column.get(id) ?? 1);
     column.set(node.id, Math.max(0, Math.min(...(targets.length ? targets : [1])) - 1));

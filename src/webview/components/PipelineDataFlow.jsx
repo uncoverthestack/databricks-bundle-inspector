@@ -28,12 +28,16 @@ function fileLinkText(node) {
  * not read are listed with their file and line.
  */
 export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
-  const [activeId, setActiveId] = useState(null);
+  const [pointedId, setActiveId] = useState(null);
   const [paths, setPaths] = useState([]);
   const [lineWidth, setLineWidth] = useState(0);
   const canvasRef = useRef(null);
+  const rowRef = useRef(null);
   const boxes = useRef(new Map());
   const columns = useMemo(() => (flow ? dataFlowColumns(flow) : []), [flow]);
+  // A box can go away while pointed at or focused (a save removed the table); it gets no
+  // blur then, so ignore an id the flow no longer has, or every other box would fade.
+  const activeId = pointedId && flow?.nodes.some((node) => node.id === pointedId) ? pointedId : null;
   const name = (value) => (resolveName ? resolveName(value) : value);
   const unreadInto = useMemo(() => {
     const counts = new Map();
@@ -77,7 +81,9 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
       next.push({ key: `${edge.from}->${edge.to}:${edge.flow ?? ""}`, d, from: edge.from, to: edge.to, streaming: edge.streaming });
     }
     setPaths(next);
-    setLineWidth(canvas.scrollWidth);
+    // The boxes' own width plus the canvas padding: the canvas's scroll width would include
+    // the line layer itself, and never shrink after a refresh with fewer boxes.
+    setLineWidth(rowRef.current ? rowRef.current.offsetWidth + 32 : 0);
   }, [flow]);
 
   useLayoutEffect(() => {
@@ -86,6 +92,7 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
     if (!canvas || typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(measure);
     observer.observe(canvas);
+    if (rowRef.current) observer.observe(rowRef.current);
     return () => observer.disconnect();
   }, [measure]);
 
@@ -129,7 +136,7 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
               );
             })}
           </svg>
-          <div className="relative flex items-start gap-12">
+          <div ref={rowRef} className="relative flex w-max items-start gap-12">
             {columns.map((column, index) => (
               // A column grows to fit its names, up to a limit, before cutting them short.
               <div key={index} className="flex w-max min-w-56 max-w-[22rem] shrink-0 flex-col gap-3">
@@ -201,9 +208,11 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
               key={`${item.file}:${item.line}:${item.reason}`}
               type="button"
               onClick={() => onOpenFile?.(item.file, item.line)}
-              className="flex min-w-0 gap-2 text-left hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex w-full min-w-0 gap-2 text-left hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <span className="shrink-0 text-link">{baseName(item.file)}:{item.line}</span>
+              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-link" title={`${item.file}:${item.line}`}>
+                {baseName(item.file)}:{item.line}
+              </span>
               <span className="min-w-0 truncate">{item.reason}</span>
             </button>
           ))}
