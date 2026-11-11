@@ -326,6 +326,8 @@ export interface BundleGraphNode {
   taskTypeBadge?: string;
   /** Local sources in a pipeline's `libraries` (pipeline nodes only, when bundleRoot is known). */
   pipelineLibraries?: PipelineLibraryReference[];
+  /** A pipeline's data flow from its SQL sources (pipeline nodes only, issue 398). */
+  pipelineDataFlow?: import("../pipelineDataFlow.js").PipelineDataFlow;
   /** Where a resource is defined: its YAML file and the line of its key (job and resource nodes, when bundleRoot is known). */
   sourceFile?: string;
   sourceLine?: number;

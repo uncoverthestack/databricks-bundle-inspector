@@ -175,6 +175,9 @@ jobs:
       - name: E2E, bundle overview
         if: matrix.group == 1
         run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite overview --fixture src/test/e2e/fixtures/overview
+      - name: E2E, pipeline data flow
+        if: matrix.group == 2
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite pipelineFlow --fixture src/test/e2e/fixtures/pipeline-flow
       # What was on screen in each theme, to see why a contrast or pixel check failed.
       - name: Upload theme screenshots
         if: failure() && matrix.group == 2

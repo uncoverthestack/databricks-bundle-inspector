@@ -1,9 +1,10 @@
 /**
- * What the pipeline view shows, from the bundle's YAML alone: the pipeline's settings, its
- * `libraries`, the jobs in this bundle that run it, and its problems. Nothing is read from
- * the pipeline's table code, so nothing here is a guess about tables.
+ * What the pipeline view shows: from the bundle's YAML, the pipeline's settings, its
+ * `libraries`, the jobs in this bundle that run it and its problems; from its SQL sources,
+ * its data flow (issue 398), read without running anything and never guessed.
  */
 
+import type { PipelineDataFlow } from "../../bundle/pipelineDataFlow.js";
 import { orderBySeverity, severityMeta } from "./issueSeverity.js";
 
 interface GraphNode {
@@ -27,6 +28,7 @@ interface GraphNode {
   }> | undefined;
   sourceFile?: string | undefined;
   sourceLine?: number | undefined;
+  pipelineDataFlow?: PipelineDataFlow | undefined;
 }
 
 interface GraphEdge {
@@ -91,6 +93,8 @@ export interface PipelineViewModel {
   runBy: PipelineRunner[];
   secrets: PipelineSecret[];
   issues: Issue[];
+  /** From the pipeline's SQL sources (issue 398); absent when it has no local sources. */
+  dataFlow?: PipelineDataFlow;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -199,6 +203,7 @@ export function buildPipelineView(
     runBy: pipelineRunners(parsedBundle).get(pipelineKey) ?? [],
     secrets: [...secrets.values()],
     issues: inspectorIssues.filter((issue) => issue.resourceId === id && !issue.taskId),
+    ...(node?.pipelineDataFlow ? { dataFlow: node.pipelineDataFlow } : {}),
   };
 }
 

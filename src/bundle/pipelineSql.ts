@@ -31,6 +31,8 @@ export interface PipelineRead {
 
 export interface PipelineUnread {
   line: number;
+  /** For a read that could not be read: the dataset it would feed. */
+  target?: string;
   /** What could not be read, in words for the panel. */
   reason: string;
   text: string;
@@ -265,10 +267,17 @@ export function readPipelineSql(sql: string, config: Record<string, string> = {}
     return filled;
   };
   const addReads = (tokens: Token[], from: number, target: string, flow?: string) => {
-    for (const read of readsIn(tokens, from, result.unread)) {
-      const source = read.name.startsWith("files:") ? read.name : placeholderFree(read.name, config);
+    const before = result.unread.length;
+    const found = readsIn(tokens, from, result.unread);
+    for (const item of result.unread.slice(before)) item.target = target;
+    for (const read of found) {
+      // A file path fills its ${key} too when the configuration gives it, and is shown as
+      // written when not: it is a label for the files, not a table to match.
+      const source = read.name.startsWith("files:")
+        ? `files:${placeholderFree(read.name.slice("files:".length), config) ?? read.name.slice("files:".length)}`
+        : placeholderFree(read.name, config);
       if (source === undefined) {
-        result.unread.push({ line: read.line, reason: `a read named by a setting: ${read.name}`, text: read.name });
+        result.unread.push({ line: read.line, reason: `a read named by a setting: ${read.name}`, text: read.name, target });
         continue;
       }
       result.reads.push({ source, target, line: read.line, streaming: read.streaming, ...(flow ? { flow } : {}) });

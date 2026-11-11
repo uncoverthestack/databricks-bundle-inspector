@@ -1,0 +1,12 @@
+resources:
+  pipelines:
+    orders_etl:
+      name: orders_etl
+      catalog: main
+      schema: sales
+      serverless: true
+      configuration:
+        landing: /Volumes/main/sales/landing
+      libraries:
+        - glob:
+            include: ../src/transformations/**

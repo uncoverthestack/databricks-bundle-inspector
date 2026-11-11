@@ -127,6 +127,12 @@ describe("pipeline SQL: settings in names", () => {
       .toEqual(["raw.orders -> dev_m"]);
   });
 
+  test("a file path fills ${key} from the configuration, and keeps it as written otherwise", () => {
+    expect(edges(`CREATE STREAMING TABLE a AS SELECT * FROM STREAM read_files('\${landing}/orders')`, { landing: "/Volumes/main/sales/landing" }))
+      .toEqual(["files:/Volumes/main/sales/landing/orders -> a"]);
+    expect(edges(`CREATE STREAMING TABLE a AS SELECT * FROM STREAM read_files('\${landing}/orders')`)).toEqual(["files:${landing}/orders -> a"]);
+  });
+
   test("a ${key} the configuration does not give makes the name unreadable, not guessed", () => {
     const result = readPipelineSql(`CREATE MATERIALIZED VIEW m AS SELECT * FROM \${source}.orders; CREATE MATERIALIZED VIEW \${name} AS SELECT 1`);
     expect(result.reads).toEqual([]);
