@@ -1,9 +1,9 @@
-import { kindMeta } from "../lib/kindMeta";
+import TypeDot from "./TypeDot";
 
 const KIND_LABEL = {
   warehouse: "SQL warehouse",
-  cluster: "Cluster",
-  secret_scope: "Secret scope",
+  cluster: "cluster",
+  secret_scope: "secret scope",
 };
 
 /** One line on where the name comes from, for the tooltip. */
@@ -46,7 +46,6 @@ export default function UsesRow({ items, activeId, pinnedId, onHover, onTogglePi
     >
       <span className="text-[11px] text-muted">Uses</span>
       {items.map((item) => {
-        const meta = kindMeta(item.kind);
         const active = item.id === activeId;
         const pinned = item.id === pinnedId;
         const count = item.taskIds.length;
@@ -62,19 +61,15 @@ export default function UsesRow({ items, activeId, pinnedId, onHover, onTogglePi
             onFocus={() => onHover(item.id)}
             onBlur={() => onHover(null)}
             onClick={() => onTogglePin(item.id)}
-            className={`flex max-w-[260px] items-center gap-1.5 rounded-full border py-0.5 pl-1 pr-2.5 text-xs text-fg transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            className={`flex max-w-[340px] items-center gap-1.5 rounded-full border py-0.5 pl-2.5 pr-2.5 text-xs text-fg transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
               item.source === "bundle" ? "border-solid" : "border-dashed"
             } ${active || pinned ? "border-accent bg-hover" : "border-line-strong"}`}
           >
-            <span
-              style={{ color: meta.color, backgroundColor: meta.bg }}
-              className="shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-bold leading-none"
-            >
-              {meta.code}
-            </span>
+            <TypeDot kind={item.kind} />
             <span className="truncate">{item.label}</span>
             <span className="shrink-0 text-muted">
-              · {count} {count === 1 ? "task" : "tasks"}
+              {/* Serverless isn't a cluster: Databricks calls it serverless compute. */}
+              · {item.source === "default" ? "compute" : KIND_LABEL[item.kind]} · {count} {count === 1 ? "task" : "tasks"}
             </span>
           </button>
         );

@@ -97,22 +97,25 @@ describe("overview wording", () => {
   });
 
   test("a job says how many tasks it has", () => {
-    expect(note("daily")).toBe("3 tasks");
-    expect(note("weekly")).toBe("1 task");
+    expect(note("daily")).toBe("job · 3 tasks");
+    expect(note("weekly")).toBe("job · 1 task");
   });
 
   test("a number always has its word, and says how many jobs when more than one", () => {
     expect(usedByWords(overview, item("analytics").id)).toBe("3 tasks in 2 jobs");
-    expect(note("analytics")).toBe("3 tasks in 2 jobs");
+    expect(note("analytics")).toBe("SQL warehouse · 3 tasks in 2 jobs");
     expect(usedByWords(overview, item("sales").id)).toBe("");
   });
 
   test("says where a name from outside the bundle comes from", () => {
-    expect(note("${var.wh}")).toBe("from a variable · 1 task");
-    expect(note("0123")).toBe("written in · 1 task");
-    expect(note("team")).toBe("not in this bundle · 1 task");
-    expect(note("gone")).toBe("may not exist · 1 task");
-    expect(note("main", "job_cluster")).toBe("job cluster of daily · 1 task");
+    expect(note("${var.wh}")).toBe("SQL warehouse · from a variable · 1 task");
+    expect(note("0123")).toBe("cluster · written in · 1 task");
+    expect(note("team")).toBe("secret scope · not in this bundle · 1 task");
+    expect(note("gone")).toBe("SQL warehouse · may not exist · 1 task");
+    expect(note("main", "job_cluster")).toBe("cluster · defined in daily · 1 task");
+    // Serverless or inherited compute is not called a cluster.
+    const serverless = { ...item("main", "job_cluster"), id: "cluster:serverless", label: "Serverless or inherited", source: "default" } as OverviewItem;
+    expect(itemNote(overview, serverless)).toBe("compute");
   });
 
   test("a type with no tag says what it is", () => {
@@ -121,7 +124,7 @@ describe("overview wording", () => {
   });
 
   test("a pipeline says which job runs it", () => {
-    expect(note("orders")).toBe("run by daily");
+    expect(note("orders")).toBe("pipeline · run by daily");
   });
 
   test("only names from outside the bundle are dashed", () => {

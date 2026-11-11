@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { kindMeta } from "../lib/kindMeta";
+import TypeDot from "./TypeDot";
 import {
   findMatches,
   foldedGroupIds,
@@ -19,7 +19,6 @@ import {
 } from "../lib/overviewView";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
-const TAGGED_KINDS = new Set(["job", "pipeline", "warehouse", "cluster", "secret_scope"]);
 const COLUMNS = [
   { id: "workloads", title: "Workloads", empty: "Nothing in this bundle runs or shows data." },
   { id: "uses", title: "What they use", empty: "No compute, secrets or data in this bundle." },
@@ -46,7 +45,6 @@ function problemWords(item) {
 
 /** One box: a resource, or something the bundle names from outside. */
 function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register }) {
-  const meta = kindMeta(item.kind);
   const problems = problemCount(item);
   const selected = state === "selected";
   const related = state === "related";
@@ -94,17 +92,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
         canOpen ? "pr-[4.25rem]" : "pr-3"
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
-      {TAGGED_KINDS.has(item.kind) && (
-        // The tag sits on the plain box colour, so a selected box's blue tint does not dull it.
-        <span style={{ backgroundColor: UI_COLOR.widget }} className="flex shrink-0 rounded-md">
-          <span
-            style={{ color: meta.color, backgroundColor: meta.bg }}
-            className="rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none"
-          >
-            {meta.code}
-          </span>
-        </span>
-      )}
+      <TypeDot kind={item.kind} />
       <span className="max-w-[65%] shrink-0 truncate text-[13px] font-medium text-fg">{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
       {problems > 0 && (
