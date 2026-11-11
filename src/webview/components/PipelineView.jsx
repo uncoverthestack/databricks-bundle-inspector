@@ -1,5 +1,6 @@
 import { kindMeta } from "../lib/kindMeta";
 import PipelineDataFlow from "./PipelineDataFlow";
+import TypeDot from "./TypeDot";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
 const STATUS = {
@@ -28,15 +29,7 @@ function location(file, line) {
 }
 
 function Badge({ kind }) {
-  const meta = kindMeta(kind);
-  return (
-    <span
-      style={{ color: meta.color, backgroundColor: meta.bg }}
-      className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none"
-    >
-      {meta.code}
-    </span>
-  );
+  return <TypeDot kind={kind} />;
 }
 
 function SectionTitle({ children, tone = "text-muted" }) {

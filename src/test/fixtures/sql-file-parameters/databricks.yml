@@ -1,0 +1,5 @@
+bundle:
+  name: sql_file_parameters
+
+include:
+  - resources/*.yml

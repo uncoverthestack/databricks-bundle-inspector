@@ -1,0 +1,86 @@
+resources:
+  jobs:
+    sql_files:
+      name: sql_files
+      tasks:
+        - task_key: not_passed
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/uses_catalog.sql
+        - task_key: passed
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/uses_catalog.sql
+            parameters:
+              catalog: main
+        - task_key: identifier
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/identifier.sql
+            parameters:
+              catalog: main
+        - task_key: not_markers
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/not_markers.sql
+        - task_key: passes_unused
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/uses_catalog.sql
+            parameters:
+              catalog: main
+              unused: "1"
+        - task_key: other_case
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/upper_case.sql
+            parameters:
+              catalog: main
+        - task_key: near_name
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/uses_schema.sql
+            parameters:
+              schema_name: bronze
+        - task_key: each_day
+          for_each_task:
+            inputs: '["mon", "tue"]'
+            task:
+              task_key: each_day_inner
+              sql_task:
+                warehouse_id: abc123
+                file:
+                  path: ../src/day_and_catalog.sql
+                parameters:
+                  day: "{{input}}"
+    job_parameters:
+      name: job_parameters
+      parameters:
+        - name: catalog
+          default: main
+      tasks:
+        - task_key: from_job
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/uses_catalog.sql
+    from_git:
+      name: from_git
+      git_source:
+        git_url: https://github.com/databricks/bundle-examples
+        git_provider: gitHub
+        git_branch: main
+      tasks:
+        - task_key: git_file
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: src/uses_catalog.sql
+              source: GIT
