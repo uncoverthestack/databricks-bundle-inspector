@@ -34,17 +34,17 @@ function summary(issue: InspectorIssue): string {
 }
 
 const FIXTURE_TARGETS = { dev: { mode: "development", default: true }, staging: {} };
-const IN_DEV = 'in target "dev" it deploys as "dev_<you>_dbi_sales", so this name may not exist there.';
+const IN_DEV = 'schema "dbi_sales" is renamed to "dev_<you>_dbi_sales" in target "dev"; this name may not exist there, or may be a different schema.';
 
 describe("schema names a target renames (issue 235)", () => {
   // See the fixture README for why each case is or isn't reported.
   test("reports written names in code and parameters, once per file or parameter", async () => {
     expect((await findings(fixtureConfig(FIXTURE_TARGETS))).map(summary).sort()).toEqual([
-      `literal_parameter: Parameter "schema" names schema "dbi_sales", which this bundle defines; ${IN_DEV} @ resources/schemas.yml:30`,
-      `literal_parameter: Parameter "table" names schema "dbi_sales", which this bundle defines; ${IN_DEV} @ resources/schemas.yml:31`,
-      `python_code: Code names schema "dbi_sales", which this bundle defines; ${IN_DEV} @ src/writes_table.py:7`,
-      `resources.jobs.uses_schema: Job parameter "target_schema" names schema "dbi_sales", which this bundle defines; ${IN_DEV} @ resources/schemas.yml:10`,
-      `sql_code: Code names schema "dbi_sales", which this bundle defines; ${IN_DEV} @ src/reads_table.sql:2`,
+      `literal_parameter: Parameter "schema": ${IN_DEV} @ resources/schemas.yml:30`,
+      `literal_parameter: Parameter "table": ${IN_DEV} @ resources/schemas.yml:31`,
+      `python_code: S${IN_DEV.slice(1)} @ src/writes_table.py:7`,
+      `resources.jobs.uses_schema: Job parameter "target_schema": ${IN_DEV} @ resources/schemas.yml:10`,
+      `sql_code: S${IN_DEV.slice(1)} @ src/reads_table.sql:2`,
     ]);
   });
 
@@ -68,15 +68,15 @@ describe("schema names a target renames (issue 235)", () => {
 
   test("names the targets that rename, and doesn't guess a custom prefix's result", async () => {
     const [qa] = await findings(fixtureConfig({ qa: { presets: { name_prefix: "qa_" } } }));
-    expect(qa?.title).toContain('in target "qa" it deploys with the target\'s name prefix, so');
+    expect(qa?.title).toBe('Schema "dbi_sales" gets target "qa"\'s name prefix; this name may not exist there, or may be a different schema.');
     // Development mode with the bundle's prefix uses that prefix, not dev_<you>_ (CLI v1.25.0).
     const [devRoot] = await findings(fixtureConfig({ dev: { mode: "development" } }, { presets: { name_prefix: "root_" } }));
-    expect(devRoot?.title).toContain('in target "dev" it deploys with the target\'s name prefix, so');
+    expect(devRoot?.title).toContain('gets target "dev"\'s name prefix;');
     // An empty prefix in development mode still gives dev_<you>_ (CLI v1.24.0, issue 235).
     const [devEmpty] = await findings(fixtureConfig({ dev: { mode: "development", presets: { name_prefix: "" } } }));
     expect(devEmpty?.title).toContain('"dev_<you>_dbi_sales"');
     const [both] = await findings(fixtureConfig({ dev: { mode: "development" }, qa: { presets: { name_prefix: "qa_" } } }));
-    expect(both?.title).toContain('targets "dev", "qa" deploy it with a name prefix, so');
+    expect(both?.title).toContain('gets a name prefix in targets "dev", "qa";');
   });
 
   test("is not checked with a target, where the CLI has already renamed the schemas", async () => {

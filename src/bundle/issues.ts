@@ -612,12 +612,17 @@ function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig
   if (schemas.length === 0) return [];
 
   const quote = (names: string[]) => names.map((n) => `"${n}"`).join(", ");
-  const where = (schema: { name: string }) => {
+  /** One short line: what the target does to the schema, and both ways a written name goes wrong. */
+  const renamed = (schema: { name: string }) => {
     const dev = renaming.filter((t) => t.development).map((t) => t.name);
     const other = renaming.filter((t) => !t.development).map((t) => t.name);
-    if (dev.length === 1 && other.length === 0) return `in target "${dev[0]}" it deploys as "dev_<you>_${schema.name}"`;
-    if (renaming.length === 1) return `in target "${renaming[0]!.name}" it deploys with the target's name prefix`;
-    return `targets ${quote(renaming.map((t) => t.name))} deploy it with a name prefix`;
+    const what =
+      dev.length === 1 && other.length === 0
+        ? `is renamed to "dev_<you>_${schema.name}" in target "${dev[0]}"`
+        : renaming.length === 1
+          ? `gets target "${renaming[0]!.name}"'s name prefix`
+          : `gets a name prefix in targets ${quote(renaming.map((t) => t.name))}`;
+    return `schema "${schema.name}" ${what}; this name may not exist there, or may be a different schema.`;
   };
   const matching = (text: string) => {
     const parts = text.split(".").map((part) => part.replace(/`/g, "").toLowerCase());
@@ -643,7 +648,7 @@ function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig
             id: `schema-renamed:${task.id}:${ref.resolvedPath}:${schema.key}`,
             severity: "warning",
             kind: "schema_renamed_in_target",
-            title: `Code names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+            title: `S${renamed(schema).slice(1)}`,
             taskId: task.id,
             taskName: task.displayName,
             yamlPath: ref.yamlPath,
@@ -659,7 +664,7 @@ function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig
           id: `schema-renamed-parameter:${task.id}:${parameter.yamlPath}`,
           severity: "warning",
           kind: "schema_renamed_in_target",
-          title: `Parameter "${parameter.name}" names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+          title: `Parameter "${parameter.name}": ${renamed(schema)}`,
           taskId: task.id,
           taskName: task.displayName,
           yamlPath: parameter.yamlPath,
@@ -675,7 +680,7 @@ function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig
         id: `schema-renamed-job-parameter:${taskData.parentJobId}:${parameter.name}`,
         severity: "warning",
         kind: "schema_renamed_in_target",
-        title: `Job parameter "${parameter.name}" names schema "${schema.name}", which this bundle defines; ${where(schema)}, so this name may not exist there.`,
+        title: `Job parameter "${parameter.name}": ${renamed(schema)}`,
         resourceId: taskData.parentJobId,
         fixHint: `Use \${resources.schemas.${schema.key}.name} as the default instead of the written name.`,
         ...issueLocation(sourceFileForTask(task), parameter.sourceLine || undefined, parameter.sourceColumn),
