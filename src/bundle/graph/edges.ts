@@ -1,7 +1,7 @@
 export type EdgeKind =
   | "contains"    // job → task
   | "depends_on"  // task → task (execution order)
-  | "references"  // task → file, task → resource, job → job (run_job_task)
+  | "references"  // task → file, task → resource, job → job (run_job_task), pipeline → resource
   | "uses"        // task → variable, task → library, task → cluster, task → warehouse
   | "lookup";     // variable → resource (variable.lookup field)
 
