@@ -17,6 +17,11 @@
       "baseline": "src/test/fixtures/baselines/multi-job-dag.semantic.json"
     },
     {
+      "name": "broken-job",
+      "fixture": "src/test/fixtures/broken-job",
+      "baseline": "src/test/fixtures/baselines/broken-job.semantic.json"
+    },
+    {
       "name": "resource-diagnostics",
       "fixture": "src/test/fixtures/resource-diagnostics",
       "baseline": "src/test/fixtures/baselines/resource-diagnostics.semantic.json"
