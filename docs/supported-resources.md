@@ -22,6 +22,7 @@ These resource groups are in the bundle schema of the latest Databricks CLI, but
 
 | Resource group | In the CLI since |
 | --- | --- |
+| `feature_specs` | v1.26.0 |
 | `postgres_data_apis` | v1.25.0 |
 | `data_quality_monitors` | v1.24.0 |
 | `materialization_sets` | v1.24.0 |

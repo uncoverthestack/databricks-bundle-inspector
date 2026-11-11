@@ -63,7 +63,7 @@ export const OVERVIEW_GROUPS: readonly OverviewGroupDefinition[] = [
     id: "machine_learning",
     name: "Machine learning",
     column: "uses",
-    resourceGroups: ["experiments", "models", "registered_models", "features", "materialization_sets"],
+    resourceGroups: ["experiments", "models", "registered_models", "features", "feature_specs", "materialization_sets"],
   },
   {
     id: "lakebase",
