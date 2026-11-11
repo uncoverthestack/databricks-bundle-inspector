@@ -2,15 +2,6 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dataFlowColumns } from "../../bundle/pipelineDataFlow";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
-const TAG = {
-  streaming_table: "ST",
-  materialized_view: "MV",
-  view: "VIEW",
-  table: "TBL",
-  flow_target: "TBL",
-  outside: "TBL",
-  files: "FILES",
-};
 const KIND_WORDS = {
   streaming_table: "streaming table",
   materialized_view: "materialized view",
@@ -155,12 +146,9 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
                         opacity: faded ? 0.45 : 1,
                       }}
                     >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="shrink-0 rounded-md bg-hover px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none text-fg-soft">
-                          {TAG[node.kind]}
-                        </span>
-                        <span className="min-w-0 truncate text-[13px] font-medium text-fg">{name(node.name)}</span>
-                      </span>
+                      {/* No type code: Databricks says "materialized view" and "streaming table",
+                          never MV or ST, so the kind is written out on the line below. */}
+                      <span className="min-w-0 truncate text-[13px] font-medium text-fg">{name(node.name)}</span>
                       <span className="flex min-w-0 items-baseline gap-2 text-[11px] text-muted">
                         <span className="truncate">
                           {node.maybeSameAs ? `may be the same as ${node.maybeSameAs}` : KIND_WORDS[node.kind]}
