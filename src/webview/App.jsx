@@ -879,7 +879,7 @@ function buildDagFlow(graph, selectedJobKey, parsedBundle, targetName, inspector
           name: compactTaskName(task.displayName),
           fullName: task.displayName,
           kind: task.kind,
-          badge: task.taskTypeBadge,
+          typeLabel: task.taskTypeLabel,
           subtitle: task.subtitle,
           branchOutcomes: [...new Set(branchOutcomesByTask.get(task.id) ?? [])],
           ...taskBoxProblems(task, parsedBundle, targetName, inspectorIssues, problemsByTask),

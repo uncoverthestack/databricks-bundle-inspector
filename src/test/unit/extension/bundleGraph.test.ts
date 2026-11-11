@@ -770,7 +770,7 @@ describe("extractBundleGraph: task labels", () => {
     ]);
   });
 
-  test("gives each task type its own badge instead of the broad kind", async () => {
+  test("names each task type in words, never a short code (issue 400)", async () => {
     const nodes = await taskNodes([
       { task_key: "dbt", dbt_task: {} },
       { task_key: "jar", spark_jar_task: {} },
@@ -779,19 +779,27 @@ describe("extractBundleGraph: task labels", () => {
       { task_key: "ai_runtime", ai_runtime_task: {} },
       { task_key: "python_operator", python_operator_task: {} },
       { task_key: "ai_function", ai_function_task: {} },
+      // These three all showed "J" before; their names tell them apart.
+      { task_key: "if_else", condition_task: { op: "EQUAL_TO", left: "1", right: "1" } },
+      { task_key: "loop", for_each_task: { inputs: "[1]", task: { task_key: "inner", notebook_task: { notebook_path: "./a.py" } } } },
+      { task_key: "run", run_job_task: { job_id: 1 } },
       { task_key: "future", brand_new_task: {} },
     ]);
 
-    expect(nodes.map((node) => [node.displayName, node.taskTypeBadge])).toEqual([
-      ["dbt", "DBT"],
+    expect(nodes.map((node) => [node.displayName, node.taskTypeLabel])).toEqual([
+      ["dbt", "dbt"],
       ["jar", "JAR"],
-      ["alert", "ALRT"],
-      ["power_bi", "PBI"],
-      ["ai_runtime", "AIR"],
-      ["python_operator", "PYOP"],
-      ["ai_function", "AIF"],
-      ["future", "?"],
+      ["alert", "Alert"],
+      ["power_bi", "Power BI"],
+      ["ai_runtime", "AI Runtime"],
+      ["python_operator", "Python operator"],
+      ["ai_function", "AI function"],
+      ["if_else", "If/else"],
+      ["loop", "For each"],
+      ["run", "Run Job"],
+      ["future", "Task"],
     ]);
+    expect(nodes.some((node) => "taskTypeBadge" in node)).toBe(false);
   });
 
   test("shows an unrecognised task type by its key", async () => {

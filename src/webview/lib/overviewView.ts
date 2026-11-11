@@ -63,11 +63,13 @@ export function usedByWords(overview: BundleOverview, itemId: string): string {
 
 /** The short grey note beside a box's name. */
 export function itemNote(overview: BundleOverview, item: OverviewItem): string {
+  // Every note starts with the type in words: there is no type code beside the name (issue 400).
   if (item.kind === "job" && item.source === "bundle") {
-    return typeof item.taskCount === "number" ? count(item.taskCount, "task") : "";
+    return [typeWords(item), typeof item.taskCount === "number" ? count(item.taskCount, "task") : ""].filter(Boolean).join(" · ");
   }
   const labelOf = (id: string) => allItems(overview).find((entry) => entry.id === id)?.label ?? id;
-  const parts: string[] = [];
+  // Serverless or inherited compute isn't a cluster: Databricks calls it serverless compute.
+  const parts: string[] = [item.source === "default" ? "compute" : typeWords(item)];
   switch (item.source) {
     case "variable":
       parts.push("from a variable");
@@ -82,11 +84,10 @@ export function itemNote(overview: BundleOverview, item: OverviewItem): string {
       parts.push("may not exist");
       break;
     case "job_cluster":
-      parts.push(`job cluster of ${labelOf(item.definedIn ?? "")}`);
+      parts.push(`defined in ${labelOf(item.definedIn ?? "")}`);
       break;
     default:
-      // Types with no tag say what they are.
-      if (!(item.kind in KIND_WORDS)) parts.push(typeWords(item));
+      break;
   }
   if (item.kind === "pipeline") {
     const runners = overview.links.filter((link) => link.to === item.id && link.kind === "runs");

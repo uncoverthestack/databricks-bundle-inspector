@@ -1,9 +1,8 @@
 import { Handle, Position } from "@xyflow/react";
-import { kindMeta } from "../lib/kindMeta";
+import TypeDot from "./TypeDot";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
 export default function TaskNode({ data, selected }) {
-  const meta = kindMeta(data.kind);
   // Red for an error, amber for warnings only, from the problem list Issues uses (issue 393).
   const tone = data.problemTone ?? "none";
   const toneColor = tone === "error" ? UI_COLOR.error : tone === "warning" ? UI_COLOR.warning : undefined;
@@ -35,19 +34,14 @@ export default function TaskNode({ data, selected }) {
       className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-fg-soft"
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <span
-        style={{ color: meta.color, backgroundColor: meta.bg }}
-        className="shrink-0 text-[10px] font-bold rounded-md px-1.5 py-0.5 font-mono leading-none"
-      >
-        {data.badge ?? meta.code}
-      </span>
+      <TypeDot kind={data.kind} />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-fg truncate leading-none mb-0.5">
           <span title={data.fullName ?? data.name}>{data.name}</span>
         </div>
-        {data.subtitle && (
+        {(data.typeLabel || data.subtitle) && (
           <div className="text-[11px] text-muted truncate leading-none">
-            {data.subtitle}
+            {[data.typeLabel, data.subtitle].filter(Boolean).join(" · ")}
           </div>
         )}
       </div>
