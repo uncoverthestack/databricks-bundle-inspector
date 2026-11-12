@@ -1372,6 +1372,7 @@ export async function extractBundleGraph(
   });
 
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
+  addPipelineResourceReferences(parsedBundle, sourceIndex, addEdge);
 
   const sourceFiles = sourceIndex.sourceDocuments.map(({ file, doc }) => ({
     file,
@@ -1520,5 +1521,65 @@ function addConfigSecretReferences(
     clusters.forEach((cluster, index) => {
       link("pipelines", pipelineKey, `clusters[${index}]`, cluster, [`resources.pipelines.${pipelineKey}`]);
     });
+  }
+}
+
+const RESOURCE_REFERENCES = /\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}/g;
+
+/** Every `${resources.<group>.<key>.*}` in a value, with the YAML path of the string it is in. */
+function findResourceReferences(
+  value: unknown,
+  path: string,
+): Array<{ expression: string; group: string; key: string; yamlPath: string }> {
+  if (typeof value === "string") {
+    return [...value.matchAll(RESOURCE_REFERENCES)].map((match) => ({
+      expression: match[0],
+      group: match[1]!,
+      key: match[2]!,
+      yamlPath: path,
+    }));
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => findResourceReferences(item, `${path}[${index}]`));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, item]) =>
+      findResourceReferences(item, path ? `${path}.${key}` : key),
+    );
+  }
+  return [];
+}
+
+/**
+ * Links a pipeline to each bundle resource it names with `${resources.<group>.<key>.*}`,
+ * such as the schema in its `catalog` and `schema` fields. One edge per resource, at its first use.
+ * The target may be missing from the bundle; the overview shows that as a missing box.
+ */
+function addPipelineResourceReferences(
+  parsedBundle: ParsedBundleConfig,
+  { resourceSourceMap, yamlLocationMaps }: SourceIndex,
+  addEdge: (edge: BundleEdge) => void,
+): void {
+  for (const [pipelineKey, pipeline] of Object.entries(parsedBundle.resources?.pipelines ?? {})) {
+    const source = `resources.pipelines.${pipelineKey}`;
+    const file = resourceSourceMap.get(`pipelines.${pipelineKey}`) ?? "";
+    for (const ref of findResourceReferences(pipeline, "")) {
+      const target = `resources.${ref.group}.${ref.key}`;
+      if (target === source) continue;
+      const yamlPath = `${source}.${ref.yamlPath}`;
+      const location = yamlLocationMaps.get(file)?.get(yamlPath);
+      addEdge({
+        id: `${source}->references->${target}`,
+        source,
+        target,
+        kind: "references",
+        data: {
+          expression: ref.expression,
+          yamlPath,
+          ...(file ? { file } : {}),
+          ...(location ? { line: location.line, column: location.column } : {}),
+        },
+      });
+    }
   }
 }

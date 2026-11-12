@@ -295,6 +295,97 @@ describe("buildBundleOverview", () => {
   });
 });
 
+describe("pipeline references (#403)", () => {
+  const YAML = `bundle:
+  name: pipeline-refs
+resources:
+  schemas:
+    sales:
+      name: sales
+      catalog_name: main
+  pipelines:
+    orders:
+      name: orders
+      catalog: \${resources.schemas.sales.catalog_name}
+      schema: \${resources.schemas.sales.name}
+      configuration:
+        landing: /Volumes/\${resources.schemas.sales.catalog_name}/raw/\${resources.volumes.landing.name}
+        self: \${resources.pipelines.orders.id}
+    plain:
+      name: plain
+      catalog: main
+      schema: sales
+  jobs:
+    runner:
+      name: runner
+      tasks:
+        - task_key: refresh
+          pipeline_task:
+            pipeline_id: \${resources.pipelines.orders.id}
+        - task_key: load
+          notebook_task:
+            notebook_path: ./load.py
+            base_parameters:
+              schema: \${resources.schemas.sales.name}
+`;
+  let result: BundleOverview;
+  let edges: Awaited<ReturnType<typeof extractBundleGraph>>["edges"];
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-overview-403-"));
+    writeFileSync(path.join(dir, "databricks.yml"), YAML);
+    writeFileSync(path.join(dir, "load.py"), "# Databricks notebook source\nprint(1)\n");
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(parse(YAML) as ParsedBundleConfig, dir));
+    edges = graph.edges;
+    result = buildBundleOverview(graph);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const linksFrom = (from: string) => result.links.filter((link) => link.from === from).map((link) => [link.to, link.kind]);
+  const itemById = (id: string) => result.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+
+  test("a pipeline links to the schema in its catalog and schema fields, once", () => {
+    expect(linksFrom("resources.pipelines.orders")).toEqual([
+      ["resources.schemas.sales", "uses"],
+      ["resources.volumes.landing", "uses"],
+    ]);
+  });
+
+  test("the edge points at the first field that names the schema", () => {
+    const edge = edges.find((e) => e.id === "resources.pipelines.orders->references->resources.schemas.sales");
+    expect(edge?.data).toMatchObject({
+      expression: "${resources.schemas.sales.catalog_name}",
+      yamlPath: "resources.pipelines.orders.catalog",
+      line: 11,
+    });
+  });
+
+  test("a resource the bundle does not have shows as a missing box", () => {
+    expect(itemById("resources.volumes.landing")).toMatchObject({
+      label: "landing",
+      kind: "volumes",
+      source: "missing",
+      expression: "${resources.volumes.landing.name}",
+    });
+  });
+
+  test("a pipeline does not link to itself", () => {
+    expect(edges.some((e) => e.source === "resources.pipelines.orders" && e.target === "resources.pipelines.orders")).toBe(false);
+  });
+
+  test("plain names are not linked", () => {
+    expect(linksFrom("resources.pipelines.plain")).toEqual([]);
+  });
+
+  test("job links are unchanged", () => {
+    expect(linksFrom("resources.jobs.runner")).toEqual([
+      ["cluster:Serverless / inherited compute", "uses"],
+      ["resources.pipelines.orders", "runs"],
+      ["resources.schemas.sales", "uses"],
+    ]);
+  });
+});
+
 describe("overview groups", () => {
   test("no resource group is listed twice", () => {
     const all = OVERVIEW_GROUPS.flatMap((group) => group.resourceGroups);

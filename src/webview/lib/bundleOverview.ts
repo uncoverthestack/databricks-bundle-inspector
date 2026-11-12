@@ -152,7 +152,7 @@ export interface OverviewItem {
 export interface OverviewLink {
   from: string;
   to: string;
-  /** `runs`: a job task that runs a pipeline or another job. `uses`: everything else. */
+  /** `runs`: a job task that runs a pipeline or another job. `uses`: everything else, such as a pipeline's schema. */
   kind: "uses" | "runs";
   /** The tasks of `from` that make the link, in graph order, when `from` is a job. */
   taskIds: string[];
@@ -191,6 +191,7 @@ interface GraphEdge {
   source: string;
   target: string;
   kind: string;
+  data?: Record<string, unknown>;
 }
 
 export interface OverviewGraph {
@@ -342,6 +343,33 @@ export function buildBundleOverview(
       if (!bundleItemIds.has(edge.target)) continue;
       const kind = items.get(edge.target)!.column === "workloads" ? "runs" : "uses";
       addLink(task.parentId!, edge.target, kind, [task.id], [task.displayName]);
+      continue;
+    }
+    // A pipeline naming another resource with `${resources.*}`, such as the schema it writes to.
+    // Secret scope links are left to the step below.
+    const reference =
+      edge.kind === "references" &&
+      target?.nodeType !== "secret_scope" &&
+      bundleItemIds.has(edge.source) &&
+      edge.source.startsWith("resources.pipelines.")
+        ? /^resources\.([^.]+)\.([^.]+)$/.exec(edge.target)
+        : null;
+    if (reference) {
+      if (!items.has(edge.target)) {
+        const expression = typeof edge.data?.expression === "string" ? edge.data.expression : undefined;
+        addItem(
+          {
+            id: edge.target,
+            kind: KIND_OF_RESOURCE_GROUP[reference[1]!] ?? reference[1]!,
+            label: reference[2]!,
+            source: "missing",
+            ...(expression ? { expression } : {}),
+            hasChecks: false,
+          },
+          overviewGroupOf(reference[1]!),
+        );
+      }
+      addLink(edge.source, edge.target, "uses", [], []);
       continue;
     }
     // A resource that is not a job, such as a pipeline or a cluster, reading a secret scope.
