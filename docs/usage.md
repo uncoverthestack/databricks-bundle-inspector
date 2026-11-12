@@ -8,7 +8,7 @@ The inspector runs `databricks bundle validate`, so it needs the [Databricks CLI
 
 If the CLI can't be found, the inspector says why (not installed, a wrong `cliPath`, or the legacy package on your `PATH`) and links to the install steps for your OS. **Locate CLI…** lets you pick the CLI file instead: it is checked, then saved as `databricksBundleInspector.cliPath`.
 
-Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship.
+Tested with Databricks CLI `v0.299.0` and newer. With an older CLI the inspector still runs, but shows a warning, because results may be incomplete. A weekly check runs the inspector against the latest CLI release, so changes in its output are caught soon after they ship. The same weekly check compares the Databricks [pipeline SQL reference](https://docs.databricks.com/gcp/en/ldp/developer/sql-ref) with a saved copy, because the inspector reads pipeline SQL itself.
 
 When `databricks` on VS Code's `PATH` doesn't work, the inspector also tries, in this order:
 
@@ -33,14 +33,15 @@ The graph opens in a new editor panel, on the [bundle overview](#bundle-overview
 
 In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The number on a task counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count.
 
-The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipelines**. A bundle with only pipelines opens on its first pipeline. A pipeline shows what its YAML says, with nothing read from its table code:
+The dropdown in the graph's header lists the bundle's **Jobs**, then its **Pipelines**. A bundle with only pipelines opens on its first pipeline. A pipeline shows what its YAML says, and the data flow its SQL sources describe:
 
 - **Run by a job in this bundle**: each job with a `pipeline_task` that points at it. Click one to see that job's tasks. Jobs outside the bundle that run it aren't known.
 - **Default catalog · schema**: the pipeline's `catalog` and `schema` (or the older `target`). Databricks puts tables there unless the code names another catalog or schema.
 - **Sources**: each entry in `libraries`, marked **Found**, **Missing**, **No files** (a folder pattern that matches nothing), **Not a notebook**, or **Not checked** (a workspace path, a variable, or a pattern the inspector doesn't read). Click a path to open the file, or its location to open the YAML line.
+- **Data flow · from SQL**: read from the pipeline's `.sql` sources, without running them. Each table, view and flow they create is a box, with a link to the line that creates it; each table it reads is a line into it. Tables and files from outside the pipeline are dashed, on the left of what they feed. A `${key}` in a name is filled from the pipeline's `configuration` when the bundle gives it. A name the inspector cannot read, such as one set by a setting the bundle does not give, is listed under **could not be read** with its file and line, and never guessed. Python sources are not read yet; a line says how many. Point at a box to light what it reads and what reads it. The syntax follows the Databricks [pipeline SQL reference](https://docs.databricks.com/gcp/en/ldp/developer/sql-ref).
 - **Issues**, **Configuration** (mode is **Triggered** unless `continuous: true`) and the **Secret scopes** found in its `.py`, `.sql` and `.ipynb` sources and cluster settings.
 
-The graph doesn't show the tables inside a pipeline. In a job's graph, a pipeline task's **Pipeline** row opens its pipeline.
+A job's graph doesn't show a pipeline's tables; its pipeline task's **Pipeline** row opens the pipeline, whose **Data flow** shows them.
 
 Above a job's graph, the **Uses** row lists the SQL warehouses, clusters and secret scopes the job's tasks use, each with how many tasks use it: `analytics · 2 tasks`. A solid chip is defined in the bundle (a `${resources...}` reference, a job cluster, a `secret_scopes` resource). A dashed one is named by a variable or an ID, is a secret scope the bundle doesn't define, or is **Serverless or inherited**, for tasks with no compute set. Secret scopes count both cluster settings and secrets read in a task's code. Point at a chip to light up the tasks that use it; click it to keep them lit, and click again to stop. Its tooltip lists those tasks. In the structural preview a variable shows as written, such as `${var.reporting_wh}`; pick a target to see its value.
 

@@ -1,4 +1,5 @@
 import { readdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
   detectQualifiedNamesInFile,
@@ -11,6 +12,8 @@ import {
 } from "../taskFileDetections.js";
 import { matchSecretScope } from "../resources/secretScope.js";
 import { bundleSecretScopes, type BundleGraph, type BundleGraphNode } from "./bundleGraph.js";
+import { buildPipelineDataFlow, type DataFlowFile } from "../pipelineDataFlow.js";
+import { readPipelineSql } from "../pipelineSql.js";
 import type { BundleEdge } from "./edges.js";
 
 /**
@@ -168,11 +171,53 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
       ),
   );
 
+  // Each pipeline's data flow from its SQL sources, read without running anything (issue 398).
+  await Promise.all(
+    [...nodeMap.values()]
+      .filter((node) => node.pipelineLibraries?.length)
+      .map(async (pipeline) => {
+        const flow = await pipelineDataFlowOf(pipeline);
+        if (flow) nodeMap.set(pipeline.id, { ...pipeline, pipelineDataFlow: flow });
+      }),
+  );
+
   return {
     ...graph,
     nodes: [...nodeMap.values()],
     edges: [...graph.edges, ...newEdges],
   };
+}
+
+/** Text values of a pipeline's `configuration`, which its SQL reads as `${key}`. */
+function pipelineConfiguration(pipeline: BundleGraphNode): Record<string, string> {
+  const configuration = pipeline.data.configuration;
+  if (!configuration || typeof configuration !== "object" || Array.isArray(configuration)) return {};
+  return Object.fromEntries(
+    Object.entries(configuration as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
+  const sources = pipelineSourceFiles(pipeline);
+  if (sources.length === 0) return undefined;
+  const config = pipelineConfiguration(pipeline);
+  const files: DataFlowFile[] = [];
+  const notRead: { file: string; reason: string }[] = [];
+  for (const file of sources) {
+    if (extname(file).toLowerCase() !== ".sql") {
+      notRead.push({ file, reason: extname(file).toLowerCase() === ".py" ? "Python" : "notebook" });
+      continue;
+    }
+    const sql = await readFile(file, "utf8").catch(() => undefined);
+    if (sql === undefined) continue;
+    files.push({ file, result: readPipelineSql(sql, config) });
+  }
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  return buildPipelineDataFlow(files, notRead, {
+    catalog: text(pipeline.data.catalog),
+    // `target` is the older name for the schema.
+    schema: text(pipeline.data.schema) ?? text(pipeline.data.target),
+  });
 }
 
 const SCANNED_SOURCE_EXTENSIONS = new Set([".py", ".sql", ".ipynb"]);

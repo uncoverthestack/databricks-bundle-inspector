@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 
-export const suites = ["cliNotFound", "includeMistakes", "issueCodes", "resourceFiles", "graphRefresh", "inspectionRaces", "alwaysOn", "savedFile", "targets", "themes", "sidebar", "workspaceChanges", "overview"] as const;
+export const suites = ["cliNotFound", "includeMistakes", "issueCodes", "resourceFiles", "graphRefresh", "inspectionRaces", "alwaysOn", "savedFile", "targets", "themes", "sidebar", "workspaceChanges", "overview", "pipelineFlow"] as const;
 
 export function requireSuite(value: string): typeof suites[number] {
   const suite = suites.find(suite => suite === value);

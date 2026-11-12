@@ -1,0 +1,8 @@
+# A pipeline whose SQL the data flow reads, for the pipeline-flow e2e suite (issue 398):
+# a file source, a streaming chain, a join with a table outside the bundle, a flow, a read
+# named by a setting the bundle does not give, and a Python file the flow does not read yet.
+bundle:
+  name: pipeline_flow_check
+
+include:
+  - resources/*.yml

@@ -1,4 +1,5 @@
 import { kindMeta } from "../lib/kindMeta";
+import PipelineDataFlow from "./PipelineDataFlow";
 import TypeDot from "./TypeDot";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
@@ -173,6 +174,7 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
             </ul>
           )}
         </section>
+        <PipelineDataFlow flow={view.dataFlow} onOpenFile={open} resolveName={resolveName} />
 
         {otherPipelines.length > 0 && (
           <section className="flex max-w-3xl flex-col gap-2" aria-label="Other pipelines">
