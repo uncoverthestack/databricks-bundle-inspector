@@ -225,24 +225,36 @@ export function themesSuite() {
         const offset = frame.result.value as { x: number; y: number };
         // The canvas spot must be bare canvas: away from the boxes, edges, zoom buttons and
         // minimap (whose shadows tint what is near them), and midway between the dots,
-        // which sit at 1px in each 16px tile.
+        // which sit at 1px in each 16px tile. Both spots stay 16px inside the webview: VS Code
+        // 1.125 draws a shadow about 6px deep over the editor's edges, which tinted a spot
+        // 3px from the right edge from #f8f8f8 to #f3f3f3.
         const spots = await evaluate(`(() => {
-          const header = document.querySelector("header").getBoundingClientRect();
+          const EDGE = 16;
+          const inside = (x, y) => x >= EDGE && x <= innerWidth - EDGE && y >= EDGE && y <= innerHeight - EDGE;
+          const headerElement = document.querySelector("header");
+          const header = headerElement.getBoundingClientRect();
           const pane = document.querySelector(".react-flow").getBoundingClientRect();
           const avoid = [...document.querySelectorAll(".react-flow__node, .react-flow__controls, .react-flow__minimap, .react-flow__edge")]
             .map(el => el.getBoundingClientRect());
           const clear = (x, y) => avoid.every(r => x < r.left - 48 || x > r.right + 48 || y < r.top - 48 || y > r.bottom + 48);
+          // A bare spot of the header itself, not one of its controls.
+          let headerSpot = null;
+          const headerY = Math.max(header.top + 3, EDGE);
+          for (let x = header.right - EDGE; x >= header.left + EDGE && !headerSpot; x -= 1) {
+            if (inside(x, headerY) && document.elementFromPoint(x, headerY) === headerElement) headerSpot = { x, y: headerY };
+          }
+          if (!headerSpot) return null;
           for (let y = pane.top + 9; y < pane.bottom; y += 16) {
             for (let x = pane.left + 9; x < pane.right; x += 16) {
               const top = document.elementFromPoint(x, y);
-              if (clear(x, y) && top && top.closest(".react-flow__pane, .react-flow__background")) {
-                return { header: { x: header.right - 3, y: header.top + 3 }, canvas: { x, y } };
+              if (inside(x, y) && clear(x, y) && top && top.closest(".react-flow__pane, .react-flow__background")) {
+                return { header: headerSpot, canvas: { x, y } };
               }
             }
           }
           return null;
         })()`) as Record<string, { x: number; y: number }> | null;
-        assert.ok(spots, "a bare spot of canvas to read");
+        assert.ok(spots, "a bare spot of header and of canvas to read");
         const result: Record<string, string> = {};
         for (const [name, spot] of Object.entries(spots)) {
           const clip = { x: offset.x + spot.x, y: offset.y + spot.y, width: 1, height: 1, scale: 1 };
