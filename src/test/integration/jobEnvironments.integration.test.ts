@@ -39,8 +39,11 @@ describe(`job environments that pass validate and fail later (${cli})`, () => {
       .map((issue) => ({ kind: issue.kind, file: path.relative(dir, issue.file ?? ""), line: issue.line, severity: issue.severity, title: issue.title }))
       .sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 
-    // project_environment arrived in CLI v1.20.0. An older CLI drops it with an "unknown
-    // field" warning, and the inspector must not then say the environment has no version.
+    // project_environment arrived in CLI v1.20.0: it is not in the CLI's
+    // bundle/schema/jsonschema.json at v1.19.0 and is from v1.20.0 (databricks/cli source).
+    // An older CLI drops it with an "unknown field" warning (seen on v0.299.2, the oldest
+    // supported), and the inspector must not then say the environment has no version.
+    // The CLI matrix skips the job-environments fixture below v1.20.0 for the same reason.
     const knowsProjectEnvironment = cliIsAtLeast(1, 20, 0);
     expect(findings).toEqual([
       { kind: "environment_version_missing", file: "resources/job.yml", line: 5, severity: "error", title: 'Environment "deps_only" has no version. Deploy may fail.' },
