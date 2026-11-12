@@ -397,9 +397,9 @@
     "*.ts": "eslint --fix"
   },
   "dependencies": {
-    "@xyflow/react": "^12.12.0",
+    "@xyflow/react": "^12.12.1",
     "ignore": "^7.0.14",
-    "lucide-react": "^1.66.0",
+    "lucide-react": "^1.70.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "yaml": "^2.9.1",
@@ -408,14 +408,14 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@jest/globals": "^30.5.2",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.9",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/vscode": "1.125.0",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.28.0",
@@ -432,7 +432,7 @@
     "ts-jest": "^29.4.15",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.5"
+    "vite": "^8.3.6"
   },
   "overrides": {
     "ovsx": {
