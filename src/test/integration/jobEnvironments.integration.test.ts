@@ -1,5 +1,7 @@
-import { describe, expect, test } from "@jest/globals";
+import { afterAll, describe, expect, test } from "@jest/globals";
 import { spawnSync } from "node:child_process";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
@@ -8,6 +10,11 @@ import { validateBundle } from "../../bundle/validateBundle.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
 const FIXTURE = path.resolve("src/test/fixtures/job-environments");
+const created: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(created.map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 /** Whether the CLI under test is this version or newer. */
 function cliIsAtLeast(...minimum: [number, number, number]): boolean {
@@ -26,8 +33,12 @@ function cliIsAtLeast(...minimum: [number, number, number]): boolean {
  */
 describe(`job environments that pass validate and fail later (${cli})`, () => {
   test("each broken environment gets one error at its line, and nothing else does", async () => {
-    // The fixture's README lists each case and what deploy and run did with it.
-    const dir = FIXTURE;
+    // The fixture's README lists each case and what deploy and run did with it. Checked in
+    // a copy: the CLI matrix's baseline test validates the same fixture at the same time,
+    // and the inspector gives each bundle folder one temp folder (bundleTempDir).
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-job-environments-"));
+    created.push(dir);
+    await cp(FIXTURE, dir, { recursive: true });
     const result = await validateBundle(dir, undefined, cli);
     if (!result.ok) throw new Error(result.error.details ?? result.error.error);
     // The CLI loaded the job: a YAML mistake in the test itself would otherwise pass as "no findings".
