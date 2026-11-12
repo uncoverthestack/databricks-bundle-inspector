@@ -1,0 +1,3 @@
+Fixed
+
+- **Type dots no longer look like problems** ([#424](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/424)). An alert's and a secret scope's dot was the error red, a SQL task's the warning amber, and others matched the blue of links or the green of "ok". Red, amber, blue and green now only ever mean a problem, focus or ok. A dot's colour says what kind of thing it is: violet for what runs (jobs, pipelines, dashboards, alerts), teal for code (notebooks, SQL, scripts), magenta for compute (warehouses, clusters), grey for everything else. The pipeline view's main box is neutral grey like every other box.
