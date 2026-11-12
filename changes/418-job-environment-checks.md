@@ -1,0 +1,3 @@
+Added
+
+- **Job environments that pass `bundle validate` and then fail are reported** ([#418](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/418)). Three new errors: `environment_version_missing`, an environment with no `environment_version`, `client`, `base_environment` or `project_environment`, which fails `bundle deploy`; `unknown_environment_key`, a task naming an environment the job doesn't have, with a "Did you mean" when one is close, which fails `bundle deploy`; and `project_environment_version_missing`, a `pyproject.toml` with no `environment_version` or `base_environment`, which deploys and fails when the job runs. Checked by deploying and running a bundle per case on Databricks CLI v1.26.0.

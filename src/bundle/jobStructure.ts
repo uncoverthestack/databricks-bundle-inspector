@@ -9,7 +9,14 @@ import type { YamlLocation, YamlLocationMap } from "./sourceLocations.js";
  * dependency and a loop; duplicate keys deploy, merged by the CLI into one.
  */
 export interface JobStructureFinding {
-  kind: "unknown_task_dependency" | "task_dependency_loop" | "duplicate_task_key" | "duplicate_job_parameter";
+  kind:
+    | "unknown_task_dependency"
+    | "task_dependency_loop"
+    | "duplicate_task_key"
+    | "duplicate_job_parameter"
+    | "environment_version_missing"
+    | "unknown_environment_key"
+    | "project_environment_version_missing";
   /** The job's resource key, e.g. `nightly` for `resources.jobs.nightly`. */
   jobKey: string;
   /** The task the finding belongs to; none for a job parameter. */
@@ -78,8 +85,8 @@ interface JobList {
   target?: string;
 }
 
-/** Every list that can define a job's tasks or parameters: the job's own and each target's. */
-function* jobLists(doc: unknown, field: "tasks" | "parameters"): Generator<JobList> {
+/** Every list that can define a job's tasks, parameters or environments: the job's own and each target's. */
+function* jobLists(doc: unknown, field: "tasks" | "parameters" | "environments"): Generator<JobList> {
   const root = record(doc);
   for (const [jobKey, job] of Object.entries(record(record(root.resources).jobs))) {
     yield { jobKey, items: list(record(job)[field]), path: ["resources", "jobs", jobKey, field] };
@@ -375,4 +382,195 @@ export function findDuplicateKeys(files: SourceFile[], options: JobStructureOpti
 
 function located(location: YamlLocation | undefined): { location?: YamlLocation } {
   return location ? { location } : {};
+}
+
+/** The fields that give a job environment its version. Deploy accepts any one of them. */
+const ENVIRONMENT_VERSION_FIELDS = ["environment_version", "client", "base_environment", "project_environment"] as const;
+
+const isSet = (value: unknown) =>
+  (typeof value === "string" && value.trim() !== "") || typeof value === "number";
+
+/**
+ * Whether a `pyproject.toml` names an environment version for Databricks. The run reads
+ * `environment_version` or `base_environment` under `[tool.databricks.environment]`; TOML
+ * can write that table several ways (a header, dotted keys, an inline table), so any line
+ * outside a comment that names either key counts. A missing finding beats a wrong one.
+ */
+export function pyprojectNamesEnvironmentVersion(text: string): boolean {
+  return text
+    .split(/\r?\n/)
+    .some((line) => /(^|[\s.{,])(environment_version|base_environment)\s*=/.test(line.replace(/#.*$/, "")));
+}
+
+export interface EnvironmentOptions extends JobStructureOptions {
+  /**
+   * The text of the local file a job's `project_environment` names, or undefined when it
+   * can't be read (a workspace path, a variable, a missing file).
+   */
+  readProjectFile?: (jobKey: string, value: string) => string | undefined;
+}
+
+/**
+ * Where a job's environment with this key is written: the job's own list first, else the
+ * picked target's. Points at `field` in it when written there, else at its environment_key.
+ */
+function environmentLocation(
+  files: SourceFile[],
+  locate: Map<SourceFile, (path: (string | number)[]) => YamlLocation | undefined>,
+  jobKey: string,
+  environmentKey: string,
+  field: (string | number)[],
+  options: JobStructureOptions,
+): YamlLocation | undefined {
+  let keyLocation: YamlLocation | undefined;
+  for (const own of [true, false]) {
+    for (const file of files) {
+      for (const environments of jobLists(file.doc, "environments")) {
+        if (environments.jobKey !== jobKey || (environments.target === undefined) !== own) continue;
+        if (!own && environments.target !== options.activeTarget) continue;
+        const target = environments.target ?? options.activeTarget;
+        for (const [index, environment] of environments.items.entries()) {
+          if (keyOf(record(environment).environment_key, target, options) !== environmentKey) continue;
+          const found = field.length ? locate.get(file)!([...environments.path, index, ...field]) : undefined;
+          if (found) return found;
+          keyLocation ??= locate.get(file)!([...environments.path, index, "environment_key"]);
+        }
+      }
+    }
+  }
+  return keyLocation;
+}
+
+/** Whether the YAML as written sets a version field in this environment's spec, in the job's own list or the picked target's. */
+function writtenVersionField(files: SourceFile[], jobKey: string, environmentKey: string, options: JobStructureOptions): boolean {
+  for (const file of files) {
+    for (const environments of jobLists(file.doc, "environments")) {
+      if (environments.jobKey !== jobKey) continue;
+      if (environments.target !== undefined && environments.target !== options.activeTarget) continue;
+      const target = environments.target ?? options.activeTarget;
+      for (const environment of environments.items) {
+        if (keyOf(record(environment).environment_key, target, options) !== environmentKey) continue;
+        const spec = record(record(environment).spec);
+        if (ENVIRONMENT_VERSION_FIELDS.some((field) => isSet(spec[field]))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Where a task's `environment_key` is written: the picked target's copy of the task
+ * first (a target that changes the key), else the job's own. `inner` is a for-each
+ * task's inner task.
+ */
+function taskEnvironmentKeyLocation(
+  files: SourceFile[],
+  locate: Map<SourceFile, (path: (string | number)[]) => YamlLocation | undefined>,
+  jobKey: string,
+  taskKey: string,
+  inner: boolean,
+  options: JobStructureOptions,
+): YamlLocation | undefined {
+  const field = inner ? ["for_each_task", "task", "environment_key"] : ["environment_key"];
+  for (const fromTarget of [true, false]) {
+    for (const file of files) {
+      for (const tasks of jobLists(file.doc, "tasks")) {
+        if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
+        if (fromTarget && tasks.target !== options.activeTarget) continue;
+        const target = tasks.target ?? options.activeTarget;
+        for (const [index, task] of tasks.items.entries()) {
+          if (keyOf(record(task).task_key, target, options) !== taskKey) continue;
+          const found = locate.get(file)!([...tasks.path, index, ...field]);
+          if (found) return found;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Job environments that `bundle validate` accepts and Databricks rejects (#418, tested on
+ * Databricks CLI v1.26.0): an environment with no version fails `bundle deploy`, a task
+ * naming an environment the job doesn't have fails `bundle deploy`, and a
+ * `project_environment` whose pyproject.toml names no version fails when the job runs.
+ * Checked in the jobs as the CLI resolved them, so a picked target's settings count.
+ */
+export function findEnvironmentProblems(
+  jobs: Record<string, unknown>,
+  files: SourceFile[],
+  options: EnvironmentOptions = {},
+): JobStructureFinding[] {
+  const findings: JobStructureFinding[] = [];
+  const locate = new Map(files.map((file) => [file, locator(file)]));
+  const target = options.activeTarget;
+
+  for (const [jobKey, job] of Object.entries(jobs)) {
+    const environments = list(record(job).environments).map((environment) => ({
+      key: keyOf(record(environment).environment_key, target, options),
+      spec: record(record(environment).spec),
+    }));
+
+    for (const { key, spec } of environments) {
+      if (key === undefined) continue;
+      if (!ENVIRONMENT_VERSION_FIELDS.some((field) => isSet(spec[field]))) {
+        // A CLI that doesn't know a field drops it from its output (project_environment
+        // before v1.20.0) and warns "unknown field". The YAML does set a version then, so
+        // saying it has none would be wrong; the CLI's warning names the real cause.
+        if (writtenVersionField(files, jobKey, key, options)) continue;
+        findings.push({
+          kind: "environment_version_missing",
+          jobKey,
+          subject: key,
+          title: `Environment "${key}" has no version. Deploy may fail.`,
+          fixHint: `Deploy fails with "Either base environment, version, or project_environment must be provided for environment '${key}'". Set environment_version, base_environment or project_environment in its spec.`,
+          ...located(environmentLocation(files, locate, jobKey, key, [], options)),
+        });
+        continue;
+      }
+      const project = spec.project_environment;
+      // Any other version field wins: deploy refuses project_environment combined with one.
+      const versioned = ENVIRONMENT_VERSION_FIELDS.some((field) => field !== "project_environment" && isSet(spec[field]));
+      if (typeof project !== "string" || versioned) continue;
+      const text = options.readProjectFile?.(jobKey, project);
+      if (text === undefined || pyprojectNamesEnvironmentVersion(text)) continue;
+      findings.push({
+        kind: "project_environment_version_missing",
+        jobKey,
+        subject: key,
+        title: `Environment "${key}": its pyproject.toml has no environment version. The job may fail when it runs.`,
+        fixHint: `The run fails with "pyproject.toml must specify environment_version or base_environment under [tool.databricks.environment]". Add environment_version (for example "5") or base_environment under [tool.databricks.environment] in that file.`,
+        ...located(environmentLocation(files, locate, jobKey, key, ["spec", "project_environment"], options)),
+      });
+    }
+
+    // A key the preview can't resolve could be any key: no task's key can be called unknown.
+    if (environments.some(({ key }) => key === undefined)) continue;
+    const known = environments.map(({ key }) => key as string);
+    const reported = new Set<string>();
+    const check = (task: Task & { environment_key?: unknown }, taskKey: string, inner: boolean) => {
+      if (task.environment_key === undefined || task.environment_key === null || task.environment_key === "") return;
+      const used = keyOf(task.environment_key, target, options);
+      if (used === undefined || known.includes(used) || reported.has(`${taskKey}\u0000${inner}`)) return;
+      reported.add(`${taskKey}\u0000${inner}`);
+      const suggestion = closestName(used, known);
+      findings.push({
+        kind: "unknown_environment_key",
+        jobKey,
+        taskKey,
+        subject: `${used}${inner ? "#inner" : ""}`,
+        title: `Environment "${used}" may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+        fixHint: `Deploy fails with "Job environment '${used}' used by task ${taskKey} is not defined in field 'environments'". Use the environment_key of one of job "${jobKey}"'s environments${known.length ? `: ${quoteList(known)}` : ", or add one"}.`,
+        ...located(taskEnvironmentKeyLocation(files, locate, jobKey, taskKey, inner, options)),
+      });
+    };
+    for (const task of list(record(job).tasks) as (Task & { environment_key?: unknown; for_each_task?: unknown })[]) {
+      const taskKey = keyOf(task.task_key, target, options);
+      if (taskKey === undefined) continue;
+      check(task, taskKey, false);
+      const innerTask = record(record(task.for_each_task).task);
+      if (Object.keys(innerTask).length) check(innerTask, taskKey, true);
+    }
+  }
+  return findings;
 }

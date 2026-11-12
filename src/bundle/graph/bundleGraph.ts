@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -5,6 +6,7 @@ import {
   buildTaskNodeData,
   getTaskPayloadKey,
   getUnrecognisedTaskKey,
+  resolveLocalPath,
   type TaskNodeData,
   type TaskPayloadKey,
 } from "../resources/task.js";
@@ -19,7 +21,12 @@ import {
 import type { BundleEdge, EdgeKind } from "./edges.js";
 import { describeCronExpression } from "./cronDescription.js";
 import { findVariableSources, type VariableSources } from "../variableSources.js";
-import { findDependencyProblems, findDuplicateKeys, type JobStructureFinding } from "../jobStructure.js";
+import {
+  findDependencyProblems,
+  findDuplicateKeys,
+  findEnvironmentProblems,
+  type JobStructureFinding,
+} from "../jobStructure.js";
 import { resolveExpressionForTarget } from "../targetResolution.js";
 import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
 import type { NotebookHeaderRule } from "../notebookFiles.js";
@@ -1399,6 +1406,22 @@ export async function extractBundleGraph(
     jobStructureFindings: [
       ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, jobStructureOptions),
       ...findDuplicateKeys(sourceFiles, jobStructureOptions),
+      ...findEnvironmentProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, {
+        ...jobStructureOptions,
+        // Relative to the job's YAML folder, as the CLI reads it; a real target's workspace
+        // path is already mapped back to the local file. Only a small file is read.
+        readProjectFile: (jobKey, value) => {
+          if (!bundleRoot) return undefined;
+          const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);
+          if (!resolvedPath || !exists) return undefined;
+          try {
+            const stats = statSync(resolvedPath);
+            return stats.isFile() && stats.size <= 1_000_000 ? readFileSync(resolvedPath, "utf8") : undefined;
+          } catch {
+            return undefined;
+          }
+        },
+      }),
     ],
   };
 }
