@@ -1,0 +1,10 @@
+bundle:
+  name: job-environments
+include:
+  - resources/*.yml
+variables:
+  env_version:
+    default: "5"
+targets:
+  dev:
+    default: true

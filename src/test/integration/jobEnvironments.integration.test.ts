@@ -1,7 +1,5 @@
-import { afterAll, describe, expect, test } from "@jest/globals";
+import { describe, expect, test } from "@jest/globals";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
@@ -9,7 +7,7 @@ import { buildInspectorIssues } from "../../bundle/issues.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
-const created: string[] = [];
+const FIXTURE = path.resolve("src/test/fixtures/job-environments");
 
 /** Whether the CLI under test is this version or newer. */
 function cliIsAtLeast(...minimum: [number, number, number]): boolean {
@@ -20,93 +18,16 @@ function cliIsAtLeast(...minimum: [number, number, number]): boolean {
   return true;
 }
 
-afterAll(async () => {
-  await Promise.all(created.map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 /**
  * Job environments that `bundle validate` accepts and Databricks rejects (#418). Each
  * broken case here was deployed or run on Databricks CLI v1.26.0 and failed; each clean
- * case deployed and ran. This runs the real CLI's preview output through the inspector,
- * so a CLI that changes how it writes these fields fails this test.
+ * case deployed and ran. This runs the real CLI's preview output for the fixture through
+ * the inspector, so a CLI that changes how it writes these fields fails this test.
  */
 describe(`job environments that pass validate and fail later (${cli})`, () => {
   test("each broken environment gets one error at its line, and nothing else does", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-environments-"));
-    created.push(dir);
-    await mkdir(path.join(dir, "src"));
-    await mkdir(path.join(dir, "resources"));
-    await mkdir(path.join(dir, "projects", "pinned"), { recursive: true });
-    await writeFile(path.join(dir, "src", "probe.py"), "print(1)\n");
-    await writeFile(path.join(dir, "projects", "pyproject.toml"), '[project]\nname = "probe"\ndependencies = ["simplejson"]\n');
-    await writeFile(
-      path.join(dir, "projects", "pinned", "pyproject.toml"),
-      '[project]\nname = "probe"\n\n[tool.databricks.environment]\nenvironment_version = "5"\n',
-    );
-    await writeFile(
-      path.join(dir, "databricks.yml"),
-      [
-        "bundle:",
-        "  name: environments",
-        "include:",
-        "  - resources/*.yml",
-        "variables:",
-        "  env_version:",
-        '    default: "5"',
-        "targets:",
-        "  dev:",
-        "    default: true",
-        "",
-      ].join("\n"),
-    );
-    await writeFile(
-      path.join(dir, "resources", "job.yml"),
-      [
-        "resources:",
-        "  jobs:",
-        "    envs:",
-        "      environments:",
-        "        - environment_key: deps_only", //                       5: no version
-        "          spec:",
-        "            dependencies: [simplejson]",
-        "        - environment_key: empty", //                           8: empty spec
-        "          spec: {}",
-        "        - environment_key: no_spec", //                        10: no spec
-        "        - environment_key: version",
-        '          spec: { environment_version: "5" }',
-        "        - environment_key: from_variable",
-        '          spec: { environment_version: "${var.env_version}" }',
-        "        - environment_key: old_client",
-        '          spec: { client: "2" }',
-        "        - environment_key: base",
-        "          spec: { base_environment: workspace-base-environments/databricks_ml_v5 }",
-        "        - environment_key: project",
-        "          spec:",
-        "            project_environment: ../projects/pyproject.toml", // 21: no version in the file
-        "        - environment_key: pinned_project",
-        "          spec:",
-        "            project_environment: ../projects/pinned/pyproject.toml",
-        "      tasks:",
-        "        - task_key: typo",
-        "          environment_key: versoin", //                         27: did you mean "version"
-        "          spark_python_task:",
-        "            python_file: ../src/probe.py",
-        "        - task_key: fine",
-        "          environment_key: version",
-        "          spark_python_task:",
-        "            python_file: ../src/probe.py",
-        "        - task_key: loop",
-        "          for_each_task:",
-        '            inputs: "[1, 2]"',
-        "            task:",
-        "              task_key: loop_inner",
-        "              environment_key: bse", //                         39: did you mean "base"
-        "              spark_python_task:",
-        "                python_file: ../src/probe.py",
-        "",
-      ].join("\n"),
-    );
-
+    // The fixture's README lists each case and what deploy and run did with it.
+    const dir = FIXTURE;
     const result = await validateBundle(dir, undefined, cli);
     if (!result.ok) throw new Error(result.error.details ?? result.error.error);
     // The CLI loaded the job: a YAML mistake in the test itself would otherwise pass as "no findings".

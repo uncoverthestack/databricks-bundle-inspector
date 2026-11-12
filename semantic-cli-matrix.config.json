@@ -71,6 +71,12 @@
       "name": "task-graph",
       "fixture": "src/test/fixtures/task-graph",
       "baseline": "src/test/fixtures/baselines/task-graph.semantic.json"
+    },
+    {
+      "name": "job-environments",
+      "fixture": "src/test/fixtures/job-environments",
+      "baseline": "src/test/fixtures/baselines/job-environments.semantic.json",
+      "minCliVersion": "1.20.0"
     }
   ]
 }
