@@ -1,0 +1,3 @@
+Added
+
+- **A compute box on the bundle overview shows its settings** ([#417](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/417)). Click a SQL warehouse, cluster or job cluster to see its key settings in the labels Databricks uses, such as a warehouse's Type, Cluster size, Auto stop, Scaling and Channel, or a cluster's Runtime, Worker type, Workers and Access mode, plus its permissions. **Also set** names every other field the bundle sets, each a link to its line. Serverless compute lists the jobs' environments, performance targets, and notebook tasks with no environment in the job. Only what the bundle sets is shown, as resolved for the picked target; no default is guessed.

@@ -26,6 +26,7 @@ module.exports = {
     "<rootDir>/src/test/integration/pathNotChecked.integration.test.ts",
     "<rootDir>/src/test/integration/pipelineView.integration.test.ts",
     "<rootDir>/src/test/integration/variableFields.integration.test.ts",
+    "<rootDir>/src/test/integration/computeSettings.integration.test.ts",
     "<rootDir>/src/test/integration/jobEnvironments.integration.test.ts",
   ],
   modulePathIgnorePatterns: ["<rootDir>/.vscode-test/", "<rootDir>/out/"],

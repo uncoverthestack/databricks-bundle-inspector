@@ -176,6 +176,18 @@ export function overviewSuite() {
       }, "the cursor on the cluster's key");
     });
 
+    it("a compute box's details show its settings, and an Also set field opens its line (issue 417)", async () => {
+      assert.equal((await read()).details, CLUSTER, "the cluster is still selected");
+      const settings = String(await evaluate(`document.querySelector("[data-overview-details] [data-overview-settings]")?.innerText ?? ""`));
+      assert.match(settings, /Worker type\s+i3\.xlarge/, "a setting in Databricks' words");
+      await evaluate(`document.querySelector('[data-overview-also-set="spark_env_vars"]').click()`);
+      await waitFor(async () => {
+        const editor = vscode.window.activeTextEditor;
+        return Boolean(editor?.document.fileName.endsWith("databricks.yml")) &&
+          editor!.document.lineAt(editor!.selection.active.line).text.trim() === "spark_env_vars:";
+      }, "the cursor on the field's key");
+    });
+
     it("clicking the box again clears the selection", async () => {
       await click(CLUSTER);
       await waitFor(async () => (await read()).details === null, "the details to close");

@@ -9,6 +9,7 @@ import {
   type ParsedBundleConfig,
 } from "../../../bundle/graph/bundleGraph.js";
 import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
+import { resolveExpressionForTarget } from "../../../bundle/targetResolution.js";
 import {
   buildBundleOverview,
   CHECKED_RESOURCE_GROUPS,
@@ -405,5 +406,99 @@ describe("overview groups", () => {
       .map((line) => /^\| \[?`([a-z_]+)`/.exec(line)?.[1])
       .filter((group): group is string => group !== undefined);
     expect([...CHECKED_RESOURCE_GROUPS].sort()).toEqual(supported.sort());
+  });
+});
+
+describe("compute settings in the details (#417)", () => {
+  const rows = (entry: OverviewItem | undefined) =>
+    Object.fromEntries((entry?.settings?.sections ?? []).map((section) => [section.title, section.rows.map((row) => `${row.label}: ${row.value}`)]));
+
+  test("a cluster resource shows its settings, and the other fields it sets with the line each is on", () => {
+    const cluster = item("resources.clusters.shared_etl");
+    expect(rows(cluster)).toEqual({ Settings: ["Name: shared-etl", "Runtime: 15.4.x-scala2.12"] });
+    expect(cluster?.settings?.alsoSet).toEqual([{ field: "spark_env_vars", count: 1, line: 16 }]);
+    expect(cluster?.settings?.file).toBe(path.join(root, "databricks.yml"));
+  });
+
+  test("a job cluster shows its new_cluster settings, each job's own", () => {
+    expect(rows(item("resources.jobs.daily.job_clusters.main"))).toEqual({ Settings: ["Runtime: 15.4.x-scala2.12"] });
+    expect(rows(item("resources.jobs.weekly.job_clusters.main"))).toEqual({ Settings: ["Runtime: 15.4.x-scala2.12"] });
+  });
+
+  test("a warehouse shows what it sets; one named by an ID has no settings to show", () => {
+    expect(rows(item("resources.sql_warehouses.analytics"))).toEqual({ Settings: ["Name: analytics"] });
+    const byId = overview.groups.flatMap((group) => group.items).find((entry) => entry.source === "variable");
+    expect(byId?.settings).toBeUndefined();
+  });
+
+  test("boxes that are not compute have no settings", () => {
+    for (const id of ["resources.jobs.daily", "resources.pipelines.orders", "resources.secret_scopes.app_secrets", "resources.schemas.sales"]) {
+      expect(item(id)?.settings).toBeUndefined();
+    }
+  });
+});
+
+describe("compute named by a variable, per target (#417)", () => {
+  const yaml = `bundle:
+  name: per-target
+variables:
+  wh:
+    default: dev0000000000000
+targets:
+  dev:
+    default: true
+  prod:
+    variables:
+      wh: prod000000000000
+resources:
+  jobs:
+    report:
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: \${var.wh}
+            query:
+              query_id: q
+        - task_key: nb
+          notebook_task:
+            notebook_path: ./nb.py
+        - task_key: script
+          environment_key: default
+          spark_python_task:
+            python_file: ./job.py
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"
+`;
+  let dir: string;
+  let graph: Awaited<ReturnType<typeof extractBundleGraph>>;
+  const config = parse(yaml) as ParsedBundleConfig;
+  beforeAll(async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "dbi-overview-targets-"));
+    writeFileSync(path.join(dir, "databricks.yml"), yaml);
+    writeFileSync(path.join(dir, "nb.py"), "# Databricks notebook source\nprint(1)\n");
+    writeFileSync(path.join(dir, "job.py"), "print(1)\n");
+    graph = await enrichGraphWithFileContent(await extractBundleGraph(config, dir));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** The overview as the app builds it for a picked target. */
+  const forTarget = (target: string) =>
+    buildBundleOverview(graph, [], (value) => resolveExpressionForTarget(value, config, target).value)
+      .groups.flatMap((group) => group.items);
+
+  test("switching targets changes the box's name to that target's value", () => {
+    const named = (target: string) => forTarget(target).find((entry) => entry.source === "variable");
+    expect(named("dev")).toMatchObject({ label: "dev0000000000000", expression: "${var.wh}" });
+    expect(named("prod")).toMatchObject({ label: "prod000000000000", expression: "${var.wh}" });
+  });
+
+  test("serverless compute lists the job's environment and its notebook task", () => {
+    const serverless = forTarget("dev").find((entry) => entry.source === "default");
+    expect(Object.fromEntries((serverless?.settings?.sections ?? []).map((section) => [section.title, section.rows.map((row) => `${row.label}: ${row.value}`)]))).toEqual({
+      "Environment default": ["Version: 5", "Tasks: script"],
+      "Notebook tasks": ["Environment: Not set in the job. Databricks chooses the version.", "Tasks: nb"],
+    });
   });
 });

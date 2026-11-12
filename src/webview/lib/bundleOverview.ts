@@ -4,6 +4,7 @@
  * bundle says. Left column: what runs or shows something. Right column: what those use.
  */
 import { buildJobUses, type UsesSource } from "./jobUses.js";
+import { clusterSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 
 export type OverviewColumn = "workloads" | "uses";
 
@@ -147,6 +148,8 @@ export interface OverviewItem {
   file?: string;
   line?: number;
   problems: ProblemCounts;
+  /** A compute box's settings for its details (issue 417), when the bundle sets any. */
+  settings?: ComputeSettings;
 }
 
 export interface OverviewLink {
@@ -184,6 +187,7 @@ interface GraphNode {
   taskCount?: number;
   sourceFile?: string;
   sourceLine?: number;
+  fieldLines?: Record<string, number>;
   data?: Record<string, unknown>;
 }
 
@@ -395,6 +399,44 @@ export function buildBundleOverview(
       .sort((a, b) => (taskOrder.get(a.id) ?? 0) - (taskOrder.get(b.id) ?? 0));
     link.taskIds = pairs.map((pair) => pair.id);
     link.taskNames = pairs.map((pair) => pair.name);
+  }
+
+  // 5. A compute box's settings, from the resolved config, with the lines they are written on.
+  for (const item of items.values()) {
+    const settings = settingsOf(item);
+    if (settings && (settings.sections.length > 0 || settings.alsoSet.length > 0)) item.settings = settings;
+  }
+  function settingsOf(item: OverviewItem): ComputeSettings | undefined {
+    if (item.source === "bundle") {
+      const node = nodeById.get(item.id);
+      const config = node?.data ?? {};
+      if (item.resourceGroup === "sql_warehouses") return warehouseSettings(config, resolve, node?.fieldLines, node?.sourceFile);
+      if (item.resourceGroup === "clusters") return clusterSettings(config, resolve, node?.fieldLines, node?.sourceFile);
+      return undefined;
+    }
+    if (item.source === "job_cluster" && item.definedIn) {
+      const job = nodeById.get(item.definedIn);
+      const jobClusters = Array.isArray(job?.data?.job_clusters) ? (job!.data!.job_clusters as unknown[]) : [];
+      const jobCluster = jobClusters.find((entry) => (entry as Record<string, unknown>)?.job_cluster_key === item.label) as
+        | Record<string, unknown>
+        | undefined;
+      const newCluster = jobCluster?.new_cluster;
+      if (!newCluster || typeof newCluster !== "object") return undefined;
+      return clusterSettings(newCluster as Record<string, unknown>, resolve, job?.fieldLines, job?.sourceFile, `job_clusters.${item.label}.`);
+    }
+    if (item.source === "default") {
+      const jobsUsing = [...links.values()]
+        .filter((link) => link.to === item.id)
+        .flatMap((link) => {
+          const job = nodeById.get(link.from);
+          if (!job?.resourceKey || !job.data) return [];
+          const prefix = `${job.id}.tasks.`;
+          const taskKeys = link.taskIds.filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length));
+          return [{ jobKey: job.resourceKey, job: job.data, taskKeys }];
+        });
+      return serverlessSettings(jobsUsing, resolve);
+    }
+    return undefined;
   }
 
   const groups: OverviewGroup[] = [];
