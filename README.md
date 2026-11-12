@@ -75,7 +75,7 @@ To turn it off, use either setting:
 
 ## Project status
 
-Latest release: [0.6.4](https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.6.4). This README also describes changes on `main` that are awaiting release; see [Unreleased changes](CHANGELOG.md#unreleased).
+Latest release: [0.7.0](https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.7.0). This README also describes changes on `main` that are awaiting release; see [Unreleased changes](CHANGELOG.md#unreleased).
 
 Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
 
