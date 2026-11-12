@@ -15,6 +15,7 @@ import { withPreviewVariableReferences } from "./bundle/graph/previewVariableRef
 import { buildInspectorIssues, type InspectorIssue } from "./bundle/issues.js";
 import { jobReviewReport } from "./bundle/reviewReport.js";
 import { bundleReviewReport } from "./bundle/bundleReviewReport.js";
+import { outsideReportVariables, type OutsideReportVariable } from "./bundle/reportVariableSources.js";
 import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
@@ -909,6 +910,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           resolutionBundle?: ParsedBundleConfig;
           writtenBundle?: ParsedBundleConfig;
           cliVersion?: string;
+          outsideVariables?: OutsideReportVariable[];
         }
       | undefined;
     if (!data?.parsedBundle || !data.graph) return undefined;
@@ -925,6 +927,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return jobKey === undefined
       ? bundleReviewReport(data.parsedBundle, data.graph, data.inspectorIssues ?? [], {
           ...context,
+          ...(data.outsideVariables ? { outsideVariables: data.outsideVariables } : {}),
           ...(shownBundleDir ? { bundleFiles: [bundleFilePath(shownBundleDir), ...(bundleLoadedFiles().get(shownBundleDir) ?? [])] } : {}),
           ...(data.writtenBundle ? { writtenBundle: data.writtenBundle } : {}),
           ...(data.resolutionBundle ? { resolutionBundle: data.resolutionBundle } : {}),
@@ -978,6 +981,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
+    const outsideVariables = requestedTarget ? outsideReportVariables(bundleDir, requestedTarget) : [];
     const previousTargetOptions = activeBundleDir === bundleDir ? activeTargetOptions : [];
     const previousStructuralBundle = activeBundleDir === bundleDir ? activeStructuralResolutionBundle : undefined;
     const config = getConfiguration();
@@ -1063,6 +1067,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return {
       result,
       bundleData,
+      outsideVariables: inspectedTargetMode === "target" ? outsideVariables : [],
       enrichedGraph,
       inspectorIssues,
       targetOptions,
@@ -1124,6 +1129,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       bundleRoot: root,
       writtenBundle: inspection.structuralResolutionBundle,
       cliVersion: result.cliVersion,
+      outsideVariables: inspection.outsideVariables,
       resolutionBundle: inspection.resolutionBundle ?? bundleData,
       graph: enrichedGraph,
       validationIssues: result.issues ?? [],

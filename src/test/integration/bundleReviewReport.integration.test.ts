@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -12,6 +12,7 @@ import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { buildInspectorIssues } from "../../bundle/issues.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
 import { bundleTempDir } from "../../databricksCli/restrictedExecution.js";
+import { outsideReportVariables } from "../../bundle/reportVariableSources.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
 const profile = process.env.INSPECTOR_TEST_PROFILE?.trim();
@@ -54,6 +55,7 @@ beforeAll(async () => {
   if (warehouse) configText = configText.replace("variables:\n", `variables:\n  warehouse:\n    lookup:\n      warehouse: ${JSON.stringify(warehouse)}\n`);
   await writeFile(config, configText);
   setEnv("BUNDLE_VAR_outside", "PRIVATE-410-OVERRIDE");
+  for (const name of ["warehouse", "label", "schema"]) setEnv(`BUNDLE_VAR_${name}`);
 }, 60_000);
 
 afterAll(async () => {
@@ -84,6 +86,35 @@ async function checked(target?: string) {
 }
 
 describe(`bundle report from the real CLI (${profile ? "workspace" : "fake workspace"})`, () => {
+  test.each(["environment", "file"])("an outside %s value is omitted using the CLI's real precedence", async source => {
+    if (!warehouse) return;
+    const dir = path.join(root, ".databricks", "bundle", "dev");
+    const marker = `PRIVATE-LOOKUP-${source}`;
+    try {
+      if (source === "environment") setEnv("BUNDLE_VAR_warehouse", marker);
+      else { await mkdir(dir, { recursive: true }); await writeFile(path.join(dir, "variable-overrides.json"), JSON.stringify({ warehouse: marker, label: marker })); }
+      const outsideVariables = outsideReportVariables(root, "dev");
+      const result = await checked("dev");
+      const name = source === "environment" ? "warehouse" : "label";
+      expect(result.data.variables?.[name]?.value).toBe(marker);
+      if (source === "file") expect(result.data.variables?.warehouse?.value).not.toBe(marker);
+      expect(result.data.variables?.warehouse?.lookup).toBeTruthy();
+      // Copying later must retain the check's provenance, even after the inputs are gone.
+      delete process.env.BUNDLE_VAR_warehouse;
+      await rm(path.join(root, ".databricks"), { recursive: true, force: true });
+      const markdown = bundleReviewReport(result.data, await extractBundleGraph(result.data, root), [], {
+        bundleRoot: root, structuralPreview: false, targetLabel: "dev", targetName: "dev", outsideVariables,
+        extensionVersion: "test", checkedAt: new Date(),
+      });
+      expect(markdown).not.toContain(marker);
+      expect(markdown).toContain(`| ${name} | omitted | outside repository; value omitted |`);
+      if (source === "file") expect(markdown).toContain(`| warehouse | ${result.data.variables!.warehouse!.value} | lookup |`);
+    } finally {
+      delete process.env.BUNDLE_VAR_warehouse;
+      await rm(path.join(root, ".databricks"), { recursive: true, force: true });
+    }
+  }, 60_000);
+
   test("preview and real targets report names and values from the CLI, omitting outside values and user identity", async () => {
     const preview = await checked();
     for (const target of [undefined, "dev", "prod"]) {

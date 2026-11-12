@@ -9,6 +9,8 @@ Live results, 2026-11-12, Databricks CLI v1.26.0:
 - The structural preview keeps `${var.label}-${var.outside}` as written and leaves variable defaults unexpanded.
 - A development target resolves the target override and prefixes a job name with `[dev <short name>]`; it prefixes the schema with `dev_<short name>_`. Production has neither prefix. These are validation results; no deploy or job run was needed to read the CLI-resolved names the report consumes.
 - `BUNDLE_VAR_outside` overrides the repository default. The resulting value appears both in `variables.outside.value` and in the job's name. The bundle report omits it in both places.
+- A `BUNDLE_VAR_warehouse` override leaves the CLI's `lookup` metadata present, so that metadata alone does not prove a value came from a lookup. The report captures environment/overrides-file provenance with the check and omits that outside value even after the inputs are removed. The new privacy test fails against the earlier report code.
+- Lookup takes precedence over `variable-overrides.json`, but an ordinary variable reads its value from that file. Both cases are checked against the real CLI; the file does not turn a genuine lookup into an outside value.
 - The report retains target/default/lookup provenance, included-file locations, the pipeline's schema relationship, folded clean rows and its Mermaid diagram. It omits the workspace identity, including the development-mode schema prefix's user name.
 - The unique workspace validation folder was deleted and its absence verified.
 

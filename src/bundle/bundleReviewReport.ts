@@ -1,6 +1,7 @@
 import type { BundleGraph, BundleGraphNode, ParsedBundleConfig } from "./graph/bundleGraph.js";
 import type { InspectorIssue } from "./issues.js";
 import { resolveVariableForTarget } from "./targetResolution.js";
+import { outsideReportVariables, type OutsideReportVariable } from "./reportVariableSources.js";
 import { reportLocation } from "./reportLocation.js";
 import { REVIEW_REPORT_MAX_CHARACTERS, REVIEW_REPORT_TASK_LIMIT, startsText, type ReviewReportContext } from "./reviewReport.js";
 import { buildBundleOverview, CHECKED_RESOURCE_GROUPS } from "../webview/lib/bundleOverview.js";
@@ -12,6 +13,8 @@ export interface BundleReviewContext extends ReviewReportContext {
   writtenBundle?: ParsedBundleConfig;
   resolutionBundle?: ParsedBundleConfig;
   targetName?: string;
+  /** Captured with the check, so an overridden lookup cannot masquerade as a lookup value. */
+  outsideVariables?: readonly OutsideReportVariable[];
 }
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -34,11 +37,15 @@ export function bundleReviewReport(
   const resolution = context.resolutionBundle ?? parsed;
   const target = context.structuralPreview ? undefined : context.targetName ?? parsed.bundle.target;
   const variableNames = Object.keys({ ...written.variables, ...resolution.variables });
+  const outsideSources = context.structuralPreview ? [] : context.outsideVariables ?? outsideReportVariables(context.bundleRoot, target);
+  // CLI v1.26.0 SetVariables checks the environment before lookup, and the overrides
+  // file after lookup. Both orders are exercised by the real-CLI test.
+  const outsideNames = new Set(outsideSources.filter(source => source.source === "environment" || source.name === "*" || !record(resolution.variables?.[source.name]).lookup).map(source => source.name));
   const hidden: string[] = [];
   const variableResults = new Map(variableNames.map(name => {
     const definition = record(resolution.variables?.[name]);
     const result = resolveVariableForTarget(resolution, name, target);
-    const outside = result.source === "outside_files" || (result.source === "cli_resolved" && !definition.lookup && !("default" in definition));
+    const outside = outsideNames.has("*") || outsideNames.has(name) || result.source === "outside_files" || (result.source === "cli_resolved" && !definition.lookup && !("default" in definition));
     if (outside) {
       const leaves = (value: unknown): void => {
         if (value && typeof value === "object") Object.values(value).forEach(leaves);
