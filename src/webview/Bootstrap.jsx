@@ -27,6 +27,7 @@ function validSignIn(value) {
 
 export default function Bootstrap() {
   const [parsedBundle, setParsedBundle] = useState(null);
+  const [bundleRoot, setBundleRoot] = useState(undefined);
   const [resolutionBundle, setResolutionBundle] = useState(null);
   const [bundleGraph, setBundleGraph] = useState(null);
   const [validationIssues, setValidationIssues] = useState([]);
@@ -56,6 +57,7 @@ export default function Bootstrap() {
         data.parsedBundle !== null
       ) {
         setParsedBundle(data.parsedBundle);
+        setBundleRoot(data.bundleRoot);
         setResolutionBundle(
           typeof data.resolutionBundle === "object" &&
             data.resolutionBundle !== null
@@ -208,6 +210,7 @@ export default function Bootstrap() {
     <App
       key={`${focusIssuesNonce ?? "inspector"}:${initialResource?.nonce ?? ""}`}
       parsedBundle={parsedBundle}
+      bundleRoot={bundleRoot}
       resolutionBundle={resolutionBundle ?? parsedBundle}
       graph={bundleGraph}
       validationIssues={validationIssues}

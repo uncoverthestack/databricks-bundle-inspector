@@ -6,6 +6,7 @@
 
 import type { PipelineDataFlow } from "../../bundle/pipelineDataFlow.js";
 import { orderBySeverity, severityMeta } from "./issueSeverity.js";
+import { reportLocation } from "../../bundle/reportLocation.js";
 
 interface GraphNode {
   id: string;
@@ -228,17 +229,13 @@ const STATUS_WORDS: Record<SourceStatus, string> = {
   not_checked: "not checked",
 };
 
-const locationOf = (file: string | undefined, line: number | undefined) => {
-  const name = file?.split(/[\\/]/).pop();
-  return name ? `${name}${line && line > 0 ? `:${line}` : ""}` : "";
-};
-
 /** The "Copy review" text for one pipeline: only its own issues, runners and sources. */
 export function pipelineReviewSummary(
   view: PipelineViewModel,
-  { bundleName, targetLabel, resolveName = (value) => value }: {
+  { bundleName, targetLabel, bundleRoot, resolveName = (value) => value }: {
     bundleName: string;
     targetLabel: string;
+    bundleRoot?: string;
     resolveName?: (value: string) => string;
   },
 ): string {
@@ -253,7 +250,7 @@ export function pipelineReviewSummary(
   ];
   if (view.issues.length === 0) lines.push("- No issues detected in this pipeline.");
   for (const issue of orderBySeverity(view.issues).slice(0, 12)) {
-    const location = locationOf(issue.file, issue.line);
+    const location = reportLocation(issue.file, issue.line, bundleRoot);
     lines.push(`- **${severityMeta(issue.severity).label}** · ${issue.title}${location ? ` (${location})` : ""}`);
   }
   if (view.issues.length > 12) lines.push(`- ...and ${view.issues.length - 12} more.`);

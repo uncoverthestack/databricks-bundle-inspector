@@ -136,6 +136,28 @@ export function overviewSuite() {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
 
+    it("Copy review copies the whole bundle report directly, including unsupported resources", async () => {
+      const previous = await vscode.env.clipboard.readText();
+      try {
+        await vscode.env.clipboard.writeText("before-copy-410");
+        await evaluate(`document.querySelector('header button[aria-label="Copy review"]').click()`);
+        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("### Inventory"), "the copied bundle inventory");
+        const report = await vscode.env.clipboard.readText();
+        assert.equal(await evaluate(`document.querySelectorAll('[role="menuitem"]').length`), 0, "overview copies directly");
+        assert.match(report, /6 resources, 0 variables/);
+        assert.match(report, /#### SQL warehouses/);
+        assert.match(report, /#### Volumes/);
+        assert.match(report, /not checked yet/);
+        assert.match(report, /databricks.yml:\d+/);
+        assert.match(report, /\| Databricks CLI \| \d+\.\d+\.\d+ \|/);
+        assert.match(report, /<details>/);
+        assert.match(report, /```mermaid/);
+        assert.doesNotMatch(report, /Selected job|Parameter flow/);
+      } finally {
+        await vscode.env.clipboard.writeText(previous);
+      }
+    });
+
     it("shows a box for every resource, and the line the bundle has", async () => {
       await waitFor(async () => (await read()).links.length === 1, "the cluster's line to its secret scope");
       const shown = await read();

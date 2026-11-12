@@ -1,0 +1,22 @@
+bundle:
+  name: bundle-review
+include:
+  - resources/*.yml
+variables:
+  label:
+    default: repository-label
+  outside:
+    default: repository-default
+  schema:
+    default: review_data
+targets:
+  dev:
+    mode: development
+    variables:
+      label: target-label
+    workspace:
+      root_path: /Shared/dbi-report-410-${workspace.current_user.short_name}/dev
+  prod:
+    mode: production
+    workspace:
+      root_path: /Shared/dbi-report-410-${workspace.current_user.short_name}/prod

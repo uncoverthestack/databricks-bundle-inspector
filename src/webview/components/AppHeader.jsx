@@ -33,6 +33,7 @@ export default function AppHeader({
   nothingToFilterNote,
   onCopyReviewSummary,
   onCopyReviewReport,
+  copyReviewTitle,
 }) {
   const options = pickerGroups.flatMap((group) => group.options);
   return (
@@ -146,7 +147,7 @@ export default function AppHeader({
             type="button"
             onClick={onCopyReviewSummary}
             className={COPY_BUTTON}
-            title="Copy bundle review summary as Markdown"
+            title={copyReviewTitle ?? "Copy bundle review summary as Markdown"}
             aria-label="Copy review"
           >
             <ClipboardCopy size={13} />

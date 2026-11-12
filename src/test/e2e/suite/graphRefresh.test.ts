@@ -229,7 +229,7 @@ export function graphRefreshSuite() {
         const review = await vscode.env.clipboard.readText();
         assert.doesNotMatch(review, /Job:|Selected job|file references/);
         // Its one problem, the notebook listed as a file, and none of the bundle's other issues.
-        assert.match(review, /### Issues\n- \*\*Error\*\* · "\.\.\/src\/task\.py" may be a notebook, not a file\. \(jobs\.yml:\d+\)\n\n### Run by/);
+        assert.match(review, /### Issues\n- \*\*Error\*\* · "\.\.\/src\/task\.py" may be a notebook, not a file\. \(resources\/jobs\.yml:\d+\)\n\n### Run by/);
         assert.match(review, /### Run by\n- alpha_second \(task refresh\)\n- alpha_second \(task refresh_each\)/);
         assert.match(review, /- 2 sources in libraries\n- 1 found\n- 1 a notebook listed as a file/);
 

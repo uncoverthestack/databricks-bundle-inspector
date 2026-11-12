@@ -179,6 +179,7 @@ describe("buildPipelineView", () => {
     const text = pipelineReviewSummary(buildPipelineView(graph, parsed, "p", issues)!, {
       bundleName: "demo",
       targetLabel: "dev",
+      bundleRoot: "/b",
     });
     expect(text).toBe(
       [
@@ -189,7 +190,7 @@ describe("buildPipelineView", () => {
         "Pipeline: Pipe P",
         "",
         "### Issues",
-        "- **Error** · x (p.yml:12)",
+        "- **Error** · x (resources/p.yml:12)",
         "",
         "### Run by",
         "- j (task t)",
@@ -211,6 +212,7 @@ describe("buildPipelineView", () => {
     const text = pipelineReviewSummary(buildPipelineView({ nodes: [], edges: [] }, parsed, "q")!, {
       bundleName: "demo",
       targetLabel: "dev",
+      bundleRoot: "/b",
     });
     expect(text).toContain("- No issues detected in this pipeline.");
     expect(text).toContain("- No job in this bundle runs this pipeline.");

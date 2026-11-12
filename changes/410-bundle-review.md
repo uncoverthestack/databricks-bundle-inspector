@@ -1,0 +1,3 @@
+Added
+
+- **Copy review on the bundle overview copies a review of the whole bundle** ([#410](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/410)). The report lists every resource kind, variables and files with problems, with problems beside each row and clean rows folded away. It includes full error and warning details, check versions and time, coverage limits, and a diagram for bundles with at most 50 resources. Values supplied outside the repository, workspace hosts and user names are omitted. Locations in bundle, job and pipeline reports now include the path from the bundle folder, so two files with the same name stay distinct.

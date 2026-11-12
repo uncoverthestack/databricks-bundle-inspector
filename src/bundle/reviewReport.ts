@@ -2,6 +2,7 @@ import type { BundleGraph, BundleGraphNode, JobTask, ParsedBundleConfig } from "
 import { taskTypeLabel } from "./graph/bundleGraph.js";
 import { describeCronExpression } from "./graph/cronDescription.js";
 import { issueBelongsToJob, type InspectorIssue } from "./issues.js";
+import { reportLocation } from "./reportLocation.js";
 
 /** Past this many tasks the report draws no picture and lists only this many rows. */
 export const REVIEW_REPORT_TASK_LIMIT = 50;
@@ -16,6 +17,7 @@ export const REVIEW_REPORT_MAX_CHARACTERS = 60_000;
 const MESSAGE_LIMIT = 400;
 
 export interface ReviewReportContext {
+  bundleRoot?: string;
   /** The target the graph shows, or "structural preview". */
   targetLabel: string;
   /** The structural preview: read from the files, the workspace not contacted. */
@@ -85,8 +87,8 @@ export function jobReviewReport(
     room -= text.length;
     return text;
   };
-  const errorSection = take(problemSection("Errors", "Error", errors, room));
-  const warningSection = take(problemSection("Warnings", "Warning", warnings, room));
+  const errorSection = take(problemSection("Errors", "Error", errors, room, context.bundleRoot));
+  const warningSection = take(problemSection("Warnings", "Warning", warnings, room, context.bundleRoot));
   const picture = take(pictureSection(tasks, starts.node));
   const taskTable = take(tasksSection(tasks));
   const parameters = Array.isArray(job.parameters) ? job.parameters : [];
@@ -160,7 +162,7 @@ function reportTask(node: BundleGraphNode, graph: BundleGraph, issues: readonly 
 }
 
 /** How the job starts, for the Starts row and the picture's first node. */
-function startsText(
+export function startsText(
   job: Record<string, unknown>,
   jobKey: string,
   parsedBundle: ParsedBundleConfig,
@@ -306,14 +308,14 @@ function tasksSection(tasks: readonly ReportTask[]): string {
   ].join("\n");
 }
 
-function problemSection(heading: string, word: string, list: readonly InspectorIssue[], room: number): string {
+function problemSection(heading: string, word: string, list: readonly InspectorIssue[], room: number, bundleRoot?: string): string {
   if (list.length === 0) return "";
   const lines = [`### ${heading} (${list.length})`, ""];
   let used = lines.join("\n").length + 200;
   let shown = 0;
   for (const issue of list) {
     const task = issue.taskName ? `**${inline(issue.taskName)}**: ` : "";
-    const where = issue.file ? ` (${code(`${issue.file.split(/[\\/]/).pop()}${issue.line ? `:${issue.line}` : ""}`)})` : "";
+    const where = issue.file ? ` (${code(reportLocation(issue.file, issue.line, bundleRoot))})` : "";
     const line = `${shown + 1}. **${word}** · ${task}${inline(short(issue.detail ?? issue.title, MESSAGE_LIMIT))}${where}`;
     if (used + line.length + 1 > room) break;
     lines.push(line);

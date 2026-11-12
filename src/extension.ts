@@ -14,6 +14,8 @@ import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
 import { withPreviewVariableReferences } from "./bundle/graph/previewVariableReferences.js";
 import { buildInspectorIssues, type InspectorIssue } from "./bundle/issues.js";
 import { jobReviewReport } from "./bundle/reviewReport.js";
+import { bundleReviewReport } from "./bundle/bundleReviewReport.js";
+import { outsideReportVariables, type OutsideReportVariable } from "./bundle/reportVariableSources.js";
 import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
@@ -897,7 +899,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   let activeBundleCheckedAt = new Date();
 
   /** Copy review, Full report: built from what the graph shows, with the CLI's version. */
-  async function reviewReportFor(jobKey: string): Promise<string | undefined> {
+  async function reviewReportFor(jobKey?: string): Promise<string | undefined> {
     const data = activeBundleData as
       | {
           parsedBundle?: ParsedBundleConfig;
@@ -905,19 +907,33 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           inspectorIssues?: InspectorIssue[];
           inspectedTarget?: string;
           inspectedTargetMode?: string;
+          resolutionBundle?: ParsedBundleConfig;
+          writtenBundle?: ParsedBundleConfig;
+          cliVersion?: string;
+          outsideVariables?: OutsideReportVariable[];
         }
       | undefined;
     if (!data?.parsedBundle || !data.graph) return undefined;
-    const cli = await resolveDatabricksCli(currentConfiguredCliPath());
-    const cliVersion = cli.ok ? /v?(\d+\.\d+\.\d+)/.exec(cli.versionOutput ?? "")?.[1] : undefined;
+    const cliVersion = data.cliVersion ? /v?(\d+\.\d+\.\d+)/.exec(data.cliVersion)?.[1] : undefined;
     const structuralPreview = data.inspectedTargetMode === "probe";
-    return jobReviewReport(data.parsedBundle, data.graph, jobKey, data.inspectorIssues ?? [], {
+    const context = {
       targetLabel: structuralPreview ? "structural preview" : data.inspectedTarget || data.parsedBundle.bundle?.target || "target",
       structuralPreview,
       ...(cliVersion ? { cliVersion } : {}),
       extensionVersion,
       checkedAt: activeBundleCheckedAt,
-    });
+      ...(shownBundleDir ? { bundleRoot: shownBundleDir } : {}),
+    };
+    return jobKey === undefined
+      ? bundleReviewReport(data.parsedBundle, data.graph, data.inspectorIssues ?? [], {
+          ...context,
+          ...(data.outsideVariables ? { outsideVariables: data.outsideVariables } : {}),
+          ...(shownBundleDir ? { bundleFiles: [bundleFilePath(shownBundleDir), ...(bundleLoadedFiles().get(shownBundleDir) ?? [])] } : {}),
+          ...(data.writtenBundle ? { writtenBundle: data.writtenBundle } : {}),
+          ...(data.resolutionBundle ? { resolutionBundle: data.resolutionBundle } : {}),
+          ...(data.inspectedTarget ? { targetName: data.inspectedTarget } : {}),
+        })
+      : jobReviewReport(data.parsedBundle, data.graph, jobKey, data.inspectorIssues ?? [], context);
   }
   let activeBundleDir: string | undefined;
   let activeRequestedTarget: string | undefined;
@@ -965,6 +981,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
 
   async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
+    const outsideVariables = requestedTarget ? outsideReportVariables(bundleDir, requestedTarget) : [];
     const previousTargetOptions = activeBundleDir === bundleDir ? activeTargetOptions : [];
     const previousStructuralBundle = activeBundleDir === bundleDir ? activeStructuralResolutionBundle : undefined;
     const config = getConfiguration();
@@ -1050,6 +1067,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     return {
       result,
       bundleData,
+      outsideVariables: inspectedTargetMode === "target" ? outsideVariables : [],
       enrichedGraph,
       inspectorIssues,
       targetOptions,
@@ -1108,6 +1126,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
     return {
       parsedBundle: bundleData,
+      bundleRoot: root,
+      writtenBundle: inspection.structuralResolutionBundle,
+      cliVersion: result.cliVersion,
+      outsideVariables: inspection.outsideVariables,
       resolutionBundle: inspection.resolutionBundle ?? bundleData,
       graph: enrichedGraph,
       validationIssues: result.issues ?? [],
@@ -1642,13 +1664,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
               });
             }
           }
-          if (message?.type === "copyReviewReport" && typeof message.jobKey === "string") {
+          if (message?.type === "copyReviewReport" && (typeof message.jobKey === "string" || message.jobKey === undefined)) {
             telemetry?.logUsage("review_summary_copied", { format: "report" });
             void reviewReportFor(message.jobKey).then((markdown) =>
               markdown === undefined
                 ? vscode.window.showWarningMessage("Could not copy the review report: the graph has no checked bundle yet.")
                 : vscode.env.clipboard.writeText(markdown).then(
-                    () => vscode.window.showInformationMessage("Bundle review report copied as Markdown. Paste it into GitHub or GitLab to see the task graph."),
+                    () => vscode.window.showInformationMessage("Bundle review report copied as Markdown. Paste it into GitHub or GitLab to see the tables and diagram."),
                     (error: unknown) =>
                       vscode.window.showWarningMessage(
                         `Could not copy the review report: ${error instanceof Error ? error.message : String(error)}`,
