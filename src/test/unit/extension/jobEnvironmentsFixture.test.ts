@@ -9,7 +9,7 @@ import { buildInspectorIssues } from "../../../bundle/issues.js";
 // for the structural preview. See the fixture's README for what deploy and run did with
 // each case (CLI v1.26.0, 2026-11-12).
 const ROOT = path.resolve("src/test/fixtures/job-environments");
-const KINDS = new Set(["environment_version_missing", "unknown_environment_key", "project_environment_version_missing"]);
+const KINDS = new Set(["environment_version_missing", "unknown_environment_key", "project_environment_version_missing", "notebook_environment_not_set"]);
 
 /** `file: line text` for each finding, so a test reads the line it points at. */
 async function findings() {
@@ -64,6 +64,13 @@ describe("job-environments fixture", () => {
           task: "typo",
           at: "resources/job.yml: environment_key: versoin",
           title: 'Environment "versoin" may not exist. Did you mean "version"?',
+        },
+        {
+          kind: "notebook_environment_not_set",
+          severity: "info",
+          task: undefined,
+          at: "resources/job.yml: envs:",
+          title: 'Job "envs" has notebook task "notebook" with no environment version. Databricks may change it.',
         },
         {
           kind: "unknown_environment_key",

@@ -39,3 +39,13 @@ resources:
               environment_key: bse
               spark_python_task:
                 python_file: ../src/probe.py
+        - task_key: notebook
+          notebook_task:
+            notebook_path: ../src/notebook.py
+        - task_key: notebook_with_environment
+          environment_key: version
+          notebook_task:
+            notebook_path: ../src/notebook.py
+        - task_key: notebook_ipynb_pinned
+          notebook_task:
+            notebook_path: ../src/pinned.ipynb

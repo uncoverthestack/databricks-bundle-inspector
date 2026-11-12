@@ -1,6 +1,6 @@
 # job-environments
 
-Fixture for the job environment checks from #418. `bundle validate` accepts every case. The deploy and run results are from Databricks CLI v1.26.0 against a serverless workspace (2026-11-12), one bundle per case, each with a Python script task.
+Fixture for the job environment checks from #418, and the notebook environment note from #419. `bundle validate` accepts every case. The deploy and run results are from Databricks CLI v1.26.0 against a serverless workspace (2026-11-12), one bundle per case, each with a Python script task.
 
 | Environment or task | Case | Deploy and run | Inspector |
 |---|---|---|---|
@@ -16,5 +16,8 @@ Fixture for the job environment checks from #418. `bundle validate` accepts ever
 | task `typo` | `environment_key: versoin` | deploy fails: `Job environment 'versoin' used by task typo is not defined in field 'environments'` | `unknown_environment_key`, suggests `version` |
 | task `fine` | `environment_key: version` | deploys | nothing |
 | task `loop`'s inner task | `environment_key: bse` | deploy fails, as `typo` | `unknown_environment_key`, suggests `base` |
+| task `notebook` | serverless notebook, no environment in the job | deploys, runs on the latest version (`client.6.5`) | `notebook_environment_not_set` (#419), one per job, on `envs` |
+| task `notebook_with_environment` | the same notebook with `environment_key: version` | deploys, runs on that version (`client.4.10` in the test with version 4) | nothing |
+| task `notebook_ipynb_pinned` | an `.ipynb` saved with `environmentMetadata.environment_version: "4"` | deploys, runs on version 4 (`client.4.10`) | nothing |
 
 `validated-bundle.json` is the CLI's structural preview output, captured with no credentials (`DATABRICKS_CONFIG_FILE=/dev/null`): the findings need no login. A CLI older than v1.20.0 doesn't know `project_environment` and drops it with an "unknown field" warning (seen on v0.299.2, the oldest supported), so its baseline would differ. That is why `semantic-cli-matrix.config.json` gives this fixture `"minCliVersion": "1.20.0"` (JSON has no comments, so the reason lives here). How the version was found: `project_environment` is not in the CLI's `bundle/schema/jsonschema.json` at tag v1.19.0 and is from v1.20.0 (databricks/cli source). `src/test/integration/jobEnvironments.integration.test.ts` checks the older behaviour.

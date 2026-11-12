@@ -37,6 +37,13 @@
   ],
   "issues": [
     {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"ingest_job\" has notebook task \"extract\" with no environment version. Databricks may change it.",
+      "file": "resources/resources.yml",
+      "line": 3
+    },
+    {
       "severity": "warning",
       "kind": "unknown_or_deprecated_field",
       "title": "Unknown or deprecated field",

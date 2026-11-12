@@ -88,6 +88,25 @@
               }
             },
             "task_key": "loop"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/notebook.py"
+            },
+            "task_key": "notebook"
+          },
+          {
+            "environment_key": "version",
+            "notebook_task": {
+              "notebook_path": "../src/notebook.py"
+            },
+            "task_key": "notebook_with_environment"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/pinned.ipynb"
+            },
+            "task_key": "notebook_ipynb_pinned"
           }
         ]
       }

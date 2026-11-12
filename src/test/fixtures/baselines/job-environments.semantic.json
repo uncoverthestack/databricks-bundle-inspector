@@ -37,6 +37,60 @@
           "libraries": []
         },
         {
+          "key": "notebook",
+          "type": "Notebook",
+          "source": "../src/notebook.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/notebook.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "notebook_ipynb_pinned",
+          "type": "Notebook",
+          "source": "../src/pinned.ipynb",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/pinned.ipynb",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "notebook_with_environment",
+          "type": "Notebook",
+          "source": "../src/notebook.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/notebook.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
           "key": "typo",
           "type": "Python script",
           "source": "../src/probe.py",
@@ -114,6 +168,13 @@
       "file": "resources/job.yml",
       "line": 27,
       "column": 28
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"envs\" has notebook task \"notebook\" with no environment version. Databricks may change it.",
+      "file": "resources/job.yml",
+      "line": 3
     }
   ],
   "detectedReferences": {

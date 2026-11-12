@@ -64,7 +64,15 @@
       }
     }
   ],
-  "issues": [],
+  "issues": [
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"runtime_parameter_job\" has notebook task \"prepare_inputs\" with no environment version. Databricks may change it.",
+      "file": "resources/runtime_parameters.job.yml",
+      "line": 3
+    }
+  ],
   "detectedReferences": {
     "secretScopes": [],
     "widgets": [

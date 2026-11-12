@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig, TargetConfig } from "./graph/bundleGraph.js";
@@ -48,6 +48,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "environment_version_missing",
   "unknown_environment_key",
   "project_environment_version_missing",
+  "notebook_environment_not_set",
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
@@ -1090,6 +1091,7 @@ export function buildInspectorIssues(
 
   issues.push(...secretScopeNameIssues(graph));
   issues.push(...taskValueIssues(graph));
+  issues.push(...notebookEnvironmentIssues(graph, tasks));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
   // The files deploy uploads are the same with or without a target.
@@ -1437,6 +1439,86 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
     });
   }
   return [...issues.values()];
+}
+
+/** The fields that give a task its compute, as `bundle validate` checks them (CLI v1.26.0). */
+const TASK_COMPUTE_FIELDS = ["environment_key", "job_cluster_key", "existing_cluster_id", "new_cluster"] as const;
+
+/**
+ * Whether an `.ipynb` notebook saves its own environment version: Databricks writes it to
+ * `metadata["application/vnd.databricks.v1+notebook"].environmentMetadata`, and a job runs
+ * the notebook on it (live test, #419). Undefined when the file can't be read as one.
+ */
+function ipynbSetsEnvironment(file: string): boolean | undefined {
+  try {
+    if (statSync(file).size > 20_000_000) return undefined;
+    const notebook = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    const metadata = (notebook.metadata ?? {}) as Record<string, unknown>;
+    const databricks = (metadata["application/vnd.databricks.v1+notebook"] ?? {}) as Record<string, unknown>;
+    const environment = (databricks.environmentMetadata ?? {}) as Record<string, unknown>;
+    return ["environment_version", "base_environment", "client"].some(
+      (field) => typeof environment[field] === "string" && (environment[field] as string).trim() !== "",
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A serverless notebook task whose job sets no environment, with a notebook that saves
+ * none: Databricks picks the environment version, so it can change with no change to the
+ * bundle (#419). Live tests on CLI v1.26.0: such notebooks ran on the latest version, a
+ * workspace's default base environment did not reach them, an `.ipynb` saved with a
+ * version ran on it, and a notebook task with an `environment_key` ran on that version.
+ * Only local notebooks that exist are judged: a workspace or Git path can't be read.
+ *
+ * One note per job, on the job's line, naming its tasks: one job environment pins them
+ * all, and a job with many notebook tasks would otherwise repeat the same note (user, #419).
+ */
+function notebookEnvironmentIssues(graph: BundleGraph, tasks: BundleGraphNode[]): InspectorIssue[] {
+  const unpinned = new Map<string, string[]>();
+  for (const task of tasks) {
+    if (parentJobHasGitSource(graph, task)) continue;
+    const jobId = task.parentId ?? task.taskData?.parentJobId;
+    if (!jobId) continue;
+    const check = (settings: Record<string, unknown>, data: TaskNodeData | undefined, label: string) => {
+      const notebookTask = settings.notebook_task;
+      if (!notebookTask || typeof notebookTask !== "object") return;
+      if ((notebookTask as Record<string, unknown>).source === "GIT") return;
+      if (TASK_COMPUTE_FIELDS.some((field) => settings[field] !== undefined && settings[field] !== null && settings[field] !== "")) return;
+      const ref = data?.fileReferences.find((entry) => entry.referenceType === "notebook");
+      if (!ref?.resolvedPath || !ref.exists) return;
+      if (/\.ipynb$/i.test(ref.resolvedPath) && ipynbSetsEnvironment(ref.resolvedPath) !== false) return;
+      unpinned.set(jobId, [...(unpinned.get(jobId) ?? []), label]);
+    };
+    const settings = task.data ?? {};
+    check(settings, task.taskData, task.displayName);
+    const inner = (settings.for_each_task as Record<string, unknown> | undefined)?.task;
+    if (inner && typeof inner === "object") {
+      const innerSettings = inner as Record<string, unknown>;
+      const innerKey = typeof innerSettings.task_key === "string" ? innerSettings.task_key : `${task.displayName} (inner)`;
+      check(innerSettings, task.taskData?.nestedTask, innerKey);
+    }
+  }
+
+  const jobsById = new Map(graph.nodes.filter((node) => node.nodeType === "job").map((node) => [node.id, node]));
+  return [...unpinned].map(([jobId, taskNames]) => {
+    const job = jobsById.get(jobId);
+    const jobName = job?.resourceKey ?? jobId.replace(/^resources\.jobs\./, "");
+    const count = taskNames.length === 1 ? `notebook task "${taskNames[0]}"` : `${taskNames.length} notebook tasks`;
+    return {
+      id: `notebook-environment:${jobId}`,
+      severity: "info" as const,
+      kind: "notebook_environment_not_set" as const,
+      title: `Job "${jobName}" has ${count} with no environment version. Databricks may change it.`,
+      resourceId: jobId,
+      ...(taskNames.length > 1 ? { detail: `Tasks: ${taskNames.join(", ")}` } : {}),
+      fixHint: `To pin ${taskNames.length === 1 ? "it" : "them"}, add a job environment with environment_version and set environment_key on ${
+        taskNames.length === 1 ? "the task" : "each task"
+      }, or use an .ipynb notebook saved with an environment.`,
+      ...issueLocation(job?.sourceFile, job?.sourceLine),
+    };
+  });
 }
 
 // `{{tasks.<task_key>.values.<key>}}` in task settings.

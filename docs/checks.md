@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `notebook_environment_not_set`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
@@ -203,6 +203,29 @@ A job environment's `project_environment` names a `pyproject.toml` that has neit
   ```
 
 - **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
+
+### `notebook_environment_not_set`
+
+A job has serverless notebook tasks with no environment in the job and none saved in the notebook. Databricks picks the environment version, so the Python and package versions under them can change with no change to the bundle. One note per job, on the job's line, naming the tasks.
+
+- **Severity:** note.
+- **Example:** a task with only `notebook_task: {notebook_path: ./src/load.py}`. Tested 2026-11-12 on Databricks CLI v1.26.0: such notebooks, source and `.ipynb`, ran on the latest environment version, and a workspace's default base environment did not reach them.
+- **Fix:** pin it. Point the task at a job environment with a version:
+
+  ```yaml
+  environments:
+    - environment_key: default
+      spec:
+        environment_version: "5"
+  tasks:
+    - task_key: load
+      environment_key: default
+      notebook_task:
+        notebook_path: ./src/load.py
+  ```
+
+  Or use an `.ipynb` notebook saved with an environment in the workspace: Databricks stores it in the notebook's metadata (`environmentMetadata`), and the job runs on it. A source `.py` or `.sql` notebook can't save one. Both were checked by running a job.
+- **Limits:** only a local notebook that exists is read; a workspace or Git path, and a task with `environment_key`, `job_cluster_key`, `existing_cluster_id` or `new_cluster`, are not reported. A for-each task's inner notebook task is checked too.
 
 ## Code in notebooks and files
 

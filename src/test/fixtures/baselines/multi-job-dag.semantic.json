@@ -121,7 +121,15 @@
       }
     }
   ],
-  "issues": [],
+  "issues": [
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"ingest_job\" has notebook task \"extract\" with no environment version. Databricks may change it.",
+      "file": "databricks.yml",
+      "line": 6
+    }
+  ],
   "detectedReferences": {
     "secretScopes": [],
     "widgets": []

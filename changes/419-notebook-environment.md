@@ -1,0 +1,3 @@
+Added
+
+- **A note when a serverless notebook task has no environment version** ([#419](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/419)). With no environment in the job and none saved in the notebook, Databricks picks the version, so it can change without a change to the bundle. New code `notebook_environment_not_set`, one note per job on its line: `Job "daily" has 3 notebook tasks with no environment version. Databricks may change it.` Tasks with an `environment_key` or a cluster are not counted, nor is an `.ipynb` saved with an environment, which the job runs on. Checked by running jobs on Databricks CLI v1.26.0.

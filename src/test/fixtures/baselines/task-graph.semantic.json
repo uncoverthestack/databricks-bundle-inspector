@@ -758,6 +758,110 @@
       "column": 25
     },
     {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"duplicate_in_target\" has notebook task \"twice\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 102
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"duplicate_parameter\" has notebook task \"t\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 90
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"duplicate_task_key\" has notebook task \"same\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 78
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"first_job\" has notebook task \"only_in_first_job\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 71
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"numeric_task_key\" has notebook task \"1\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 109
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"other_job_dependency\" has notebook task \"wait\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 62
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"self_dependency\" has notebook task \"alone\" with no environment version. Databricks may change it.",
+      "file": "resources/mistakes.yml",
+      "line": 15
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"target_override\" has notebook task \"load\" with no environment version. Databricks may change it.",
+      "file": "resources/override.yml",
+      "line": 3
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"three_task_loop\" has 4 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: a, b, c, after_loop",
+      "file": "resources/mistakes.yml",
+      "line": 38
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"control\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: first, second",
+      "file": "resources/mistakes.yml",
+      "line": 143
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"case_dependency\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: load, after",
+      "file": "resources/mistakes.yml",
+      "line": 121
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"case_keys\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: load, Load",
+      "file": "resources/mistakes.yml",
+      "line": 133
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"unknown_dependency\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: load, report",
+      "file": "resources/mistakes.yml",
+      "line": 3
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"two_task_loop\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: x, y",
+      "file": "resources/mistakes.yml",
+      "line": 24
+    },
+    {
       "severity": "warning",
       "kind": "duplicate_job_parameter",
       "title": "Job \"duplicate_parameter\" declares the parameter \"env\" twice. The CLI keeps one, with the later default.",

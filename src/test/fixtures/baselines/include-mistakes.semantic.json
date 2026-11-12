@@ -70,6 +70,20 @@
   ],
   "issues": [
     {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"second_job\" has notebook task \"run_again\" with no environment version. Databricks may change it.",
+      "file": "resources/top.job.yml",
+      "line": 9
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"top_job\" has notebook task \"run\" with no environment version. Databricks may change it.",
+      "file": "resources/top.job.yml",
+      "line": 3
+    },
+    {
       "severity": "warning",
       "kind": "include_matches_nothing",
       "title": "No files match the include pattern \"resource/*.yml\", so nothing from it is loaded. Did you mean \"resources/*.yml\"?",

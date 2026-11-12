@@ -283,7 +283,23 @@
       }
     }
   ],
-  "issues": [],
+  "issues": [
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"other\" has notebook task \"nb\" with no environment version. Databricks may change it.",
+      "file": "resources/job.yml",
+      "line": 11
+    },
+    {
+      "severity": "info",
+      "kind": "notebook_environment_not_set",
+      "title": "Job \"all_tasks\" has 2 notebook tasks with no environment version. Databricks may change it.",
+      "detail": "Tasks: t_notebook, t_inner",
+      "file": "resources/job.yml",
+      "line": 17
+    }
+  ],
   "detectedReferences": {
     "secretScopes": [],
     "widgets": []
