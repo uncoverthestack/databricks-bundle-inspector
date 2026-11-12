@@ -129,6 +129,70 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
   );
 }
 
+/**
+ * A compute box's settings (issue 417): sections of label and value in Databricks' words,
+ * then "Also set", the other fields the bundle sets, each opening the line it is on.
+ */
+function ComputeSettingsList({ settings, onOpenFile }) {
+  const heading = (text) => <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{text}</div>;
+  return (
+    <div data-overview-settings className="flex flex-col gap-3">
+      {settings.sections.map((section) => (
+        <div key={section.title} className="flex flex-col gap-1.5">
+          {heading(section.title)}
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+            {section.rows.map((row, index) => (
+              <div key={`${row.label}-${index}`} className="contents">
+                <dt className="text-muted">{row.label}</dt>
+                <dd className={`min-w-0 break-words ${row.expression ? "text-muted" : "text-fg"}`}>
+                  {row.lines ? (
+                    row.lines.map((line) => (
+                      <div key={line} className="break-all font-mono text-[11px]">
+                        {line}
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      {row.value}
+                      {row.raw && <span className="ml-1.5 font-mono text-[10px] text-muted">{row.raw}</span>}
+                    </>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+      {settings.alsoSet.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {heading("Also set")}
+          <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+            {settings.alsoSet.map((field) => {
+              const text = `${field.field}${field.count !== undefined ? ` (${field.count})` : ""}`;
+              return field.line && settings.file ? (
+                <button
+                  key={field.field}
+                  type="button"
+                  data-overview-also-set={field.field}
+                  title={`Open line ${field.line}`}
+                  onClick={() => onOpenFile?.(settings.file, field.line)}
+                  className="font-mono text-[11px] text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {text}
+                </button>
+              ) : (
+                <span key={field.field} data-overview-also-set={field.field} className="font-mono text-[11px] text-fg-soft">
+                  {text}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** What the selected box is, where it is defined, and what it is linked to. */
 function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFile, onClose }) {
   const links = linksOf(overview, item.id);
@@ -207,6 +271,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {problemCount(item) > 0 && (
         <div className="text-xs text-fg-soft">{problemWords(item)}. The Problems panel lists them.</div>
       )}
+      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={onOpenFile} />}
       {linkList("Uses", uses, "to")}
       {linkList("Used by", usedBy, "from")}
       {item.source === "bundle" && !item.hasChecks && (

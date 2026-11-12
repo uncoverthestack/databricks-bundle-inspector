@@ -336,6 +336,11 @@ export interface BundleGraphNode {
   /** Where a resource is defined: its YAML file and the line of its key (job and resource nodes, when bundleRoot is known). */
   sourceFile?: string;
   sourceLine?: number;
+  /**
+   * Where each setting the resource sets is written in `sourceFile`, by field: `cluster_size`,
+   * and for a job's cluster `job_clusters.<job_cluster_key>.<field>` (issue 417).
+   */
+  fieldLines?: Record<string, number>;
   subtitle?: string;
   status?: string;
   trigger?: string;
@@ -990,6 +995,8 @@ interface SourceIndex {
   taskPositions: Map<string, Map<string, number>>;
   /** Per `group.key`, the line its key is written on in its file. */
   resourceKeyLines: Map<string, number>;
+  /** Per `group.key`, the line of each field it sets in that file (see BundleGraphNode.fieldLines). */
+  resourceFieldLines: Map<string, Record<string, number>>;
   /** Every YAML file read, as written: the anchors for mapping a real target's workspace paths back. */
   sourceDocuments: SourceDocument[];
   /** Every YAML file read, as text. */
@@ -1006,6 +1013,30 @@ function positionsByTaskKey(tasks: unknown[]): Map<string, number> {
   return positions;
 }
 
+/**
+ * The line each field of a resource is written on: its top-level fields, and for a job each
+ * `job_clusters` entry's `new_cluster` fields by its job_cluster_key (issue 417).
+ */
+function fieldLinesOf(resource: unknown, prefix: string, keyLocations: YamlLocationMap): Record<string, number> {
+  const lines: Record<string, number> = {};
+  for (const field of Object.keys(toRecord(resource))) {
+    const line = keyLocations.get(`${prefix}.${field}`)?.line;
+    if (line) lines[field] = line;
+  }
+  const jobClusters = toRecord(resource).job_clusters;
+  if (Array.isArray(jobClusters)) {
+    jobClusters.forEach((jobCluster, index) => {
+      const key = toRecord(jobCluster).job_cluster_key;
+      if (typeof key !== "string") return;
+      for (const field of Object.keys(toRecord(toRecord(jobCluster).new_cluster))) {
+        const line = keyLocations.get(`${prefix}.job_clusters[${index}].new_cluster.${field}`)?.line;
+        if (line) lines[`job_clusters.${key}.${field}`] = line;
+      }
+    });
+  }
+  return lines;
+}
+
 async function buildSourceIndex(
   bundleRoot: string,
   includePatterns: string[],
@@ -1014,6 +1045,7 @@ async function buildSourceIndex(
   const yamlLocationMaps = new Map<string, YamlLocationMap>();
   const taskPositions = new Map<string, Map<string, number>>();
   const resourceKeyLines = new Map<string, number>();
+  const resourceFieldLines = new Map<string, Record<string, number>>();
   const sourceDocuments: SourceDocument[] = [];
   const sourceTexts = new Map<string, string>();
 
@@ -1034,6 +1066,7 @@ async function buildSourceIndex(
           resourceSourceMap.set(key, filePath);
           const keyLine = keyLocations.get(`resources.${key}`)?.line;
           if (keyLine) resourceKeyLines.set(key, keyLine);
+          resourceFieldLines.set(key, fieldLinesOf(resource, `resources.${key}`, keyLocations));
           const tasks = toRecord(resource).tasks;
           if (Array.isArray(tasks)) taskPositions.set(key, positionsByTaskKey(tasks));
         }
@@ -1066,7 +1099,7 @@ async function buildSourceIndex(
     await parseResourceFile(p);
   }
 
-  return { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines, sourceDocuments, sourceTexts };
+  return { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines, resourceFieldLines, sourceDocuments, sourceTexts };
 }
 
 /**
@@ -1151,10 +1184,11 @@ export async function extractBundleGraph(
         yamlLocationMaps: new Map<string, YamlLocationMap>(),
         taskPositions: new Map<string, Map<string, number>>(),
         resourceKeyLines: new Map<string, number>(),
+        resourceFieldLines: new Map<string, Record<string, number>>(),
         sourceDocuments: [],
         sourceTexts: new Map<string, string>(),
       };
-  const { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines } = sourceIndex;
+  const { resourceSourceMap, yamlLocationMaps, taskPositions, resourceKeyLines, resourceFieldLines } = sourceIndex;
 
   // A fully resolved real target has workspace paths; read the local files instead.
   const dirOf = (group: string, key: string) => {
@@ -1192,6 +1226,10 @@ export async function extractBundleGraph(
     }
   }
 
+  const fieldLinesFor = (resourceNode: ResourceNode) => {
+    const lines = resourceFieldLines.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
+    return lines && Object.keys(lines).length > 0 ? { fieldLines: lines } : {};
+  };
   resourceNodes.forEach((resourceNode) => {
     const isJobGroup = resourceNode.resourceGroup === "jobs" || resourceNode.resourceGroup === "job";
     if (!isJobGroup) {
@@ -1224,6 +1262,7 @@ export async function extractBundleGraph(
         ...(pipelineLibraries?.length ? { pipelineLibraries } : {}),
         ...(sourceFilePath ? { sourceFile: sourceFilePath } : {}),
         ...(definedAtLine ? { sourceLine: definedAtLine } : {}),
+        ...fieldLinesFor(resourceNode),
       });
       return;
     }
@@ -1263,6 +1302,7 @@ export async function extractBundleGraph(
       resourceKey: resourceNode.resourceKey,
       ...(jobSourceFile ? { sourceFile: jobSourceFile } : {}),
       ...(jobDefinedAtLine ? { sourceLine: jobDefinedAtLine } : {}),
+      ...fieldLinesFor(resourceNode),
       data: resourceNode.data,
     });
 

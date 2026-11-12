@@ -60,6 +60,14 @@ A job or pipeline box has an **Open** link that goes to its graph; double-click 
 
 A line joins two boxes where the bundle's own settings link them, such as a cluster whose settings read a secret scope. Point at a box to light up what it is linked to; click it to keep that lit and see its details, with a link to the line that defines it. Click it again, or press Esc, to clear.
 
+The details of a compute box list its **Settings** in the labels Databricks shows on its own pages, only those the bundle sets, as resolved for the picked target:
+
+- **SQL warehouse:** Name, Type (Serverless, Pro or Classic), Cluster size, Auto stop, Scaling (Min and Max clusters), Channel, and its Permissions.
+- **Cluster** and **job cluster:** Name, Runtime, Worker type, Workers (a number, or a range with autoscaling), Access mode (Standard, Dedicated or Auto, with the value as written beside it; older modes as written), Auto termination, and a cluster's Permissions.
+- **Serverless or inherited compute:** each job environment its tasks use (version, base environment, `pyproject.toml`, dependencies and which tasks), each job's performance target, and its notebook tasks with no environment in the job. Those say "Not set in the job. Databricks chooses the version." for a source notebook, and "The notebook may set its own." for an `.ipynb`, which can carry one.
+
+**Also set** names every other field the bundle sets on it, such as `spark_conf (3)`, with how many entries a list or map has; click one to open the line it is written on. A cluster or warehouse named by an ID or a variable shows no settings: they are in the workspace, not the bundle. A value written with a variable the target doesn't resolve is shown as written, in grey.
+
 The search box in the header says **Find a resource** on the overview: type part of a name or bundle key to light up the matching boxes and what they link to; the rest fade, and Esc clears it. Pick a result from its list to select that box. **Issues** keeps only the boxes with an error or warning, and what they link to, with one line to show the rest again. In every group, boxes with errors come first, then those with warnings. When nothing in view has a problem, **Issues** is dimmed and does nothing, on the overview and in a job; point at it, or reach it with Tab, to see "No problems found". Opening the graph from the status bar or **Open Bundle Issues** then shows **All**. A save that adds a problem makes **Issues** available again. Press **Issues** again, or the x on its list, to close the list; the view stays on Issues.
 
 A group marked **not checked yet** holds resource types the inspector shows but has no checks for; see [Supported resources](supported-resources.md). `databricks bundle validate` still checks their settings. A bundle with more than 15 boxes folds those groups to one line each, and draws lines only for the box you point at or select. In a narrow panel the two columns stack and no lines are drawn.
