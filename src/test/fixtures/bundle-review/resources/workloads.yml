@@ -1,0 +1,22 @@
+resources:
+  jobs:
+    daily:
+      name: ${var.label}-${var.outside}
+      tasks:
+        - task_key: notebook
+          notebook_task:
+            notebook_path: ../notebook.py
+        - task_key: ingest
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.ingest.id}
+    clean:
+      name: Clean job
+      tasks: []
+  pipelines:
+    ingest:
+      name: Ingest
+      catalog: main
+      schema: ${resources.schemas.data.name}
+      libraries:
+        - file:
+            path: ../pipeline.sql

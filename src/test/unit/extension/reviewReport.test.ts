@@ -10,6 +10,7 @@ import {
 } from "../../../bundle/reviewReport.js";
 
 const context: ReviewReportContext = {
+  bundleRoot: "/repo",
   targetLabel: "dev",
   structuralPreview: false,
   cliVersion: "1.21.0",
@@ -155,7 +156,7 @@ describe("jobReviewReport", () => {
       issue(jobId, "extract", "warning", "Widget run_date is read but not set"),
       issue(jobId, "load", "error", "File not found: ../src/load.py"),
     ]);
-    expect(markdown).toContain("### Errors (1)\n\n1. **Error** · **load**: File not found: ../src/load.py (`nightly.job.yml:18`)");
+    expect(markdown).toContain("### Errors (1)\n\n1. **Error** · **load**: File not found: ../src/load.py (`resources/nightly.job.yml:18`)");
     expect(markdown).toContain("### Warnings (1)\n\n1. **Warning** · **extract**: Widget run_date is read but not set");
     expect(markdown.indexOf("### Errors")).toBeLessThan(markdown.indexOf("### Warnings"));
   });

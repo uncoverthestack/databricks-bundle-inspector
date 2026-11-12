@@ -32,6 +32,7 @@ import { buildBundleOverview } from "./lib/bundleOverview";
 import { countsFor, problemTone, taskProblemCounts } from "./lib/taskProblems";
 import { typeWords } from "./lib/overviewView";
 import { buildJobUses } from "./lib/jobUses";
+import { reportLocation } from "../bundle/reportLocation";
 import { variableSourceLocation } from "./lib/variableSource";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -1418,6 +1419,7 @@ function parameterFlowMarkdownLabel(segment) {
 
 function buildBundleReviewSummary({
   parsedBundle,
+  bundleRoot,
   graph,
   jobNode,
   targetLabel,
@@ -1445,7 +1447,7 @@ function buildBundleReviewSummary({
         issue.subtitle && issue.subtitle !== issue.title
           ? `${issue.subtitle}: `
           : "";
-      const location = formatSourceLocation(issue.file, issue.line);
+      const location = reportLocation(issue.file, issue.line, bundleRoot);
       lines.push(
         `- **${severityMeta(issue.severity).label}** · ${taskPrefix}${issue.title}${location ? ` (${location})` : ""}`,
       );
@@ -2739,6 +2741,7 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
 
 export default function App({
   parsedBundle,
+  bundleRoot,
   resolutionBundle,
   graph,
   validationIssues = [],
@@ -3220,12 +3223,17 @@ export default function App({
   }
 
   function handleCopyReviewSummary() {
+    if (atOverview) {
+      onCopyReviewReport?.();
+      return;
+    }
     if (!onCopyReviewSummary) return;
     if (pipelineView) {
       onCopyReviewSummary(
         pipelineReviewSummary(pipelineView, {
           bundleName: parsedBundle?.bundle?.name ?? "Unknown bundle",
           targetLabel,
+          bundleRoot,
           resolveName: (value) => displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
         }),
       );
@@ -3234,6 +3242,7 @@ export default function App({
     onCopyReviewSummary(
       buildBundleReviewSummary({
         parsedBundle,
+        bundleRoot,
         graph,
         jobNode,
         targetLabel,
@@ -3251,6 +3260,7 @@ export default function App({
       style={{ backgroundColor: UI_COLOR.surface }}
     >
       <AppHeader
+        copyReviewTitle={atOverview ? "Copy the full bundle report as Markdown" : undefined}
         bundleName={parsedBundle?.bundle?.name}
         targetLabel={targetLabel}
         targetTitle={targetTitle}
