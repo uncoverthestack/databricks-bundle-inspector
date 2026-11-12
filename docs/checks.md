@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
@@ -133,7 +133,7 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 ## Jobs
 
-`bundle validate` accepts these. The Databricks Jobs service rejects the first two at `bundle deploy`; the last two deploy, but as a different job from the one written.
+`bundle validate` accepts these. The Databricks Jobs service rejects the dependency and environment mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written.
 
 ### `unknown_task_dependency`
 
@@ -170,6 +170,39 @@ A job declares the same parameter name twice. The CLI keeps one, with the later 
 - **Example:** `parameters: [{name: env, default: "1"}, {name: env, default: "2"}]` deploys one parameter `env` with default `"2"`.
 - **Fix:** remove one of them.
 - **Limits:** as for `duplicate_task_key`, a target declaring a job's parameter again is an override, not reported.
+
+### `environment_version_missing`
+
+A job environment (`environments[].spec`) sets none of `environment_version`, `client`, `base_environment` or `project_environment`, for example only `dependencies`, an empty `spec`, or no `spec` at all.
+
+- **Severity:** error.
+- **Example:** `environments: [{environment_key: e, spec: {dependencies: [simplejson]}}]`. Deploy fails with `Either base environment, version, or project_environment must be provided for environment 'e'`, after the bundle's files are uploaded.
+- **Fix:** set `environment_version` (for example `"5"`), `base_environment` or `project_environment` in the spec.
+- **Limits:** checks the job as the CLI resolved it, so a target's settings count. A value from a variable counts as set. Tested 2026-11-12 on Databricks CLI v1.26.0: `client` (the older field) deploys and runs. A CLI older than v1.20.0 doesn't know `project_environment` and drops it with an "unknown field" warning; the environment is then not reported here, since the YAML does set a version.
+
+### `unknown_environment_key`
+
+A task's `environment_key` names an environment the job doesn't have.
+
+- **Severity:** error.
+- **Example:** `environment_key: defualt` in a job whose environment is `default`. Deploy fails with `Job environment 'defualt' used by task script is not defined in field 'environments'`.
+- **Fix:** use the `environment_key` of one of the job's environments. The finding suggests a close match.
+- **Limits:** a for-each task's inner task is checked too. When an environment key can't be resolved offline, the job's tasks aren't judged.
+
+### `project_environment_version_missing`
+
+A job environment's `project_environment` names a `pyproject.toml` that has neither `environment_version` nor `base_environment`.
+
+- **Severity:** error.
+- **Example:** a `pyproject.toml` with only `[project]` and its `dependencies`. Validate and deploy pass; the job run fails with `pyproject.toml must specify environment_version or base_environment under [tool.databricks.environment]`.
+- **Fix:** add the version to the file:
+
+  ```toml
+  [tool.databricks.environment]
+  environment_version = "5"
+  ```
+
+- **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
 
 ## Code in notebooks and files
 

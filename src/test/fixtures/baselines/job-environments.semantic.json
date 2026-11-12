@@ -1,0 +1,123 @@
+{
+  "bundle": "job-environments",
+  "jobs": [
+    {
+      "key": "envs",
+      "name": "envs",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "fine",
+          "type": "Python script",
+          "source": "../src/probe.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/probe.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "loop",
+          "type": "For each",
+          "source": "[1, 2]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "typo",
+          "type": "Python script",
+          "source": "../src/probe.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/probe.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 6,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "environment_version_missing",
+      "title": "Environment \"deps_only\" has no version. Deploy may fail.",
+      "file": "resources/job.yml",
+      "line": 5,
+      "column": 28
+    },
+    {
+      "severity": "error",
+      "kind": "environment_version_missing",
+      "title": "Environment \"empty\" has no version. Deploy may fail.",
+      "file": "resources/job.yml",
+      "line": 8,
+      "column": 28
+    },
+    {
+      "severity": "error",
+      "kind": "environment_version_missing",
+      "title": "Environment \"no_spec\" has no version. Deploy may fail.",
+      "file": "resources/job.yml",
+      "line": 10,
+      "column": 28
+    },
+    {
+      "severity": "error",
+      "kind": "project_environment_version_missing",
+      "title": "Environment \"project\": its pyproject.toml has no environment version. The job may fail when it runs.",
+      "file": "resources/job.yml",
+      "line": 21,
+      "column": 34
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_environment_key",
+      "title": "Environment \"bse\" may not exist. Did you mean \"base\"?",
+      "taskKey": "loop",
+      "file": "resources/job.yml",
+      "line": 39,
+      "column": 32
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_environment_key",
+      "title": "Environment \"versoin\" may not exist. Did you mean \"version\"?",
+      "taskKey": "typo",
+      "file": "resources/job.yml",
+      "line": 27,
+      "column": 28
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

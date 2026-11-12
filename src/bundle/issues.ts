@@ -45,6 +45,9 @@ export const INSPECTOR_ISSUE_KINDS = [
   "task_dependency_loop",
   "duplicate_task_key",
   "duplicate_job_parameter",
+  "environment_version_missing",
+  "unknown_environment_key",
+  "project_environment_version_missing",
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
@@ -1139,15 +1142,16 @@ export function workspacePathClashIssues(
   );
 }
 
-/** Task graph and duplicate key mistakes in jobs (#135). Deploy rejects the first two. */
+/** Task graph, duplicate key (#135) and environment (#418) mistakes in jobs. */
 function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
   return (graph.jobStructureFindings ?? []).map((finding) => {
     const jobId = `resources.jobs.${finding.jobKey}`;
     const { file, line, column } = finding.location ?? {};
     return {
       id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
+      // Deploy rejects these, or the run fails; duplicates deploy, merged into one.
       severity:
-        finding.kind === "unknown_task_dependency" || finding.kind === "task_dependency_loop" ? "error" : "warning",
+        finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" ? "warning" : "error",
       kind: finding.kind,
       title: finding.title,
       ...(finding.taskKey

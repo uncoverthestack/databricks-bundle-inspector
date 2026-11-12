@@ -1,0 +1,41 @@
+resources:
+  jobs:
+    envs:
+      environments:
+        - environment_key: deps_only
+          spec:
+            dependencies: [simplejson]
+        - environment_key: empty
+          spec: {}
+        - environment_key: no_spec
+        - environment_key: version
+          spec: { environment_version: "5" }
+        - environment_key: from_variable
+          spec: { environment_version: "${var.env_version}" }
+        - environment_key: old_client
+          spec: { client: "2" }
+        - environment_key: base
+          spec: { base_environment: workspace-base-environments/databricks_ml_v5 }
+        - environment_key: project
+          spec:
+            project_environment: ../projects/pyproject.toml
+        - environment_key: pinned_project
+          spec:
+            project_environment: ../projects/pinned/pyproject.toml
+      tasks:
+        - task_key: typo
+          environment_key: versoin
+          spark_python_task:
+            python_file: ../src/probe.py
+        - task_key: fine
+          environment_key: version
+          spark_python_task:
+            python_file: ../src/probe.py
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: loop_inner
+              environment_key: bse
+              spark_python_task:
+                python_file: ../src/probe.py

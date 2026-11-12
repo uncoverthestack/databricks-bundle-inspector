@@ -80,6 +80,15 @@ function slotsIn(resources: unknown): PathSlot[] {
   for (const [key, job] of Object.entries(record(r.jobs) ?? {})) {
     const tasks = record(job)?.tasks;
     if (Array.isArray(tasks)) for (const t of tasks) task(`jobs.${key}`, t);
+    // A serverless environment's pyproject.toml, uploaded with the bundle's files (#418).
+    const environments = record(job)?.environments;
+    if (Array.isArray(environments)) {
+      for (const environment of environments) {
+        const e = record(environment);
+        if (typeof e?.environment_key !== "string") continue;
+        add(`jobs.${key}.environments.${e.environment_key}.project`, e.spec, "project_environment", "file");
+      }
+    }
   }
   for (const [key, pipeline] of Object.entries(record(r.pipelines) ?? {})) {
     const libraries = record(pipeline)?.libraries;
