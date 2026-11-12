@@ -45,11 +45,14 @@ describe("theme colours", () => {
     for (const name of names) expect(name).toMatch(/^--vscode-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?$/);
   });
 
-  test("every kind colour has a dark value and a light-theme value", () => {
+  test("every type colour family has a dark value and a light-theme value", () => {
     const css = read("index.css");
-    const kinds = new Set([...read("lib/kindMeta.js").matchAll(/color: "([a-z_]+)"/g)].map((match) => match[1]));
-    expect(kinds.size).toBeGreaterThan(10);
-    for (const kind of kinds) expect(css.split(`--kind-${kind}:`).length - 1).toBe(2);
+    const families = new Set([...read("lib/kindMeta.js").matchAll(/: "([a-z]+)",/g)].map((match) => match[1]));
+    families.add("other");
+    expect([...families].sort()).toEqual(["code", "compute", "other", "workload"]);
+    for (const family of families) expect(css.split(`--kind-${family}:`).length - 1).toBe(2);
+    // No type has a colour of its own any more.
+    expect([...css.matchAll(/--kind-([a-z]+):/g)].every((match) => families.has(match[1]!))).toBe(true);
   });
 
   test("every --ui colour used from JavaScript is defined in index.css", () => {

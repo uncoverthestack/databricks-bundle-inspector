@@ -1,4 +1,3 @@
-import { kindMeta } from "../lib/kindMeta";
 import PipelineDataFlow from "./PipelineDataFlow";
 import TypeDot from "./TypeDot";
 import { UI_COLOR } from "../lib/vscodeTheme";
@@ -92,10 +91,8 @@ export default function PipelineView({ view, otherPipelines, background, onSelec
           <section
             aria-label="Pipeline"
             className="flex w-80 max-w-full flex-col gap-3 rounded-2xl border-2 p-4"
-            style={{
-              borderColor: kindMeta("pipeline").color,
-              backgroundColor: `color-mix(in srgb, ${kindMeta("pipeline").color} 6%, ${UI_COLOR.widget})`,
-            }}
+            // Neutral, like every box: colour on a box's edge means a problem or focus (issue 424).
+            style={{ borderColor: UI_COLOR.boxLine, backgroundColor: UI_COLOR.widget }}
           >
             <div className="flex items-center gap-2.5">
               <Badge kind="pipeline" />
