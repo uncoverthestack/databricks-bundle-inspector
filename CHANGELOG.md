@@ -4,6 +4,22 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-15
+
+### Added
+
+- **A pipeline's data flow, from its SQL** ([#398](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/398)). The pipeline view shows the tables, views and flows its `.sql` sources create, what each one reads, and the tables and files it reads from outside, read without running anything. A name the inspector cannot read is listed with its file and line, never guessed. Python sources are not read yet.
+- **Copy review on the bundle overview copies a review of the whole bundle** ([#410](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/410)). The report lists every resource kind, variables and files with problems, with problems beside each row and clean rows folded away. It includes full error and warning details, check versions and time, coverage limits, and a diagram for bundles with at most 50 resources. Values supplied outside the repository, workspace hosts and user names are omitted. Locations in bundle, job and pipeline reports now include the path from the bundle folder, so two files with the same name stay distinct.
+- **A compute box on the bundle overview shows its settings** ([#417](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/417)). Click a SQL warehouse, cluster or job cluster to see its key settings in the labels Databricks uses, such as a warehouse's Type, Cluster size, Auto stop, Scaling and Channel, or a cluster's Runtime, Worker type, Workers and Access mode, plus its permissions. **Also set** names every other field the bundle sets, each a link to its line. Serverless compute lists the jobs' environments, performance targets, and notebook tasks with no environment in the job. Only what the bundle sets is shown, as resolved for the picked target; no default is guessed.
+- **The bundle overview draws lines from dashboards, alerts, Genie spaces, apps and Unity Catalog data** ([#423](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/423)). Before, only jobs and pipelines had lines. Now any resource that names another with `${resources.<group>.<key>...}` is joined to it: a dashboard, alert or Genie space to its SQL warehouse, a volume or registered model to its schema, an app to the jobs, warehouses and other resources it lists. A reference to a resource the bundle doesn't have shows as a box marked "may not exist". Lines come from the bundle's settings only: a plain name or ID, or a table or job used inside a notebook or other code, draws no line, so a box with no lines may still be used.
+- **Job environments that pass `bundle validate` and then fail are reported** ([#418](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/418)). Three new errors: `environment_version_missing`, an environment with no `environment_version`, `client`, `base_environment` or `project_environment`, which fails `bundle deploy`; `unknown_environment_key`, a task naming an environment the job doesn't have, with a "Did you mean" when one is close, which fails `bundle deploy`; and `project_environment_version_missing`, a `pyproject.toml` with no `environment_version` or `base_environment`, which deploys and fails when the job runs. Checked by deploying and running a bundle per case on Databricks CLI v1.26.0.
+
+### Fixed
+
+- **Mistakes the Databricks CLI only reports once a target is picked now show without one** ([#389](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/389)). The structural preview validates with no real target, so the CLI stopped before these checks and the bundle looked clean. Twelve new codes: `internal_resource_set`, `resource_not_defined` (a resource key with nothing under it), `variable_in_auth_field` and `variable_in_bundle_name` (`${...}` where the CLI doesn't resolve it), `invalid_engine`, `terraform_engine_removed` and `terraform_setting_has_no_effect` (CLI v1.20.0 and later), `script_no_content`, `variable_in_script_content` and `script_env_reference_not_resolved`, and `secret_value_not_variable` and `secret_variable_has_default` (a secret's value stored in plain text). Each is checked against the real CLI, on the newest release and on v0.299.2, the oldest supported. With a target picked, the CLI's own message shows instead.
+- **The bundle overview links a pipeline to the schema or catalog it references** ([#403](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/403)). A pipeline whose `catalog` or `schema` is `${resources.schemas.<key>...}` showed no line to that schema, while a job task with the same reference did. Any `${resources.<group>.<key>...}` in a pipeline's settings now draws a line to that resource, or to a box marked "may not exist" when the bundle has no such resource. Plain names like `schema: sales` are not linked.
+- **Type dots no longer look like problems** ([#424](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/424)). An alert's and a secret scope's dot was the error red, a SQL task's the warning amber, and others matched the blue of links or the green of "ok". Red, amber, blue and green now only ever mean a problem, focus or ok. A dot's colour says what kind of thing it is: violet for what runs (jobs, pipelines, dashboards, alerts), teal for code (notebooks, SQL, scripts), magenta for compute (warehouses, clusters), grey for everything else. The pipeline view's main box is neutral grey like every other box.
+
 ## [0.7.0] - 2026-11-12
 
 ### Added
@@ -458,6 +474,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.8.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.2...v0.6.3
