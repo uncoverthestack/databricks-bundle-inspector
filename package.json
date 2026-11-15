@@ -438,6 +438,7 @@
     "vite": "^8.3.6"
   },
   "overrides": {
+    "minimatch": "^11.0.1",
     "ovsx": {
       "@vscode/vsce": "$@vscode/vsce"
     },
