@@ -1424,7 +1424,7 @@ export async function extractBundleGraph(
   });
 
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
-  addPipelineResourceReferences(parsedBundle, sourceIndex, addEdge);
+  addResourceReferences(parsedBundle, sourceIndex, addEdge);
 
   const sourceFiles = sourceIndex.sourceDocuments.map(({ file, doc }) => ({
     file,
@@ -1594,7 +1594,8 @@ function addConfigSecretReferences(
   }
 }
 
-const RESOURCE_REFERENCES = /\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}/g;
+// `$${...}` is the CLI's escape for literal text, not a reference (#423).
+const RESOURCE_REFERENCES = /(?<!\$)\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}/g;
 
 /** Every `${resources.<group>.<key>.*}` in a value, with the YAML path of the string it is in. */
 function findResourceReferences(
@@ -1621,35 +1622,40 @@ function findResourceReferences(
 }
 
 /**
- * Links a pipeline to each bundle resource it names with `${resources.<group>.<key>.*}`,
- * such as the schema in its `catalog` and `schema` fields. One edge per resource, at its first use.
- * The target may be missing from the bundle; the overview shows that as a missing box.
+ * Links a resource to each bundle resource it names with `${resources.<group>.<key>.*}`,
+ * such as a pipeline's schema, a dashboard's or alert's SQL warehouse, a volume's schema or
+ * an app's resources (#403, #423). One edge per resource, at its first use. The target may
+ * be missing from the bundle; the overview shows that as a missing box. Jobs are left out:
+ * their links come from their tasks.
  */
-function addPipelineResourceReferences(
+function addResourceReferences(
   parsedBundle: ParsedBundleConfig,
   { resourceSourceMap, yamlLocationMaps }: SourceIndex,
   addEdge: (edge: BundleEdge) => void,
 ): void {
-  for (const [pipelineKey, pipeline] of Object.entries(parsedBundle.resources?.pipelines ?? {})) {
-    const source = `resources.pipelines.${pipelineKey}`;
-    const file = resourceSourceMap.get(`pipelines.${pipelineKey}`) ?? "";
-    for (const ref of findResourceReferences(pipeline, "")) {
-      const target = `resources.${ref.group}.${ref.key}`;
-      if (target === source) continue;
-      const yamlPath = `${source}.${ref.yamlPath}`;
-      const location = yamlLocationMaps.get(file)?.get(yamlPath);
-      addEdge({
-        id: `${source}->references->${target}`,
-        source,
-        target,
-        kind: "references",
-        data: {
-          expression: ref.expression,
-          yamlPath,
-          ...(file ? { file } : {}),
-          ...(location ? { line: location.line, column: location.column } : {}),
-        },
-      });
+  for (const [group, resources] of Object.entries(parsedBundle.resources ?? {})) {
+    if (group === "jobs" || !resources || typeof resources !== "object") continue;
+    for (const [resourceKey, resource] of Object.entries(resources as Record<string, unknown>)) {
+      const source = `resources.${group}.${resourceKey}`;
+      const file = resourceSourceMap.get(`${group}.${resourceKey}`) ?? "";
+      for (const ref of findResourceReferences(resource, "")) {
+        const target = `resources.${ref.group}.${ref.key}`;
+        if (target === source) continue;
+        const yamlPath = `${source}.${ref.yamlPath}`;
+        const location = yamlLocationMaps.get(file)?.get(yamlPath);
+        addEdge({
+          id: `${source}->references->${target}`,
+          source,
+          target,
+          kind: "references",
+          data: {
+            expression: ref.expression,
+            yamlPath,
+            ...(file ? { file } : {}),
+            ...(location ? { line: location.line, column: location.column } : {}),
+          },
+        });
+      }
     }
   }
 }

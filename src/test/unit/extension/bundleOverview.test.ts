@@ -387,6 +387,124 @@ resources:
   });
 });
 
+describe("resource references beyond pipelines (#423)", () => {
+  const YAML = `bundle:
+  name: resource-refs
+resources:
+  sql_warehouses:
+    wh:
+      name: wh
+      cluster_size: 2X-Small
+  schemas:
+    sales:
+      name: sales
+      catalog_name: main
+  dashboards:
+    revenue:
+      display_name: Revenue
+      file_path: ./revenue.lvdash.json
+      warehouse_id: \${resources.sql_warehouses.wh.id}
+    by_id:
+      display_name: By ID $\${resources.sql_warehouses.wh.id}
+      file_path: ./revenue.lvdash.json
+      warehouse_id: 1234567890abcdef
+  alerts:
+    late:
+      display_name: Late orders
+      warehouse_id: \${resources.sql_warehouses.wh.id}
+  genie_spaces:
+    ask:
+      title: Ask sales
+      warehouse_id: \${resources.sql_warehouses.gone.id}
+  volumes:
+    landing:
+      name: landing
+      catalog_name: \${resources.schemas.sales.catalog_name}
+      schema_name: \${resources.schemas.sales.name}
+  registered_models:
+    churn:
+      name: churn
+      catalog_name: main
+      schema_name: \${resources.schemas.sales.name}
+  apps:
+    portal:
+      name: portal
+      source_code_path: ./app
+      description: \${resources.apps.portal.name}
+      resources:
+        - name: warehouse
+          sql_warehouse:
+            id: \${resources.sql_warehouses.wh.id}
+            permission: CAN_USE
+        - name: nightly
+          job:
+            id: \${resources.jobs.nightly.id}
+            permission: CAN_MANAGE_RUN
+  jobs:
+    nightly:
+      name: nightly
+      description: \${resources.schemas.sales.name}
+      tasks:
+        - task_key: refresh
+          sql_task:
+            warehouse_id: \${resources.sql_warehouses.wh.id}
+            file:
+              path: ./refresh.sql
+`;
+  let result: BundleOverview;
+  let edges: Awaited<ReturnType<typeof extractBundleGraph>>["edges"];
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-overview-423-"));
+    writeFileSync(path.join(dir, "databricks.yml"), YAML);
+    writeFileSync(path.join(dir, "refresh.sql"), "SELECT 1\n");
+    writeFileSync(path.join(dir, "revenue.lvdash.json"), "{}\n");
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(parse(YAML) as ParsedBundleConfig, dir));
+    edges = graph.edges;
+    result = buildBundleOverview(graph);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const linksFrom = (from: string) => result.links.filter((link) => link.from === from).map((link) => [link.to, link.kind]);
+  const itemById = (id: string) => result.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+
+  test("a dashboard and an alert link to the SQL warehouse they name", () => {
+    expect(linksFrom("resources.dashboards.revenue")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
+    expect(linksFrom("resources.alerts.late")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
+  });
+
+  test("a warehouse given as a plain ID, or in an escaped $${...}, draws no line", () => {
+    expect(linksFrom("resources.dashboards.by_id")).toEqual([]);
+  });
+
+  test("a Genie space naming a warehouse the bundle does not have links to a missing box", () => {
+    expect(linksFrom("resources.genie_spaces.ask")).toEqual([["resources.sql_warehouses.gone", "uses"]]);
+    expect(itemById("resources.sql_warehouses.gone")).toMatchObject({ label: "gone", source: "missing", expression: "${resources.sql_warehouses.gone.id}" });
+  });
+
+  test("a volume and a registered model link to their schema, once each", () => {
+    expect(linksFrom("resources.volumes.landing")).toEqual([["resources.schemas.sales", "uses"]]);
+    expect(linksFrom("resources.registered_models.churn")).toEqual([["resources.schemas.sales", "uses"]]);
+  });
+
+  test("the edge points at the first field that names the resource", () => {
+    const edge = edges.find((e) => e.id === "resources.volumes.landing->references->resources.schemas.sales");
+    expect(edge?.data).toMatchObject({ yamlPath: "resources.volumes.landing.catalog_name", line: 32 });
+  });
+
+  test("an app links to the resources it lists, but not to itself", () => {
+    expect(linksFrom("resources.apps.portal").sort()).toEqual([
+      ["resources.jobs.nightly", "uses"],
+      ["resources.sql_warehouses.wh", "uses"],
+    ]);
+  });
+
+  test("job links still come only from their tasks", () => {
+    expect(linksFrom("resources.jobs.nightly")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
+    expect(edges.some((e) => e.source === "resources.jobs.nightly" && e.kind === "references")).toBe(false);
+  });
+});
+
 describe("overview groups", () => {
   test("no resource group is listed twice", () => {
     const all = OVERVIEW_GROUPS.flatMap((group) => group.resourceGroups);

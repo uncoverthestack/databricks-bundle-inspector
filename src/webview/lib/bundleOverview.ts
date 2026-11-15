@@ -349,13 +349,15 @@ export function buildBundleOverview(
       addLink(task.parentId!, edge.target, kind, [task.id], [task.displayName]);
       continue;
     }
-    // A pipeline naming another resource with `${resources.*}`, such as the schema it writes to.
-    // Secret scope links are left to the step below.
+    // A resource naming another with `${resources.*}`, such as a pipeline's schema or a
+    // dashboard's warehouse (#403, #423). Jobs link through their tasks, above; secret scope
+    // links are left to the step below.
     const reference =
       edge.kind === "references" &&
       target?.nodeType !== "secret_scope" &&
       bundleItemIds.has(edge.source) &&
-      edge.source.startsWith("resources.pipelines.")
+      /^resources\.[^.]+\.[^.]+$/.test(edge.source) &&
+      !edge.source.startsWith("resources.jobs.")
         ? /^resources\.([^.]+)\.([^.]+)$/.exec(edge.target)
         : null;
     if (reference) {
