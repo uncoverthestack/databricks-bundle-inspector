@@ -1594,7 +1594,8 @@ function addConfigSecretReferences(
   }
 }
 
-const RESOURCE_REFERENCES = /\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}/g;
+// `$${...}` is the CLI's escape for literal text, not a reference (#423).
+const RESOURCE_REFERENCES = /(?<!\$)\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}/g;
 
 /** Every `${resources.<group>.<key>.*}` in a value, with the YAML path of the string it is in. */
 function findResourceReferences(

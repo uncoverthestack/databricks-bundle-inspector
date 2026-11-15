@@ -405,7 +405,7 @@ resources:
       file_path: ./revenue.lvdash.json
       warehouse_id: \${resources.sql_warehouses.wh.id}
     by_id:
-      display_name: By ID
+      display_name: By ID $\${resources.sql_warehouses.wh.id}
       file_path: ./revenue.lvdash.json
       warehouse_id: 1234567890abcdef
   alerts:
@@ -473,7 +473,7 @@ resources:
     expect(linksFrom("resources.alerts.late")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
   });
 
-  test("a warehouse given as a plain ID draws no line", () => {
+  test("a warehouse given as a plain ID, or in an escaped $${...}, draws no line", () => {
     expect(linksFrom("resources.dashboards.by_id")).toEqual([]);
   });
 
