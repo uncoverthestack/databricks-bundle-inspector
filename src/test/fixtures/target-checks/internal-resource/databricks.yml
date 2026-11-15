@@ -1,0 +1,7 @@
+bundle:
+  name: internal_resource
+resources:
+  internal_immutable_snapshots:
+    immutable:
+      bundle_id: 123
+      zip_path: /tmp/snapshot.zip

@@ -1,0 +1,4 @@
+bundle:
+  name: bundle_terraform
+  terraform:
+    exec_path: /usr/local/bin/terraform

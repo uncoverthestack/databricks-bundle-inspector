@@ -1,0 +1,5 @@
+bundle:
+  name: script_content_variable
+scripts:
+  hello:
+    content: echo ${bundle.name}

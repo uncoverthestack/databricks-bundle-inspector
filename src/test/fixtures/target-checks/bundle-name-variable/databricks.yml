@@ -1,0 +1,5 @@
+bundle:
+  name: ${var.name}
+variables:
+  name:
+    default: bundle_name_variable

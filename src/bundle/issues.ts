@@ -61,6 +61,18 @@ export const INSPECTOR_ISSUE_KINDS = [
   "empty_bundle_name_in_root_path",
   "unresolved_variable",
   "variable_reference_loop",
+  "internal_resource_set",
+  "resource_not_defined",
+  "variable_in_auth_field",
+  "variable_in_bundle_name",
+  "invalid_engine",
+  "terraform_engine_removed",
+  "terraform_setting_has_no_effect",
+  "script_no_content",
+  "variable_in_script_content",
+  "script_env_reference_not_resolved",
+  "secret_value_not_variable",
+  "secret_variable_has_default",
   "cli_diagnostic",
   "unknown_or_deprecated_field",
   "unknown_task_type",
@@ -1104,6 +1116,8 @@ export function buildInspectorIssues(
   if (!targetName) issues.push(...variableLoopIssues(parsedBundle, graph.variableSources ?? {}));
   // With a target the CLI has already renamed the schemas, so the written names are gone.
   if (!targetName) issues.push(...schemaRenameIssues(graph, parsedBundle, tasks));
+  // With a target the CLI runs these checks itself and reports its own errors (#389).
+  if (!targetName) issues.push(...targetCheckIssues(graph, bundleRoot));
 
   return issues;
 }
@@ -1143,6 +1157,28 @@ export function workspacePathClashIssues(
 }
 
 /** Task graph, duplicate key (#135) and environment (#418) mistakes in jobs. */
+/** The checks the CLI skips in the structural preview because no target is picked (#389). See targetChecks.ts. */
+function targetCheckIssues(graph: BundleGraph, bundleRoot: string): InspectorIssue[] {
+  const findings = graph.targetCheckFindings ?? [];
+  // A key reached through a YAML merge has no line: the finding goes on databricks.yml.
+  const bundleFile = findings.some((finding) => !finding.location)
+    ? path.join(bundleRoot, readIncludeEntries(bundleRoot).file ?? "databricks.yml")
+    : undefined;
+  return findings.map((finding) => {
+    const { file = bundleFile, line, column } = finding.location ?? {};
+    return {
+      id: `target-check:${finding.kind}:${finding.yamlPath}:${finding.title}`,
+      severity: finding.severity,
+      kind: finding.kind,
+      title: finding.title,
+      fixHint: finding.fixHint,
+      yamlPath: finding.yamlPath,
+      ...(finding.resourceId ? { resourceId: finding.resourceId } : {}),
+      ...issueLocation(file, line, column),
+    };
+  });
+}
+
 function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
   return (graph.jobStructureFindings ?? []).map((finding) => {
     const jobId = `resources.jobs.${finding.jobKey}`;

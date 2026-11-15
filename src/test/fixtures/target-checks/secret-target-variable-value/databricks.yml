@@ -1,0 +1,17 @@
+bundle:
+  name: secret_target_variable_value
+variables:
+  api_key:
+    description: passed at deploy
+targets:
+  dev:
+    default: true
+    variables:
+      api_key: not-a-real-secret
+resources:
+  secrets:
+    api_key:
+      catalog_name: main
+      schema_name: default
+      name: api_key
+      value: ${var.api_key}

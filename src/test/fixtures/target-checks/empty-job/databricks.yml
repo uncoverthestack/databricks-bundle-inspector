@@ -1,0 +1,5 @@
+bundle:
+  name: empty_job
+resources:
+  jobs:
+    nightly:

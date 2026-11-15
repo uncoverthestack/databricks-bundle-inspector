@@ -1,0 +1,5 @@
+bundle:
+  name: script_no_content
+scripts:
+  hello:
+    content: ""
