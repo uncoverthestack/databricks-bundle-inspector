@@ -1,0 +1,6 @@
+bundle:
+  name: clean
+resources:
+  jobs:
+    nightly:
+      name: nightly

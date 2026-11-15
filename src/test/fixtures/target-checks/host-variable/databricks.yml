@@ -1,0 +1,7 @@
+bundle:
+  name: host_variable
+variables:
+  host:
+    default: https://example-not-real.cloud.databricks.com
+workspace:
+  host: ${var.host}

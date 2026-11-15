@@ -1,0 +1,12 @@
+bundle:
+  name: secret_variable_default
+variables:
+  api_key:
+    default: not-a-real-secret
+resources:
+  secrets:
+    api_key:
+      catalog_name: main
+      schema_name: default
+      name: api_key
+      value: ${var.api_key}

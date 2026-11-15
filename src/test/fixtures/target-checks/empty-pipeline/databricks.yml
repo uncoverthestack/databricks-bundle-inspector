@@ -1,0 +1,4 @@
+bundle:
+  name: empty_pipeline
+include:
+  - resources/*.yml

@@ -348,7 +348,10 @@ export async function updateBundleDiagnostics(
       // Read file contents as the inspector panel does, so issues found in code
       // (e.g. a secret scope named by its resource key) also reach the Problems panel.
       graph = await enrichGraphWithFileContent(
-        await extractBundleGraph(result.data, bundleRoot, { notebookRule: notebookHeaderRuleFor(result.cliVersion) }),
+        await extractBundleGraph(result.data, bundleRoot, {
+          notebookRule: notebookHeaderRuleFor(result.cliVersion),
+          ...(result.cliVersion ? { cliVersion: result.cliVersion } : {}),
+        }),
       );
       const inspectorIssues = buildInspectorIssues(
         graph,

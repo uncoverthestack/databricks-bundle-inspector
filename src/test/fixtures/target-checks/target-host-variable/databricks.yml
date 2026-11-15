@@ -1,0 +1,10 @@
+bundle:
+  name: target_host_variable
+variables:
+  host:
+    default: https://example-not-real.cloud.databricks.com
+targets:
+  dev:
+    default: true
+    workspace:
+      host: ${var.host}

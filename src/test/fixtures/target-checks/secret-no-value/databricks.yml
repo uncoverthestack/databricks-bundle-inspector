@@ -1,0 +1,8 @@
+bundle:
+  name: secret_no_value
+resources:
+  secrets:
+    api_key:
+      catalog_name: main
+      schema_name: default
+      name: api_key

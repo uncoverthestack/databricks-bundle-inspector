@@ -14,7 +14,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -337,6 +337,111 @@ Variable values refer to each other in a loop, or a variable refers to itself, s
 - **Example:** `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`. `bundle validate` and deploy fail with `cycle detected in field resolution: variables.catalog.default -> var.env_catalog -> var.catalog -> var.env_catalog` (CLI v1.24.0). The finding names every variable in the loop, appears at each one's value, and says which targets fail: a target's override can make a loop, or break one.
 - **Fix:** give one of the variables in the loop a value that doesn't refer back.
 - **Limits:** reported in the structural preview only; with a target picked, the CLI's own error shows. A `BUNDLE_VAR_<name>` environment variable, `--var` or `variable-overrides.json` can set one of the variables and break the loop, which the inspector doesn't see.
+
+### `internal_resource_set`
+
+The bundle sets a resource group the Databricks CLI only writes for itself, such as `internal_immutable_snapshots`. `bundle validate` and deploy stop with "Internal resources cannot be set in bundle configuration".
+
+- **Severity:** error.
+- **Example:** `resources: internal_immutable_snapshots: { immutable: { bundle_id: 123 } }`.
+- **Fix:** remove the group.
+- **Limits:** Databricks CLI v1.16.0 and later. An older CLI doesn't know these groups: it warns "unknown field" and drops them. Like every check from here to `secret_variable_has_default`, it comes from a check the CLI only runs once it has picked a target, so the structural preview, which validates with no real target, never sees the CLI's own message. With a target picked, the CLI's message shows instead.
+
+### `resource_not_defined`
+
+A resource key has nothing under it, so `bundle validate` and deploy stop with "job nightly is not defined" (or pipeline, and so on).
+
+- **Severity:** error.
+- **Example:** `resources: jobs: nightly:` with nothing after `nightly:`, often a half-written resource.
+- **Fix:** add the resource's settings under the key, or remove the key.
+- **Limits:** only resources the bundle itself defines; a target that overrides a resource with nothing is not checked.
+
+### `variable_in_auth_field`
+
+A workspace setting that configures sign-in, such as `workspace.host` or `workspace.profile`, uses `${...}`. The CLI reads these before it resolves variables, so it warns "Variable interpolation is not supported for fields that configure authentication", and then tries the text as written, for example `https://${var.host}`.
+
+- **Severity:** warning.
+- **Example:** `workspace: host: ${var.host}`, in the bundle or in a target.
+- **Fix:** write the value itself, or leave the field out and set its environment variable, such as `DATABRICKS_HOST`.
+- **Limits:** the fields the CLI checks: `host`, `profile`, `auth_type`, `metadata_service_url`, `client_id`, `google_service_account`, the `azure_*` fields, `account_id` and `workspace_id`.
+
+### `variable_in_bundle_name`
+
+`bundle.name` uses `${...}`. The name is part of the folder each deploy keeps its state in, so a name that changes can deploy the same bundle twice, or leave resources behind on `bundle destroy`. The CLI warns "Please do not use variable interpolation in the name of your bundle".
+
+- **Severity:** warning.
+- **Example:** `bundle: name: ${var.name}`.
+- **Fix:** write the name itself.
+
+### `invalid_engine`
+
+`bundle.engine` is set to something the CLI doesn't know, so `bundle validate` and deploy stop with `invalid value "drect" for bundle.engine`.
+
+- **Severity:** error.
+- **Example:** `bundle: engine: drect`.
+- **Fix:** use `direct`, or leave `bundle.engine` out. Before Databricks CLI v1.20.0, `terraform` is valid too.
+
+### `terraform_engine_removed`
+
+`bundle.engine` is `terraform`, which Databricks CLI v1.20.0 removed. `bundle validate` and deploy stop with "the Terraform deployment engine has been removed in Databricks CLI v1.20.0".
+
+- **Severity:** error.
+- **Example:** `bundle: engine: terraform`, in the bundle or in a target.
+- **Fix:** change it to `direct`, or leave `bundle.engine` out. A bundle deployed with Terraform may need migrating first; see the Databricks CLI release notes for v1.20.0.
+- **Limits:** Databricks CLI v1.20.0 and later, and when the CLI's version can't be read. Older CLIs deploy with Terraform.
+
+### `terraform_setting_has_no_effect`
+
+`bundle.terraform` is set, which does nothing since Databricks CLI v1.20.0 removed the Terraform engine. The CLI warns "bundle.terraform is deprecated and has no effect".
+
+- **Severity:** warning.
+- **Example:** `bundle: terraform: { exec_path: /usr/local/bin/terraform }`.
+- **Fix:** remove `bundle.terraform`.
+- **Limits:** Databricks CLI v1.20.0 and later, and when the CLI's version can't be read.
+
+### `script_no_content`
+
+A script under `scripts:` has no `content`, so `bundle validate` and deploy stop with "Script hello has no content".
+
+- **Severity:** error.
+- **Example:** `scripts: hello: { content: "" }`.
+- **Fix:** add the commands to run under `content:`, or remove the script.
+
+### `variable_in_script_content`
+
+A script's `content` uses `${...}`, which the CLI doesn't allow there, because the shell has its own `${...}`. `bundle validate` and deploy stop with "Found ${bundle.name} in script hello.content".
+
+- **Severity:** error.
+- **Example:** `scripts: hello: { content: echo ${bundle.name} }`.
+- **Fix:** set the value under the script's `env:`, for example `env: { NAME: ${bundle.name} }`, and use `$NAME` in the content.
+- **Limits:** from Databricks CLI v1.15.0, `$${...}` is an escaped literal and fine. An older CLI still reads `$${HOME}` as `${HOME}` and rejects it, and so does this check.
+
+### `script_env_reference_not_resolved`
+
+A script's `env:` uses a value the CLI hasn't worked out when scripts run, such as `${resources.jobs.nightly.id}`. Only `${bundle.*}`, `${workspace.*}` and `${var.*}` are. `bundle validate` and deploy stop with "cannot be used in scripts.hello.env.JOB_ID".
+
+- **Severity:** error.
+- **Example:** `env: { JOB_ID: ${resources.jobs.nightly.id} }`.
+- **Fix:** use a `bundle`, `workspace` or `var` value, or read the ID in the script itself.
+- **Limits:** Databricks CLI v1.8.0 and later. An older CLI doesn't know `env:` in a script: it warns "unknown field" and drops it.
+
+### `secret_value_not_variable`
+
+A secret under `resources: secrets:` has its value written in the file, a value that isn't text, or no value. The CLI only accepts a variable reference, so the secret is never stored in plain text, and stops with "Secret value must be a variable reference" or "Secret value must be a string".
+
+- **Severity:** error.
+- **Example:** `value: my-api-key`, or no `value:` at all.
+- **Fix:** use `value: ${var.my_secret}` with a variable that has no default, and pass it at deploy with `--var` or `BUNDLE_VAR_my_secret`.
+- **Limits:** Databricks CLI v1.12.0 and later. An older CLI doesn't know secrets: it warns "unknown field" and drops them. The CLI hides secret values in its output, so the value is read from the YAML as written, in the bundle and in each target.
+
+### `secret_variable_has_default`
+
+A secret's value is a variable that has a value in the bundle, a `default` or a target's value. That value is in the file as plain text, so the CLI stops with "Variable used for secret value must not have a default value".
+
+- **Severity:** error.
+- **Example:** `value: ${var.api_key}` with `variables: api_key: { default: my-api-key }`, or a target that sets `api_key`.
+- **Fix:** remove the default and any target's value, and pass the variable at deploy with `--var` or `BUNDLE_VAR_api_key`.
+- **Limits:** Databricks CLI v1.12.0 and later, as for `secret_value_not_variable`.
 
 ### `cli_diagnostic`
 

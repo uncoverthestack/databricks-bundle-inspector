@@ -1037,7 +1037,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       ...(mergedTargets ? { targets: mergedTargets } : {}),
     };
     // The CLI that validated decides which notebook header rule applies.
-    const graphOptions = { notebookRule: notebookHeaderRuleFor(result.cliVersion) };
+    const graphOptions = {
+      notebookRule: notebookHeaderRuleFor(result.cliVersion),
+      ...(result.cliVersion ? { cliVersion: result.cliVersion } : {}),
+    };
     const graph = await extractBundleGraph(bundleData, bundleDir, graphOptions);
     const checkedGraph = await enrichGraphWithFileContent(graph);
     const inspectorIssues = buildInspectorIssues(

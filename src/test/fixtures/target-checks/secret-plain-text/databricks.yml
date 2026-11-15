@@ -1,0 +1,9 @@
+bundle:
+  name: secret_plain_text
+resources:
+  secrets:
+    api_key:
+      catalog_name: main
+      schema_name: default
+      name: api_key
+      value: not-a-real-secret

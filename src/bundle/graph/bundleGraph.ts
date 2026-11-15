@@ -30,6 +30,7 @@ import {
 import { resolveExpressionForTarget } from "../targetResolution.js";
 import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
 import type { NotebookHeaderRule } from "../notebookFiles.js";
+import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -368,6 +369,8 @@ export interface BundleGraph {
   variableSources?: Record<string, VariableSources>;
   /** Task graph and duplicate key mistakes in jobs (#135), for the issue list. */
   jobStructureFindings?: JobStructureFinding[];
+  /** Problems the CLI only reports once a target is picked (#389), for the issue list. */
+  targetCheckFindings?: TargetCheckFinding[];
   /** The CLI version's rule for notebook headers, used again by the issue list's suggestions. */
   notebookRule?: NotebookHeaderRule;
 }
@@ -375,6 +378,8 @@ export interface BundleGraph {
 export interface ExtractBundleGraphOptions {
   /** The rule of the CLI that validated the bundle (see notebookHeaderRuleFor). */
   notebookRule?: NotebookHeaderRule;
+  /** The version of the CLI that validated, such as `v1.26.0`, for the rules that changed between versions. */
+  cliVersion?: string;
 }
 
 // --- helpers ---
@@ -1466,6 +1471,8 @@ export async function extractBundleGraph(
         },
       }),
     ],
+    // The CLI's own output, before the paths are mapped back to local files.
+    targetCheckFindings: findTargetCheckProblems(cliOutput, sourceFiles, options.cliVersion),
   };
 }
 

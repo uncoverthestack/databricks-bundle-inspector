@@ -1,0 +1,12 @@
+bundle:
+  name: script_env_resource
+scripts:
+  hello:
+    content: echo "$JOB_ID $NAME"
+    env:
+      NAME: ${bundle.name}
+      JOB_ID: ${resources.jobs.nightly.id}
+resources:
+  jobs:
+    nightly:
+      name: nightly

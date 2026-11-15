@@ -1,0 +1,5 @@
+bundle:
+  name: script_escaped_variable
+scripts:
+  hello:
+    content: echo $${HOME}
