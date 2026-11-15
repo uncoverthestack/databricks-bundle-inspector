@@ -1,0 +1,3 @@
+Added
+
+- **The bundle overview draws lines from dashboards, alerts, Genie spaces, apps and Unity Catalog data** ([#423](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/423)). Before, only jobs and pipelines had lines. Now any resource that names another with `${resources.<group>.<key>...}` is joined to it: a dashboard, alert or Genie space to its SQL warehouse, a volume or registered model to its schema, an app to the jobs, warehouses and other resources it lists. A reference to a resource the bundle doesn't have shows as a box marked "may not exist". A warehouse or schema given as a plain name or ID draws no line yet.

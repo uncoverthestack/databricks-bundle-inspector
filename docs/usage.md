@@ -62,7 +62,7 @@ Every bundle opens on the **bundle overview**: every resource in the bundle as a
 
 A job or pipeline box has an **Open** link that goes to its graph; double-click the box, or press Enter on it, to do the same. Inside a job or pipeline, the arrow beside the bundle name goes back to the overview, with the box you left selected. The picker in the header lists **Bundle overview** above the jobs and pipelines. A warehouse, cluster or secret scope selected on the overview stays lit in the Uses row of a job you open that uses it. On the overview, **Issues** lists every problem in the bundle; picking a task's problem opens its job.
 
-A line joins two boxes where the bundle's own settings link them, such as a cluster whose settings read a secret scope. Point at a box to light up what it is linked to; click it to keep that lit and see its details, with a link to the line that defines it. Click it again, or press Esc, to clear.
+A line joins two boxes where the bundle's own settings link them, such as a cluster whose settings read a secret scope, or a dashboard that names its SQL warehouse with `${resources.sql_warehouses.<key>.id}`. A warehouse or schema given as a plain name or ID draws no line. Point at a box to light up what it is linked to; click it to keep that lit and see its details, with a link to the line that defines it. Click it again, or press Esc, to clear.
 
 The details of a compute box list its **Settings** in the labels Databricks shows on its own pages, only those the bundle sets, as resolved for the picked target:
 
