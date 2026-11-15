@@ -145,8 +145,13 @@ function tokenize(sql: string): Token[][] {
         if (d === "`") {
           quoted = true;
           i++;
-          while (i < sql.length && sql[i] !== "`") { parts[parts.length - 1] += sql[i]!; i++; }
-          i++;
+          while (i < sql.length) {
+            if (sql[i] === "`") {
+              if (sql[i + 1] === "`") { parts[parts.length - 1] += "`"; i += 2; continue; }
+              i++; break;
+            }
+            parts[parts.length - 1] += sql[i]!; i++;
+          }
           continue;
         }
         if (d === "$") {
@@ -167,7 +172,7 @@ function tokenize(sql: string): Token[][] {
         if (d === "." && isWordStart(sql[i + 1] ?? "")) { parts.push(""); i++; continue; }
         break;
       }
-      const text = parts.map((part) => (part.includes(".") ? `\`${part}\`` : part)).join(".");
+      const text = joinParts(parts);
       current.push({ kind: "word", text, upper: quoted ? "" : text.toUpperCase(), parts, line: at });
       if (i === start) i++;
       continue;
@@ -206,7 +211,7 @@ function nameParts(token: Token): string[] {
   const parts = token.parts ?? [token.text];
   return parts.length > 1 && parts[0]!.toLowerCase() === "live" && token.upper.startsWith("LIVE.") ? parts.slice(1) : parts;
 }
-const joinParts = (parts: string[]) => parts.map((part) => (part.includes(".") ? `\`${part}\`` : part)).join(".");
+const joinParts = (parts: string[]) => parts.map((part) => (/[.`]/.test(part) ? `\`${part.replaceAll("`", "``")}\`` : part)).join(".");
 
 const CLAUSE_END = new Set([
   "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "UNION", "INTERSECT", "EXCEPT", "WINDOW", "QUALIFY",
@@ -265,7 +270,7 @@ function readsIn(tokens: Token[], from: number, unread: PipelineUnread[]): Found
   const ctes: { name: string; defined: number; scopeEnd: number }[] = [];
   for (let k = from; k < tokens.length; k++) {
     const t = tokens[k]!;
-    if (t.kind !== "word" || !t.upper || CLAUSE_END.has(t.upper)) continue;
+    if (t.kind !== "word" || CLAUSE_END.has(t.upper)) continue;
     const before = tokens[k - 1];
     if (!(before?.upper === "WITH" || (before?.upper === "RECURSIVE" && tokens[k - 2]?.upper === "WITH") || isPunct(before, ","))) continue;
     let j = k + 1;
