@@ -63,7 +63,9 @@ const isPlaceholder = (value: string | null | undefined) => !value || value.incl
 export function splitName(name: string): string[] {
   const parts: string[] = [""];
   let quoted = false;
-  for (const c of name) {
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i]!;
+    if (quoted && c === "`" && name[i + 1] === "`") { parts[parts.length - 1] += "`"; i++; continue; }
     if (c === "`") { quoted = !quoted; continue; }
     if (c === "." && !quoted) { parts.push(""); continue; }
     parts[parts.length - 1] += c;

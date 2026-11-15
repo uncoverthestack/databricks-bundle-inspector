@@ -38,6 +38,9 @@ describe("pipeline SQL review: valid SQL keeps every dependency and invents none
     ["a table named like a keyword, in backticks", "CREATE MATERIALIZED VIEW m AS SELECT * FROM `SELECT`", ["SELECT"]],
     ["a table named STREAM, in backticks", "CREATE MATERIALIZED VIEW m AS SELECT * FROM `STREAM`", ["STREAM"]],
     ["CTE column aliases", "CREATE MATERIALIZED VIEW m AS WITH recent(id) AS (SELECT id FROM orders) SELECT * FROM recent", ["orders"]],
+    ["a quoted CTE", "CREATE MATERIALIZED VIEW m AS WITH `recent` AS (SELECT * FROM orders) SELECT * FROM `recent`", ["orders"]],
+    ["a quoted keyword CTE", "CREATE MATERIALIZED VIEW m AS WITH `SELECT` AS (SELECT * FROM orders) SELECT * FROM `SELECT`", ["orders"]],
+    ["a quoted CTE with column aliases", "CREATE MATERIALIZED VIEW m AS WITH `a.b`(id) AS (SELECT id FROM orders) SELECT * FROM `a.b`", ["orders"]],
     ["a CTE hides a table only after it is defined, in its own query", "CREATE MATERIALIZED VIEW m AS SELECT * FROM orders WHERE id IN (WITH orders AS (SELECT id FROM archive_orders) SELECT id FROM orders)", ["orders", "archive_orders"]],
     ["nested block comments", "CREATE MATERIALIZED VIEW m AS SELECT 1 /* outer /* inner */ FROM ghost */ FROM orders", ["orders"]],
     ["read_files with concat of strings", "CREATE MATERIALIZED VIEW m AS SELECT * FROM read_files(concat('/Volumes/c/s/', 'in'))", ["files:/Volumes/c/s/in"]],
@@ -59,6 +62,15 @@ describe("pipeline SQL review: valid SQL keeps every dependency and invents none
     const flow = buildPipelineDataFlow([{ file: "x.sql", result }], []);
     expect(flow.nodes).toHaveLength(2);
     expect(flow.nodes.every((node) => !node.definedAgain)).toBe(true);
+  });
+
+  test("escaped backticks do not collapse distinct dataset names or their reads", () => {
+    const result = readPipelineSql("CREATE MATERIALIZED VIEW `a``b` AS SELECT 1; CREATE MATERIALIZED VIEW ab AS SELECT 2; CREATE MATERIALIZED VIEW report AS SELECT * FROM `a``b` JOIN ab USING(id)");
+    expect(result.datasets.map(dataset => dataset.name)).toEqual(["`a``b`", "ab", "report"]);
+    const flow = buildPipelineDataFlow([{ file: "x.sql", result }], []);
+    expect(flow.nodes).toHaveLength(3);
+    expect(flow.nodes.every(node => !node.definedAgain)).toBe(true);
+    expect(flow.edges.map(edge => edge.from)).toEqual(["dataset:`a``b`", "dataset:ab"]);
   });
 });
 

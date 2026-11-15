@@ -395,9 +395,11 @@ export function overviewSuite() {
       const file = vscode.Uri.file(path.join(root, "databricks.yml"));
       const original = Buffer.from(await vscode.workspace.fs.readFile(file)).toString("utf8");
       const VOLUME = "resources.volumes.raw_files";
-      await evaluate(`document.querySelector('[data-overview-item="${VOLUME}"]').focus()`);
       await browser.call("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
       try {
+        // Force a focus event even when a previous, unfocused frame kept this as its
+        // active element. Calling focus() twice on the same element emits no event.
+        await evaluate(`document.activeElement?.blur()`);
         await evaluate(`document.querySelector('[data-overview-item="${VOLUME}"]').focus()`);
         await waitFor(async () => (await fadedIds()).length > 0, "the focused volume lighting its links");
         // Line by line, keeping the file's own line endings: Windows checks it out with \r\n.
@@ -413,8 +415,11 @@ export function overviewSuite() {
         await sleep(300);
         assert.deepEqual(await fadedIds(), [], "no box fades for a resource that is gone");
       } finally {
-        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
-        await vscode.workspace.fs.writeFile(file, Buffer.from(original, "utf8"));
+        try {
+          await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
+        } finally {
+          await vscode.workspace.fs.writeFile(file, Buffer.from(original, "utf8"));
+        }
         await waitFor(async () => (await read()).boxes.some((box) => box.id === VOLUME), "the volume back");
       }
     });

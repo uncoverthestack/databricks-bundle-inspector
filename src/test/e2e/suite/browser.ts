@@ -26,6 +26,8 @@ export class Browser {
       }, 5000);
       this.pending.set(id, { resolve, reject, timer });
       this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    }).catch((error: unknown) => {
+      throw new Error(`${method}: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
   close(): void {

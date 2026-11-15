@@ -237,8 +237,12 @@ export function pipelineFlowSuite() {
         const needed = Math.max(widths.canvasClient, widths.row + 32);
         assert.ok(widths.canvasScroll <= needed + 2, `no stale scroll width after shrinking: ${JSON.stringify(widths)}`);
       } finally {
-        await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
-        for (let i = 0; i < files.length; i++) await vscode.workspace.fs.writeFile(files[i]!, Buffer.from(original[i]!, "utf8"));
+        // A disappearing debugger session must not leave the tracked fixture edited.
+        try {
+          await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, sessionId);
+        } finally {
+          for (let i = 0; i < files.length; i++) await vscode.workspace.fs.writeFile(files[i]!, Buffer.from(original[i]!, "utf8"));
+        }
         await waitFor(async () => (await read()).nodes.length === 8, "the full data flow again");
       }
     });

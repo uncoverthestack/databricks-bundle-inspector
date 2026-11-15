@@ -64,6 +64,13 @@ async function main() {
     await cp(folder, copy, { recursive: true });
     folder = path.join(copy, "workspace-changes.code-workspace");
   }
+  // These suites edit bundle and SQL files to exercise save refreshes. Run copies:
+  // a debugger failure must not leave a tracked fixture changed for the next run.
+  if (suite === "pipelineFlow" || suite === "overview") {
+    const copy = path.join(await mkdtemp(path.join(os.tmpdir(), "dbi-fixture-")), suite);
+    await cp(folder, copy, { recursive: true });
+    folder = copy;
+  }
   await runTests({
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(root, "out/e2e/suite/index.cjs"),
