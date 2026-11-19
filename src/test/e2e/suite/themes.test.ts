@@ -121,7 +121,8 @@ const MEASURE = String.raw`(() => {
   const overviewBoxes = [...document.querySelectorAll("[data-overview-item]")].map((box) => ({
     name: box.dataset.overviewItem,
     border: ratio(over(rgba(getComputedStyle(box).borderTopColor), overviewBg), overviewBg),
-    dimmed: opacityOf(box) < 1,
+    // A faded box fades only its frame; its text is measured like any other (issue 425).
+    dimmed: opacityOf(box) < 1 || box.dataset.dimmed === "true",
   }));
   const overviewLines = [...document.querySelectorAll("[data-overview-link]")].map((line) => {
     const stroke = rgba(getComputedStyle(line).stroke);

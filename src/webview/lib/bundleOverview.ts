@@ -36,8 +36,9 @@ export const OVERVIEW_GROUPS: readonly OverviewGroupDefinition[] = [
     resourceGroups: ["model_serving_endpoints", "vector_search_endpoints", "vector_search_indexes"],
   },
   {
+    // Databricks' own name for model, model provider and MCP services (docs.databricks.com/unity-gateway, issue 425).
     id: "ai_gateway",
-    name: "AI gateway services",
+    name: "Unity Gateway",
     column: "workloads",
     resourceGroups: ["model_services", "model_provider_services", "mcp_services"],
   },

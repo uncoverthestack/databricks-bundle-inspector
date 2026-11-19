@@ -48,12 +48,16 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
   const problems = problemCount(item);
   const selected = state === "selected";
   const related = state === "related";
+  // A box that isn't linked to the active one fades its frame and dot, never its text, so
+  // it stays readable at 4.5:1 (issue 425); the themes suite measures it.
+  const dimmed = state === "dimmed";
   const canOpen = Boolean(onOpen) && opens(item);
   const row = (
     <button
       ref={(element) => register(item.id, element)}
       type="button"
       data-overview-item={item.id}
+      data-dimmed={dimmed || undefined}
       aria-pressed={selected}
       title={[`${typeWords(item)} ${item.label}`, sourceSentence(item), problems ? problemWords(item) : ""]
         .filter(Boolean)
@@ -82,18 +86,21 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
             : related
               ? // Full strength: a paler blue falls under 3:1 against the canvas in most themes.
                 UI_COLOR.accent
-              : UI_COLOR.boxLine,
+              : dimmed
+                ? `color-mix(in srgb, ${UI_COLOR.boxLine} 45%, transparent)`
+                : UI_COLOR.boxLine,
         backgroundColor: selected
           ? `color-mix(in srgb, ${UI_COLOR.accent} 10%, ${UI_COLOR.widget})`
           : UI_COLOR.widget,
-        opacity: state === "dimmed" ? 0.48 : 1,
       }}
       className={`relative z-10 flex h-10 w-full items-center gap-2.5 rounded-xl border pl-3 text-left transition-colors hover:border-fg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         canOpen ? "pr-[4.25rem]" : "pr-3"
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
-      <TypeDot kind={item.kind} />
-      <span className="max-w-[65%] shrink-0 truncate text-[13px] font-medium text-fg">{item.label}</span>
+      <span className={`flex shrink-0 ${dimmed ? "opacity-45" : ""}`}>
+        <TypeDot kind={item.kind} />
+      </span>
+      <span className={`max-w-[65%] shrink-0 truncate text-[13px] font-medium ${dimmed ? "text-muted" : "text-fg"}`}>{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
       {problems > 0 && (
         <span
@@ -120,7 +127,6 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
         onClick={() => onOpen(item)}
         onMouseEnter={() => onHover(item.id)}
         onMouseLeave={() => onHover(null)}
-        style={{ opacity: state === "dimmed" ? 0.48 : 1 }}
         className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-md px-1.5 py-1 text-[11px] text-link hover:bg-hover hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         Open ›

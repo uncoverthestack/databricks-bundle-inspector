@@ -23,7 +23,7 @@ const READ = `(() => {
   const boxes = [...document.querySelectorAll("[data-overview-item]")].map((box) => ({
     id: box.dataset.overviewItem,
     pressed: box.getAttribute("aria-pressed") === "true",
-    faded: Number(getComputedStyle(box).opacity) < 1,
+    faded: box.dataset.dimmed === "true",
   }));
   return {
     boxes,
