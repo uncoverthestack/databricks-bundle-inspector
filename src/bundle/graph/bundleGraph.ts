@@ -1682,6 +1682,16 @@ function addNamedOutside(
     }
   }
 
+  // The bundle's own schemas by `catalog_name.name` as written, so a plain name that matches
+  // one is a line to that box, not a dashed box beside it.
+  const bundleSchemas = new Map<string, string>();
+  for (const [key, resource] of Object.entries(toRecord(resources.schemas) ?? {})) {
+    const record = toRecord(resource);
+    if (typeof record?.catalog_name === "string" && typeof record?.name === "string") {
+      bundleSchemas.set(`${record.catalog_name}.${record.name}`, `resources.schemas.${key}`);
+    }
+  }
+
   for (const group of SCHEMA_GROUPS) {
     for (const [key, resource] of Object.entries(toRecord(resources[group]) ?? {})) {
       const record = toRecord(resource);
@@ -1690,6 +1700,11 @@ function addNamedOutside(
       if (!named(catalog) || !named(schema)) continue;
       const source = `resources.${group}.${key}`;
       const name = `${catalog}.${schema}`;
+      const own = bundleSchemas.get(name);
+      if (own) {
+        addEdge({ id: `${source}->references->${own}`, source, target: own, kind: "references", data: edgeData(group, key, "schema_name", name) });
+        continue;
+      }
       const nodeId = `schema:${name}`;
       addNode({
         id: nodeId,

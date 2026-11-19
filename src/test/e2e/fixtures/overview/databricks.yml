@@ -1,5 +1,6 @@
 # A bundle with no job and no pipeline, for the overview e2e suite: the panel opens on the
-# bundle overview. The cluster reads a secret scope, so one line is drawn.
+# bundle overview. The cluster reads a secret scope and the volume names the bundle's schema,
+# so two lines are drawn.
 bundle:
   name: overview_check
 

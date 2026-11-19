@@ -538,6 +538,10 @@ resources:
       name: team
       catalog_name: main
       schema_name: \${var.team_schema}
+    gold_files:
+      name: gold_files
+      catalog_name: main
+      schema_name: gold
   registered_models:
     churn:
       name: churn
@@ -600,6 +604,11 @@ resources:
 
   test("a schema name with a variable shows its value", () => {
     expect(itemById("schema:main.${var.team_schema}")).toMatchObject({ label: "main.analytics", source: "variable" });
+  });
+
+  test("a plain catalog and schema the bundle defines is a line to its own schema box", () => {
+    expect(result.links.filter((link) => link.from === "resources.volumes.gold_files").map((link) => link.to)).toEqual(["resources.schemas.gold"]);
+    expect(itemById("schema:main.gold")).toBeUndefined();
   });
 
   test("a ${resources...} schema stays a line to the bundle's own box, with no dashed box", () => {

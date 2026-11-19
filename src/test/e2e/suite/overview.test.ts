@@ -159,7 +159,7 @@ export function overviewSuite() {
     });
 
     it("shows a box for every resource, and the line the bundle has", async () => {
-      await waitFor(async () => (await read()).links.length === 1, "the cluster's line to its secret scope");
+      await waitFor(async () => (await read()).links.length === 2, "the cluster's line to its secret scope and the volume's to its schema");
       const shown = await read();
       assert.deepEqual(shown.boxes.map((box) => box.id).sort(), [
         CLUSTER,
@@ -169,11 +169,12 @@ export function overviewSuite() {
         "resources.sql_warehouses.analytics",
         "resources.volumes.raw_files",
       ]);
-      assert.deepEqual(shown.links, [`${CLUSTER}->${SCOPE}`]);
+      // The volume names its schema by plain catalog and schema name, which the bundle defines.
+      assert.deepEqual(shown.links, [`${CLUSTER}->${SCOPE}`, "resources.volumes.raw_files->resources.schemas.sales"]);
       assert.equal(shown.boxes.some((box) => box.faded), false, "nothing is faded until a box is active");
       assert.equal(shown.details, null);
-      // Groups the inspector has no checks or lines for say so. Compute and Secrets do not.
-      assert.deepEqual(shown.unchecked.sort(), ["machine_learning", "unity_catalog"]);
+      // Groups the inspector has no checks or lines for say so. Compute, Secrets and Unity Catalog do not.
+      assert.deepEqual(shown.unchecked.sort(), ["machine_learning"]);
       await screenshot("overview");
     });
 
