@@ -85,6 +85,17 @@ describe("targetFallback: the short reason in the graph's note", () => {
       "you're not signed in to this workspace",
     ],
     [
+      // CLI 1.26.0 after `databricks auth logout`, with an older CLI's sign-in file still on disk.
+      "no saved login, older CLI's sign-in file left over",
+      {
+        error: "Failed to validate Databricks bundle.",
+        errorCode: "VALIDATION_FAILED",
+        details:
+          "Error: failed during request visitor: error getting token: cache: stored credentials from older CLI versions are no longer used; run `databricks auth login` to sign in again, or set DATABRICKS_AUTH_STORAGE=plaintext to keep using the file cache",
+      },
+      "you're not signed in to this workspace",
+    ],
+    [
       "any other login failure",
       {
         error: "Failed to validate Databricks bundle.",
@@ -114,6 +125,12 @@ describe("targetFallback: the short reason in the graph's note", () => {
     ["no saved login", "error getting token: cache: no cached credentials", undefined, "not_logged_in"],
     // CLI 0.299.0's words for the same, captured with a browser profile that has no saved sign-in.
     ["no saved login (0.299.0)", "error: failed during request visitor: error getting token: cache: token not found", undefined, "not_logged_in"],
+    [
+      "no saved login, older CLI's sign-in file left over",
+      "error getting token: cache: stored credentials from older CLI versions are no longer used; run `databricks auth login` to sign in again",
+      undefined,
+      "not_logged_in",
+    ],
     ["other login", "error getting token: something", undefined, "login_other"],
     ["anything else", "error: job x is not defined", undefined, "other"],
   ])("%s has the telemetry code the schema takes", (_name, details, errorCode, code) => {
