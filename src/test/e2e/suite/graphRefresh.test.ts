@@ -414,7 +414,7 @@ export function graphRefreshSuite() {
           await evaluate(`${issues}.click()`);
           await waitFor(async () => (await read()).boxes.length < everyBox, "Issues filtering again");
           await sleep(200);
-          const fadedCount = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].filter((box) => Number(getComputedStyle(box).opacity) < 1).length`);
+          const fadedCount = await evaluate(`[...document.querySelectorAll("[data-overview-item]")].filter((box) => box.dataset.dimmed === "true").length`);
           assert.equal(fadedCount, 0, "no box fades for a focused box that Issues filtered out");
         } finally {
           await browser.call("Emulation.setFocusEmulationEnabled", { enabled: false }, graph!.sessionId);
