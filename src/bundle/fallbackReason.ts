@@ -72,6 +72,10 @@ function shortReason(errorCode: string | undefined, message: string): Reason {
  *   ("Refresh token is invalid", "(error code: invalid_grant)").
  * - `no cached credentials` (CLI 1.x) and `cache: token not found` (CLI 0.299.0): no
  *   saved sign-in for that workspace at all.
+ * - `stored credentials from older CLI versions are no longer used` (CLI 1.22.0 and
+ *   later, libs/auth/storage/not_found_hint.go): the same, said when the keychain has
+ *   no sign-in but an older CLI's sign-in file is still on disk, such as after
+ *   `databricks auth logout`.
  */
 function loginReason(message: string): Reason | undefined {
   if (!/error getting token:/.test(message)) return undefined;
@@ -81,7 +85,7 @@ function loginReason(message: string): Reason | undefined {
       code: "login_unreachable",
     };
   }
-  if (/no cached credentials|cache: token not found/.test(message)) {
+  if (/no cached credentials|cache: token not found|stored credentials from older CLI versions are no longer used/.test(message)) {
     return { reason: "you're not signed in to this workspace", code: "not_logged_in" };
   }
   if (/Refresh token is invalid|invalid_grant|cached token has no refresh token/.test(message)) {
