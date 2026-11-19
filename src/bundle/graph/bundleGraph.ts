@@ -321,6 +321,7 @@ export type BundleNodeType =
   | "cluster"
   | "warehouse"
   | "secret_scope"
+  | "schema"
   | "widget";
 
 export interface BundleGraphNode {
@@ -1425,6 +1426,7 @@ export async function extractBundleGraph(
 
   addConfigSecretReferences(parsedBundle, sourceIndex, nodeMap, addNode, addEdge);
   addResourceReferences(parsedBundle, sourceIndex, addEdge);
+  addNamedOutside(parsedBundle, sourceIndex, addNode, addEdge);
 
   const sourceFiles = sourceIndex.sourceDocuments.map(({ file, doc }) => ({
     file,
@@ -1628,6 +1630,79 @@ function findResourceReferences(
  * be missing from the bundle; the overview shows that as a missing box. Jobs are left out:
  * their links come from their tasks.
  */
+/** Resources whose `warehouse_id` names the SQL warehouse they run on (CLI v1.26.0 schema). */
+const WAREHOUSE_GROUPS = ["dashboards", "alerts", "genie_spaces", "quality_monitors"];
+/** Resources that live in a schema named by `catalog_name` and `schema_name` (CLI v1.26.0 schema). */
+const SCHEMA_GROUPS = ["volumes", "registered_models", "secrets"];
+
+/**
+ * A warehouse or schema a resource names by a plain name, ID or `${var.*}`, not by
+ * `${resources.*}` (those are edges from addResourceReferences). Each gets the same kind of
+ * node a job task's warehouse gets, so a dashboard and a job naming one warehouse ID share it
+ * (#423 follow-up). Other `${...}` values are kept as written.
+ */
+function addNamedOutside(
+  parsedBundle: ParsedBundleConfig,
+  { resourceSourceMap, yamlLocationMaps }: SourceIndex,
+  addNode: (node: BundleGraphNode) => void,
+  addEdge: (edge: BundleEdge) => void,
+): void {
+  const resources = (parsedBundle.resources ?? {}) as Record<string, unknown>;
+  const edgeData = (group: string, key: string, field: string, expression: string) => {
+    const file = resourceSourceMap.get(`${group}.${key}`) ?? "";
+    const yamlPath = `resources.${group}.${key}.${field}`;
+    const location = yamlLocationMaps.get(file)?.get(yamlPath);
+    return {
+      expression,
+      yamlPath,
+      ...(file ? { file } : {}),
+      ...(location ? { line: location.line, column: location.column } : {}),
+    };
+  };
+  const named = (value: unknown): value is string => typeof value === "string" && value.trim() !== "" && !value.includes("${resources.");
+
+  for (const group of WAREHOUSE_GROUPS) {
+    for (const [key, resource] of Object.entries(toRecord(resources[group]) ?? {})) {
+      const value = toRecord(resource)?.warehouse_id;
+      if (!named(value)) continue;
+      const source = `resources.${group}.${key}`;
+      const nodeId = `warehouse:${normalizeReference(value)}`;
+      const reference = computeReference(value);
+      addNode({
+        id: nodeId,
+        kind: "warehouse",
+        nodeType: "warehouse",
+        displayName: normalizeReference(value),
+        data: {
+          ...(reference.expression ? { expression: reference.expression } : {}),
+          ...(reference.variableName ? { variableName: reference.variableName } : {}),
+        },
+      });
+      addEdge({ id: `${source}->uses->${nodeId}`, source, target: nodeId, kind: "uses", data: edgeData(group, key, "warehouse_id", value) });
+    }
+  }
+
+  for (const group of SCHEMA_GROUPS) {
+    for (const [key, resource] of Object.entries(toRecord(resources[group]) ?? {})) {
+      const record = toRecord(resource);
+      const catalog = record?.catalog_name;
+      const schema = record?.schema_name;
+      if (!named(catalog) || !named(schema)) continue;
+      const source = `resources.${group}.${key}`;
+      const name = `${catalog}.${schema}`;
+      const nodeId = `schema:${name}`;
+      addNode({
+        id: nodeId,
+        kind: "schemas",
+        nodeType: "schema",
+        displayName: name,
+        data: name.includes("${") ? { expression: name } : {},
+      });
+      addEdge({ id: `${source}->uses->${nodeId}`, source, target: nodeId, kind: "uses", data: edgeData(group, key, "schema_name", name) });
+    }
+  }
+}
+
 function addResourceReferences(
   parsedBundle: ParsedBundleConfig,
   { resourceSourceMap, yamlLocationMaps }: SourceIndex,

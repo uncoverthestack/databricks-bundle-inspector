@@ -473,8 +473,8 @@ resources:
     expect(linksFrom("resources.alerts.late")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
   });
 
-  test("a warehouse given as a plain ID, or in an escaped $${...}, draws no line", () => {
-    expect(linksFrom("resources.dashboards.by_id")).toEqual([]);
+  test("a warehouse given as a plain ID links to a dashed box; an escaped $${...} elsewhere draws no line", () => {
+    expect(linksFrom("resources.dashboards.by_id")).toEqual([["warehouse:1234567890abcdef", "uses"]]);
   });
 
   test("a Genie space naming a warehouse the bundle does not have links to a missing box", () => {
@@ -502,6 +502,113 @@ resources:
   test("job links still come only from their tasks", () => {
     expect(linksFrom("resources.jobs.nightly")).toEqual([["resources.sql_warehouses.wh", "uses"]]);
     expect(edges.some((e) => e.source === "resources.jobs.nightly" && e.kind === "references")).toBe(false);
+  });
+});
+
+describe("warehouses and schemas named outside the bundle (#423 follow-up)", () => {
+  const YAML = `bundle:
+  name: named-outside
+variables:
+  wh:
+    default: 0f0f0f0f0f0f0f0f
+  team_schema:
+    default: analytics
+resources:
+  dashboards:
+    sales:
+      display_name: Sales
+      file_path: ./sales.lvdash.json
+      warehouse_id: 4f2a9c1e8b7d6a05
+  alerts:
+    late:
+      display_name: Late orders
+      warehouse_id: \${var.wh}
+  quality_monitors:
+    orders_monitor:
+      table_name: main.sales.orders
+      assets_dir: /Workspace/monitors
+      output_schema_name: main.sales
+      warehouse_id: 4f2a9c1e8b7d6a05
+  volumes:
+    raw:
+      name: raw
+      catalog_name: main
+      schema_name: sales
+    team:
+      name: team
+      catalog_name: main
+      schema_name: \${var.team_schema}
+  registered_models:
+    churn:
+      name: churn
+      catalog_name: main
+      schema_name: sales
+  schemas:
+    gold:
+      name: gold
+      catalog_name: main
+  secrets:
+    token:
+      catalog_name: main
+      schema_name: \${resources.schemas.gold.name}
+  jobs:
+    refresh:
+      name: refresh
+      tasks:
+        - task_key: run_sql
+          sql_task:
+            warehouse_id: 4f2a9c1e8b7d6a05
+            file:
+              path: ./refresh.sql
+`;
+  let result: BundleOverview;
+  let edges: Awaited<ReturnType<typeof extractBundleGraph>>["edges"];
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-overview-outside-"));
+    writeFileSync(path.join(dir, "databricks.yml"), YAML);
+    writeFileSync(path.join(dir, "refresh.sql"), "SELECT 1\n");
+    writeFileSync(path.join(dir, "sales.lvdash.json"), "{}\n");
+    const config = parse(YAML) as ParsedBundleConfig;
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, dir));
+    edges = graph.edges;
+    result = buildBundleOverview(graph, [], (value) => resolveExpressionForTarget(value, config).value);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const linksTo = (to: string) => result.links.filter((link) => link.to === to).map((link) => link.from).sort();
+  const itemById = (id: string) => result.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+
+  test("a dashboard, a quality monitor and a job naming one warehouse ID share one dashed box", () => {
+    expect(linksTo("warehouse:4f2a9c1e8b7d6a05")).toEqual([
+      "resources.dashboards.sales",
+      "resources.jobs.refresh",
+      "resources.quality_monitors.orders_monitor",
+    ]);
+    expect(itemById("warehouse:4f2a9c1e8b7d6a05")).toMatchObject({ label: "4f2a9c1e8b7d6a05", source: "fixed", kind: "warehouse", groupId: "compute" });
+  });
+
+  test("a warehouse from a variable shows the variable's value", () => {
+    expect(linksTo("warehouse:wh")).toEqual(["resources.alerts.late"]);
+    expect(itemById("warehouse:wh")).toMatchObject({ label: "0f0f0f0f0f0f0f0f", source: "variable", expression: "${var.wh}" });
+  });
+
+  test("a volume and a registered model in one schema share a dashed schema box", () => {
+    expect(linksTo("schema:main.sales")).toEqual(["resources.registered_models.churn", "resources.volumes.raw"]);
+    expect(itemById("schema:main.sales")).toMatchObject({ label: "main.sales", source: "fixed", kind: "schemas", groupId: "unity_catalog" });
+  });
+
+  test("a schema name with a variable shows its value", () => {
+    expect(itemById("schema:main.${var.team_schema}")).toMatchObject({ label: "main.analytics", source: "variable" });
+  });
+
+  test("a ${resources...} schema stays a line to the bundle's own box, with no dashed box", () => {
+    expect(result.links.filter((link) => link.from === "resources.secrets.token").map((link) => link.to)).toEqual(["resources.schemas.gold"]);
+  });
+
+  test("the edge points at the field that names it", () => {
+    const edge = edges.find((e) => e.id === "resources.dashboards.sales->uses->warehouse:4f2a9c1e8b7d6a05");
+    expect(edge?.data).toMatchObject({ yamlPath: "resources.dashboards.sales.warehouse_id", line: 13 });
   });
 });
 
