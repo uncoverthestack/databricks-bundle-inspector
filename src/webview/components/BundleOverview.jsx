@@ -394,7 +394,11 @@ export default function BundleOverview({
         if (itemById.get(link.from)?.column !== itemById.get(link.to)?.column) continue;
         const leftColumn = itemById.get(link.from)?.column === "workloads";
         const x = (leftColumn ? from.left : from.right) - origin.left;
-        const bend = x + (leftColumn ? -26 : 26);
+        // Longer lines bend further out, so lines sharing a box nest instead of piling up
+        // (issue 423 follow-up). Capped at 48: the curve's peak, three quarters of it, stays in
+        // the canvas's 40px side padding.
+        const offset = Math.min(48, 20 + Math.abs(y2 - y1) * 0.12);
+        const bend = x + (leftColumn ? -offset : offset);
         d = `M${x} ${y1} C${bend} ${y1} ${bend} ${y2} ${x} ${y2}`;
       } else {
         const leftToRight = from.left < to.left;

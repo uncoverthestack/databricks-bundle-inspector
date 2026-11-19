@@ -3,7 +3,7 @@
  * links between them. Built from the graph the extension sends, so it shows only what the
  * bundle says. Left column: what runs or shows something. Right column: what those use.
  */
-import { buildJobUses, type UsesSource } from "./jobUses.js";
+import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
 import { clusterSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 
 export type OverviewColumn = "workloads" | "uses";
@@ -224,6 +224,24 @@ const RESOURCE_GROUP_OF_USES_KIND: Record<string, string> = {
   secret_scope: "secret_scopes",
 };
 
+/** The box for a warehouse or schema named outside the bundle, as a job's Uses row names it. */
+function outsideItem(node: GraphNode, resolve: (value: string) => string): Omit<OverviewItem, "problems" | "column" | "groupId"> {
+  if (node.nodeType === "warehouse") {
+    const name = computeName(node, resolve);
+    return { id: node.id, kind: "warehouse", label: name.label, source: name.source, ...(name.expression ? { expression: name.expression } : {}), hasChecks: false };
+  }
+  const expression = typeof node.data?.expression === "string" ? node.data.expression : undefined;
+  const label = expression ? resolve(expression) : node.displayName;
+  return {
+    id: node.id,
+    kind: "schemas",
+    label,
+    source: expression && /\$\{var\./.test(expression) ? "variable" : "fixed",
+    ...(expression ? { expression } : {}),
+    hasChecks: false,
+  };
+}
+
 function problemTotal(problems: ProblemCounts): number {
   return problems.errors + problems.warnings;
 }
@@ -348,6 +366,19 @@ export function buildBundleOverview(
       if (!bundleItemIds.has(edge.target)) continue;
       const kind = items.get(edge.target)!.column === "workloads" ? "runs" : "uses";
       addLink(task.parentId!, edge.target, kind, [task.id], [task.displayName]);
+      continue;
+    }
+    // A warehouse or schema a resource names by a plain name, ID or variable: a dashed box,
+    // shared with any job naming the same one (#423 follow-up).
+    if (
+      edge.kind === "uses" &&
+      target &&
+      (target.nodeType === "warehouse" || target.nodeType === "schema") &&
+      bundleItemIds.has(edge.source) &&
+      !edge.source.startsWith("resources.jobs.")
+    ) {
+      if (!items.has(target.id)) addItem(outsideItem(target, resolve), overviewGroupOf(target.nodeType === "warehouse" ? "sql_warehouses" : "schemas"));
+      addLink(edge.source, target.id, "uses", [], []);
       continue;
     }
     // A resource naming another with `${resources.*}`, such as a pipeline's schema or a

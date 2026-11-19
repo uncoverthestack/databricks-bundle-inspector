@@ -60,7 +60,7 @@ const KIND_ORDER: Record<UsesKind, number> = { warehouse: 0, cluster: 1, secret_
  *
  * @param resolve Turns a `${var.*}` expression into the value for the shown target, when known.
  */
-function computeName(
+export function computeName(
   node: GraphNode,
   resolve: (value: string) => string,
 ): { label: string; source: UsesSource; expression?: string; jobCluster?: true } {
