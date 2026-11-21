@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
@@ -213,19 +213,30 @@ export function containsTemplate(p: string): boolean {
  * live on CLI v1.27.0). Names above `anchor` aren't uploaded, so they aren't compared.
  */
 /**
- * A folder's names, read again only when the folder changes: adding, removing or renaming
- * an entry updates its modified time. Many tasks share a folder, and one can hold
- * thousands of files.
+ * Folder names, read once per check while one runs ({@link withFolderNames}): many tasks
+ * share a folder, and one can hold thousands of files. Outside a check each lookup reads
+ * the folder, and each check starts afresh, so a rename is always seen. A folder's
+ * modified time can't tell instead: on Windows it didn't change for a rename in CI.
  */
-const folderNames = new Map<string, { modified: number; names: Set<string> }>();
+let folderNames: Map<string, Set<string>> | undefined;
+let checksRunning = 0;
 function namesIn(folder: string): Set<string> {
-  const modified = statSync(folder).mtimeMs;
-  const known = folderNames.get(folder);
-  if (known && known.modified === modified) return known.names;
-  const names = new Set(readdirSync(folder));
-  if (folderNames.size >= 10_000) folderNames.clear();
-  folderNames.set(folder, { modified, names });
+  let names = folderNames?.get(folder);
+  if (!names) {
+    names = new Set(readdirSync(folder));
+    folderNames?.set(folder, names);
+  }
   return names;
+}
+
+/** Runs one check with folder names read once. Checks running at the same time share them. */
+export async function withFolderNames<T>(check: () => Promise<T>): Promise<T> {
+  if (checksRunning++ === 0) folderNames = new Map();
+  try {
+    return await check();
+  } finally {
+    if (--checksRunning === 0) folderNames = undefined;
+  }
 }
 
 export function existsWithCase(candidate: string, anchor: string): boolean {

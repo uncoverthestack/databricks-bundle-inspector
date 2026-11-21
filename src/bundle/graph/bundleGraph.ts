@@ -9,6 +9,7 @@ import {
   resolveLocalPath,
   type TaskNodeData,
   type TaskPayloadKey,
+  withFolderNames,
 } from "../resources/task.js";
 import {
   getPipelineLibraryReferences,
@@ -1165,6 +1166,15 @@ export async function extractBundleGraph(
   cliOutput: ParsedBundleConfig,
   bundleRoot?: string,
   options: ExtractBundleGraphOptions = {},
+): Promise<BundleGraph> {
+  // Folder names for the letter case check (#475), read once for this check.
+  return withFolderNames(() => buildBundleGraph(cliOutput, bundleRoot, options));
+}
+
+async function buildBundleGraph(
+  cliOutput: ParsedBundleConfig,
+  bundleRoot: string | undefined,
+  options: ExtractBundleGraphOptions,
 ): Promise<BundleGraph> {
   const notebookRule = options.notebookRule ?? "contains";
   const nodeMap = new Map<string, BundleGraphNode>();

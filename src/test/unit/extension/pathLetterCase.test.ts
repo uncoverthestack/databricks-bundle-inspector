@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
-import { existsWithCase } from "../../../bundle/resources/task.js";
+import { existsWithCase, withFolderNames } from "../../../bundle/resources/task.js";
 
 const CONFIG = {
   bundle: { name: "b" },
@@ -48,16 +48,25 @@ describe("paths with the wrong letter case (#475)", () => {
     expect(existsWithCase(path.join(root, "src", "job.py"), path.join(root, "notebooks"))).toBe(true);
   });
 
-  test("a rename is seen at once, though folder names are cached", () => {
+  test("one check reads each folder once; the next one, and any lookup outside a check, sees a rename", async () => {
     const folder = mkdtempSync(path.join(os.tmpdir(), "bdi-case-rename-"));
+    // Through a temporary name, as a disk that ignores case may not rename by case alone.
+    const renameTo = (from: string, to: string) => {
+      renameSync(path.join(folder, from), path.join(folder, "tmp.py"));
+      renameSync(path.join(folder, "tmp.py"), path.join(folder, to));
+    };
     try {
       writeFileSync(path.join(folder, "load.py"), "print(1)\n");
+      await withFolderNames(async () => {
+        expect(existsWithCase(path.join(folder, "Load.py"), folder)).toBe(false);
+        renameTo("load.py", "Load.py");
+      });
+      await withFolderNames(async () => {
+        expect(existsWithCase(path.join(folder, "Load.py"), folder)).toBe(true);
+      });
+      renameTo("Load.py", "load.py");
+      expect(existsWithCase(path.join(folder, "load.py"), folder)).toBe(true);
       expect(existsWithCase(path.join(folder, "Load.py"), folder)).toBe(false);
-      // Through a temporary name, as a disk that ignores case may not rename by case alone.
-      renameSync(path.join(folder, "load.py"), path.join(folder, "tmp.py"));
-      renameSync(path.join(folder, "tmp.py"), path.join(folder, "Load.py"));
-      expect(existsWithCase(path.join(folder, "Load.py"), folder)).toBe(true);
-      expect(existsWithCase(path.join(folder, "load.py"), folder)).toBe(false);
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }
