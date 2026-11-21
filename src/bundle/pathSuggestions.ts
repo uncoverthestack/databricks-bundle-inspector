@@ -15,6 +15,10 @@ import { isNotebookFile, type NotebookHeaderRule } from "./notebookFiles.js";
  *   ... but got a file"), and a file field rejects a notebook ("expected a file ... but
  *   got a notebook"), so only files of the right kind are suggested.
  *
+ * - The workspace is case sensitive, so a path that only differs in letter case from a
+ *   file is not found there (#475, checked live on CLI v1.27.0). That file is suggested
+ *   first, as it is almost certainly the one meant.
+ *
  * No suggestion when several files would do, or when the bundle has too many files to
  * list them all: the inspector would be guessing.
  */
@@ -84,13 +88,14 @@ export function movedFileSuggestion(options: {
   const name = path.basename(options.resolvedPath);
   const listed = options.files();
   if (!listed.complete) return undefined;
-  const matches = listed.files.filter(
-    (file) =>
-      path.basename(file) === name &&
-      file !== options.resolvedPath &&
-      !options.excluded(file) &&
-      fitsField(file, options.expects, options.notebookRule ?? "contains"),
-  );
+  const usable = (file: string) =>
+    file !== options.resolvedPath &&
+    !options.excluded(file) &&
+    fitsField(file, options.expects, options.notebookRule ?? "contains");
+  const lower = options.resolvedPath.toLowerCase();
+  const sameButCase = listed.files.filter((file) => file.toLowerCase() === lower && usable(file));
+  const matches =
+    sameButCase.length === 1 ? sameButCase : listed.files.filter((file) => path.basename(file) === name && usable(file));
   if (matches.length !== 1) return undefined;
   const relative = path.relative(path.dirname(options.sourceFile), matches[0]!).split(path.sep).join("/");
   // Keep the way the path was written: `./src/x.py` stays with its `./`.

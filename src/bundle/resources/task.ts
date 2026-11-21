@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
 
 export interface TaskNodeData {
@@ -205,6 +205,65 @@ export function containsTemplate(p: string): boolean {
   return p.includes("${") || p.includes("{{");
 }
 
+/**
+ * Whether `candidate` exists with the letter case written, for every folder and file
+ * name below `anchor`. The workspace is case sensitive: on a disk that ignores case
+ * (macOS, Windows) `./Notebooks/Main.py` finds `notebooks/main.py`, `bundle validate`
+ * and deploy pass, and the job fails because sync uploads the real name (#475, checked
+ * live on CLI v1.27.0). Names above `anchor` aren't uploaded, so they aren't compared.
+ */
+/**
+ * Folder names, read once per check while one runs ({@link withFolderNames}): many tasks
+ * share a folder, and one can hold thousands of files. Outside a check each lookup reads
+ * the folder, and each check starts afresh, so a rename is always seen. A folder's
+ * modified time can't tell instead: on Windows it didn't change for a rename in CI.
+ */
+let folderNames: Map<string, Set<string>> | undefined;
+let checksRunning = 0;
+function namesIn(folder: string): Set<string> {
+  let names = folderNames?.get(folder);
+  if (!names) {
+    names = new Set(readdirSync(folder));
+    folderNames?.set(folder, names);
+  }
+  return names;
+}
+
+/** Runs one check with folder names read once. Checks running at the same time share them. */
+export async function withFolderNames<T>(check: () => Promise<T>): Promise<T> {
+  if (checksRunning++ === 0) folderNames = new Map();
+  try {
+    return await check();
+  } finally {
+    if (--checksRunning === 0) folderNames = undefined;
+  }
+}
+
+export function existsWithCase(candidate: string, anchor: string): boolean {
+  if (!existsSync(candidate)) return false;
+  const rel = relative(anchor, candidate);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return true;
+  let folder = anchor;
+  for (const name of rel.split(sep)) {
+    try {
+      if (!namesIn(folder).has(name)) return false;
+    } catch {
+      return true;
+    }
+    folder = join(folder, name);
+  }
+  return true;
+}
+
+/**
+ * Whether a path the inspector didn't find is there only when letter case is ignored, as
+ * on macOS and Windows. Then nothing should read it: on a case-sensitive disk, and in the
+ * workspace, it isn't there (#475).
+ */
+export function foundOnlyIgnoringCase(resolvedPath: string, exists: boolean): boolean {
+  return !exists && existsSync(resolvedPath);
+}
+
 export function resolveLocalPath(
   rawPath: string,
   primaryDir: string,
@@ -235,9 +294,11 @@ export function resolveLocalPath(
     ];
   };
 
+  // Names are compared from the bundle folder (the fallback, when given) or the base folder.
+  const anchor = fallbackDir ?? primaryDir;
   for (const baseDir of baseDirs) {
     for (const candidate of candidates(baseDir)) {
-      if (existsSync(candidate)) {
+      if (existsWithCase(candidate, relative(anchor, candidate).startsWith("..") ? baseDir : anchor)) {
         return { resolvedPath: candidate, exists: true };
       }
     }
@@ -404,7 +465,7 @@ function getFileReferences(
     const yamlPath = `tasks.${taskKey}.${yamlSubPath}`;
     const sourceLocation = resolveSourceLocation?.(yamlPath);
     const notebookProblem =
-      expects && resolvedPath
+      expects && resolvedPath && !foundOnlyIgnoringCase(resolvedPath, exists)
         ? checkNotebookPath(rawPath, resolvedPath, expects, notebookRule)
         : undefined;
     refs.push({
