@@ -1,4 +1,5 @@
 import type { ParsedBundleConfig, Variable } from "./graph/bundleGraph.js";
+import { hasOwnKey, own } from "./ownKeys.js";
 
 export type ResolutionSource =
   | "cli_resolved"
@@ -48,7 +49,7 @@ function rawValue(
   definition: Variable | Record<string, unknown> | unknown,
   key: "value" | "default",
 ): { found: boolean; value?: unknown } {
-  if (!isRecord(definition) || !(key in definition)) return { found: false };
+  if (!isRecord(definition) || !hasOwnKey(definition, key)) return { found: false };
   return { found: true, value: definition[key] };
 }
 
@@ -100,7 +101,7 @@ function valueAtPath(value: unknown, path: (string | number)[]): { found: boolea
   for (const key of path) {
     if (Array.isArray(current) && typeof key === "number" && key < current.length) {
       current = current[key];
-    } else if (isRecord(current) && typeof key === "string" && key in current) {
+    } else if (isRecord(current) && typeof key === "string" && hasOwnKey(current, key)) {
       current = current[key];
     } else {
       return { found: false };
@@ -116,7 +117,7 @@ export function resolveVariableForTarget(
 ): VariableResolution {
   const expression = `\${var.${variableName}}`;
   const { name, path } = splitVariableReference(variableName);
-  const variableDefinition = parsedBundle?.variables?.[name];
+  const variableDefinition = own(parsedBundle?.variables, name);
   const result = (
     source: ResolutionSource,
     raw: { found: boolean; value?: unknown },
@@ -131,9 +132,9 @@ export function resolveVariableForTarget(
 
   const cliResolved = rawValue(variableDefinition, "value");
   if (targetName) {
-    const targetVariables = parsedBundle?.targets?.[targetName]?.variables;
+    const targetVariables = own(parsedBundle?.targets, targetName)?.variables;
     const override =
-      targetVariables && name in targetVariables ? targetOverrideRaw(targetVariables[name]) : { found: false };
+      targetVariables && hasOwnKey(targetVariables, name) ? targetOverrideRaw(targetVariables[name]) : { found: false };
     // The CLI's value is what deploys. A BUNDLE_VAR_ environment variable or
     // variable-overrides.json wins over the target's override (docs, precedence order).
     if (override.found && (!cliResolved.found || sameValue(override.value, cliResolved.value))) {

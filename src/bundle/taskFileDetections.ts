@@ -11,6 +11,7 @@ import {
 import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sqlTokenizer.js";
 import { checkRunTarget } from "./runTargets.js";
 import type { NotebookHeaderRule } from "./notebookFiles.js";
+import { emptyRecord, hasOwnKey, own } from "./ownKeys.js";
 
 /**
  * A single detected use of a Databricks secret-access call within a file.
@@ -784,9 +785,9 @@ export async function detectWidgetUsageInFile(
   const python = scanPythonWidgets(views.python, views.document);
   const sql = scanSqlWidgets(views.sql, views.document);
   const pythonDefaults = scanPythonWidgetDefaults(views.python);
-  const defaultLanguages: Record<string, CodeLanguage[]> = {};
+  const defaultLanguages = emptyRecord<CodeLanguage[]>();
   for (const [language, names] of [["python", pythonDefaults], ["sql", sql.defaults]] as const) {
-    for (const name of names) defaultLanguages[name] = [...(defaultLanguages[name] ?? []), language];
+    for (const name of names) defaultLanguages[name] = [...(own(defaultLanguages, name) ?? []), language];
   }
   const withLanguage = (language: CodeLanguage) => (d: WidgetDetection) =>
     d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line, language }] : [];
@@ -825,7 +826,7 @@ export async function detectWidgetUsageInFile(
     const childDefaults = new Set(child.defaults);
     const reported = new Set<string>();
     for (const read of child.reads) {
-      if (read.name in run.args || childDefaults.has(read.name) || reported.has(read.name)) continue;
+      if (hasOwnKey(run.args, read.name) || childDefaults.has(read.name) || reported.has(read.name)) continue;
       reported.add(read.name);
       usage.unsetRunReads.push({ name: read.name, line: read.line, file: target, target: run.target });
     }

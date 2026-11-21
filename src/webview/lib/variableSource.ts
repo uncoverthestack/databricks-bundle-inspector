@@ -1,4 +1,5 @@
 import { splitVariableReference } from "../../bundle/targetResolution.js";
+import { own } from "../../bundle/ownKeys.js";
 
 export interface SourceLocation {
   file: string;
@@ -22,7 +23,7 @@ export function variableSourceLocation(
   targetName: string | null | undefined,
 ): SourceLocation | undefined {
   // A field reference such as `c.a.b` opens the variable `c`.
-  const sources = variableSources?.[splitVariableReference(reference).name];
+  const sources = own(variableSources, splitVariableReference(reference).name);
   if (!sources) return undefined;
-  return (targetName ? sources.targets?.[targetName] : undefined) ?? sources.definition;
+  return (targetName ? own(sources.targets, targetName) : undefined) ?? sources.definition;
 }
