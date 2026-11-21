@@ -44,6 +44,23 @@ describe("isOpenFilePathAllowed", () => {
   });
 });
 
+describe("isOpenFilePathAllowed with names that start with two dots (#461)", () => {
+  const root = path.resolve("/workspace/project");
+  const folders = [{ uri: { fsPath: root } }];
+
+  test("a file or folder named like ..notes is inside", () => {
+    expect(isOpenFilePathAllowed(path.join(root, "..notes.py"), undefined, folders)).toBe(true);
+    expect(isOpenFilePathAllowed(path.join(root, "..old", "load.py"), undefined, folders)).toBe(true);
+    expect(isOpenFilePathAllowed(path.join(root, "src", "...py"), undefined, folders)).toBe(true);
+  });
+
+  test("the parent folder and its other folders are still outside", () => {
+    expect(isOpenFilePathAllowed(path.dirname(root), undefined, folders)).toBe(false);
+    expect(isOpenFilePathAllowed(path.join(path.dirname(root), "other", "x.py"), undefined, folders)).toBe(false);
+    expect(isOpenFilePathAllowed(`${root}-other${path.sep}x.py`, undefined, folders)).toBe(false);
+  });
+});
+
 // #326: a symlink inside the workspace can point anywhere. Real folders and links; Windows
 // needs extra rights to create symlinks, so it skips these.
 (process.platform === "win32" ? describe.skip : describe)("isOpenFilePathAllowed with symlinks", () => {

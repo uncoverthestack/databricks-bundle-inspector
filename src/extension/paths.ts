@@ -11,10 +11,11 @@ function isPathInDirectory(filePath: string, directoryPath: string): boolean {
   const resolvedDirectoryPath = path.resolve(directoryPath);
   const relativePath = path.relative(resolvedDirectoryPath, resolvedFilePath);
 
+  // Only `..` itself or `..` and a separator leads out: `..notes.py` is a file inside (#461).
   return (
     relativePath === "" ||
-    (relativePath.length > 0 &&
-      !relativePath.startsWith("..") &&
+    (relativePath !== ".." &&
+      !relativePath.startsWith(`..${path.sep}`) &&
       !path.isAbsolute(relativePath))
   );
 }
