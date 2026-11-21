@@ -7,6 +7,7 @@ import {
   resolveLocalPath,
   type SourceLocationResolver,
   foundOnlyIgnoringCase,
+  existsWithCase,
 } from "./task.js";
 
 /**
@@ -79,7 +80,9 @@ function checkGlob(
   const recursive = suffix[1] === "**";
   for (const dir of new Set([sourceFileDir, bundleRoot])) {
     const candidate = resolve(dir, base);
-    if (isDirectory(candidate) && hasFile(candidate, recursive)) {
+    // With the letter case written: the pipeline reads the glob in the workspace, which is
+    // case sensitive, so `./Transformations/**` finds nothing in `transformations/` (#477).
+    if (isDirectory(candidate) && existsWithCase(candidate, bundleRoot) && hasFile(candidate, recursive)) {
       return { resolvedPath: candidate, exists: true, checked: true };
     }
   }

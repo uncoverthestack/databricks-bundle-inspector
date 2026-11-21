@@ -152,3 +152,29 @@ describe("a notebook path with the wrong letter case and no extension (#477)", (
   });
 });
 
+describe("a pipeline glob folder with the wrong letter case (#477)", () => {
+  let root: string;
+  beforeAll(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), "bdi-case-glob-"));
+    mkdirSync(path.join(root, "transformations"));
+    writeFileSync(path.join(root, "transformations", "a.sql"), "CREATE OR REFRESH MATERIALIZED VIEW a AS SELECT 1\n");
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test("is reported as on Linux, and the right case is fine", async () => {
+    const config = {
+      bundle: { name: "b" },
+      resources: {
+        pipelines: {
+          p: {
+            name: "p",
+            libraries: [{ glob: { include: "./Transformations/**" } }, { glob: { include: "./transformations/**" } }],
+          },
+        },
+      },
+    } as unknown as ParsedBundleConfig;
+    const issues = buildInspectorIssues(await extractBundleGraph(config, root), config, [], root);
+    expect(issues.map((issue) => [issue.kind, issue.detail])).toEqual([["missing_pipeline_source", "./Transformations/**"]]);
+  });
+});
+
