@@ -224,7 +224,22 @@ const RESOURCE_GROUP_OF_USES_KIND: Record<string, string> = {
   secret_scope: "secret_scopes",
 };
 
-/** The box for a warehouse or schema named outside the bundle, as a job's Uses row names it. */
+/**
+ * Groups an app can name that are not bundle resource groups (#446): Unity Catalog tables,
+ * functions and connections. Their dashed boxes go with the bundle's Unity Catalog data.
+ */
+const OUTSIDE_ONLY_GROUPS: Record<string, string> = { tables: "unity_catalog", functions: "unity_catalog", connections: "unity_catalog" };
+
+/** The overview group of a box named outside the bundle. */
+function outsideGroupOf(node: GraphNode): OverviewGroupDefinition {
+  if (node.nodeType === "warehouse") return overviewGroupOf("sql_warehouses");
+  if (node.nodeType === "schema") return overviewGroupOf("schemas");
+  const group = String(node.data?.group ?? "");
+  const groupId = OUTSIDE_ONLY_GROUPS[group];
+  return groupId ? OVERVIEW_GROUPS.find((definition) => definition.id === groupId)! : overviewGroupOf(group);
+}
+
+/** The box for a warehouse, schema or other resource named outside the bundle, as a job's Uses row names it. */
 function outsideItem(node: GraphNode, resolve: (value: string) => string): Omit<OverviewItem, "problems" | "column" | "groupId"> {
   if (node.nodeType === "warehouse") {
     const name = computeName(node, resolve);
@@ -234,7 +249,7 @@ function outsideItem(node: GraphNode, resolve: (value: string) => string): Omit<
   const label = expression ? resolve(expression) : node.displayName;
   return {
     id: node.id,
-    kind: "schemas",
+    kind: node.nodeType === "named" ? String(node.data?.group) : "schemas",
     label,
     source: expression && /\$\{var\./.test(expression) ? "variable" : "fixed",
     ...(expression ? { expression } : {}),
@@ -368,16 +383,16 @@ export function buildBundleOverview(
       addLink(task.parentId!, edge.target, kind, [task.id], [task.displayName]);
       continue;
     }
-    // A warehouse or schema a resource names by a plain name, ID or variable: a dashed box,
-    // shared with any job naming the same one (#423 follow-up).
+    // A warehouse, schema or other resource a resource names by a plain name, ID or variable:
+    // a dashed box, shared with anything else naming the same one (#423 follow-up, #446).
     if (
       edge.kind === "uses" &&
       target &&
-      (target.nodeType === "warehouse" || target.nodeType === "schema") &&
+      (target.nodeType === "warehouse" || target.nodeType === "schema" || target.nodeType === "named") &&
       bundleItemIds.has(edge.source) &&
       !edge.source.startsWith("resources.jobs.")
     ) {
-      if (!items.has(target.id)) addItem(outsideItem(target, resolve), overviewGroupOf(target.nodeType === "warehouse" ? "sql_warehouses" : "schemas"));
+      if (!items.has(target.id)) addItem(outsideItem(target, resolve), outsideGroupOf(target));
       addLink(edge.source, target.id, "uses", [], []);
       continue;
     }
