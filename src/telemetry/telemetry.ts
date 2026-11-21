@@ -74,7 +74,7 @@ async function showNotice(
   onAcknowledged: () => void,
 ): Promise<void> {
   const choice = await vscode.window.showInformationMessage(
-    "Databricks Bundle Inspector collects usage data (features used, never paths, names or file contents) to guide development. Nothing is sent until VS Code is next opened, so you have time to turn it off.",
+    "Databricks Bundle Inspector collects usage data (features used, never paths, names or file contents) to guide development. Nothing is sent from this window. Sending starts in another VS Code window or after a restart, so you have time to turn it off.",
     "Learn More",
     "Disable",
   );
