@@ -1441,6 +1441,8 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
       | { resourceId: string; scopeName: string }
       | undefined;
     if (!scopeNode || !misuse) continue;
+    // An app's `resources` secret entry draws a line on the overview (#446); it is not checked here yet.
+    if (edge.data?.appResource) continue;
 
     const source = nodeById.get(edge.source);
     if (!source) continue;

@@ -9,6 +9,7 @@ import {
   type ParsedBundleConfig,
 } from "../../../bundle/graph/bundleGraph.js";
 import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
+import { buildInspectorIssues } from "../../../bundle/issues.js";
 import { resolveExpressionForTarget } from "../../../bundle/targetResolution.js";
 import {
   buildBundleOverview,
@@ -19,6 +20,7 @@ import {
   type BundleOverview,
   type OverviewItem,
 } from "../../../webview/lib/bundleOverview.js";
+import { typeWords } from "../../../webview/lib/overviewView.js";
 
 const BUNDLE_YAML = `bundle:
   name: overview
@@ -734,5 +736,187 @@ resources:
       "Environment default": ["Version: 5", "Tasks: script"],
       "Notebook tasks": ["Environment: Not set in the job. Databricks chooses the version.", "Tasks: nb"],
     });
+  });
+});
+
+describe("what an app's resources name by plain name (#446)", () => {
+  const YAML = `bundle:
+  name: app-resources
+variables:
+  endpoint:
+    default: chat-prod
+resources:
+  secret_scopes:
+    app_scope:
+      name: app-secrets
+  model_serving_endpoints:
+    chat:
+      name: chat-endpoint
+  database_instances:
+    db:
+      name: orders-db
+  volumes:
+    landing:
+      name: landing
+      catalog_name: main
+      schema_name: raw
+  model_services:
+    svc:
+      parent: schemas/main.ml
+      model_service_id: ranker
+  postgres_branches:
+    dev:
+      parent: projects/shop
+      branch_id: dev
+  dashboards:
+    sales:
+      display_name: Sales
+      file_path: ./sales.lvdash.json
+      warehouse_id: 4f2a9c1e8b7d6a05
+  apps:
+    other:
+      name: other-app
+      source_code_path: ./other
+    portal:
+      name: portal
+      source_code_path: ./app
+      resources:
+        - name: wh
+          sql_warehouse: { id: 4f2a9c1e8b7d6a05, permission: CAN_USE }
+        - name: own_secret
+          secret: { scope: app-secrets, key: token, permission: READ }
+        - name: key_not_name
+          secret: { scope: app_scope, key: token, permission: READ }
+        - name: workspace_secret
+          secret: { scope: shared-secrets, key: token, permission: READ }
+        - name: chat
+          serving_endpoint: { name: chat-endpoint, permission: CAN_QUERY }
+        - name: chat_by_var
+          serving_endpoint: { name: "\${var.endpoint}", permission: CAN_QUERY }
+        - name: other_app
+          app: { name: other-app, permission: CAN_USE }
+        - name: self
+          app: { name: portal, permission: CAN_USE }
+        - name: db
+          database: { instance_name: orders-db, database_name: shop, permission: CAN_CONNECT_AND_CREATE }
+        - name: landing
+          uc_securable: { securable_type: VOLUME, securable_full_name: main.raw.landing, permission: READ_VOLUME }
+        - name: orders
+          uc_securable: { securable_type: TABLE, securable_full_name: main.sales.orders, permission: SELECT }
+        - name: fn
+          uc_securable: { securable_type: FUNCTION, securable_full_name: main.sales.score, permission: EXECUTE }
+        - name: conn
+          uc_securable: { securable_type: CONNECTION, securable_full_name: pg_conn, permission: USE_CONNECTION }
+        - name: ranker
+          uc_securable: { securable_type: MODEL_SERVICE, securable_full_name: main.ml.ranker, permission: EXECUTE }
+        - name: branch
+          postgres: { branch: projects/shop/branches/dev, permission: CAN_CONNECT_AND_CREATE }
+        - name: pg_db
+          postgres: { branch: projects/shop/branches/dev, database: projects/shop/branches/dev/databases/orders, permission: CAN_CONNECT_AND_CREATE }
+        - name: job
+          job: { id: "123", permission: CAN_MANAGE_RUN }
+        - name: experiment
+          experiment: { experiment_id: "456", permission: CAN_READ }
+        - name: genie
+          genie_space: { name: ask, space_id: "789", permission: CAN_RUN }
+    linked:
+      name: linked
+      source_code_path: ./linked
+      resources:
+        - name: chat
+          serving_endpoint: { name: "\${resources.model_serving_endpoints.chat.name}", permission: CAN_QUERY }
+        - name: other_chat
+          serving_endpoint: { name: chat-prod, permission: CAN_QUERY }
+`;
+  let result: BundleOverview;
+  let resolved: BundleOverview;
+  let graph: Awaited<ReturnType<typeof extractBundleGraph>>;
+  let issues: ReturnType<typeof buildInspectorIssues>;
+
+  beforeAll(async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "dbi-overview-446-"));
+    writeFileSync(path.join(dir, "databricks.yml"), YAML);
+    writeFileSync(path.join(dir, "sales.lvdash.json"), "{}\n");
+    const parsed = parse(YAML) as ParsedBundleConfig;
+    graph = await enrichGraphWithFileContent(await extractBundleGraph(parsed, dir));
+    result = buildBundleOverview(graph);
+    resolved = buildBundleOverview(graph, [], (value) => value.replace("${var.endpoint}", "chat-prod"));
+    issues = buildInspectorIssues(graph, parsed, [], dir);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const linksFrom = (overview: BundleOverview, from: string) =>
+    overview.links.filter((link) => link.from === from).map((link) => link.to).sort();
+  const itemById = (overview: BundleOverview, id: string) => overview.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+  const groupOf = (overview: BundleOverview, id: string) => overview.groups.find((group) => group.items.some((entry) => entry.id === id))?.id;
+
+  test("each name the bundle defines links to its own box; the rest to dashed boxes; plain job, experiment and Genie IDs draw nothing", () => {
+    expect(linksFrom(result, "resources.apps.portal")).toEqual([
+      "named:connections:pg_conn",
+      "named:functions:main.sales.score",
+      "named:model_serving_endpoints:${var.endpoint}",
+      "named:postgres_databases:projects/shop/branches/dev/databases/orders",
+      "named:tables:main.sales.orders",
+      "resources.apps.other",
+      "resources.database_instances.db",
+      "resources.model_services.svc",
+      "resources.model_serving_endpoints.chat",
+      "resources.postgres_branches.dev",
+      "resources.secret_scopes.app_scope",
+      "resources.volumes.landing",
+      "secret:app_scope",
+      "secret:shared-secrets",
+      "warehouse:4f2a9c1e8b7d6a05",
+    ]);
+  });
+
+  test("a warehouse ID shares the dashed box a dashboard naming it gets", () => {
+    expect(linksFrom(result, "resources.dashboards.sales")).toEqual(["warehouse:4f2a9c1e8b7d6a05"]);
+    expect(result.groups.flatMap((group) => group.items).filter((entry) => entry.id === "warehouse:4f2a9c1e8b7d6a05")).toHaveLength(1);
+  });
+
+  test("tables, functions and connections are dashed boxes in Unity Catalog data", () => {
+    for (const id of ["named:tables:main.sales.orders", "named:functions:main.sales.score", "named:connections:pg_conn"]) {
+      expect(groupOf(result, id)).toBe("unity_catalog");
+      expect(itemById(result, id)).toMatchObject({ source: "fixed", hasChecks: false });
+    }
+    expect(itemById(result, "named:tables:main.sales.orders")).toMatchObject({ kind: "tables", label: "main.sales.orders" });
+  });
+
+  test("a dashed box sits in its resource's group", () => {
+    expect(groupOf(result, "named:postgres_databases:projects/shop/branches/dev/databases/orders")).toBe("lakebase");
+    expect(groupOf(result, "named:model_serving_endpoints:${var.endpoint}")).toBe("serving_search");
+    expect(groupOf(result, "secret:shared-secrets")).toBe("secrets");
+  });
+
+  test("a name from a variable shows the variable, or its value for a picked target", () => {
+    expect(itemById(result, "named:model_serving_endpoints:${var.endpoint}")).toMatchObject({ label: "${var.endpoint}", source: "variable" });
+    expect(itemById(resolved, "named:model_serving_endpoints:${var.endpoint}")).toMatchObject({ label: "chat-prod", source: "variable" });
+  });
+
+  test("two apps naming the same thing share one dashed box, and ${resources...} stays a line to the bundle's box", () => {
+    expect(linksFrom(result, "resources.apps.linked")).toEqual(["named:model_serving_endpoints:chat-prod", "resources.model_serving_endpoints.chat"]);
+  });
+
+  test("an app naming itself draws no line", () => {
+    expect(linksFrom(result, "resources.apps.portal")).not.toContain("resources.apps.portal");
+  });
+
+  test("the edge points at the field that names it", () => {
+    const edge = graph.edges.find((e) => e.id === "resources.apps.portal->uses->named:tables:main.sales.orders");
+    expect(edge?.data).toMatchObject({ yamlPath: "resources.apps.portal.resources[10].uc_securable.securable_full_name", line: 63 });
+  });
+
+  test("a dashed box's type reads in words", () => {
+    const words = (id: string) => typeWords(itemById(result, id)!);
+    expect(words("named:tables:main.sales.orders")).toBe("table");
+    expect(words("named:functions:main.sales.score")).toBe("function");
+    expect(words("named:connections:pg_conn")).toBe("connection");
+    expect(words("named:model_serving_endpoints:${var.endpoint}")).toBe("model serving endpoint");
+    expect(words("named:postgres_databases:projects/shop/branches/dev/databases/orders")).toBe("Postgres database");
+  });
+
+  test("an app secret naming a scope by its resource key adds no warning yet", () => {
+    expect(issues.filter((issue) => issue.kind === "secret_scope_name_mismatch")).toEqual([]);
   });
 });

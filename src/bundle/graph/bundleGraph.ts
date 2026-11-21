@@ -322,6 +322,8 @@ export type BundleNodeType =
   | "warehouse"
   | "secret_scope"
   | "schema"
+  /** Something an app's `resources` names by plain name that the bundle does not define (#446). `data.group` is its resource group. */
+  | "named"
   | "widget";
 
 export interface BundleGraphNode {
@@ -1715,6 +1717,150 @@ function addNamedOutside(
       });
       addEdge({ id: `${source}->uses->${nodeId}`, source, target: nodeId, kind: "uses", data: edgeData(group, key, "schema_name", name) });
     }
+  }
+
+  addAppResources(resources, named, edgeData, addNode, addEdge);
+}
+
+/** `securable_type` of an app's `uc_securable` entry → the group its dashed box is shown in (CLI v1.27.0 schema). */
+const UC_SECURABLE_GROUPS: Record<string, string> = {
+  VOLUME: "volumes",
+  TABLE: "tables",
+  FUNCTION: "functions",
+  CONNECTION: "connections",
+  MODEL_SERVICE: "model_services",
+};
+
+/**
+ * What an app's `resources` list names by plain name (#446): a line to the bundle's own box
+ * when the name matches one, else to a dashed box shared with anything else naming it. Plain
+ * IDs that only exist after deploy (`job`, `experiment`, `genie_space`) are left out, so a
+ * dashed "job 123" box never sits beside the bundle job it may be. Names are matched as
+ * written, as #444 does for schemas.
+ */
+function addAppResources(
+  resources: Record<string, unknown>,
+  named: (value: unknown) => value is string,
+  edgeData: (group: string, key: string, field: string, expression: string) => Record<string, unknown>,
+  addNode: (node: BundleGraphNode) => void,
+  addEdge: (edge: BundleEdge) => void,
+): void {
+  const apps = Object.entries(toRecord(resources.apps) ?? {});
+  if (apps.length === 0) return;
+
+  /** The bundle's resources of one group, by the name Databricks knows them by. */
+  const byName = (group: string, nameOf: (record: Record<string, unknown>) => unknown) => {
+    const map = new Map<string, string>();
+    for (const [key, resource] of Object.entries(toRecord(resources[group]) ?? {})) {
+      const record = toRecord(resource);
+      const name = record ? nameOf(record) : undefined;
+      if (typeof name === "string" && !map.has(name)) map.set(name, `resources.${group}.${key}`);
+    }
+    return map;
+  };
+  const joined = (...parts: unknown[]) => (parts.every((part) => typeof part === "string") ? parts.join("") : undefined);
+  const own: Record<string, Map<string, string>> = {
+    model_serving_endpoints: byName("model_serving_endpoints", (r) => r.name),
+    apps: byName("apps", (r) => r.name),
+    database_instances: byName("database_instances", (r) => r.name),
+    volumes: byName("volumes", (r) => joined(r.catalog_name, ".", r.schema_name, ".", r.name)),
+    // A model service's parent is `schemas/<catalog>.<schema>` (CLI acceptance tests), so its full name adds the ID.
+    model_services: byName("model_services", (r) =>
+      typeof r.parent === "string" && r.parent.startsWith("schemas/") ? joined(r.parent.slice("schemas/".length), ".", r.model_service_id) : undefined,
+    ),
+    postgres_branches: byName("postgres_branches", (r) => joined(r.parent, "/branches/", r.branch_id)),
+    postgres_databases: byName("postgres_databases", (r) => joined(r.parent, "/databases/", r.database_id)),
+  };
+  const scopes: BundleSecretScope[] = Object.entries(toRecord(resources.secret_scopes) ?? {}).map(([key, resource]) => {
+    const name = toRecord(resource)?.name;
+    return { id: `resources.secret_scopes.${key}`, resourceKey: key, name: typeof name === "string" ? name : key };
+  });
+
+  for (const [appKey, app] of apps) {
+    const entries = toRecord(app)?.resources;
+    if (!Array.isArray(entries)) continue;
+    const source = `resources.apps.${appKey}`;
+
+    /** A line to the bundle's box for `name` in `group`, or to a dashed one. */
+    const link = (group: string, name: string, field: string) => {
+      const data = edgeData("apps", appKey, field, name);
+      const target = own[group]?.get(name);
+      if (target) {
+        if (target !== source) addEdge({ id: `${source}->references->${target}`, source, target, kind: "references", data });
+        return;
+      }
+      const nodeId = `named:${group}:${name}`;
+      addNode({ id: nodeId, kind: group, nodeType: "named", displayName: name, data: { group, ...(name.includes("${") ? { expression: name } : {}) } });
+      addEdge({ id: `${source}->uses->${nodeId}`, source, target: nodeId, kind: "uses", data });
+    };
+
+    entries.forEach((rawEntry, index) => {
+      const entry = toRecord(rawEntry);
+      if (!entry) return;
+      const at = `resources[${index}]`;
+
+      const warehouseId = toRecord(entry.sql_warehouse)?.id;
+      if (named(warehouseId)) {
+        // The same dashed box a job task's or a dashboard's warehouse ID gets.
+        const nodeId = `warehouse:${normalizeReference(warehouseId)}`;
+        const reference = computeReference(warehouseId);
+        addNode({
+          id: nodeId,
+          kind: "warehouse",
+          nodeType: "warehouse",
+          displayName: normalizeReference(warehouseId),
+          data: {
+            ...(reference.expression ? { expression: reference.expression } : {}),
+            ...(reference.variableName ? { variableName: reference.variableName } : {}),
+          },
+        });
+        addEdge({ id: `${source}->uses->${nodeId}`, source, target: nodeId, kind: "uses", data: edgeData("apps", appKey, `${at}.sql_warehouse.id`, warehouseId) });
+      }
+
+      const scope = toRecord(entry.secret)?.scope;
+      if (named(scope)) {
+        // The same scope node a `{{secrets/...}}` in cluster config gets, matched on the scope's real name.
+        const match = matchSecretScope(scope, scopes);
+        const field = `${at}.secret.scope`;
+        if (match.nodeId.startsWith("secret:")) {
+          addNode({
+            id: match.nodeId,
+            kind: "secret_scope",
+            nodeType: "secret_scope",
+            displayName: scope,
+            data: { scope, ...(match.resourceKeyMisuse ? { resourceKeyMisuse: match.resourceKeyMisuse } : {}) },
+          });
+        }
+        addEdge({
+          id: `${source}->secret->${match.nodeId}@${source}.${field}`,
+          source,
+          target: match.nodeId,
+          kind: "references",
+          data: { ...edgeData("apps", appKey, field, scope), appResource: true },
+        });
+      }
+
+      const endpoint = toRecord(entry.serving_endpoint)?.name;
+      if (named(endpoint)) link("model_serving_endpoints", endpoint, `${at}.serving_endpoint.name`);
+
+      const otherApp = toRecord(entry.app)?.name;
+      if (named(otherApp)) link("apps", otherApp, `${at}.app.name`);
+
+      const instance = toRecord(entry.database)?.instance_name;
+      if (named(instance)) link("database_instances", instance, `${at}.database.instance_name`);
+
+      const securable = toRecord(entry.uc_securable);
+      const securableType = typeof securable?.securable_type === "string" ? securable.securable_type.toUpperCase() : "";
+      const fullName = securable?.securable_full_name;
+      if (UC_SECURABLE_GROUPS[securableType] && named(fullName)) {
+        link(UC_SECURABLE_GROUPS[securableType]!, fullName, `${at}.uc_securable.securable_full_name`);
+      }
+
+      // A database is inside a branch, so the database is the more exact box when both are given.
+      const postgres = toRecord(entry.postgres);
+      if (named(postgres?.database)) link("postgres_databases", postgres.database, `${at}.postgres.database`);
+      else if (named(postgres?.branch)) link("postgres_branches", postgres.branch, `${at}.postgres.branch`);
+    });
   }
 }
 
