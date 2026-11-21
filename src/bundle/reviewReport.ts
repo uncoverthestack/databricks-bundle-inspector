@@ -1,3 +1,4 @@
+import { escapeMarkdown } from "./markdownText.js";
 import type { BundleGraph, BundleGraphNode, JobTask, ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { taskTypeLabel } from "./graph/bundleGraph.js";
 import { describeCronExpression } from "./graph/cronDescription.js";
@@ -428,20 +429,25 @@ function short(text: string, limit: number): string {
   return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
 }
 
-/** Text in a table cell: one line, `|` escaped. */
-function cell(text: string): string {
-  return inline(text).replace(/\|/g, "\\|");
-}
-
-/** Running text: one line. */
-function inline(text: string): string {
+/** One line, at most 1,000 characters. */
+function oneLine(text: string): string {
   const flat = text.replace(/\r?\n/g, " ");
   return flat.length > 1_000 ? `${flat.slice(0, 999)}…` : flat;
 }
 
-/** Inline code that survives backticks and `|` inside it. */
+/** Text in a table cell. Same as {@link inline}, which already escapes `|`. */
+function cell(text: string): string {
+  return inline(text);
+}
+
+/** Running text: one line, shown as the text it is, never a link, HTML or a mention (#473). */
+function inline(text: string): string {
+  return escapeMarkdown(oneLine(text));
+}
+
+/** Inline code that survives backticks and `|` inside it. A code span shows its text as it is. */
 function code(text: string): string {
-  const flat = cell(text);
+  const flat = oneLine(text).replace(/\|/g, "\\|");
   const runs = flat.match(/`+/g) ?? [];
   const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
   return runs.length ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;

@@ -67,7 +67,7 @@ describe("jobReviewReport", () => {
     const markdown = await report(bundle({
       trigger: { file_arrival: { url: "s3://bucket/`folder|name" } }, tasks: [],
     }));
-    expect(markdown).toContain("s3://bucket/`folder\\|name");
+    expect(markdown).toContain("s3://bucket/\\`folder\\|name");
   });
 
   test("backtick runs in a file name cannot close its inline code", async () => {
@@ -117,7 +117,7 @@ describe("jobReviewReport", () => {
     const markdown = jobReviewReport(parsed, graph, "nightly", [], context);
     expect(markdown).toContain("### Files (1)");
     expect(markdown).toContain("./src/region.py");
-    expect(markdown).toContain("| per_region → region_report | For each → Notebook | `./src/region.py`");
+    expect(markdown).toContain("| per\\_region → region\\_report | For each → Notebook | `./src/region.py`");
   });
 
   test("large generated jobs at the picture boundary keep every problem in the right job", async () => {
@@ -157,7 +157,7 @@ describe("jobReviewReport", () => {
       issue(jobId, "load", "error", "File not found: ../src/load.py"),
     ]);
     expect(markdown).toContain("### Errors (1)\n\n1. **Error** · **load**: File not found: ../src/load.py (`resources/nightly.job.yml:18`)");
-    expect(markdown).toContain("### Warnings (1)\n\n1. **Warning** · **extract**: Widget run_date is read but not set");
+    expect(markdown).toContain("### Warnings (1)\n\n1. **Warning** · **extract**: Widget run\\_date is read but not set");
     expect(markdown.indexOf("### Errors")).toBeLessThan(markdown.indexOf("### Warnings"));
   });
 
@@ -182,7 +182,7 @@ describe("jobReviewReport", () => {
     const markdown = await report(bundle(SALES_JOB), (jobId) => [issue(jobId, "refresh", "error", "x")]);
     const rows = markdown.split("### Tasks (5)")[1]!.split("\n").filter((line) => line.startsWith("| ") && !line.startsWith("| Task"));
     expect(rows[0]).toMatch(/^\| refresh \| Pipeline \|/);
-    expect(markdown).toContain("| per_region → region_report | For each → Notebook |  | check (true) |");
+    expect(markdown).toContain("| per\\_region → region\\_report | For each → Notebook |  | check (true) |");
     expect(markdown).toContain("| refresh | Pipeline | `pipeline bronze` | load |");
     expect(markdown).toContain("check (true)");
   });
@@ -194,6 +194,18 @@ describe("jobReviewReport", () => {
     expect(markdown).toContain('subgraph t1["per_region · for each of [#quot;#lt;b#gt;x#lt;/b#gt;#quot;]"]');
   });
 
+  test("names show as text, never a link, an image, HTML or a mention (#473)", async () => {
+    const markdown = await report(
+      bundle({ ...SALES_JOB, name: "@data-team [docs](https://example.com) ![x](https://example.com/p.png) <details>" }),
+      (jobId) => [issue(jobId, "load", "error", "Ask @alice about [this](https://example.com)")],
+    );
+    expect(markdown).toContain(
+      "| Job | @\u200bdata-team \\[docs\\](https://example.com) !\\[x\\](https://example.com/p.png) &lt;details&gt; (nightly) |",
+    );
+    expect(markdown).toContain("Ask @\u200balice about \\[this\\](https://example.com)");
+    expect(markdown).not.toMatch(/@(?!\u200b)[\w-]/);
+  });
+
   test(`more than ${REVIEW_REPORT_TASK_LIMIT} tasks: no picture, the note says so, and the table stops at ${REVIEW_REPORT_TASK_LIMIT} rows`, async () => {
     const tasks = Array.from({ length: 60 }, (_, i) => ({ task_key: `t_${i}`, notebook_task: { notebook_path: `./src/n${i}.py` } }));
     const markdown = await report(bundle({ name: "big", tasks }), (jobId) => [issue(jobId, "t_59", "error", "broken")]);
@@ -201,9 +213,9 @@ describe("jobReviewReport", () => {
     expect(markdown).toContain(
       "Unfortunately, this job has 60 tasks, more than 50, which would be difficult to view as a picture.",
     );
-    const rows = markdown.split("### Tasks (60)")[1]!.split("### ")[0]!.split("\n").filter((line) => /^\| t_\d+ \|/.test(line));
+    const rows = markdown.split("### Tasks (60)")[1]!.split("### ")[0]!.split("\n").filter((line) => /^\| t\\_\d+ \|/.test(line));
     expect(rows).toHaveLength(50);
-    expect(rows[0]).toMatch(/^\| t_59 \|/);
+    expect(rows[0]).toMatch(/^\| t\\_59 \|/);
     expect(markdown).toContain("...and 10 more tasks.");
   });
 

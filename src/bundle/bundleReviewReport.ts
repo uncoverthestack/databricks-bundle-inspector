@@ -6,6 +6,7 @@ import { reportLocation } from "./reportLocation.js";
 import { REVIEW_REPORT_MAX_CHARACTERS, REVIEW_REPORT_TASK_LIMIT, startsText, type ReviewReportContext } from "./reviewReport.js";
 import { buildBundleOverview, CHECKED_RESOURCE_GROUPS } from "../webview/lib/bundleOverview.js";
 import { own } from "./ownKeys.js";
+import { escapeMarkdown } from "./markdownText.js";
 
 export interface BundleReviewContext extends ReviewReportContext {
   /** The bundle definition and loaded include files, including ones defining no resources. */
@@ -21,9 +22,8 @@ export interface BundleReviewContext extends ReviewReportContext {
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown): string => value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value);
-// Escape HTML as well as Markdown: a resource name must not open a details block or a link.
-const markdownText = (value: unknown): string => text(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-  .replace(/[\\`*_[\]]/g, "\\$&").replaceAll("|", "\\|").replace(/\r?\n/g, " ");
+// Escape HTML as well as Markdown: a resource name must not open a details block, a link or a mention.
+const markdownText = (value: unknown): string => escapeMarkdown(text(value));
 interface Row { cells: string[]; problems: boolean }
 interface Table { heading: string; columns: string[]; rows: Row[] }
 
