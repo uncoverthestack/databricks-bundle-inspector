@@ -33,5 +33,7 @@ Only the latest release on the VS Code Marketplace and Open VSX receives fixes.
 - It writes nothing into the folder you open. For a real target the CLI keeps working files in
   `<bundle>/.databricks`, so the extension sets `DATABRICKS_BUNDLE_TMP` to a folder in the
   system temp folder instead. A test checks that the bundle folder is unchanged after a check.
+  Where other users share the temp folder (`/tmp` on Linux), that folder is created for your
+  user only, and one another user made or a link is never used: a new private folder is.
 - Usage telemetry never includes paths, names or file contents, and can be turned off.
   See the [README](README.md#telemetry).
