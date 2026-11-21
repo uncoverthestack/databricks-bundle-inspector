@@ -55,6 +55,8 @@ export function notebookHeaderRuleFor(cliVersion: string | undefined): NotebookH
 const HEADER_BYTES: Record<NotebookHeaderRule, number> = { exact: 32, contains: 200 };
 
 export type NotebookPathProblem =
+  /** A notebook or file path that points at a folder, which the CLI can't read the first line of (#465). */
+  | { kind: "is_a_folder"; expects: "notebook" | "file" }
   /** A notebook path without an extension, where `path + extension` exists. */
   | { kind: "missing_extension"; suggestedPath: string }
   /**
@@ -133,6 +135,14 @@ export function isNotebookFile(filePath: string, rule: NotebookHeaderRule = "con
   }
 }
 
+function isFolder(filePath: string): boolean {
+  try {
+    return statSync(filePath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** Whether a file the exact rule turns down would pass the newer rule. */
 function hasMarkerNotExact(filePath: string): boolean {
   try {
@@ -156,6 +166,7 @@ export function checkNotebookPath(
   expects: "notebook" | "file",
   rule: NotebookHeaderRule = "contains",
 ): NotebookPathProblem | undefined {
+  if (isFolder(resolvedPath)) return { kind: "is_a_folder", expects };
   const isNotebook = isNotebookFile(resolvedPath, rule);
 
   if (expects === "file") {

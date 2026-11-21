@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
@@ -76,6 +76,14 @@ A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline 
 - **Severity:** error.
 - **Example:** `python_file: ../src/job.py`, where the first line is `# Databricks notebook source`.
 - **Fix:** remove the header line, or run it from a notebook task or a pipeline `notebook` library.
+
+### `path_is_a_folder`
+
+A task path that takes a notebook or a file, or a pipeline `notebook` or `file` library, points at a folder. With a target, the CLI turns it down while reading the first line (Databricks CLI v1.27.0, `translate_paths.go`): `unable to determine if <path> is a notebook: ... is a directory`. The structural preview never gets that far, so `bundle validate` without a target passes.
+
+- **Severity:** error.
+- **Example:** `notebook_path: ./etl.py`, where `etl.py` is a folder.
+- **Fix:** point it at a notebook or file inside the folder. A pipeline that should load a whole folder takes a `glob` library instead.
 
 ### `excluded_from_sync`
 

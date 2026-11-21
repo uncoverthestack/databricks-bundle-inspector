@@ -115,7 +115,7 @@ async function fixtureIssues(notebookRule: NotebookHeaderRule): Promise<Inspecto
   const config = fixtureConfig();
   const graph = await extractBundleGraph(config, bundleRoot, { notebookRule });
   return buildInspectorIssues(graph, config, [], bundleRoot).filter(
-    (issue) => ["notebook_missing_extension", "not_a_notebook", "file_is_a_notebook"].includes(issue.kind),
+    (issue) => ["notebook_missing_extension", "not_a_notebook", "file_is_a_notebook", "path_is_a_folder"].includes(issue.kind),
   );
 }
 
@@ -141,6 +141,21 @@ describe("notebook path issues on the fixture bundle, CLI before v1.24.0", () =>
     expect(kindAt("libraries[0].notebook.path")).toBe("notebook_missing_extension");
     expect(kindAt("libraries[1].notebook.path")).toBe("not_a_notebook");
     expect(kindAt("libraries[2].file.path")).toBe("file_is_a_notebook");
+    expect(kindAt("tasks.folder_as_notebook.notebook_task.notebook_path")).toBe("path_is_a_folder");
+    expect(kindAt("tasks.folder_as_file.spark_python_task.python_file")).toBe("path_is_a_folder");
+  });
+
+  test("a folder where a notebook or file goes says so, and how to fix it (#465)", () => {
+    const at = (end: string) => issues.find((issue) => issue.yamlPath?.endsWith(end));
+    expect(at("tasks.folder_as_notebook.notebook_task.notebook_path")).toMatchObject({
+      severity: "error",
+      title: '"../src/folder_nb.py" is a folder, not a notebook.',
+      fixHint: "Point it at a notebook in the folder, with its extension (.py, .r, .scala, .sql or .ipynb).",
+    });
+    expect(at("tasks.folder_as_file.spark_python_task.python_file")).toMatchObject({
+      title: '"../src/folder_nb.py" is a folder, not a file.',
+      fixHint: "Point it at a file in the folder.",
+    });
   });
 
   test("job tasks follow the CLI's notebook rules", () => {
@@ -214,7 +229,8 @@ describe("notebook path issues on the fixture bundle, CLI before v1.24.0", () =>
     ]) {
       expect(titleAt(ok)).toBeUndefined();
     }
-    expect(issues).toHaveLength(15);
+    // Includes the two folder tasks (#465).
+    expect(issues).toHaveLength(17);
   });
 
   test("a header that is close but not exact says why, and that a newer CLI takes it", () => {
@@ -262,7 +278,8 @@ describe("notebook path issues on the fixture bundle, CLI v1.24.0 and later", ()
     expect(kindAt("tasks.plain_sql.notebook_task.notebook_path")).toBe("not_a_notebook");
     expect(kindAt("tasks.old_ipynb.notebook_task.notebook_path")).toBe("not_a_notebook");
     expect(kindAt("tasks.python_file_is_notebook.spark_python_task.python_file")).toBe("file_is_a_notebook");
-    expect(issues).toHaveLength(10);
+    // Includes the two folder tasks (#465).
+    expect(issues).toHaveLength(12);
   });
 
   test("the missing header hint is the plain one", () => {

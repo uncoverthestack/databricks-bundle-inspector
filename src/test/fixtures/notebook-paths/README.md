@@ -23,6 +23,8 @@ From v1.24.0 the CLI counts a `.py`, `.r`, `.scala` or `.sql` file as a notebook
 | `spark_python_task` `nb_bom.py` | header after a UTF-8 BOM | OK | `expected a file ... but got a notebook` |
 | `sql_task.file` `query_nb.sql` | has the notebook header | `expected a file ... but got a notebook` | same |
 | `spark_python_task` `plain.py` | plain Python | OK | OK |
+| `notebook_task` `folder_nb.py` | a folder (#465) | `unable to determine if ... is a notebook: ... is a directory` | same |
+| `spark_python_task` `folder_nb.py` | a folder (#465) | `unable to determine if ... is not a notebook: ... is a directory` | same |
 | pipeline `notebook` `../src/nb_noext` | `nb_noext.sql` exists | `notebook "src/nb_noext" not found. Did you mean ...?` | same |
 | pipeline `notebook` `nb_plain.sql` | no notebook header | `expected a notebook ... but got a file` | same |
 | pipeline `file` `script_nb.py` | has the notebook header | `expected a file ... but got a notebook` | same |
