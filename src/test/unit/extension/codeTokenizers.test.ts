@@ -204,6 +204,7 @@ describe("dbutils under other names", () => {
       hasUnresolvedRuns: false,
       runReadNames: [],
       unsetRunReads: [],
+      runFiles: [],
     });
   });
 

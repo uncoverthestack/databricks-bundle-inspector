@@ -1,6 +1,9 @@
-import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import type { BundleGraph, ParsedBundleConfig } from "./graph/bundleGraph.js";
+import { CLI_NOTEBOOK_EXTENSIONS } from "./notebookFiles.js";
+import { unquote } from "./runTargets.js";
 import { createSyncFilter, type SyncFilter } from "./syncRules.js";
 
 /**
@@ -84,6 +87,18 @@ export function collectWatchSpec(
       for (const ref of data.libraryReferences) {
         if (ref.isLocal && ref.resolvedPath) files.add(ref.resolvedPath);
       }
+    }
+    // Notebooks a task's notebook runs with %run or dbutils.notebook.run: their widgets and
+    // whether they exist change what the checks find.
+    const usage = node.data?.widgetUsage as { runFiles?: unknown } | undefined;
+    for (const file of Array.isArray(usage?.runFiles) ? usage.runFiles : []) {
+      if (typeof file === "string") files.add(file);
+    }
+    const runTargets = node.data?.runTargets;
+    for (const run of Array.isArray(runTargets) ? (runTargets as Array<{ target?: unknown; file?: unknown }>) : []) {
+      if (typeof run.target !== "string" || typeof run.file !== "string") continue;
+      const written = unquote(run.target);
+      if (written.startsWith("./") || written.startsWith("../")) files.add(join(dirname(run.file), written));
     }
     for (const ref of node.pipelineLibraries ?? []) {
       if (!ref.checked || !ref.resolvedPath) continue;
@@ -181,7 +196,24 @@ export function classifyChange(
     if (isInside(folder, changed)) return "source";
   }
 
+  // Any uploaded file or folder, referenced or not, can take the workspace path of another
+  // (same_workspace_path, #370): `a.py` and `a.sql` both deploy to `a`, and so does a folder `a`.
+  if (spec.isSynced(forSyncRules) && sharesWorkspacePath(changedPath)) return "source";
+
   return undefined;
+}
+
+/**
+ * Whether something else on disk could deploy to the same workspace path as `changedPath`:
+ * the same name with another notebook extension, with none, or a folder of that name. Checked
+ * on disk, so a create, an edit (a notebook header added) and a delete of either one count.
+ */
+function sharesWorkspacePath(changedPath: string): boolean {
+  const extension = extname(changedPath).toLowerCase();
+  const stem = CLI_NOTEBOOK_EXTENSIONS.includes(extension) ? changedPath.slice(0, -extension.length) : changedPath;
+  return [stem, ...CLI_NOTEBOOK_EXTENSIONS.map((other) => stem + other)].some(
+    (candidate) => candidate !== changedPath && existsSync(candidate),
+  );
 }
 
 /** Files outside the bundle root that the bundle points at, which need their own watchers. */

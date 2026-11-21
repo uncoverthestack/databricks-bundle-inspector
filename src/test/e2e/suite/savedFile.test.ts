@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as vscode from "vscode";
 import { codeValue } from "../../../bundle/issueDocs.js";
@@ -97,6 +97,60 @@ export function savedFileSuite() {
         await expectWarning(false, `round ${round}: fixing it outside the editor`);
         await saveInEditor(FIXED, BROKEN);
         await expectWarning(true, `round ${round}: breaking it in the editor`);
+      }
+    });
+  });
+
+  describe("files the bundle never names (needs a real Databricks CLI)", function () {
+    let root: string;
+
+    before(function () {
+      if (!databricksCliAvailable()) this.skip();
+      root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      assert.ok(root, "the saved-file fixture should be the open folder");
+    });
+
+    after(async function () {
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    });
+
+    /** Waits until the inspector's problem with `code` is shown or gone, then checks. */
+    async function expectCode(code: string, shown: boolean, after: string): Promise<void> {
+      const has = () =>
+        vscode.languages.getDiagnostics().some(([, diagnostics]) => diagnostics.some((d) => codeValue(d.code) === code));
+      for (let waited = 0; has() !== shown && waited < 10_000; waited += 250) await sleep(250);
+      assert.equal(has(), shown, `10 seconds after ${after}, ${code} should be ${shown ? "shown" : "gone"}`);
+      await sleep(700);
+    }
+
+    it("a warning in a %run notebook follows that notebook alone", async function () {
+      const child = realpathSync.native(path.join(root, "src", "helpers", "child.py"));
+      const original = await readFile(child, "utf8");
+      try {
+        await expectCode("widget_not_set", true, "opening the folder");
+        await writeFile(child, original.replace('dbutils.widgets.get("child_setting")', '"fixed"'));
+        await expectCode("widget_not_set", false, "fixing the %run notebook");
+        await writeFile(child, original);
+        await expectCode("widget_not_set", true, "breaking the %run notebook again");
+      } finally {
+        await writeFile(child, original);
+      }
+    });
+
+    it("two new notebooks no task names, with one workspace path, are found and cleared", async function () {
+      const header = "# Databricks notebook source\n";
+      const python = path.join(root, "src", "orphan.py");
+      const sql = path.join(root, "src", "orphan.sql");
+      try {
+        await expectCode("same_workspace_path", false, "opening the folder");
+        await writeFile(python, header);
+        await writeFile(sql, "-- Databricks notebook source\n");
+        await expectCode("same_workspace_path", true, "creating orphan.py and orphan.sql");
+        await rm(sql);
+        await expectCode("same_workspace_path", false, "deleting orphan.sql");
+      } finally {
+        await rm(python, { force: true });
+        await rm(sql, { force: true });
       }
     });
   });

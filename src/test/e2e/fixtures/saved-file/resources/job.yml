@@ -11,3 +11,6 @@ resources:
             - task_key: producer
           notebook_task:
             notebook_path: ../src/consumer.py
+        - task_key: runs_child
+          notebook_task:
+            notebook_path: ../src/runner.py

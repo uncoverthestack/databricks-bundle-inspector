@@ -9,7 +9,7 @@ import {
   type PythonToken,
 } from "./code/pythonTokenizer.js";
 import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sqlTokenizer.js";
-import { checkRunTarget } from "./runTargets.js";
+import { checkRunTarget, unquote } from "./runTargets.js";
 import type { NotebookHeaderRule } from "./notebookFiles.js";
 
 /**
@@ -753,6 +753,12 @@ export interface WidgetUsage {
    * its own widget defaults (https://docs.databricks.com/aws/en/notebooks/widgets).
    */
   unsetRunReads: Array<{ name: string; line: number; file: string; target: string }>;
+  /**
+   * The local notebooks this one's `%run` lines point at, at any depth, found or not: each as
+   * the path written (`./child` → `<folder>/child`) and, when found, the file itself. Saving,
+   * creating or deleting one changes what the widget checks find, so they are watched.
+   */
+  runFiles: string[];
 }
 
 /** Notebooks the widget scan can read; R and Scala notebooks are not scanned. */
@@ -798,10 +804,14 @@ export async function detectWidgetUsageInFile(
     hasUnresolvedRuns: false,
     runReadNames: [],
     unsetRunReads: [],
+    runFiles: [],
   };
 
   for (const run of views.runs) {
+    const written = unquote(run.target);
+    if (written.startsWith("./") || written.startsWith("../")) usage.runFiles.push(path.resolve(path.dirname(filePath), written));
     const target = resolveRunTarget(filePath, run.target, rule);
+    if (target) usage.runFiles.push(target);
     if (!target || visited.size > MAX_RUN_DEPTH) {
       usage.hasUnresolvedRuns = true;
       continue;
@@ -820,6 +830,7 @@ export async function detectWidgetUsageInFile(
     usage.hasUnresolvedRuns ||= child.hasUnresolvedRuns;
     usage.runReadNames.push(...child.reads.map((read) => read.name), ...child.runReadNames);
     usage.unsetRunReads.push(...child.unsetRunReads);
+    usage.runFiles.push(...child.runFiles);
     // A notebook that itself runs one we can't see may get its widgets from there.
     if (child.hasUnresolvedRuns || child.hasDynamicReads) continue;
     const childDefaults = new Set(child.defaults);
