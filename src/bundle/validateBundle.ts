@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
-import { bundleCliEnv, explainCodeNotRun } from "../databricksCli/restrictedExecution.js";
+import { bundleCliEnv, explainCodeNotRun, privateBundleTempDir } from "../databricksCli/restrictedExecution.js";
 import type {
   CliProblem,
   CliResolutionFailure,
@@ -336,7 +336,7 @@ export async function validateBundleWithDependencies(
       maxBuffer: MAX_CLI_OUTPUT_BYTES,
       // Never let the CLI run scripts or Python that the bundle defines, or write
       // its working files into the bundle folder.
-      env: bundleCliEnv(resolvedBundleDir),
+      env: bundleCliEnv(resolvedBundleDir, process.env, privateBundleTempDir(resolvedBundleDir)),
     });
 
     const parsed = parseBundleConfig(JSON.parse(stdout));

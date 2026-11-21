@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lstatSync, mkdirSync, mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,15 +32,60 @@ export function bundleTempDir(bundleDir: string, tempRoot: string = os.tmpdir())
   return path.join(tempRoot, "databricks-bundle-inspector", id);
 }
 
+/**
+ * Whether a folder can be handed to the CLI: a real folder, not a link, owned by this user,
+ * that no one else can write to. Windows (no `getuid`) gives each user their own temp folder.
+ */
+export function isPrivateFolder(folder: string, uid: number | undefined = process.getuid?.()): boolean {
+  if (uid === undefined) return true;
+  try {
+    const stats = lstatSync(folder);
+    return stats.isDirectory() && stats.uid === uid && (stats.mode & 0o022) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** The folder used instead when the usual one isn't private, per usual folder, for this session. */
+const fallbackTempDirs = new Map<string, string>();
+
+/**
+ * {@link bundleTempDir}, created with owner-only permissions if it is missing. On a machine
+ * whose temp folder every user shares (`/tmp` on Linux), another user could make that
+ * folder, whose name can be worked out, first, or a link to somewhere else, and the CLI
+ * would use it as it is (#469). When it or its parent isn't private, a new private folder
+ * is used for this session instead.
+ */
+export function privateBundleTempDir(
+  bundleDir: string,
+  tempRoot: string = os.tmpdir(),
+  uid: number | undefined = process.getuid?.(),
+): string {
+  const dir = bundleTempDir(bundleDir, tempRoot);
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch {
+    // Checked next: something else is there.
+  }
+  if (isPrivateFolder(path.dirname(dir), uid) && isPrivateFolder(dir, uid)) return dir;
+  let fallback = fallbackTempDirs.get(dir);
+  if (!fallback || !isPrivateFolder(fallback, uid)) {
+    fallback = mkdtempSync(path.join(tempRoot, "databricks-bundle-inspector-"));
+    fallbackTempDirs.set(dir, fallback);
+  }
+  return fallback;
+}
+
 /** Uses the selected bundle, without running its code or writing into its folder. */
 export function bundleCliEnv(
   bundleDir: string,
   base: NodeJS.ProcessEnv = process.env,
+  tempDir: string = bundleTempDir(bundleDir),
 ): NodeJS.ProcessEnv {
   const root = path.resolve(bundleDir);
   return {
     ...restrictedCliEnv(base),
-    [BUNDLE_TMP_VARIABLE]: bundleTempDir(root),
+    [BUNDLE_TMP_VARIABLE]: tempDir,
     [BUNDLE_ROOT_VARIABLE]: root,
     // The CLI also accepts this older name. Neither inherited value may select another bundle.
     BUNDLE_ROOT: root,
