@@ -1,3 +1,4 @@
+import { respellPath, spelledOnDisk } from "./pathCase.js";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { extname } from "node:path";
 import { isAtLeastVersion } from "../databricksCli/parsing.js";
@@ -165,6 +166,8 @@ export function checkNotebookPath(
   resolvedPath: string,
   expects: "notebook" | "file",
   rule: NotebookHeaderRule = "contains",
+  /** The bundle folder. When given, the extension is looked for with the disk's letter case (#477). */
+  anchor?: string,
 ): NotebookPathProblem | undefined {
   if (isFolder(resolvedPath)) return { kind: "is_a_folder", expects };
   const isNotebook = isNotebookFile(resolvedPath, rule);
@@ -179,9 +182,15 @@ export function checkNotebookPath(
       : { kind: "not_a_notebook" };
   }
   if (isNotebook === undefined && !existsSync(resolvedPath) && !extname(resolvedPath)) {
-    const extension = CLI_NOTEBOOK_EXTENSIONS.find((ext) => existsSync(resolvedPath + ext));
-    if (extension) {
-      return { kind: "missing_extension", suggestedPath: rawPath + extension };
+    // With the bundle folder, by the disk's names, so `./Notebooks/Main` for `notebooks/main.py`
+    // suggests `./notebooks/main.py` on every OS: the workspace is case sensitive.
+    for (const extension of CLI_NOTEBOOK_EXTENSIONS) {
+      if (anchor) {
+        const spelled = spelledOnDisk(resolvedPath + extension, anchor);
+        if (spelled) return { kind: "missing_extension", suggestedPath: respellPath(rawPath + extension, spelled) };
+      } else if (existsSync(resolvedPath + extension)) {
+        return { kind: "missing_extension", suggestedPath: rawPath + extension };
+      }
     }
   }
   return undefined;

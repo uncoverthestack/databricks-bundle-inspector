@@ -186,8 +186,12 @@ function missingExtensionFix(
   if (problem.kind !== "missing_extension") return {};
   const written = writtenPathAt(resolvedPath, file, line, column);
   if (!written) return {};
-  const extension = problem.suggestedPath.slice(rawPath.length);
-  return { fix: replacementFix(written, written + extension) };
+  // Only the extension added, as written; or, when the suggestion also fixes letter case
+  // (#477), the whole suggested path.
+  const replacement = problem.suggestedPath.startsWith(rawPath)
+    ? written + problem.suggestedPath.slice(rawPath.length)
+    : problem.suggestedPath;
+  return { fix: replacementFix(written, replacement) };
 }
 
 /**

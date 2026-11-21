@@ -38,6 +38,7 @@ A notebook path is written without its extension, and a notebook exists once the
 - **Example:** `notebook_path: ../src/etl`, with `src/etl.py` on disk.
 - **Fix:** add the extension (`.py`, `.r`, `.scala`, `.sql` or `.ipynb`).
 - **Quick fix:** yes, from the light bulb: `../src/etl` becomes `../src/etl.py`. It is only offered while the file still holds that value, so a path from a variable gets none.
+- **Letter case:** the file is found whatever the letter case, and the suggestion uses the case on disk, as the workspace is case sensitive: `./Notebooks/Main` for `notebooks/main.py` suggests `./notebooks/main.py`, on every OS.
 
 ### `missing_pipeline_source`
 
