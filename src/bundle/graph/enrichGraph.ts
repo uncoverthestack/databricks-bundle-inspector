@@ -116,15 +116,26 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         });
       }
 
+      // One link per scope, so the graph shows it once, holding every line that names it,
+      // so each line gets its own finding (#463).
+      const scopeLinks = new Map<string, { line: number; key: string | undefined; lines: number[] }>();
       for (const detection of secrets) {
         if (!detection.scope) continue;
         const nodeId = secretScopeNode(detection.scope);
+        const link = scopeLinks.get(nodeId);
+        if (link) {
+          if (!link.lines.includes(detection.line)) link.lines.push(detection.line);
+          continue;
+        }
+        scopeLinks.set(nodeId, { line: detection.line, key: detection.key ?? undefined, lines: [detection.line] });
+      }
+      for (const [nodeId, link] of scopeLinks) {
         addEdge({
           id: `${fileNode.id}->references->${nodeId}`,
           source: fileNode.id,
           target: nodeId,
           kind: "references",
-          data: { line: detection.line, key: detection.key ?? undefined, file: resolvedPath },
+          data: { ...link, file: resolvedPath },
         });
       }
 

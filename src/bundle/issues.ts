@@ -1457,23 +1457,30 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
             )?.source
           : undefined;
     const file = typeof edge.data?.file === "string" ? edge.data.file : undefined;
-    const line = typeof edge.data?.line === "number" ? edge.data.line : undefined;
-    const column = typeof edge.data?.column === "number" ? edge.data.column : undefined;
-    const id = `secret-scope-name:${scopeNode.id}:${file ?? source.id}:${line ?? 0}`;
-    if (issues.has(id)) continue;
+    const firstLine = typeof edge.data?.line === "number" ? edge.data.line : undefined;
+    const firstColumn = typeof edge.data?.column === "number" ? edge.data.column : undefined;
+    // A file's link holds every line that names the scope: one finding each (#463).
+    const lines = Array.isArray(edge.data?.lines)
+      ? edge.data.lines.filter((value): value is number => typeof value === "number")
+      : [];
+    for (const line of lines.length ? lines : [firstLine]) {
+      const column = line === firstLine ? firstColumn : undefined;
+      const id = `secret-scope-name:${scopeNode.id}:${file ?? source.id}:${line ?? 0}`;
+      if (issues.has(id)) continue;
 
-    const used = String(scopeNode.data.scope ?? scopeNode.displayName);
-    issues.set(id, {
-      id,
-      severity: "warning",
-      kind: "secret_scope_name_mismatch",
-      title: `Secret scope "${used}" may not exist. Did you mean "${misuse.scopeName}"?`,
-      ...(taskId ? { taskId, taskName: nodeById.get(taskId)?.displayName ?? taskId } : {}),
-      ...(!taskId && source.nodeType !== "file" ? { resourceId: source.id } : {}),
-      ...(typeof edge.data?.yamlPath === "string" ? { yamlPath: edge.data.yamlPath } : {}),
-      fixHint: `"${used}" is the resource key of the bundle's secret scope named "${misuse.scopeName}". Unless a scope called "${used}" exists outside this bundle, use "${misuse.scopeName}".`,
-      ...issueLocation(file, line, column),
-    });
+      const used = String(scopeNode.data.scope ?? scopeNode.displayName);
+      issues.set(id, {
+        id,
+        severity: "warning",
+        kind: "secret_scope_name_mismatch",
+        title: `Secret scope "${used}" may not exist. Did you mean "${misuse.scopeName}"?`,
+        ...(taskId ? { taskId, taskName: nodeById.get(taskId)?.displayName ?? taskId } : {}),
+        ...(!taskId && source.nodeType !== "file" ? { resourceId: source.id } : {}),
+        ...(typeof edge.data?.yamlPath === "string" ? { yamlPath: edge.data.yamlPath } : {}),
+        fixHint: `"${used}" is the resource key of the bundle's secret scope named "${misuse.scopeName}". Unless a scope called "${used}" exists outside this bundle, use "${misuse.scopeName}".`,
+        ...issueLocation(file, line, column),
+      });
+    }
   }
   return [...issues.values()];
 }
