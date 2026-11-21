@@ -5,6 +5,7 @@ import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
 import { existsWithCase, withFolderNames } from "../../../bundle/resources/task.js";
+import { respellPath, spelledOnDisk } from "../../../bundle/pathCase.js";
 
 const CONFIG = {
   bundle: { name: "b" },
@@ -86,3 +87,68 @@ describe("paths with the wrong letter case (#475)", () => {
     ]);
   });
 });
+
+// The same answers on every OS (#477): the extension and the disk's letter case together.
+describe("a notebook path with the wrong letter case and no extension (#477)", () => {
+  let root: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), "bdi-case-noext-"));
+    mkdirSync(path.join(root, "notebooks"));
+    writeFileSync(path.join(root, "notebooks", "main.py"), "# Databricks notebook source\nprint(1)\n");
+    writeFileSync(
+      path.join(root, "databricks.yml"),
+      [
+        "bundle: {name: b}",
+        "resources:",
+        "  jobs:",
+        "    j:",
+        "      name: j",
+        "      tasks:",
+        "        - task_key: wrong_case",
+        "          notebook_task:",
+        "            notebook_path: ./Notebooks/Main",
+        "        - task_key: right_case",
+        "          notebook_task:",
+        "            notebook_path: ./notebooks/main",
+        "",
+      ].join("\n"),
+    );
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test("spelledOnDisk finds the disk's names whatever the case, and nothing outside the anchor", () => {
+    expect(spelledOnDisk(path.join(root, "Notebooks", "MAIN.py"), root)).toBe(path.join(root, "notebooks", "main.py"));
+    expect(spelledOnDisk(path.join(root, "notebooks", "main.py"), root)).toBe(path.join(root, "notebooks", "main.py"));
+    expect(spelledOnDisk(path.join(root, "notebooks", "other.py"), root)).toBeUndefined();
+    expect(spelledOnDisk(path.join(root, "notebooks", "main.py"), path.join(root, "elsewhere"))).toBeUndefined();
+  });
+
+  test("respellPath keeps the leading ./ and ../", () => {
+    expect(respellPath("./Notebooks/Main.py", "/b/notebooks/main.py")).toBe("./notebooks/main.py");
+    expect(respellPath("../Src/Nb.py", "/b/src/nb.py")).toBe("../src/nb.py");
+  });
+
+  test("the suggestion and its quick fix use the disk's letter case", async () => {
+    const config = {
+      bundle: { name: "b" },
+      resources: {
+        jobs: {
+          j: {
+            name: "j",
+            tasks: [
+              { task_key: "wrong_case", notebook_task: { notebook_path: "./Notebooks/Main" } },
+              { task_key: "right_case", notebook_task: { notebook_path: "./notebooks/main" } },
+            ],
+          },
+        },
+      },
+    } as unknown as ParsedBundleConfig;
+    const issues = buildInspectorIssues(await extractBundleGraph(config, root), config, [], root);
+    expect(issues.map((issue) => [issue.taskName, issue.kind, issue.title, issue.fix?.newText])).toEqual([
+      ["wrong_case", "notebook_missing_extension", 'Notebook "./Notebooks/Main" may not be found. Did you mean "./notebooks/main.py"?', "./notebooks/main.py"],
+      ["right_case", "notebook_missing_extension", 'Notebook "./notebooks/main" may not be found. Did you mean "./notebooks/main.py"?', "./notebooks/main.py"],
+    ]);
+  });
+});
+

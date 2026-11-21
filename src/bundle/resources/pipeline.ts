@@ -126,7 +126,7 @@ export function getPipelineLibraryReferences(
             };
       const notebookProblem =
         kind !== "glob" && result.resolvedPath && !foundOnlyIgnoringCase(result.resolvedPath, result.exists)
-          ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file", notebookRule)
+          ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file", notebookRule, bundleRoot)
           : undefined;
       refs.push({
         kind,

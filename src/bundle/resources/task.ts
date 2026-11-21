@@ -466,7 +466,7 @@ function getFileReferences(
     const sourceLocation = resolveSourceLocation?.(yamlPath);
     const notebookProblem =
       expects && resolvedPath && !foundOnlyIgnoringCase(resolvedPath, exists)
-        ? checkNotebookPath(rawPath, resolvedPath, expects, notebookRule)
+        ? checkNotebookPath(rawPath, resolvedPath, expects, notebookRule, bundleRoot)
         : undefined;
     refs.push({
       path: rawPath,

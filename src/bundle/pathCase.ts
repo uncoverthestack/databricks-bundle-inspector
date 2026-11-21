@@ -1,4 +1,6 @@
+import { readdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import path from "node:path";
 
 interface FileIdentity {
   ino: number | bigint;
@@ -37,3 +39,42 @@ export async function folderIgnoresCase(
     return false;
   }
 }
+
+/**
+ * `file` as the disk spells it below `anchor`, found by comparing folder names while
+ * ignoring letter case, so a case-sensitive disk (Linux) finds it too. The exact spelling
+ * wins when a folder holds both. Undefined when nothing matches, or `file` is not below
+ * `anchor`. Names above `anchor` are left as they are, as they aren't uploaded (#477).
+ */
+export function spelledOnDisk(file: string, anchor: string): string | undefined {
+  const rel = path.relative(anchor, file);
+  if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return undefined;
+  let folder = anchor;
+  for (const name of rel.split(path.sep)) {
+    let names: string[];
+    try {
+      names = readdirSync(folder);
+    } catch {
+      return undefined;
+    }
+    const found = names.includes(name) ? name : names.find((entry) => entry.toLowerCase() === name.toLowerCase());
+    if (found === undefined) return undefined;
+    folder = path.join(folder, found);
+  }
+  return folder;
+}
+
+/**
+ * `rawPath` with its trailing names spelled as `spelled` spells them: `./Notebooks/Main.py`
+ * and `/b/notebooks/main.py` give `./notebooks/main.py`. A leading `.` or `..` stays.
+ */
+export function respellPath(rawPath: string, spelled: string): string {
+  const written = rawPath.split(/[\\/]/);
+  const real = spelled.split(path.sep);
+  for (let i = written.length - 1, j = real.length - 1; i >= 0 && j >= 0; i--, j--) {
+    if (written[i] === "" || written[i] === "." || written[i] === "..") break;
+    written[i] = real[j]!;
+  }
+  return written.join("/");
+}
+
