@@ -6,6 +6,7 @@ import {
   isRemotePath,
   resolveLocalPath,
   type SourceLocationResolver,
+  foundOnlyIgnoringCase,
 } from "./task.js";
 
 /**
@@ -124,7 +125,7 @@ export function getPipelineLibraryReferences(
               checked: true,
             };
       const notebookProblem =
-        kind !== "glob" && result.resolvedPath
+        kind !== "glob" && result.resolvedPath && !foundOnlyIgnoringCase(result.resolvedPath, result.exists)
           ? checkNotebookPath(rawPath, result.resolvedPath, kind === "notebook" ? "notebook" : "file", notebookRule)
           : undefined;
       refs.push({
