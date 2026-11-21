@@ -4,6 +4,7 @@ import {
   extractDatabricksVersion,
 } from "./parsing.js";
 import {
+  cliOnPath,
   moreCliCandidates,
   realLookupEnvironment,
   type CliLookupEnvironment,
@@ -142,15 +143,23 @@ export async function verifyCliPath(
 }
 
 /**
- * Automatically detects the Databricks CLI on the current host machine.
- * Requires `databricks` to be on the system PATH.
- * @returns The verification result for `databricks` on the PATH.
+ * Automatically detects the Databricks CLI on the current host machine: the `databricks`
+ * that running it by name would start, kept as its full path so that every later run starts
+ * that same file, whatever folder it runs in (#459).
+ * @returns The verification result for that file, or a failure when PATH has none.
  */
-export async function autoDetectDatabricksCli(): Promise<DatabricksCliVerificationResult> {
-  const result = await verifyCliPath("databricks");
+export async function autoDetectDatabricksCli(
+  lookup: CliLookupEnvironment = realLookupEnvironment(),
+): Promise<DatabricksCliVerificationResult> {
+  const file = cliOnPath(lookup);
+  if (!file) {
+    console.warn("[DatabricksBundleInspector] no databricks file found on the PATH");
+    return { ok: false, candidate: "databricks", reason: "No databricks file on the PATH." };
+  }
+  const result = await verifyCliPath(file);
   if (result.ok) {
     console.log(
-      `[DatabricksBundleInspector] auto-detected Databricks CLI: databricks`,
+      `[DatabricksBundleInspector] auto-detected Databricks CLI: ${file}`,
     );
     return result;
   }
@@ -214,12 +223,14 @@ async function resolveCliInternal(
       `[DatabricksBundleInspector] configured cliPath is invalid: ${configuredPath}. Reason: ${result.reason ?? "unknown"}`,
     );
   }
-  const detected = await autoDetectDatabricksCli();
+  const detected = await autoDetectDatabricksCli(lookup);
   if (detected.ok) {
     return detected;
   }
   // Only reached when the lookup above failed, so nothing changes where it works.
+  const tried = lookup.platform === "win32" ? detected.candidate.toLowerCase() : detected.candidate;
   for (const candidate of await moreCliCandidates(lookup)) {
+    if ((lookup.platform === "win32" ? candidate.toLowerCase() : candidate) === tried) continue;
     const result = await verifyCliPath(candidate);
     if (result.ok) {
       return result;

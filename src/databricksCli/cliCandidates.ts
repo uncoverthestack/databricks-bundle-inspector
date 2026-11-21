@@ -16,6 +16,10 @@ export interface CliLookupEnvironment {
   readRegistryPath: (key: string) => Promise<string | undefined>;
   /** CLIs other extensions ship, such as the Databricks extension's. */
   extraCandidates: () => string[];
+  /** The open workspace folders. A PATH folder inside one is left out, as its files come with the repo. */
+  workspaceFolders?: () => readonly string[];
+  /** Whether the OS would run the file (the execute permission on macOS and Linux). Defaults to the real check. */
+  canRun?: (file: string) => boolean;
 }
 
 /** The keys Windows stores the system and the user `Path` under (Microsoft Learn, "Environment Variables"; checked on a real machine). */
@@ -29,14 +33,35 @@ export function cliFileName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "databricks.exe" : "databricks";
 }
 
-/** The folders in a PATH value: trimmed, unquoted, without empty or repeated entries. */
-export function pathEntries(pathValue: string | undefined, platform: NodeJS.Platform): string[] {
+/** Whether `folder` is `parent` or inside it, ignoring letter case on Windows. */
+function isInside(folder: string, parent: string, platform: NodeJS.Platform): boolean {
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  const fold = (value: string) => (platform === "win32" ? value.toLowerCase() : value);
+  const relative = paths.relative(fold(paths.resolve(parent)), fold(paths.resolve(folder)));
+  return relative === "" || (!relative.startsWith(`..${paths.sep}`) && relative !== ".." && !paths.isAbsolute(relative));
+}
+
+/**
+ * The folders in a PATH value: trimmed, unquoted, without empty or repeated entries. Only
+ * full paths: an empty entry, `.` or any other relative one means the folder the CLI runs
+ * in, which is the bundle folder (#459). Folders inside `skipInside` (the open workspace
+ * folders) are left out too, as what is in them came with the repo.
+ */
+export function pathEntries(
+  pathValue: string | undefined,
+  platform: NodeJS.Platform,
+  skipInside: readonly string[] = [],
+): string[] {
   const separator = platform === "win32" ? ";" : ":";
+  const paths = platform === "win32" ? path.win32 : path.posix;
   const seen = new Set<string>();
   const entries: string[] = [];
   for (const raw of (pathValue ?? "").split(separator)) {
     const entry = raw.trim().replace(/^"(.*)"$/, "$1");
-    if (!entry) continue;
+    if (!entry || !paths.isAbsolute(entry)) continue;
+    // `C:foo` is relative to the drive's current folder, and `\foo` to the current drive.
+    if (platform === "win32" && !/^([a-zA-Z]:[\\/]|\\\\[^\\])/.test(entry)) continue;
+    if (skipInside.some((folder) => isInside(entry, folder, platform))) continue;
     const key = platform === "win32" ? entry.toLowerCase() : entry;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -50,9 +75,10 @@ export function cliFilesOnPath(
   pathValue: string | undefined,
   platform: NodeJS.Platform,
   isFile: (file: string) => boolean,
+  skipInside: readonly string[] = [],
 ): string[] {
   const join = platform === "win32" ? path.win32.join : path.posix.join;
-  return pathEntries(pathValue, platform)
+  return pathEntries(pathValue, platform, skipInside)
     .map((entry) => join(entry, cliFileName(platform)))
     .filter((file) => isFile(file));
 }
@@ -68,6 +94,20 @@ export function fileRunByName(
   canRun: (file: string) => boolean = isExecutable,
 ): string | undefined {
   return platform === "win32" ? files[0] : files.find((file) => canRun(file));
+}
+
+/** Every `databricks` file on the lookup's PATH, without folders in the open workspace. */
+export function lookupPathFiles(lookup: CliLookupEnvironment, pathValue = lookup.pathValue): string[] {
+  return cliFilesOnPath(pathValue, lookup.platform, lookup.isFile, lookup.workspaceFolders?.() ?? []);
+}
+
+/**
+ * The `databricks` on PATH the checks run, by its full path: the one running it by name
+ * would start, found here once. Running it by name instead would search again from the
+ * folder it runs in, the bundle folder, where Windows looks first (#459).
+ */
+export function cliOnPath(lookup: CliLookupEnvironment): string | undefined {
+  return fileRunByName(lookupPathFiles(lookup), lookup.platform, lookup.canRun ?? isExecutable);
 }
 
 function isExecutable(file: string): boolean {
@@ -133,7 +173,7 @@ async function readRegistryPath(key: string): Promise<string | undefined> {
   }
 }
 
-let lookupOptions: { extraCandidates: () => string[]; readStoredPath: boolean } = {
+let lookupOptions: { extraCandidates: () => string[]; readStoredPath: boolean; workspaceFolders?: () => readonly string[] } = {
   extraCandidates: () => [],
   readStoredPath: true,
 };
@@ -147,7 +187,7 @@ export function configureCliLookup(options: typeof lookupOptions): void {
 }
 
 export function realLookupEnvironment(): CliLookupEnvironment {
-  const { extraCandidates, readStoredPath } = lookupOptions;
+  const { extraCandidates, readStoredPath, workspaceFolders } = lookupOptions;
   return {
     platform: process.platform,
     pathValue: process.env.PATH ?? process.env.Path,
@@ -155,6 +195,7 @@ export function realLookupEnvironment(): CliLookupEnvironment {
     isFile,
     readRegistryPath: readStoredPath ? readRegistryPath : async () => undefined,
     extraCandidates,
+    ...(workspaceFolders ? { workspaceFolders } : {}),
   };
 }
 
@@ -168,9 +209,9 @@ export function realLookupEnvironment(): CliLookupEnvironment {
  */
 export async function moreCliCandidates(lookup: CliLookupEnvironment): Promise<string[]> {
   const { platform } = lookup;
-  const found = [...cliFilesOnPath(lookup.pathValue, platform, lookup.isFile)];
+  const found = lookupPathFiles(lookup);
   if (platform === "win32") {
-    found.push(...cliFilesOnPath(await storedWindowsPath(lookup), platform, lookup.isFile));
+    found.push(...lookupPathFiles(lookup, await storedWindowsPath(lookup)));
   }
   found.push(...lookup.extraCandidates().filter((file) => lookup.isFile(file)));
 

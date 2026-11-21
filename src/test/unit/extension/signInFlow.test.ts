@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
-import { configFilePath, SignInFlow, type SignInBanner } from "../../../extension/signInFlow.js";
+import { configFilePath, SignInFlow, terminalEnv, type SignInBanner } from "../../../extension/signInFlow.js";
 
 // The flow with a stand-in terminal, a CLI lookup the test finishes, and throwaway files.
 // No CLI runs and nothing signs in.
@@ -241,5 +241,25 @@ describe("configFilePath", () => {
     expect(configFilePath("/bundle", { DATABRICKS_CONFIG_FILE: "~/x.cfg" })).toBe(path.join(home, "x.cfg"));
     expect(configFilePath("/bundle", { DATABRICKS_CONFIG_FILE: "conf/x.cfg" })).toBe(path.resolve("/bundle", "conf/x.cfg"));
     expect(configFilePath("/bundle", { DATABRICKS_CONFIG_FILE: "/etc/x.cfg" })).toBe(path.resolve("/etc/x.cfg"));
+  });
+});
+
+describe("terminalEnv: the sign-in terminal never runs a databricks file from the bundle folder (#459)", () => {
+  test("a CLI found by name has its folder first on PATH", () => {
+    expect(terminalEnv({ command: "databricks", folder: "/opt/homebrew/bin" }, "darwin", { PATH: "/usr/bin" })).toEqual({
+      PATH: "/opt/homebrew/bin:/usr/bin",
+    });
+  });
+
+  test("on Windows, cmd.exe is told not to look in the folder it runs in, with PATH spelt as the environment does", () => {
+    expect(terminalEnv({ command: "databricks", folder: "C:\\tools" }, "win32", { Path: "C:\\Windows" })).toEqual({
+      Path: "C:\\tools;C:\\Windows",
+      NoDefaultCurrentDirectoryInExePath: "1",
+    });
+    expect(terminalEnv({ command: "C:\\tools\\dbx.exe" }, "win32", {})).toEqual({ NoDefaultCurrentDirectoryInExePath: "1" });
+  });
+
+  test("a CLI typed as its path adds nothing elsewhere", () => {
+    expect(terminalEnv({ command: "/tmp/x/databricks-custom" }, "linux", { PATH: "/usr/bin" })).toEqual({});
   });
 });

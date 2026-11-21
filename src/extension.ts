@@ -73,9 +73,9 @@ import {
 import { isBundlePath, isOpenFilePathAllowed } from "./extension/paths.js";
 import {
   cliFileName,
-  cliFilesOnPath,
+  cliOnPath,
   configureCliLookup,
-  fileRunByName,
+  lookupPathFiles,
   realLookupEnvironment,
   storedWindowsPath,
 } from "./databricksCli/cliCandidates.js";
@@ -184,6 +184,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       if (!databricksExtension) return [];
       return [path.join(databricksExtension.extensionPath, "bin", cliFileName(process.platform))];
     },
+    // A `databricks` in a PATH folder inside these came with the repo, so it is never picked by itself (#459).
+    workspaceFolders: () =>
+      (vscode.workspace.workspaceFolders ?? []).filter((folder) => folder.uri.scheme === "file").map((folder) => folder.uri.fsPath),
     // The cliNotFound e2e suite needs no CLI found, even one Windows has stored the path of.
     readStoredPath: !(
       extensionContext.extensionMode === vscode.ExtensionMode.Test &&
@@ -474,10 +477,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     const lookup = realLookupEnvironment();
     return cliCandidates({
       setting: currentConfiguredCliPath(),
-      onPath: cliFilesOnPath(lookup.pathValue, lookup.platform, lookup.isFile),
+      onPath: lookupPathFiles(lookup),
       windowsPath:
         withWindowsPath && lookup.platform === "win32"
-          ? cliFilesOnPath(await storedWindowsPath(lookup), lookup.platform, lookup.isFile)
+          ? lookupPathFiles(lookup, await storedWindowsPath(lookup))
           : [],
       databricksExtension: lookup.extraCandidates().filter((file) => lookup.isFile(file)),
       ignoreCase: lookup.platform === "win32",
@@ -491,13 +494,11 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     try {
       const cli = await resolveDatabricksCli(currentConfiguredCliPath());
       if (cli.ok) {
-        // The lookup runs `databricks` by name first; say which file that is, and where it is from.
+        // Say which file the checks run, and where it is from. Only a cliPath setting of just
+        // `databricks` is still a name.
         const candidates = await cliCandidateList(false);
         const byName = !cli.candidate.includes("/") && !cli.candidate.includes("\\");
-        const lookup = realLookupEnvironment();
-        const file = byName
-          ? (fileRunByName(cliFilesOnPath(lookup.pathValue, lookup.platform, lookup.isFile), lookup.platform) ?? cli.candidate)
-          : cli.candidate;
+        const file = byName ? (cliOnPath(realLookupEnvironment()) ?? cli.candidate) : cli.candidate;
         const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
         // A cliPath setting of just `databricks` still runs it by name, but from the setting.
         const fromSetting = cli.candidate === currentConfiguredCliPath();
@@ -850,6 +851,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
   }
   extensionContext.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders((event) => {
+      // Which PATH folders count as part of the repo changed, so find the CLI again (#459).
+      invalidateDatabricksCliCache();
+      void updateSidebarCli();
       for (const folder of event.removed) {
         for (const root of [...foundBundles]) {
           if (root === folder.uri.fsPath || root.startsWith(folder.uri.fsPath + path.sep)) forgetBundle(root);
