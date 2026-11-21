@@ -6,8 +6,8 @@
 import { MarkerType } from "@xyflow/react";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { isDrawnDependency, taskLevels } from "./taskLevels.js";
-import { countsFor, problemTone, taskProblemCounts, type TaskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
-import { getTaskIssueCounts, type GraphLike, type TaskNode } from "./taskIssues.js";
+import { taskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
+import { taskBoxProblems, type GraphLike, type TaskNode } from "./taskIssues.js";
 import { UI_COLOR } from "./vscodeTheme.js";
 
 export const NODE_W = 260;
@@ -46,27 +46,6 @@ export function dependencyOutcomeTone(label: string | null | undefined) {
     return { stroke: UI_COLOR.muted, labelColor: UI_COLOR.fg, labelBg: UI_COLOR.widget, labelBorder: UI_COLOR.muted };
   }
   return { stroke: UI_COLOR.link, labelColor: UI_COLOR.link, labelBg: UI_COLOR.widget, labelBorder: UI_COLOR.link };
-}
-
-/**
- * A task box's problem count and border colour. From the inspector's problem list when
- * there is one, as Issues does; without it (an old or partial result), the box's own
- * recount of missing files, libraries and variables, which are all errors.
- */
-export function taskBoxProblems(
-  task: TaskNode,
-  parsedBundle: Bundle,
-  targetName: Target,
-  inspectorIssues: readonly TaskProblemIssue[],
-  problemsByTask: Map<string, TaskProblemCounts>,
-) {
-  if (inspectorIssues.length > 0) {
-    const counts = countsFor(problemsByTask, task.id);
-    return { issueCounts: counts, problemTone: problemTone(counts) };
-  }
-  const recount = getTaskIssueCounts(task, parsedBundle, targetName);
-  const counts = { errors: recount.total, warnings: 0, infos: 0, total: recount.total };
-  return { issueCounts: counts, problemTone: problemTone(counts) };
 }
 
 export function buildDagFlow(

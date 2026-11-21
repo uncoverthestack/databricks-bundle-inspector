@@ -32,6 +32,7 @@ import { basename, buildTaskAdjacency, collectReachable, formatSourceLocation, g
 import { buildIssueItems } from "./lib/issueItems";
 import { buildSearchItems, buildStatPanelItems, displayResolvedValue, variableResolutionLabel } from "./lib/headerItems";
 import { NODE_H, NODE_W, buildDagFlow, compactTaskName, dependencyOutcomeLabel, dependencyOutcomeTone } from "./lib/dagFlow";
+import { problemTone } from "./lib/taskProblems";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
 
@@ -1998,9 +1999,10 @@ export default function App({
             jobNode,
             effectiveResolutionBundle,
             effectiveTargetName,
+            inspectorIssues,
           )
         : [],
-    [graph, jobNode, effectiveResolutionBundle, effectiveTargetName],
+    [graph, jobNode, effectiveResolutionBundle, effectiveTargetName, inspectorIssues],
   );
 
   const headerPanelItems = useMemo(
@@ -2209,6 +2211,7 @@ export default function App({
               subtitle: typeWords(item),
               kind: item.kind,
               issueCount: item.problems.errors + item.problems.warnings,
+              problemTone: problemTone(item.problems),
             })),
           )
         : [],

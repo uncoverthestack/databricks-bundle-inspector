@@ -12,10 +12,17 @@ export interface FileStatusReference {
   exists?: boolean | undefined;
 }
 
-/** A path in the workspace, DBFS or cloud storage, which the inspector can't look at offline. */
+/**
+ * A path in the workspace (with or without the `/Workspace` prefix), a volume, DBFS or cloud
+ * storage, which never exists locally. The one rule the graph, the panel and the export use.
+ */
 export function isRemotePath(path: string | undefined): boolean {
   return Boolean(
     path?.startsWith("/Workspace/") ||
+      path?.startsWith("/Users/") ||
+      path?.startsWith("/Shared/") ||
+      path?.startsWith("/Repos/") ||
+      path?.startsWith("/Volumes/") ||
       path?.startsWith("dbfs:/") ||
       path?.startsWith("s3://") ||
       path?.startsWith("abfss://") ||
