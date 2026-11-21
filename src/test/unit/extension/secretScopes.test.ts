@@ -1,10 +1,14 @@
-import { describe, test, expect } from "@jest/globals";
+import { afterAll, beforeAll, describe, test, expect } from "@jest/globals";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   findClusterSecretReferences,
   matchSecretScope,
 } from "../../../bundle/resources/secretScope.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
-import type { BundleGraph } from "../../../bundle/graph/bundleGraph.js";
+import { extractBundleGraph, type BundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
+import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
 
 const scopes = [
   { id: "resources.secret_scopes.app_scope", resourceKey: "app_scope", name: "app-secrets" },
@@ -108,5 +112,51 @@ describe("secret scope name warning", () => {
         line: 2,
       },
     ]);
+  });
+});
+
+describe("a wrong secret scope on several lines of one notebook (#463)", () => {
+  let root: string;
+  let graph: BundleGraph;
+
+  beforeAll(async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), "bdi-secret-lines-"));
+    writeFileSync(
+      path.join(root, "nb.py"),
+      [
+        "# Databricks notebook source",
+        'a = dbutils.secrets.get(scope="kv", key="a")',
+        'b = dbutils.secrets.get("kv", "b")',
+        'c = dbutils.secrets.get(scope="real-scope-name", key="c")',
+        'd = dbutils.secrets.get(scope="kv", key="d")',
+      ].join("\n"),
+    );
+    const config = {
+      bundle: { name: "b" },
+      resources: {
+        secret_scopes: { kv: { name: "real-scope-name" } },
+        jobs: { j: { name: "j", tasks: [{ task_key: "t", notebook_task: { notebook_path: "./nb.py" } }] } },
+      },
+    } as unknown as ParsedBundleConfig;
+    graph = await enrichGraphWithFileContent(await extractBundleGraph(config, root));
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test("each line that uses the resource key gets its own warning", () => {
+    const issues = buildInspectorIssues(graph, { bundle: { name: "b" } } as ParsedBundleConfig, [], root).filter(
+      (issue) => issue.kind === "secret_scope_name_mismatch",
+    );
+    expect(issues.map((issue) => [issue.line, issue.taskName])).toEqual([
+      [2, "t"],
+      [3, "t"],
+      [5, "t"],
+    ]);
+  });
+
+  test("the graph still links the notebook to the scope once", () => {
+    const toScope = graph.edges.filter(
+      (edge) => edge.source.startsWith("file:") && graph.nodes.find((node) => node.id === edge.target)?.nodeType === "secret_scope",
+    );
+    expect(toScope.map((edge) => edge.data?.lines)).toEqual([[2, 3, 5], [4]]);
   });
 });
