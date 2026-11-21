@@ -298,7 +298,8 @@ export function graphRefreshSuite() {
           "each Copy review item says it copies Markdown",
         );
         await evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(b => b.textContent.startsWith('Full report')).click()`);
-        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("## Databricks Bundle Review: alpha_second"), "the copied full report");
+        // Names are escaped in the report, so it shows them as text (#473).
+        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("## Databricks Bundle Review: alpha\\_second"), "the copied full report");
         const report = await vscode.env.clipboard.readText();
         assert.match(report, /\| Databricks CLI \| \d+\.\d+\.\d+ \|/);
         assert.match(report, /\| Databricks Bundle Inspector \| \d+\.\d+\.\d+ \|/);
