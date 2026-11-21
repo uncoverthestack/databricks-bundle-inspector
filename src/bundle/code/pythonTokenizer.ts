@@ -24,6 +24,11 @@ export interface PythonToken {
   end: number;
   /** True for f-strings, whose value depends on the expressions inside them. */
   formatted?: boolean;
+  /**
+   * Strings only: the value Python reads, with escapes such as `\u0069` decoded; raw strings
+   * as written. `null` when it can't be known offline (`\N{...}`). Unset for f-strings.
+   */
+  decoded?: string | null;
 }
 
 const STRING_PREFIX = /^(?:[rRbBuUfF]|[bB][rR]|[rR][bB]|[fF][rR]|[rR][fF])$/;
@@ -57,7 +62,8 @@ function scanString(
     // A backslash always protects the next character from closing the string,
     // raw strings included.
     if (ch === "\\") {
-      i += 2;
+      // A line continuation in a file with Windows line ends is `\` and then `\r\n`.
+      i += text[i + 1] === "\r" && text[i + 2] === "\n" ? 3 : 2;
       continue;
     }
     // An f-string expression can hold strings with the same quote (Python 3.12+),
@@ -163,12 +169,14 @@ function pushString(
 ): number {
   const { end, bodyStart, bodyEnd } = scanString(text, quoteStart, formatted);
   const stop = Math.min(end, limit);
+  const value = text.slice(bodyStart, Math.min(bodyEnd, limit));
+  const prefix = text.slice(prefixStart, quoteStart);
   tokens.push({
     kind: "string",
-    value: text.slice(bodyStart, Math.min(bodyEnd, limit)),
+    value,
     start: prefixStart,
     end: stop,
-    ...(formatted ? { formatted: true } : {}),
+    ...(formatted ? { formatted: true } : { decoded: decodedString(value, prefix) }),
   });
   if (formatted) {
     let i = bodyStart;
@@ -187,6 +195,72 @@ function pushString(
     }
   }
   return stop;
+}
+
+const SIMPLE_ESCAPES: Record<string, string> = {
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  a: "\x07",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  v: "\v",
+};
+
+/**
+ * A string's body as Python reads it (https://docs.python.org/3/reference/lexical_analysis.html#escape-sequences).
+ * An escape Python doesn't know keeps its backslash, as Python does. `null` for `\N{...}`,
+ * whose character comes from the Unicode name table.
+ */
+export function decodeEscapes(body: string, bytes: boolean): string | null {
+  if (!body.includes("\\")) return body;
+  let out = "";
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (ch !== "\\" || i + 1 >= body.length) {
+      out += ch;
+      continue;
+    }
+    const next = body[i + 1]!;
+    if (next === "\n") {
+      i += 1;
+      continue;
+    }
+    if (Object.hasOwn(SIMPLE_ESCAPES, next)) {
+      out += SIMPLE_ESCAPES[next];
+      i += 1;
+      continue;
+    }
+    const octal = /^[0-7]{1,3}/.exec(body.slice(i + 1, i + 4));
+    if (octal) {
+      // In bytes, Python keeps the low 8 bits of an octal escape above \377.
+      out += String.fromCodePoint(bytes ? parseInt(octal[0], 8) & 0xff : parseInt(octal[0], 8));
+      i += octal[0].length;
+      continue;
+    }
+    const digits = next === "x" ? 2 : !bytes && next === "u" ? 4 : !bytes && next === "U" ? 8 : 0;
+    if (digits > 0) {
+      const hex = body.slice(i + 2, i + 2 + digits);
+      const code = /^[0-9a-fA-F]+$/.test(hex) && hex.length === digits ? parseInt(hex, 16) : NaN;
+      // A short or invalid escape is a SyntaxError in Python; the inspector can't read it either.
+      if (Number.isNaN(code) || code > 0x10ffff) return null;
+      out += String.fromCodePoint(code);
+      i += 1 + digits;
+      continue;
+    }
+    if (!bytes && next === "N") return null;
+    out += ch;
+  }
+  return out;
+}
+
+/** Python reads source with Windows line ends as `\n`, so a string over two lines holds `\n`. */
+function decodedString(body: string, prefix: string): string | null {
+  const lines = body.replace(/\r\n?/g, "\n");
+  return /r/i.test(prefix) ? lines : decodeEscapes(lines, /b/i.test(prefix));
 }
 
 export function tokenizePython(text: string): PythonToken[] {
@@ -256,8 +330,8 @@ function toArgument(tokens: PythonToken[]): PythonArgument {
  */
 export function literalValue(arg: PythonArgument | undefined): string | null {
   if (!arg || arg.tokens.length === 0) return null;
-  if (!arg.tokens.every((token) => token.kind === "string" && !token.formatted)) return null;
-  const value = arg.tokens.map((token) => token.value).join("");
+  if (!arg.tokens.every((token) => token.kind === "string" && !token.formatted && typeof token.decoded === "string")) return null;
+  const value = arg.tokens.map((token) => token.decoded).join("");
   return value === "" ? null : value;
 }
 
