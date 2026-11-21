@@ -7,7 +7,8 @@ import { bundleTempDir, privateBundleTempDir } from "../../../databricksCli/rest
 // Real folders in a throwaway temp root, standing in for a /tmp every user shares (#469).
 // Owners and permission bits are POSIX only; Windows gives each user their own temp folder.
 (process.platform === "win32" ? describe.skip : describe)("privateBundleTempDir", () => {
-  const uid = process.getuid!();
+  // Read here, not at load: Jest runs a skipped block's body too, and Windows has no getuid.
+  const uid = process.getuid?.() ?? 0;
   let root: string;
   let outside: string;
   const bundle = "/work/some bundle";
