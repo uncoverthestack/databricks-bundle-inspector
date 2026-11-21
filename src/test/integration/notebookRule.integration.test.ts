@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile);
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
 const fixtureRoot = path.resolve(__dirname, "../fixtures/notebook-paths");
 
-type Verdict = "ok" | "missing_extension" | "not_a_notebook" | "is_a_notebook";
+type Verdict = "ok" | "missing_extension" | "not_a_notebook" | "is_a_notebook" | "is_a_folder";
 
 // The task fields that take a local path, and whether the CLI expects a notebook there.
 const PATH_FIELDS: Array<{ payload: string; field: string[]; expects: "notebook" | "file" }> = [
@@ -35,6 +35,7 @@ const PATH_FIELDS: Array<{ payload: string; field: string[]; expects: "notebook"
 
 /** What `bundle validate` said about the task's path. */
 function cliVerdict(output: string): Verdict {
+  if (/unable to determine if .* a notebook: .*is a directory/.test(output)) return "is_a_folder";
   if (/expected a notebook .* but got a file/.test(output)) return "not_a_notebook";
   if (/unable to determine if .* is a notebook/.test(output)) return "not_a_notebook";
   if (/expected a file .* but got a notebook/.test(output)) return "is_a_notebook";

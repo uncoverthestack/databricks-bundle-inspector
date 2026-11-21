@@ -56,3 +56,9 @@ resources:
         - task_key: python_file_bom
           spark_python_task:
             python_file: ../src/nb_bom.py
+        - task_key: folder_as_notebook
+          notebook_task:
+            notebook_path: ../src/folder_nb.py
+        - task_key: folder_as_file
+          spark_python_task:
+            python_file: ../src/folder_nb.py

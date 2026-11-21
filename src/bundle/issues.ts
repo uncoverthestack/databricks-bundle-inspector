@@ -37,6 +37,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "missing_library",
   "not_a_notebook",
   "file_is_a_notebook",
+  "path_is_a_folder",
   "excluded_from_sync",
   "path_not_checked",
   "same_workspace_path",
@@ -317,6 +318,16 @@ function notebookProblemIssue(
       title: `Notebook "${path}" may not be found. Did you mean "${problem.suggestedPath}"?`,
       fixHint:
         "Local notebook paths need their file extension (.py, .r, .scala, .sql or .ipynb).",
+    };
+  }
+  if (problem.kind === "is_a_folder") {
+    return {
+      kind: "path_is_a_folder",
+      title: `"${path}" is a folder, not a ${problem.expects}.`,
+      fixHint:
+        problem.expects === "notebook"
+          ? "Point it at a notebook in the folder, with its extension (.py, .r, .scala, .sql or .ipynb)."
+          : "Point it at a file in the folder.",
     };
   }
   if (problem.kind === "is_a_notebook") {
