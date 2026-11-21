@@ -742,6 +742,8 @@ describe("detectWidgetUsageInFile — SQL", () => {
       hasUnresolvedRuns: true,
       runReadNames: [],
       unsetRunReads: [],
+      // ./shared_widgets doesn't exist, so it is watched for being created.
+      runFiles: [path.join(path.dirname(file), "shared_widgets")],
     });
   });
 });
@@ -783,6 +785,7 @@ describe("detectWidgetUsageInFile — Python", () => {
       hasUnresolvedRuns: false,
       runReadNames: [],
       unsetRunReads: [],
+      runFiles: [],
     });
   });
 });

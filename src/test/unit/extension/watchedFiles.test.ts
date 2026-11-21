@@ -1,10 +1,13 @@
-import { describe, test, expect, beforeAll } from "@jest/globals";
+import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import ignore from "ignore";
 import {
   extractBundleGraph,
   type ParsedBundleConfig,
 } from "../../../bundle/graph/bundleGraph.js";
+import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
 import {
   classifyChange,
   collectWatchSpec,
@@ -207,5 +210,58 @@ describe("classifyChange: folders whose name starts with ..", () => {
     expect(classifyChange(dotSpec, path.join(root, "..resources", "new.yml"))).toBe("config");
     // A file above the bundle stays outside it.
     expect(classifyChange(dotSpec, path.join(root, "..", "resources", "new.yml"))).toBeUndefined();
+  });
+});
+
+describe("notebooks a task's notebook runs, and files that share a workspace path", () => {
+  // A temporary bundle on disk, since both rules read the files there.
+  let root: string;
+  let spec: BundleWatchSpec;
+  const header = "# Databricks notebook source\n";
+
+  beforeAll(async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), "dbi-watch-run-"));
+    mkdirSync(path.join(root, "lib"));
+    writeFileSync(path.join(root, "parent.py"), `${header}# MAGIC %run ./lib/child\n# COMMAND ----------\n# MAGIC %run ./not_yet\n# COMMAND ----------\ndbutils.notebook.run("./later", 60)\n`);
+    writeFileSync(path.join(root, "lib", "child.py"), `${header}# MAGIC %run ./grandchild\n`);
+    writeFileSync(path.join(root, "lib", "grandchild.py"), `${header}dbutils.widgets.get("x")\n`);
+    writeFileSync(path.join(root, "pair.py"), header);
+    writeFileSync(path.join(root, "pair.sql"), "-- Databricks notebook source\n");
+    writeFileSync(path.join(root, "alone.py"), header);
+    mkdirSync(path.join(root, "folder_twin"));
+    writeFileSync(path.join(root, "folder_twin.py"), header);
+    const bundle: ParsedBundleConfig = {
+      bundle: { name: "watch-run" },
+      resources: { jobs: { job: { tasks: [{ task_key: "t", notebook_task: { notebook_path: "./parent.py" } }] } } },
+    } as unknown as ParsedBundleConfig;
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(bundle, root));
+    spec = collectWatchSpec(graph, bundle, root, []);
+  });
+
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test("saving a %run notebook, at any depth, re-checks", () => {
+    expect(classifyChange(spec, path.join(root, "lib", "child.py"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "lib", "grandchild.py"))).toBe("source");
+  });
+
+  test("creating a %run or notebook.run notebook that was missing re-checks", () => {
+    expect(classifyChange(spec, path.join(root, "not_yet.py"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "later.ipynb"))).toBe("source");
+  });
+
+  test("a new notebook beside one with the same name and another extension re-checks, either way round", () => {
+    expect(classifyChange(spec, path.join(root, "pair.sql"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "pair.py"))).toBe("source");
+  });
+
+  test("a notebook beside a folder of the same name re-checks, and the folder too", () => {
+    expect(classifyChange(spec, path.join(root, "folder_twin.py"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "folder_twin"))).toBe("source");
+  });
+
+  test("an unreferenced file with nothing sharing its path does not", () => {
+    expect(classifyChange(spec, path.join(root, "alone.py"))).toBeUndefined();
+    expect(classifyChange(spec, path.join(root, "notes.md"))).toBeUndefined();
   });
 });
