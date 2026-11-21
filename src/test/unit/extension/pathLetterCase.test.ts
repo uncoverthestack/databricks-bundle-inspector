@@ -125,8 +125,10 @@ describe("a notebook path with the wrong letter case and no extension (#477)", (
   });
 
   test("respellPath keeps the leading ./ and ../", () => {
-    expect(respellPath("./Notebooks/Main.py", "/b/notebooks/main.py")).toBe("./notebooks/main.py");
-    expect(respellPath("../Src/Nb.py", "/b/src/nb.py")).toBe("../src/nb.py");
+    // Spelled with this OS's separator, as spelledOnDisk gives it.
+    const bundle = path.resolve("/b");
+    expect(respellPath("./Notebooks/Main.py", path.join(bundle, "notebooks", "main.py"))).toBe("./notebooks/main.py");
+    expect(respellPath("../Src/Nb.py", path.join(bundle, "src", "nb.py"))).toBe("../src/nb.py");
   });
 
   test("the suggestion and its quick fix use the disk's letter case", async () => {
