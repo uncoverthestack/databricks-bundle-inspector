@@ -27,7 +27,9 @@ Only the latest release on the VS Code Marketplace and Open VSX receives fixes.
   CLI itself can run code while it loads a bundle (shell commands under `experimental.scripts`,
   Python under the `python` section), so the extension starts it with
   `DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION` set, which makes the CLI refuse. A test runs
-  this against every supported CLI version. Versions 0.2.0 and older did not set it.
+  this against every supported CLI version. Versions 0.2.0 and older did not set it. CLI
+  versions older than v0.246.0 don't know this variable and run that code anyway, so use a
+  supported CLI (v0.299.0 or newer).
 - It writes nothing into the folder you open. For a real target the CLI keeps working files in
   `<bundle>/.databricks`, so the extension sets `DATABRICKS_BUNDLE_TMP` to a folder in the
   system temp folder instead. A test checks that the bundle folder is unchanged after a check.
