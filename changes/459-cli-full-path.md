@@ -1,0 +1,3 @@
+Security
+
+- **The checks run the Databricks CLI by its full path, so a `databricks` file in the bundle folder can't stand in for it** ([#459](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/459)). The CLI found on PATH was run by name from the bundle folder, where Windows looks first, and so do macOS and Linux when PATH has an empty or `.` entry. Now the inspector finds the file once and always runs that one. PATH entries that aren't full paths, and PATH folders inside the open workspace, are skipped. On Windows the sign-in terminal tells cmd.exe not to look in the bundle folder either. The sidebar shows the file the checks run.

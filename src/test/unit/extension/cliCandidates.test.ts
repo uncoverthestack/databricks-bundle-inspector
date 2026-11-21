@@ -57,6 +57,34 @@ describe("pathEntries", () => {
   });
 });
 
+describe("pathEntries keeps only full paths outside the workspace (#459)", () => {
+  test("drops empty, . and other relative entries, which mean the folder the CLI runs in", () => {
+    expect(pathEntries(":/a:.:./b:b:~/c:/d:", "darwin")).toEqual(["/a", "/d"]);
+    expect(pathEntries(";C:\\a;.;.\\b;b;C:b;\\c;C:/d", "win32")).toEqual(["C:\\a", "C:/d"]);
+  });
+
+  test("keeps a Windows network share", () => {
+    expect(pathEntries("\\\\server\\share\\bin", "win32")).toEqual(["\\\\server\\share\\bin"]);
+  });
+
+  test("drops folders inside a workspace folder, and the folder itself", () => {
+    expect(pathEntries("/work/repo:/work/repo/bin:/work/repo-other/bin:/work:/usr/bin", "linux", ["/work/repo"])).toEqual([
+      "/work/repo-other/bin",
+      "/work",
+      "/usr/bin",
+    ]);
+  });
+
+  test("ignores letter case for that on Windows only", () => {
+    expect(pathEntries("C:\\Work\\Repo\\bin;C:\\tools", "win32", ["c:\\work\\repo"])).toEqual(["C:\\tools"]);
+    expect(pathEntries("/Work/Repo/bin:/tools", "linux", ["/work/repo"])).toEqual(["/Work/Repo/bin", "/tools"]);
+  });
+
+  test("a folder named like ..x inside the workspace is still inside it", () => {
+    expect(pathEntries("/work/repo/..bin:/tools", "linux", ["/work/repo"])).toEqual(["/tools"]);
+  });
+});
+
 describe("cliFilesOnPath", () => {
   test("lists only folders that hold the CLI file, in PATH order", () => {
     const files = new Set(["/b/databricks", "/c/databricks"]);

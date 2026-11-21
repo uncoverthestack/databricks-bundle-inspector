@@ -29,6 +29,7 @@ function machine(overrides: Partial<CliLookupEnvironment> & { files?: string[] }
     pathValue: "",
     env: {},
     isFile: (file) => files.has(file),
+    canRun: (file) => files.has(file),
     readRegistryPath: async () => undefined,
     extraCandidates: () => [],
     ...overrides,
@@ -36,6 +37,8 @@ function machine(overrides: Partial<CliLookupEnvironment> & { files?: string[] }
 }
 
 const NEW_CLI = { stdout: "Databricks CLI v0.299.0", stderr: "" };
+/** A machine whose PATH has one `databricks`, in /usr/local/bin. */
+const ON_PATH = { pathValue: "/usr/local/bin", files: ["/usr/local/bin/databricks"] };
 const PIP_CLI = { stdout: "Version 0.18.0", stderr: "" };
 
 describe("resolveDatabricksCli", () => {
@@ -79,10 +82,10 @@ describe("resolveDatabricksCli", () => {
         stderr: "",
       });
 
-    await expect(resolveDatabricksCli(undefined, machine())).resolves.toEqual({ ok: false, problem: "not_installed" });
-    await expect(resolveDatabricksCli(undefined, machine())).resolves.toMatchObject({
+    await expect(resolveDatabricksCli(undefined, machine(ON_PATH))).resolves.toEqual({ ok: false, problem: "not_installed" });
+    await expect(resolveDatabricksCli(undefined, machine(ON_PATH))).resolves.toMatchObject({
       ok: true,
-      candidate: "databricks",
+      candidate: "/usr/local/bin/databricks",
     });
 
     expect(mockRunVersionCommand).toHaveBeenCalledTimes(2);
@@ -103,16 +106,16 @@ describe("resolveDatabricksCli", () => {
       .mockRejectedValueOnce(new Error("spawn ENOENT"))
       .mockResolvedValueOnce({ stdout: "Databricks CLI v0.295.0", stderr: "" });
 
-    await expect(resolveDatabricksCli("/opt/wrong/databricks", machine())).resolves.toMatchObject({
+    await expect(resolveDatabricksCli("/opt/wrong/databricks", machine(ON_PATH))).resolves.toMatchObject({
       ok: true,
-      candidate: "databricks",
+      candidate: "/usr/local/bin/databricks",
     });
   });
 
   test("reports a databricks command that is not the Databricks CLI", async () => {
     mockRunVersionCommand.mockResolvedValue({ stdout: "Version 0.18.0", stderr: "" });
 
-    await expect(resolveDatabricksCli(undefined, machine())).resolves.toEqual({
+    await expect(resolveDatabricksCli(undefined, machine(ON_PATH))).resolves.toEqual({
       ok: false,
       problem: "not_databricks_cli",
       versionOutput: "Version 0.18.0",
@@ -136,7 +139,7 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
   }
 
   test("uses a later databricks on the PATH when the first is the legacy pip CLI", async () => {
-    versions({ databricks: PIP_CLI, "/usr/local/bin/databricks": PIP_CLI, "/opt/homebrew/bin/databricks": NEW_CLI });
+    versions({ "/usr/local/bin/databricks": PIP_CLI, "/opt/homebrew/bin/databricks": NEW_CLI });
     const lookup = machine({
       pathValue: "/usr/local/bin:/opt/homebrew/bin",
       files: ["/usr/local/bin/databricks", "/opt/homebrew/bin/databricks"],
@@ -149,7 +152,7 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
   });
 
   test("still reports the pip CLI when no other databricks works", async () => {
-    versions({ databricks: PIP_CLI, "/usr/local/bin/databricks": PIP_CLI });
+    versions({ "/usr/local/bin/databricks": PIP_CLI });
     const lookup = machine({ pathValue: "/usr/local/bin", files: ["/usr/local/bin/databricks"] });
 
     await expect(resolveDatabricksCli(undefined, lookup)).resolves.toEqual({
@@ -214,7 +217,7 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
     const lookup = machine({ extraCandidates: () => ["/gone/bin/databricks"] });
 
     await expect(resolveDatabricksCli(undefined, lookup)).resolves.toEqual({ ok: false, problem: "not_installed" });
-    expect(mockRunVersionCommand).toHaveBeenCalledTimes(1);
+    expect(mockRunVersionCommand).not.toHaveBeenCalled();
   });
 
   test("skips an old shipped CLI that does not answer like the Databricks CLI", async () => {
@@ -232,10 +235,13 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
   });
 
   test("does nothing extra when databricks on the PATH works", async () => {
-    versions({ databricks: NEW_CLI });
+    versions({ "C:\\tools\\databricks.exe": NEW_CLI });
     const readRegistryPath = jest.fn(async () => undefined);
     const extraCandidates = jest.fn(() => []);
-    await resolveDatabricksCli(undefined, machine({ platform: "win32", readRegistryPath, extraCandidates }));
+    await resolveDatabricksCli(
+      undefined,
+      machine({ platform: "win32", pathValue: "C:\\tools", files: ["C:\\tools\\databricks.exe"], readRegistryPath, extraCandidates }),
+    );
 
     expect(mockRunVersionCommand).toHaveBeenCalledTimes(1);
     expect(readRegistryPath).not.toHaveBeenCalled();
@@ -251,7 +257,62 @@ describe("resolveDatabricksCli, when databricks on the PATH does not work", () =
       ok: true,
       candidate: "/dir150/databricks",
     });
-    expect(mockRunVersionCommand).toHaveBeenCalledTimes(2);
+    expect(mockRunVersionCommand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resolveDatabricksCli runs the CLI by its full path, never by name (#459)", () => {
+  beforeEach(() => {
+    invalidateDatabricksCliCache();
+    mockRunVersionCommand.mockReset();
+    mockRunVersionCommand.mockResolvedValue(NEW_CLI);
+  });
+
+  const ranOnlyFullPaths = () =>
+    expect(mockRunVersionCommand.mock.calls.map(([file]) => file).filter((file) => !file.startsWith("/"))).toEqual([]);
+
+  test.each([
+    ["an empty entry first", ":/usr/local/bin"],
+    ["a . entry first", ".:/usr/local/bin"],
+    ["a relative entry first", "bin:/usr/local/bin"],
+    ["a ~ entry first, which only a shell expands", "~/bin:/usr/local/bin"],
+  ])("with %s, the PATH folder's CLI", async (_label, pathValue) => {
+    const lookup = machine({ pathValue, files: ["databricks", "bin/databricks", "~/bin/databricks", "/usr/local/bin/databricks"] });
+
+    await expect(resolveDatabricksCli(undefined, lookup)).resolves.toMatchObject({ ok: true, candidate: "/usr/local/bin/databricks" });
+    ranOnlyFullPaths();
+  });
+
+  test("leaves out a PATH folder inside an open workspace folder, which came with the repo", async () => {
+    const lookup = machine({
+      pathValue: "/work/repo/.venv/bin:/usr/local/bin",
+      files: ["/work/repo/.venv/bin/databricks", "/usr/local/bin/databricks"],
+      workspaceFolders: () => ["/work/repo"],
+    });
+
+    await expect(resolveDatabricksCli(undefined, lookup)).resolves.toMatchObject({ ok: true, candidate: "/usr/local/bin/databricks" });
+    expect(mockRunVersionCommand).not.toHaveBeenCalledWith("/work/repo/.venv/bin/databricks");
+  });
+
+  test("is not installed when only the bundle folder or the repo has one", async () => {
+    const lookup = machine({
+      pathValue: ".:/work/repo/bin",
+      files: ["databricks", "/work/repo/bin/databricks"],
+      workspaceFolders: () => ["/work/repo"],
+    });
+
+    await expect(resolveDatabricksCli(undefined, lookup)).resolves.toEqual({ ok: false, problem: "not_installed" });
+    expect(mockRunVersionCommand).not.toHaveBeenCalled();
+  });
+
+  test("skips a file the OS would not run, as running it by name does", async () => {
+    const lookup = machine({
+      pathValue: "/a:/b",
+      files: ["/a/databricks", "/b/databricks"],
+      canRun: (file) => file === "/b/databricks",
+    });
+
+    await expect(resolveDatabricksCli(undefined, lookup)).resolves.toMatchObject({ ok: true, candidate: "/b/databricks" });
   });
 });
 

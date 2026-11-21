@@ -77,6 +77,26 @@ function environmentProfile(env: NodeJS.ProcessEnv = process.env): string | unde
   return env.DATABRICKS_CONFIG_PROFILE?.trim() || undefined;
 }
 
+/**
+ * The sign-in terminal's additions to its environment. A CLI found by name gets its folder
+ * first on PATH. On Windows, cmd.exe looks in the folder it runs in, the bundle folder, before
+ * PATH; `NoDefaultCurrentDirectoryInExePath` tells it not to, so a `databricks` file that came
+ * with the repo can't stand in for the CLI (#459). PowerShell never looks there.
+ */
+export function terminalEnv(
+  cli: { command: string; folder?: string },
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
+  return {
+    ...(cli.folder !== undefined
+      ? { [key]: `${cli.folder}${platform === "win32" ? ";" : ":"}${env[key] ?? ""}` }
+      : {}),
+    ...(platform === "win32" ? { NoDefaultCurrentDirectoryInExePath: "1" } : {}),
+  };
+}
+
 /** The sign-in for the target the graph shows; one at a time, as there is one graph. */
 export class SignInFlow implements vscode.Disposable {
   private flow: Flow | undefined;
@@ -204,7 +224,7 @@ export class SignInFlow implements vscode.Disposable {
     const terminal = vscode.window.createTerminal({
       name: "Databricks sign-in",
       cwd: root,
-      ...("folder" in cli ? { env: { [pathKey()]: `${cli.folder}${path.delimiter}${process.env[pathKey()] ?? ""}` } } : {}),
+      env: terminalEnv(cli),
     });
     flow.terminal = terminal;
     terminal.show();
@@ -369,9 +389,4 @@ function canWrite(file: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** `Path` on Windows, as the environment spells it there. */
-function pathKey(): string {
-  return Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
 }
