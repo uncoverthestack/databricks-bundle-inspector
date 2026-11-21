@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import { fileStatusKey, hasTemplate, isRemotePath } from "../../../bundle/fileStatus.js";
+import { isRemotePath as taskIsRemotePath } from "../../../bundle/resources/task.js";
 import { GROUPED_ISSUE_KINDS, issueGroupName, issueKindLabel, NAMED_ISSUE_KINDS } from "../../../bundle/issueLabels.js";
 import { INSPECTOR_ISSUE_KINDS } from "../../../bundle/issues.js";
 
@@ -12,6 +13,10 @@ describe("file status (#392)", () => {
     ["s3://bucket/a.jar", {}, "remote"],
     ["abfss://c@acct.dfs.core.windows.net/a", {}, "remote"],
     ["gs://bucket/a", {}, "remote"],
+    ["/Users/me@example.com/nb", { resolvedPath: "/b/x", exists: false }, "remote"],
+    ["/Shared/existing_notebook", {}, "remote"],
+    ["/Repos/team/repo/nb", {}, "remote"],
+    ["/Volumes/main/raw/code/job.py", {}, "remote"],
     ["./nb.py", { resolvedPath: "/b/nb.py", exists: false }, "missing"],
     ["./nb.py", { resolvedPath: "/b/nb.py", exists: true }, "found"],
     ["./nb.py", { exists: true }, "found"],
@@ -25,6 +30,10 @@ describe("file status (#392)", () => {
     expect(isRemotePath("/Workspace/${var.x}")).toBe(true);
     expect(hasTemplate("/Workspace/${var.x}")).toBe(true);
     expect(fileStatusKey({ path: "/Workspace/${var.x}" })).toBe("template");
+  });
+
+  test("the graph, the panel and the export use one rule (#455)", () => {
+    expect(taskIsRemotePath).toBe(isRemotePath);
   });
 
   test("a workspace path needs the /Workspace/ folder, not just the word", () => {

@@ -54,7 +54,12 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                   </span>
                 </span>
                 {item.issueCount > 0 && (
-                  <span className="shrink-0 rounded bg-error/15 px-1.5 text-[10px] font-semibold text-fg-strong">
+                  // The same colours as the task's box: red for an error, amber for warnings only.
+                  <span
+                    className={`shrink-0 rounded px-1.5 text-[10px] font-semibold text-fg-strong ${
+                      item.problemTone === "warning" ? "bg-warning/15" : item.problemTone === "error" ? "bg-error/15" : "bg-hover"
+                    }`}
+                  >
                     {item.issueCount}
                   </span>
                 )}

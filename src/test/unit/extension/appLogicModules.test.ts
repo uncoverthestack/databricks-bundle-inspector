@@ -217,6 +217,30 @@ describe("header panels and search (#392)", () => {
     expect(buildSearchItems(graph, null, bundle, null)).toEqual([]);
   });
 
+  test("search and the Tasks panel count what the task's box counts, from the inspector's problems (#455)", () => {
+    const listed: Array<TaskIssue & TaskProblemIssue> = [
+      { id: "dep", kind: "unknown_task_dependency", severity: "error", title: "t", taskId: task("skip").id },
+      { id: "warn", kind: "unused_parameter", severity: "warning", title: "t", taskId: task("check").id },
+      { id: "note", kind: "path_not_checked", severity: "info", title: "t", taskId: task("a_task_with_a_name_longer_than_twenty_six").id },
+    ];
+    const search = buildSearchItems(graph, job(), bundle, null, listed);
+    const box = (key: string) => buildDagFlow(graph, "nightly", bundle, null, listed).flowNodes.find((node) => node.id === task(key).id)?.data as {
+      issueCounts: { total: number };
+      problemTone: string;
+    };
+    for (const key of ["check", "load", "skip", "a_task_with_a_name_longer_than_twenty_six"]) {
+      const item = search.find((entry) => entry.label === key)!;
+      expect([key, item.issueCount, item.problemTone]).toEqual([key, box(key).issueCounts.total, box(key).problemTone]);
+    }
+    expect(search.find((entry) => entry.label === "skip")).toMatchObject({ issueCount: 1, problemTone: "error" });
+    expect(search.find((entry) => entry.label === "check")).toMatchObject({ issueCount: 1, problemTone: "warning" });
+    // load's missing files are not in this list, so like its box it shows none.
+    expect(search.find((entry) => entry.label === "load")).toMatchObject({ issueCount: 0, problemTone: "none" });
+
+    const severity = Object.fromEntries(buildStatPanelItems(graph, job(), bundle, null, [], listed).tasks.map((item) => [item.title, item.severity]));
+    expect(severity).toEqual({ a_task_with_a_name_longer_than_twenty_six: undefined, check: "warning", load: undefined, skip: "error" });
+  });
+
   test("a variable's chip and a resolved value", () => {
     expect(variableResolutionLabel({ unresolved: true, resolutionSource: "target_override" })).toBe("UNRESOLVED");
     expect(variableResolutionLabel({ source: "lookup" })).toBe("LOOKUP");

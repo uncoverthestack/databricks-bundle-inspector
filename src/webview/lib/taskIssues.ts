@@ -7,6 +7,7 @@ import { fileStatusKey, type FileStatusKey } from "../../bundle/fileStatus.js";
 import { issueKindLabel } from "../../bundle/issueLabels.js";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { isVariableResolvedForTarget } from "../../bundle/targetResolution.js";
+import { countsFor, problemTone, type TaskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
 import { UI_COLOR } from "./vscodeTheme.js";
 
 type Bundle = ParsedBundleConfig | null | undefined;
@@ -142,6 +143,27 @@ export function getTaskIssueCounts(taskNode: TaskNode, parsedBundle: Bundle, tar
     unresolvedVariables,
     total: missingFiles + missingLibraries + unresolvedVariables,
   };
+}
+
+/**
+ * A task box's problem count and border colour. From the inspector's problem list when
+ * there is one, as Issues does; without it (an old or partial result), the box's own
+ * recount of missing files, libraries and variables, which are all errors.
+ */
+export function taskBoxProblems(
+  task: TaskNode,
+  parsedBundle: Bundle,
+  targetName: Target,
+  inspectorIssues: readonly TaskProblemIssue[],
+  problemsByTask: Map<string, TaskProblemCounts>,
+) {
+  if (inspectorIssues.length > 0) {
+    const counts = countsFor(problemsByTask, task.id);
+    return { issueCounts: counts, problemTone: problemTone(counts) };
+  }
+  const recount = getTaskIssueCounts(task, parsedBundle, targetName);
+  const counts = { errors: recount.total, warnings: 0, infos: 0, total: recount.total };
+  return { issueCounts: counts, problemTone: problemTone(counts) };
 }
 
 /** `file.yml:12`, or just the file name when there is no line. */

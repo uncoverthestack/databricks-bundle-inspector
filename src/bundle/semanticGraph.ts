@@ -2,6 +2,7 @@ import path from "node:path";
 import { decideDocumentationGeneration } from "./documentationPolicy.js";
 import type { BundleGraph, BundleGraphNode, ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { issueBelongsToJob, type InspectorIssue } from "./issues.js";
+import { isRemotePath } from "./fileStatus.js";
 
 export type SemanticFileStatus =
   | "found"
@@ -75,16 +76,6 @@ function sortStrings(values: string[]): string[] {
 
 function taskKeyFromId(taskId: string): string {
   return taskId.split(".tasks.").at(-1) ?? taskId;
-}
-
-function isRemotePath(value: string): boolean {
-  return (
-    value.startsWith("/Workspace/") ||
-    value.startsWith("dbfs:/") ||
-    value.startsWith("s3://") ||
-    value.startsWith("abfss://") ||
-    value.startsWith("gs://")
-  );
 }
 
 function hasTemplateExpression(value: string): boolean {

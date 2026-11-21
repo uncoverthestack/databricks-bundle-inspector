@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import { isAbsolute, resolve } from "node:path";
+import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
 
 export interface TaskNodeData {
   taskKey: string;
@@ -198,19 +199,7 @@ export interface SourceLocation {
 export type SourceLocationResolver = (yamlPath: string) => SourceLocation | undefined;
 
 // Absolute workspace paths (with or without the /Workspace prefix) never exist locally.
-export function isRemotePath(p: string): boolean {
-  return (
-    p.startsWith("/Workspace/") ||
-    p.startsWith("/Users/") ||
-    p.startsWith("/Shared/") ||
-    p.startsWith("/Repos/") ||
-    p.startsWith("/Volumes/") ||
-    p.startsWith("dbfs:/") ||
-    p.startsWith("s3://") ||
-    p.startsWith("abfss://") ||
-    p.startsWith("gs://")
-  );
-}
+export { isRemotePath } from "../fileStatus.js";
 
 export function containsTemplate(p: string): boolean {
   return p.includes("${") || p.includes("{{");
@@ -225,7 +214,7 @@ export function resolveLocalPath(
     extensions?: string[];
   },
 ): { resolvedPath: string | undefined; exists: boolean } {
-  if (isRemotePath(rawPath) || containsTemplate(rawPath)) {
+  if (isRemotePathRule(rawPath) || containsTemplate(rawPath)) {
     return { resolvedPath: undefined, exists: false };
   }
   if (isAbsolute(rawPath)) {

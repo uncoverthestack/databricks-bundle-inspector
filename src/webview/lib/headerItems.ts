@@ -5,12 +5,13 @@
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { resolveExpressionForTarget, resolveVariableForTarget } from "../../bundle/targetResolution.js";
 import { buildIssueItems, type IssueItem, type ValidationIssue } from "./issueItems.js";
+import { taskProblemCounts, type TaskProblemIssue, type TaskProblemTone } from "./taskProblems.js";
 import {
   basename,
   getCurrentJobTaskNodes,
   getDefinedVariableNames,
   getFileStatus,
-  getTaskIssueCounts,
+  taskBoxProblems,
   type FileStatus,
   type GraphLike,
   type TaskIssue,
@@ -50,8 +51,17 @@ export interface PanelItem {
   subtitle: string;
   taskId: string | undefined;
   kind: string | undefined;
-  severity: "error" | undefined;
+  severity: "error" | "warning" | undefined;
 }
+
+/** A task's problems as its box on the graph shows them, so search and the Tasks panel agree with it. */
+function taskProblemsFor(tasks: readonly TaskNode[], parsedBundle: Bundle, targetName: Target, inspectorIssues: readonly TaskIssue[]) {
+  const issues = inspectorIssues as readonly TaskProblemIssue[];
+  const problemsByTask = taskProblemCounts(issues);
+  return new Map(tasks.map((task) => [task.id, taskBoxProblems(task, parsedBundle, targetName, issues, problemsByTask)]));
+}
+
+const SEVERITY_OF_TONE: Record<TaskProblemTone, PanelItem["severity"]> = { error: "error", warning: "warning", none: undefined };
 
 interface Collected {
   title: string;
@@ -76,6 +86,7 @@ export function buildStatPanelItems(
   inspectorIssues: readonly TaskIssue[] | undefined,
 ): Record<"tasks" | "files" | "pipelines" | "variables" | "secrets" | "compute", PanelItem[]> & { issues: IssueItem[] } {
   const tasks = getCurrentJobTaskNodes(graph, jobNode);
+  const problems = taskProblemsFor(tasks, parsedBundle, targetName, inspectorIssues ?? []);
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const taskIds = new Set(tasks.map((task) => task.id));
   const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -221,7 +232,7 @@ export function buildStatPanelItems(
         subtitle: task.taskTypeLabel ?? "Task",
         taskId: task.id,
         kind: task.kind,
-        severity: getTaskIssueCounts(task, parsedBundle, targetName).total > 0 ? "error" : undefined,
+        severity: SEVERITY_OF_TONE[problems.get(task.id)!.problemTone],
       })),
     files: fromMap(files, "Files", (item, taskCountLabel) => `${item.status?.label ?? "FILE"} · ${taskCountLabel}`),
     pipelines: fromMap(pipelines, "Pipelines", (item, taskCountLabel) => `${item.taskTypeLabel ?? "Pipeline"} · ${taskCountLabel}`),
@@ -241,25 +252,29 @@ export interface SearchItem {
   kind: string | undefined;
   taskId: string;
   issueCount: number;
+  problemTone: TaskProblemTone;
 }
 
-/** The search box's items: the job's tasks, each with its own problem count. */
+/** The search box's items: the job's tasks, each with the problem count its box shows. */
 export function buildSearchItems(
   graph: GraphLike | null | undefined,
   jobNode: { id: string } | null | undefined,
   parsedBundle: Bundle,
   targetName: Target,
+  inspectorIssues: readonly TaskIssue[] = [],
 ): SearchItem[] {
   const tasks = getCurrentJobTaskNodes(graph, jobNode);
+  const problems = taskProblemsFor(tasks, parsedBundle, targetName, inspectorIssues);
   return tasks.map((task) => {
-    const issues = getTaskIssueCounts(task, parsedBundle, targetName);
+    const { issueCounts, problemTone } = problems.get(task.id)!;
     return {
       id: `task:${task.id}`,
       label: task.displayName,
       subtitle: task.taskTypeLabel ?? "Task",
       kind: task.kind,
       taskId: task.id,
-      issueCount: issues.total,
+      issueCount: issueCounts.total,
+      problemTone,
     };
   });
 }
