@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { CLI_NOTEBOOK_EXTENSIONS } from "./notebookFiles.js";
+import { own } from "./ownKeys.js";
 
 /**
  * When the Databricks CLI fully resolves a real target, it rewrites local paths to where
@@ -112,7 +113,7 @@ function slotsIn(resources: unknown): PathSlot[] {
 function substituted(value: string, output: Record<string, unknown> | undefined): string | undefined {
   const filled = value.replace(/\$\{(var|bundle)\.([A-Za-z0-9_-]+)\}/g, (match, scope: string, name: string) => {
     const resolved =
-      scope === "var" ? record(record(output?.variables)?.[name])?.value : record(output?.bundle)?.[name];
+      scope === "var" ? record(own(record(output?.variables), name))?.value : own(record(output?.bundle), name);
     return typeof resolved === "string" ? resolved : match;
   });
   return filled.includes("${") ? undefined : filled;

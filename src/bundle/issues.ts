@@ -20,6 +20,7 @@ import type { RunTarget } from "./taskFileDetections.js";
 import { findVariableLoops } from "./variableLoops.js";
 import { findWorkspacePathClashes } from "./workspacePathClashes.js";
 import type { VariableSources } from "./variableSources.js";
+import { own } from "./ownKeys.js";
 
 export type InspectorIssueSeverity = "error" | "warning" | "info";
 
@@ -460,7 +461,7 @@ function widgetParameterIssues(
       if (passed.has(read.name) || reported.has(read.name)) continue;
       // A default created in the other language's cells doesn't reach this read when
       // the notebook runs as a job; one from a %run notebook is not language-bound here.
-      const ownLanguages = usage.defaultLanguages[read.name];
+      const ownLanguages = own(usage.defaultLanguages, read.name);
       if (ownLanguages && !ownLanguages.includes(read.language)) {
         reported.add(read.name);
         const where = read.language === "sql" ? "a SQL cell" : "a Python cell";
@@ -1368,7 +1369,7 @@ export function variableLoopIssues(
       : `The Databricks CLI can't resolve them, so validate and deploy fail on ${where} with "cycle detected in field resolution". Give one of them a value that doesn't refer back. A BUNDLE_VAR_ environment variable or --var could also set one, which the inspector doesn't see.`;
     return loop.variables.map((name) => {
       const override = loop.overrideTarget[name];
-      const location = override ? sources[name]?.targets[override] : sources[name]?.definition;
+      const location = override ? own(own(sources, name)?.targets, override) : own(sources, name)?.definition;
       return {
         id: `variable-loop:${chain}:${JSON.stringify(loop.overrideTarget)}:${name}`,
         severity: loop.complex ? ("warning" as const) : ("error" as const),

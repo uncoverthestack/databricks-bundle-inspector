@@ -5,6 +5,7 @@ import { outsideReportVariables, type OutsideReportVariable } from "./reportVari
 import { reportLocation } from "./reportLocation.js";
 import { REVIEW_REPORT_MAX_CHARACTERS, REVIEW_REPORT_TASK_LIMIT, startsText, type ReviewReportContext } from "./reviewReport.js";
 import { buildBundleOverview, CHECKED_RESOURCE_GROUPS } from "../webview/lib/bundleOverview.js";
+import { own } from "./ownKeys.js";
 
 export interface BundleReviewContext extends ReviewReportContext {
   /** The bundle definition and loaded include files, including ones defining no resources. */
@@ -40,10 +41,10 @@ export function bundleReviewReport(
   const outsideSources = context.structuralPreview ? [] : context.outsideVariables ?? outsideReportVariables(context.bundleRoot, target);
   // CLI v1.26.0 SetVariables checks the environment before lookup, and the overrides
   // file after lookup. Both orders are exercised by the real-CLI test.
-  const outsideNames = new Set(outsideSources.filter(source => source.source === "environment" || source.name === "*" || !record(resolution.variables?.[source.name]).lookup).map(source => source.name));
+  const outsideNames = new Set(outsideSources.filter(source => source.source === "environment" || source.name === "*" || !record(own(resolution.variables, source.name)).lookup).map(source => source.name));
   const hidden: string[] = [];
   const variableResults = new Map(variableNames.map(name => {
-    const definition = record(resolution.variables?.[name]);
+    const definition = record(own(resolution.variables, name));
     const result = resolveVariableForTarget(resolution, name, target);
     const outside = outsideNames.has("*") || outsideNames.has(name) || result.source === "outside_files" || (result.source === "cli_resolved" && !definition.lookup && !("default" in definition));
     if (outside) {

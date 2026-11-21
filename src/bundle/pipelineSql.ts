@@ -8,6 +8,7 @@
  * Comments (nested block comments allowed) and common table expressions follow the
  * Databricks SQL language manual.
  */
+import { own } from "./ownKeys.js";
 
 export type PipelineDatasetKind = "streaming_table" | "materialized_view" | "view" | "table";
 
@@ -376,7 +377,7 @@ function placeholderFree(name: string, config: Record<string, string>): string |
   if (!name.includes("$")) return name;
   let unresolved = false;
   const filled = name.replace(/\$\{([^}]*)\}/g, (_, key: string) => {
-    const value = config[key.trim()];
+    const value = own(config, key.trim());
     if (value === undefined) { unresolved = true; return ""; }
     return value;
   });

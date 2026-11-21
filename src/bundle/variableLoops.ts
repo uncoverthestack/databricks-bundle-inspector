@@ -1,5 +1,6 @@
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { isFullFormOverride, splitVariableReference } from "./targetResolution.js";
+import { hasOwnKey, own } from "./ownKeys.js";
 
 /**
  * Loops between variable values (#228), which the structural preview never resolves, so
@@ -59,7 +60,7 @@ function at(value: unknown, path: (string | number)[]): { found: boolean; value?
   let current = value;
   for (const part of path) {
     if (Array.isArray(current) && typeof part === "number" && part < current.length) current = current[part];
-    else if (isContainer(current) && !Array.isArray(current) && typeof part === "string" && part in current) current = current[part];
+    else if (isContainer(current) && !Array.isArray(current) && typeof part === "string" && hasOwnKey(current, part)) current = current[part];
     else return { found: false };
   }
   return { found: true, value: current };
@@ -71,9 +72,9 @@ function valuesFor(
   target: string | undefined,
 ): Map<string, Value> {
   const values = new Map<string, Value>();
-  const overrides = target ? (parsedBundle.targets?.[target]?.variables as Record<string, unknown> | undefined) : undefined;
+  const overrides = target ? (own(parsedBundle.targets, target)?.variables as Record<string, unknown> | undefined) : undefined;
   for (const [name, definition] of Object.entries(parsedBundle.variables ?? {})) {
-    if (overrides && name in overrides) {
+    if (overrides && hasOwnKey(overrides, name)) {
       const raw = overrides[name];
       const value = isFullFormOverride(raw) ? (raw.value ?? raw.default) : raw;
       if (value !== undefined) {
@@ -82,7 +83,7 @@ function valuesFor(
       }
     }
     const def = definition as Record<string, unknown> | undefined;
-    if (def && "default" in def) values.set(name, { value: def.default });
+    if (def && hasOwnKey(def, "default")) values.set(name, { value: def.default });
   }
   return values;
 }

@@ -15,6 +15,7 @@
  *   the cell's language. The notebook's own language comes from its metadata.
  * - Any other file is one cell in the file's language.
  */
+import { emptyRecord } from "../ownKeys.js";
 
 export type CodeLanguage = "python" | "sql";
 
@@ -43,7 +44,7 @@ function parseRun(text: string, line: number): NotebookRun | undefined {
   // No `$` anchor: a CRLF file leaves "\r" at the end of the line, which `.` can't match.
   const match = /%run\s+("[^"\r\n]*"|'[^'\r\n]*'|[^\s"']\S*)(.*)/.exec(text);
   if (!match) return undefined;
-  const args: Record<string, string> = {};
+  const args = emptyRecord<string>();
   const argument = /\$(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
   let arg: RegExpExecArray | null;
   while ((arg = argument.exec(match[2] ?? "")) !== null) {

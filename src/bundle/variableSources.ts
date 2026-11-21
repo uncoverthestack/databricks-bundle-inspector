@@ -2,6 +2,7 @@ import { isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, vi
 import type { Document, Node } from "yaml";
 import type { YamlLocation } from "./sourceLocations.js";
 import { VARIABLE_SETTINGS } from "./targetResolution.js";
+import { emptyRecord, own } from "./ownKeys.js";
 
 /** Where a bundle variable is set: its top-level definition and each target's override. */
 export interface VariableSources {
@@ -89,8 +90,8 @@ export function entries(anchors: Anchors, node: unknown, depth = 0): Map<string,
  * a value taken from an anchor points where the anchor writes it.
  */
 export function findVariableSources(files: readonly LoadedFile[]): Record<string, VariableSources> {
-  const sources: Record<string, VariableSources> = {};
-  const sourcesOf = (name: string) => (sources[name] ??= { targets: {} });
+  const sources = emptyRecord<VariableSources>();
+  const sourcesOf = (name: string) => own(sources, name) ?? (sources[name] = { targets: emptyRecord() });
 
   for (const { file, text } of files) {
     const lineCounter = new LineCounter();
