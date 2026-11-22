@@ -4,6 +4,40 @@ All notable changes to the **Databricks Bundle Inspector** extension are documen
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-22
+
+### Added
+
+- **A notebook or file path that points at a folder is reported** ([#465](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/465)). New error `path_is_a_folder`, for tasks and pipeline `notebook` and `file` libraries. `bundle validate` without a target passes, and with one the CLI turns it down with "unable to determine if ... is a notebook: ... is a directory".
+- **The bundle overview draws lines from an app's `resources` entries given by name** ([#446](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/446)). A SQL warehouse, secret scope, serving endpoint, app, database instance, Postgres branch or database, or Unity Catalog volume, table, function, connection or model service that an app names links to the bundle's own box when the name matches one, and to a dashed box otherwise, shared with anything else that names it. Entries given by a job, experiment or Genie space ID draw no line, since those IDs only exist after deploy.
+- **The bundle overview draws a dashed box for a warehouse or schema named by ID, name or variable** ([#444](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/444)). A dashboard, alert, Genie space or quality monitor with a plain `warehouse_id` links to the same dashed warehouse box a job gets, so you can see they share it. A volume, registered model or Unity Catalog secret links to a dashed `catalog.schema` box. Lines between boxes in the same column now bend further out the longer they are, so they no longer sit on top of each other.
+
+### Changed
+
+- **The telemetry notice says when sending starts: in another VS Code window or after a restart** ([#471](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/471)). It said "until VS Code is next opened", but another window sends too. Nothing is sent from the window that shows the notice, as before.
+- **The docs say that the extension's "your code is never run" promise needs Databricks CLI v0.246.0 or newer** ([#457](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/457)). An older CLI ignores the setting that stops it from running a bundle's scripts and Python, so the README, the security policy and the usage guide now say so.
+- **The bundle overview's "AI gateway services" group is now "Unity Gateway"** ([#425](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/425)), the name the Databricks docs use for model services, model provider services and MCP services.
+
+### Fixed
+
+- **A path with the wrong letter case is "File not found" on every OS, with the right one suggested** ([#475](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/475)). `./Notebooks/Main.py` for `notebooks/main.py` passed on macOS and Windows, which ignore case, then the job failed with "Unable to access the notebook", because the workspace doesn't. Linux already reported it; it now also says "Did you mean "./notebooks/main.py"?", with a quick fix.
+- **A notebook path with the wrong letter case and no extension gets the right suggestion, and a pipeline glob folder with the wrong case is reported, on every OS** ([#477](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/477)). `./Notebooks/Main` for `notebooks/main.py` suggested `./Notebooks/Main.py` on macOS and Windows, whose quick fix still failed at run time, and nothing on Linux; it now suggests `./notebooks/main.py`, with a quick fix. `glob: {include: ./Transformations/**}` for a `transformations` folder passed on macOS and Windows; it is now reported as on Linux, as the pipeline reads the glob in the case-sensitive workspace.
+- **Names in the review reports show as text: never a link, an image, HTML or an `@mention` that notifies someone** ([#473](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/473)). The job report pasted names and messages from the bundle into the pull request as they were. Both reports now escape them, and code such as file paths is unchanged.
+- **Findings on a setting that comes from a YAML merge key (`<<: *anchor`) point at its line** ([#467](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/467)). They had no line and showed at the top of the file. The line is where the anchor writes the value, and a key written in the task itself still wins.
+- **A wrong secret scope gets a warning on every line that uses it** ([#463](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/463)). Only the first line in a notebook was reported, so the next one only showed up after fixing it. The graph still shows the scope once.
+- **The graph opens a file whose name starts with two dots, such as `..notes.py`** ([#461](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/461)). It was taken for a file outside the workspace and nothing opened.
+- **Task search and the Tasks panel show the same problems as the task's box** ([#455](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/455)). A task with a broken `depends_on`, or any other problem besides a missing file, library or variable, used to show no count in search and no mark in the Tasks panel. Search badges are now amber for warnings only, as the boxes are. Paths under `/Shared/`, `/Users/`, `/Repos/` and `/Volumes/` show REMOTE in the Files panel instead of UNKNOWN.
+- **Names in Python strings are read as Python reads them** ([#453](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/453)). `dbutils.widgets.get("region")` reads the widget `region`, so it no longer gives a missing widget warning and an unused parameter warning for a task that passes `region`. The same applies to secret scopes and keys, task values and run paths. A `\` line continuation inside a string, in a file with Windows line ends, no longer cuts the string short.
+- **Saving a notebook run with `%run` re-checks the bundle** ([#451](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/451)). A widget warning from a `%run` notebook used to stay after the notebook was fixed, until the notebook that runs it was saved too. Creating a missing `%run` or `dbutils.notebook.run` notebook re-checks as well. So does creating, editing or deleting a file that shares a workspace path with another, such as `orphan.py` beside `orphan.sql`, even when no task names either of them.
+- **A widget, variable or setting named `constructor`, `toString`, `hasOwnProperty` or `valueOf` no longer breaks the checks** ([#449](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/449)). Reading such a widget used to crash the checks and clear every problem from the Problems panel, including unrelated ones. A variable with one of these names, overridden in a target, stopped the bundle from showing at all. A widget created with one of these names turned off that notebook's widget checks, and `${var.toString}` with no such variable was not reported as unresolved.
+- **Sign-in is offered again after `databricks auth logout`** ([#441](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/441)). When a sign-in file from an older CLI was still on disk, picking a real target said "your Databricks sign-in couldn't be used" with nothing to do next. It now says you're not signed in to this workspace and offers `databricks auth login`.
+- **Faded boxes in the bundle overview stay readable** ([#425](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/425)). When a box is pointed at or selected, the boxes it isn't linked to used to fade as a whole, which took their text to about 3:1 contrast. Now only their frame and dot fade, and their text is checked at 4.5:1 on every built-in theme.
+
+### Security
+
+- **On a shared Linux machine, the CLI's temp folder can't be taken over by another user** ([#469](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/469)). The folder the CLI keeps its working files in is now created for your user only. If it or its parent was made by someone else, can be written by others, or is a link, a new private folder is used instead.
+- **The checks run the Databricks CLI by its full path, so a `databricks` file in the bundle folder can't stand in for it** ([#459](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/459)). The CLI found on PATH was run by name from the bundle folder, where Windows looks first, and so do macOS and Linux when PATH has an empty or `.` entry. Now the inspector finds the file once and always runs that one. PATH entries that aren't full paths, and PATH folders inside the open workspace, are skipped. On Windows the sign-in terminal tells cmd.exe not to look in the bundle folder either. The sidebar shows the file the checks run.
+
 ## [0.8.0] - 2026-11-15
 
 ### Added
@@ -474,6 +508,7 @@ Initial public release. The extension is a read-only inspector for Declarative A
 - Node 22 (development).
 - Databricks CLI `v0.270.1` or newer.
 
+[0.9.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/uncoverthestack/databricks-bundle-inspector/compare/v0.6.3...v0.6.4
