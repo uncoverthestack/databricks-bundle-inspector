@@ -1,3 +1,0 @@
-Added
-
-- **The bundle overview draws lines from an app's `resources` entries given by name** ([#446](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/446)). A SQL warehouse, secret scope, serving endpoint, app, database instance, Postgres branch or database, or Unity Catalog volume, table, function, connection or model service that an app names links to the bundle's own box when the name matches one, and to a dashed box otherwise, shared with anything else that names it. Entries given by a job, experiment or Genie space ID draw no line, since those IDs only exist after deploy.
