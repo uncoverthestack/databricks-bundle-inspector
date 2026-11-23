@@ -7,7 +7,7 @@ import { validateBundle, extractBundleGraph } from "../bundle/validateBundle.js"
 import type { BundleDiagnostic } from "../bundle/validateBundle.js";
 import { enrichGraphWithFileContent } from "../bundle/graph/enrichGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
-import { getIncludedFiles, parseBundleIncludes } from "../bundle/bundleIncludes.js";
+import { getIncludedFiles, parseBundleIncludes } from "./bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
 import { notebookHeaderRuleFor } from "../bundle/notebookFiles.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
