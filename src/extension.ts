@@ -20,7 +20,7 @@ import {
   getConfiguration,
   getConfiguredDatabricksCliPath,
   getConfiguredProfile,
-} from "./databricksCli/config.js";
+} from "./extension/config.js";
 import {
   databricksCliInstallUrl,
   databricksCliUpdateUrl,
