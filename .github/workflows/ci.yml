@@ -106,3 +106,60 @@ jobs:
 
       - name: Run semantic tests (jest)
         run: npm run test:semantic
+
+  # The command-line tool (#348) as users get it: packed, installed into an empty folder and
+  # run on the oldest Node it supports, on each OS. The checks themselves are tested against
+  # real Databricks CLIs in cli-compat.yml.
+  cli-package:
+    name: CLI package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --include=optional --ignore-scripts
+
+      - name: Build and pack the CLI
+        run: |
+          npm run build:cli
+          T="$(cd "$RUNNER_TEMP" && pwd)"
+          cd cli
+          npm pack --pack-destination "$T"
+
+      - name: Use the oldest supported Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+
+      - name: Install into an empty folder and run it
+        run: |
+          T="$(cd "$RUNNER_TEMP" && pwd)"
+          W="$(pwd)"
+          mkdir "$T/try" && cd "$T/try"
+          npm init -y > /dev/null
+          npm install --ignore-scripts "$T"/uncoverthestack-databricks-bundle-inspector-*.tgz
+          test "$(npx --no-install databricks-bundle-inspector --version)" = "$(node -p "require(process.argv[1]).version" "$W/cli/package.json")"
+          npx --no-install databricks-bundle-inspector --help | grep -q "Usage: databricks-bundle-inspector check"
+          # No Databricks CLI at this path: a setup problem, exit code 3, with the reason.
+          set +e
+          npx --no-install databricks-bundle-inspector check "$W/src/test/fixtures/broken-job" --databricks-cli "$T/no-databricks" 2> err.txt
+          code=$?
+          set -e
+          cat err.txt
+          test "$code" = 3
+          grep -q "is not a working Databricks CLI" err.txt

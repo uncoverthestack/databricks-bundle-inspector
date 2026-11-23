@@ -3,13 +3,12 @@ import { readFile } from "node:fs/promises";
 import path from "path";
 import { existsSync } from "node:fs";
 import { BUNDLE_FILE_NAMES } from "../bundle/includeFiles.js";
-import { validateBundle, extractBundleGraph } from "../bundle/validateBundle.js";
+import { validateBundle } from "../bundle/validateBundle.js";
 import type { BundleDiagnostic } from "../bundle/validateBundle.js";
-import { enrichGraphWithFileContent } from "../bundle/graph/enrichGraph.js";
+import { checkedGraphOf, cliDiagnosticsOf } from "../bundle/inspectBundle.js";
 import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "../bundle/bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
-import { notebookHeaderRuleFor } from "../bundle/notebookFiles.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
 import { issueDocsUrl } from "../bundle/issueDocs.js";
 import type { InspectorIssueKind } from "../bundle/issues.js";
@@ -95,17 +94,6 @@ function inspectorIssuesToVsCodeDiagnostics(
     map.set(issue.file, existing);
   }
   return map;
-}
-
-function extractDiagnostics(result: Awaited<ReturnType<typeof validateBundle>>): BundleDiagnostic[] {
-  if (result.ok) {
-    return (
-      result.issues
-        ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
-        .flatMap((i) => i.diagnostics ?? []) ?? []
-    );
-  }
-  return result.error.diagnostics ?? [];
 }
 
 export type BundleValidationResult = Awaited<ReturnType<typeof validateBundle>>;
@@ -332,11 +320,11 @@ export async function updateBundleDiagnostics(
     ...(diagnosticsByBundle.get(bundleRoot)?.keys() ?? []),
   ]);
 
-  const fresh = toVsCodeDiagnostics(extractDiagnostics(result), bundleRoot);
+  const fresh = toVsCodeDiagnostics(cliDiagnosticsOf(result), bundleRoot);
   let graph: BundleGraph | undefined;
   const fixes = new Map<string, StoredFix[]>();
   // When validation failed, what the CLI reported without a file is all there is.
-  const cliGraphOnly = result.ok ? [] : extractDiagnostics(result).filter((d) => !d.path);
+  const cliGraphOnly = result.ok ? [] : cliDiagnosticsOf(result).filter((d) => !d.path);
   const graphOnly = {
     problems: cliGraphOnly.length,
     errors: cliGraphOnly.filter((d) => d.severity === "error").length,
@@ -347,12 +335,7 @@ export async function updateBundleDiagnostics(
     try {
       // Read file contents as the inspector panel does, so issues found in code
       // (e.g. a secret scope named by its resource key) also reach the Problems panel.
-      graph = await enrichGraphWithFileContent(
-        await extractBundleGraph(result.data, bundleRoot, {
-          notebookRule: notebookHeaderRuleFor(result.cliVersion),
-          ...(result.cliVersion ? { cliVersion: result.cliVersion } : {}),
-        }),
-      );
+      graph = await checkedGraphOf(result, bundleRoot);
       const inspectorIssues = buildInspectorIssues(
         graph,
         result.data,

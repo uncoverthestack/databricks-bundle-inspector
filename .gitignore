@@ -40,3 +40,7 @@ repo-audit
 
 # Local state the Databricks CLI writes next to a bundle when it validates
 .databricks/
+
+# Made by npm run build:cli
+cli/LICENSE
+cli/THIRD_PARTY_NOTICES.md

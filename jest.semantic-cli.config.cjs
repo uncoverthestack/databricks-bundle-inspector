@@ -30,6 +30,7 @@ module.exports = {
     "<rootDir>/src/test/integration/computeSettings.integration.test.ts",
     "<rootDir>/src/test/integration/jobEnvironments.integration.test.ts",
     "<rootDir>/src/test/integration/targetChecks.integration.test.ts",
+    "<rootDir>/src/test/integration/cli.integration.test.ts",
   ],
   modulePathIgnorePatterns: ["<rootDir>/.vscode-test/", "<rootDir>/out/"],
   verbose: true,
