@@ -110,4 +110,6 @@ A target that can't be checked is never replaced by the preview: no sign-in, a p
 
 The command-line tool has the extension's version number: the same version of both runs the same checks.
 
+It is published under two names with the same contents: `@uncoverthestack/databricks-bundle-inspector` and `databricks-bundle-inspector`.
+
 [Source, issues and the full documentation](https://github.com/uncoverthestack/databricks-bundle-inspector) · Apache-2.0

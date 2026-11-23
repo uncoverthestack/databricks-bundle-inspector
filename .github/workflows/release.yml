@@ -1,7 +1,8 @@
 name: Release
 
 # Runs only for a pushed tag, so every release is built from its tag's commit. It creates the
-# GitHub release, then starts publish-release.yml, which publishes the release's VSIX. To
+# GitHub release, then starts publish-release.yml, which publishes the release's VSIX and the
+# command-line tool's npm packages. To
 # publish an existing release to a registry again, run publish-release.yml by hand.
 on:
   push:
@@ -27,7 +28,7 @@ jobs:
   # Installs, tests, builds and packages: code from every dev dependency runs here, so this
   # job can only read the repo. create-release, which can write, installs nothing (#492).
   package:
-    name: Package VSIX
+    name: Package VSIX and CLI
     needs: e2e
     runs-on: ubuntu-latest
     permissions:
@@ -96,6 +97,18 @@ jobs:
       - name: Verify checksum
         run: sha256sum --check "${{ steps.package.outputs.package_name }}.sha256"
 
+      # The command-line tool (#348), one build packed under both npm names. Its version is
+      # the extension's: a unit test in Verify fails if cli/package.json differs.
+      - name: Pack the CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run pack:cli -- --out npm-packages
+          cd npm-packages
+          for package in ./*.tgz; do sha256sum "$package" > "$package.sha256"; done
+          sha256sum --check ./*.sha256
+          test "$(ls ./*.tgz | wc -l)" -eq 2
+
       - name: Hand the VSIX to create-release
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -103,6 +116,8 @@ jobs:
           path: |
             ${{ steps.package.outputs.package_name }}
             ${{ steps.package.outputs.package_name }}.sha256
+            npm-packages/*.tgz
+            npm-packages/*.tgz.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -132,8 +147,12 @@ jobs:
         with:
           name: release-vsix
 
-      - name: Verify checksum
-        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
+      - name: Verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
+          cd npm-packages && sha256sum --check ./*.tgz.sha256
 
       # Only this version's section of CHANGELOG.md, not every version's (#294). Fails when
       # the version has no section or an empty one, before anything is created.
@@ -148,16 +167,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          assets=("${{ needs.package.outputs.package_name }}" "${{ needs.package.outputs.package_name }}.sha256" npm-packages/*.tgz npm-packages/*.tgz.sha256)
           if gh release view "${{ needs.package.outputs.tag_name }}" > /dev/null 2>&1; then
             echo "Release already exists — uploading assets only"
-            gh release upload "${{ needs.package.outputs.tag_name }}" \
-              "${{ needs.package.outputs.package_name }}" \
-              "${{ needs.package.outputs.package_name }}.sha256" \
-              --clobber
+            gh release upload "${{ needs.package.outputs.tag_name }}" "${assets[@]}" --clobber
           else
-            gh release create "${{ needs.package.outputs.tag_name }}" \
-              "${{ needs.package.outputs.package_name }}" \
-              "${{ needs.package.outputs.package_name }}.sha256" \
+            gh release create "${{ needs.package.outputs.tag_name }}" "${assets[@]}" \
               --title "${{ needs.package.outputs.tag_name }}" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
@@ -178,4 +193,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.package.outputs.tag_name }}
-        run: gh workflow run publish-release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG" -f registry=both
+        run: gh workflow run publish-release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG" -f registry=all
