@@ -64,7 +64,7 @@ interface ValidateBundleDependencies {
   resolveDatabricksCli: () => Promise<
     VerifiedDatabricksCli | CliResolutionFailure
   >;
-  /** Tests only: a shorter limit, so a real hung CLI can be waited out quickly. */
+  /** How long a real target may take: shorter in tests, longer for the command-line tool. */
   realTargetTimeoutMs?: number;
 }
 
@@ -251,6 +251,8 @@ function isExpectedProbeTargetFailure(
  * @param target Deployment target to validate against. Defaults to the probe target.
  * @param configuredCliPath Optional user-configured CLI path from extension settings.
  * @param profile Optional `~/.databrickscfg` profile from extension settings, used for real targets.
+ * @param options `realTargetTimeoutMs`: how long a real target may take. The extension keeps
+ *   {@link REAL_TARGET_TIMEOUT_MS} so the graph stays responsive; CI can wait longer.
  * @returns A {@link BundleResult} that is either `ok` with parsed bundle data and any
  *   diagnostics, or `!ok` with a structured error.
  */
@@ -259,6 +261,7 @@ export async function validateBundle(
   target?: string,
   configuredCliPath?: string,
   profile?: string,
+  options: { realTargetTimeoutMs?: number } = {},
 ): Promise<BundleResult> {
   return validateBundleWithDependencies(
     bundleDir,
@@ -266,6 +269,7 @@ export async function validateBundle(
     {
       execFileAsync,
       resolveDatabricksCli: () => resolveDatabricksCli(configuredCliPath),
+      ...(options.realTargetTimeoutMs !== undefined ? { realTargetTimeoutMs: options.realTargetTimeoutMs } : {}),
     },
     profile,
   );
@@ -310,8 +314,10 @@ export async function validateBundleWithDependencies(
   const cliPath = cliResult.candidate;
   const cliVersion = cliResult.versionOutput;
   const versionField = cliVersion ? { cliVersion } : {};
-  const readDiagnostics = (stderr: string, probeTarget: string) =>
-    explainCodeNotRun(parseBundleDiagnostics(stderr, probeTarget), resolvedBundleDir);
+  // Only the probe target's own "no such target" error is dropped. A real target that doesn't
+  // exist is a real error, which the command-line tool's --target must report (#348).
+  const readDiagnostics = (stderr: string) =>
+    explainCodeNotRun(parseBundleDiagnostics(stderr, BUNDLE_PROBE_TARGET), resolvedBundleDir);
   const args = ["bundle", "validate", "--output", "json"];
   // // TODO: revisit as we are hardcoding target, instead check if target was needed and then pass dev
   if (target) {
@@ -353,10 +359,7 @@ export async function validateBundleWithDependencies(
       };
     }
 
-    const diagnostics = await readDiagnostics(
-      stderr ?? "",
-      target ?? BUNDLE_PROBE_TARGET,
-    );
+    const diagnostics = await readDiagnostics(stderr ?? "");
     const targetOptions = parseAvailableTargets(stderr ?? "");
     const issues =
       diagnostics.length > 0
@@ -456,7 +459,7 @@ export async function validateBundleWithDependencies(
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
           const diagnostics = (
-            await readDiagnostics(stderr ?? "", target ?? BUNDLE_PROBE_TARGET)
+            await readDiagnostics(stderr ?? "")
           ).map((diagnostic) => ({
             ...diagnostic,
             severity: "warning" as const,
@@ -488,10 +491,7 @@ export async function validateBundleWithDependencies(
         const raw: unknown = JSON.parse(stdout);
         const parsed = parseBundleConfig(raw);
         if (parsed.ok && (!inspectsRealTarget || cliAppliedTarget(raw))) {
-          const diagnostics = await readDiagnostics(
-            stderr ?? "",
-            target ?? BUNDLE_PROBE_TARGET,
-          );
+          const diagnostics = await readDiagnostics(stderr ?? "");
           const targetOptions = parseAvailableTargets(stderr ?? "");
           const issues =
             diagnostics.length > 0
@@ -525,12 +525,11 @@ export async function validateBundleWithDependencies(
       }
     }
 
-    const probeTarget = target ?? BUNDLE_PROBE_TARGET;
-    const diagnostics = await readDiagnostics(stderr ?? "", probeTarget);
+    const diagnostics = await readDiagnostics(stderr ?? "");
     const targetOptions = parseAvailableTargets(stderr ?? "");
     const filteredStderr = (stderr ?? "")
       .split("\n")
-      .filter((line) => !line.includes(`${probeTarget}: no such target`))
+      .filter((line) => !line.includes(`${BUNDLE_PROBE_TARGET}: no such target`))
       .join("\n")
       .trim();
     const fallbackDetails = expectedProbeTargetFailure

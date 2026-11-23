@@ -10,9 +10,9 @@ import {
 import type { BundleResult } from "./bundle/validateBundle.js";
 import { notebookHeaderRuleFor } from "./bundle/notebookFiles.js";
 import { targetFallback, type FallbackCode, type TargetFallback } from "./bundle/fallbackReason.js";
-import { enrichGraphWithFileContent } from "./bundle/graph/enrichGraph.js";
+import { inspectorFindingsAt, targetResolutionOf } from "./bundle/inspectBundle.js";
 import { withPreviewVariableReferences } from "./bundle/graph/previewVariableReferences.js";
-import { buildInspectorIssues, type InspectorIssue } from "./bundle/issues.js";
+import type { InspectorIssue } from "./bundle/issues.js";
 import { jobReviewReport } from "./bundle/reviewReport.js";
 import { bundleReviewReport } from "./bundle/bundleReviewReport.js";
 import { outsideReportVariables, type OutsideReportVariable } from "./bundle/reportVariableSources.js";
@@ -1018,42 +1018,21 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     const bundleData = result.data;
-    const discoveredTargetOptions =
-      result.targetOptions && result.targetOptions.length > 0
-        ? result.targetOptions
-        : Object.keys(
-            (bundleData as { targets?: Record<string, unknown> }).targets ?? {},
-          );
-    const targetOptions = discoveredTargetOptions.length > 0 ? discoveredTargetOptions : previousTargetOptions;
-    const structuralResolutionBundle = discoveredTargetOptions.length > 0 ? bundleData : previousStructuralBundle;
-    const previousResolutionBundle: Partial<ParsedBundleConfig> =
-      structuralResolutionBundle ?? {};
-    const mergedVariables = {
-      ...(previousResolutionBundle.variables ?? {}),
-      ...(bundleData.variables ?? {}),
-    } as ParsedBundleConfig["variables"];
-    const mergedTargets =
-      (bundleData as { targets?: ParsedBundleConfig["targets"] }).targets ??
-      previousResolutionBundle.targets;
-    const resolutionBundle: ParsedBundleConfig = {
-      bundle: bundleData.bundle,
-      ...(mergedVariables ? { variables: mergedVariables } : {}),
-      ...(mergedTargets ? { targets: mergedTargets } : {}),
-    };
+    const { targetOptions, structuralResolutionBundle, resolutionBundle } = targetResolutionOf(
+      bundleData,
+      result.targetOptions,
+      previousTargetOptions,
+      previousStructuralBundle,
+    );
     // The CLI that validated decides which notebook header rule applies.
     const graphOptions = {
       notebookRule: notebookHeaderRuleFor(result.cliVersion),
       ...(result.cliVersion ? { cliVersion: result.cliVersion } : {}),
     };
-    const graph = await extractBundleGraph(bundleData, bundleDir, graphOptions);
-    const checkedGraph = await enrichGraphWithFileContent(graph);
-    const inspectorIssues = buildInspectorIssues(
-      checkedGraph,
-      // The whole config, as the Problems panel's check has it: `sync` and `include` decide
-      // the sync and include checks. Only variables and targets come from the merge.
-      { ...bundleData, ...resolutionBundle },
-      result.issues ?? [],
+    const { graph: checkedGraph, issues: inspectorIssues } = await inspectorFindingsAt(
+      result,
       bundleDir,
+      resolutionBundle,
       inspectedTargetMode === "target" ? inspectedTarget : undefined,
     );
     // With a target the CLI has replaced every ${var...}, so the graph has no variable

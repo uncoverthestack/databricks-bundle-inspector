@@ -62,7 +62,17 @@ Problems that pass `databricks bundle validate` and only fail when you deploy or
 
 Each finding names its check, such as `[missing_file]`. [Every check, and what code is read](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/docs/checks.md). Checks on code read Python and SQL. Scala and R are not read.
 
-It checks the structural preview, which needs no login. Checking a real target (`--target`) is planned.
+## Targets
+
+By default it checks the structural preview, which needs no sign-in. Paths and values that use variables are then reported as "Not checked".
+
+With `--target`, it checks the target as the Databricks CLI resolves it for a deploy: each target's own paths, variables and overrides. That needs a sign-in to the target's workspace (`databricks auth login`, or the usual `DATABRICKS_HOST` and token or OAuth variables in CI):
+
+```sh
+npx @uncoverthestack/databricks-bundle-inspector check --target prod --profile PROD
+```
+
+A target that can't be checked is never replaced by the preview: no sign-in, a profile for another workspace, or a workspace that doesn't answer within 60 seconds exits with `3`, and a target the bundle doesn't have exits with `2`. With a sign-in, `bundle validate` creates the target's empty files folder in the workspace if it is missing; nothing is uploaded.
 
 ## Options
 
@@ -72,6 +82,8 @@ It checks the structural preview, which needs no login. Checking a real target (
 | `--fail-on <error\|warning\|note\|never>` | `error` | Exit with `1` when a finding is at least this severe |
 | `--output <file>` | | Write the report to a file instead of the terminal |
 | `--databricks-cli <path>` | `databricks` on `PATH` | The Databricks CLI to run. A path given here is used or refused, never swapped for another |
+| `-t, --target <name>` | the structural preview | Check this target as the Databricks CLI resolves it. Needs a sign-in |
+| `-p, --profile <name>` | the CLI's default | The `~/.databrickscfg` profile for `--target` |
 | `--no-color` | | Plain text. Also when `NO_COLOR` is set or the output isn't a terminal |
 
 `--format json` has a `schemaVersion`, so scripts can rely on its shape.
@@ -82,15 +94,15 @@ It checks the structural preview, which needs no login. Checking a real target (
 | --- | --- |
 | `0` | Nothing at or above `--fail-on` |
 | `1` | Findings at or above `--fail-on`, including errors the Databricks CLI reports |
-| `2` | Wrong usage, or no bundle found |
-| `3` | Setup problem: no Databricks CLI, or one older than `v0.299.0` |
+| `2` | Wrong usage, no bundle found, or a `--target` the bundle doesn't have |
+| `3` | Setup problem: no Databricks CLI, one older than `v0.299.0`, or no working sign-in for `--target` |
 | `4` | The inspector itself failed |
 
 ## Safety
 
 - It runs one program, the Databricks CLI, and only `databricks bundle validate`. Nothing is deployed, planned or run. It sets `DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION`, so the CLI doesn't run scripts or Python a bundle asks it to run.
 - It writes nothing into your bundle folders.
-- No telemetry, and no network calls of its own.
+- No telemetry, and no network calls of its own. Only with `--target` does the Databricks CLI contact your workspace.
 - Names and messages from a bundle are printed as text: never a link, a mention or a GitHub workflow command.
 - The package has no dependencies: `dist/cli.cjs` is one readable file. The libraries bundled into it are listed in `THIRD_PARTY_NOTICES.md`.
 

@@ -39,10 +39,15 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-/** "2 errors, 1 warning and 0 notes in 3 bundles" */
+/** What was checked: "the structural preview" or `target "prod"`. */
+function checkedWhat(report: CheckReport): string {
+  return report.target ? `target "${report.target}"` : "the structural preview";
+}
+
+/** "2 errors, 1 warning and 0 notes in 3 bundles (the structural preview)" */
 export function summaryLine(report: CheckReport): string {
   const counts = countFindings(report);
-  return `${plural(counts.error, "error")}, ${plural(counts.warning, "warning")} and ${plural(counts.info, "note")} in ${plural(report.bundles.length, "bundle")}`;
+  return `${plural(counts.error, "error")}, ${plural(counts.warning, "warning")} and ${plural(counts.info, "note")} in ${plural(report.bundles.length, "bundle")} (${checkedWhat(report)})`;
 }
 
 function oneLine(text: string): string {
@@ -98,6 +103,7 @@ export function formatJson(report: CheckReport, failOn: FailOn): string {
         tool: { name: "databricks-bundle-inspector", version: report.version },
         databricksCli: { version: report.databricksCli.version ?? null },
         failOn,
+        target: report.target ?? null,
         summary: { errors: counts.error, warnings: counts.warning, notes: counts.info, bundles: report.bundles.length },
         bundles: report.bundles.map((bundle) => ({ ...bundle, findings: orderFindings(bundle.findings) })),
       },
@@ -116,7 +122,7 @@ export function formatMarkdown(report: CheckReport): string {
   const lines = [
     "## Databricks Bundle Inspector",
     "",
-    `**${plural(counts.error, "error")}, ${plural(counts.warning, "warning")} and ${plural(counts.info, "note")}** in ${plural(report.bundles.length, "bundle")}.`,
+    `**${plural(counts.error, "error")}, ${plural(counts.warning, "warning")} and ${plural(counts.info, "note")}** in ${plural(report.bundles.length, "bundle")}, ${report.target ? `target ${markdownCode(report.target)}` : "structural preview"}.`,
   ];
   for (const bundle of report.bundles) {
     lines.push("", `### ${markdownCode(bundle.path)}${bundle.name ? ` (${escapeMarkdown(bundle.name)})` : ""}`, "");
