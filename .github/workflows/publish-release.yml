@@ -132,9 +132,11 @@ jobs:
           PACKAGE: ${{ steps.vsix.outputs.package_name }}
         run: npx ovsx publish "$PACKAGE" --skip-duplicate --trusted-publishing
 
-  # The command-line tool (#348) under both of its npm names.
+  # The command-line tool (#348) under both of its npm names. This job only stages them: nothing
+  # is public until a maintainer approves each staged version on npm with two-factor
+  # authentication (npmjs.com > Staged Packages). A workflow run alone can't publish.
   publish-npm:
-    name: Publish to npm
+    name: Stage on npm
     if: inputs.registry == 'npm' || inputs.registry == 'all'
     runs-on: ubuntu-latest
     environment:
@@ -142,9 +144,9 @@ jobs:
       url: https://www.npmjs.com/package/@uncoverthestack/databricks-bundle-inspector
     permissions:
       contents: read
-      # Trusted publishing: npm swaps this job's GitHub OIDC token for a short-lived publishing
-      # token, and adds a provenance statement. Each package trusts this workflow and the npm
-      # environment, so no npm token is stored anywhere.
+      # Trusted publishing: npm swaps this job's GitHub OIDC token for a short-lived token. Each
+      # package trusts this workflow and the npm environment for staging only, so no npm token
+      # is stored anywhere and the token can't publish directly.
       id-token: write
 
     steps:
@@ -159,7 +161,7 @@ jobs:
         with:
           node-version-file: ".nvmrc"
 
-      - name: Check npm supports trusted publishing
+      - name: Check npm supports staged publishing
         shell: bash
         run: |
           set -euo pipefail
@@ -167,8 +169,8 @@ jobs:
           echo "npm $version"
           node -e '
             const [major, minor, patch] = process.argv[1].split(".").map(Number);
-            if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
-              console.error("Trusted publishing needs npm 11.5.1 or newer");
+            if (major < 11 || (major === 11 && minor < 15)) {
+              console.error("Staged publishing needs npm 11.15.0 or newer");
               process.exit(1);
             }' "$version"
 
@@ -184,9 +186,10 @@ jobs:
           sha256sum --check ./*.tgz.sha256
           test "$(ls ./*.tgz | wc -l)" -eq 2
 
-      # A version npm already has is skipped, so a re-run publishes only what is missing. A
+      # A version npm already has is skipped, so a re-run stages only what is missing; a version
+      # staged but not yet approved can't be seen from here, and staging it again fails. A
       # pre-release goes to the next tag, so a plain install never picks it up.
-      - name: Publish
+      - name: Stage
         env:
           TAG: ${{ inputs.tag }}
         shell: bash
@@ -212,6 +215,7 @@ jobs:
             fi
             dist_tag=latest
             case "$version" in *-*) dist_tag=next ;; esac
-            npm publish "$package" --access public --tag "$dist_tag" --ignore-scripts
-            echo "Published $name@$version ($dist_tag)"
+            npm stage publish "$package" --access public --tag "$dist_tag" --ignore-scripts
+            echo "Staged $name@$version ($dist_tag): approve it on npmjs.com under Staged Packages"
+            echo "- Staged \`$name@$version\` (\`$dist_tag\`): approve it on npmjs.com under Staged Packages" >> "$GITHUB_STEP_SUMMARY"
           done
