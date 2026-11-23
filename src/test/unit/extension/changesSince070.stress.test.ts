@@ -5,7 +5,7 @@ import { findEnvironmentProblems } from "../../../bundle/jobStructure.js";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { bundleReviewReport } from "../../../bundle/bundleReviewReport.js";
 import { REVIEW_REPORT_MAX_CHARACTERS } from "../../../bundle/reviewReport.js";
-import { buildBundleOverview } from "../../../webview/lib/bundleOverview.js";
+import { buildBundleOverview } from "../../../bundle/bundleOverview.js";
 
 /** Generated inputs for the features added after v0.7.0. Keep the dependencies explicit
  * in the generator so the expected graph is independent of the SQL reader. */

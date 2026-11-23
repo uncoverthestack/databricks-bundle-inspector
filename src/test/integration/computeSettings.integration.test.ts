@@ -5,7 +5,7 @@ import path from "node:path";
 import { enrichGraphWithFileContent } from "../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph } from "../../bundle/graph/bundleGraph.js";
 import { validateBundle } from "../../bundle/validateBundle.js";
-import { buildBundleOverview, type OverviewItem } from "../../webview/lib/bundleOverview.js";
+import { buildBundleOverview, type OverviewItem } from "../../bundle/bundleOverview.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
 const created: string[] = [];

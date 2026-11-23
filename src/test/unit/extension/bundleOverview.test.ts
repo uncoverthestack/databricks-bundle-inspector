@@ -19,7 +19,7 @@ import {
   overviewGroupOf,
   type BundleOverview,
   type OverviewItem,
-} from "../../../webview/lib/bundleOverview.js";
+} from "../../../bundle/bundleOverview.js";
 import { typeWords } from "../../../webview/lib/overviewView.js";
 
 const BUNDLE_YAML = `bundle:

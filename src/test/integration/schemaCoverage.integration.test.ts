@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { MODELLED_RESOURCE_GROUPS } from "../../bundle/graph/bundleGraph.js";
 import { TASK_PAYLOAD_KEYS } from "../../bundle/resources/task.js";
-import { OTHER_GROUP, overviewGroupOf } from "../../webview/lib/bundleOverview.js";
+import { OTHER_GROUP, overviewGroupOf } from "../../bundle/bundleOverview.js";
 
 /**
  * Fails when `databricks bundle schema` contains a job task type or resource

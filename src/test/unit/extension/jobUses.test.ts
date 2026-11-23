@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
-import { buildJobUses, type UsesItem } from "../../../webview/lib/jobUses.js";
+import { buildJobUses, type UsesItem } from "../../../bundle/jobUses.js";
 
 let root: string;
 let uses: UsesItem[];
