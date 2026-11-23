@@ -208,6 +208,17 @@ describe("buildPipelineView", () => {
     expect(text).not.toMatch(/Job:|Selected job|bundle-wide|\by\b/);
   });
 
+  test("names from the bundle show as text in the copied review (#486)", () => {
+    const view = { ...buildPipelineView({ nodes: [], edges: [] }, parsed, "q")!, name: "pipe [x](https://e.com)" };
+    view.issues = [{ id: "1", severity: "warning", kind: "k", title: "<b>@team</b>", file: "/b/p_1.yml", line: 2 }];
+    view.runBy = [{ jobKey: "j", jobName: "@ops", taskKey: "t_*" }];
+    const text = pipelineReviewSummary(view, { bundleName: "b_*", targetLabel: "dev", bundleRoot: "/b" }).split("\n");
+    expect(text).toContain("Bundle: b\\_\\*");
+    expect(text).toContain("Pipeline: pipe \\[x\\](https://e.com)");
+    expect(text).toContain("- **Warning** · &lt;b&gt;@\u200bteam&lt;/b&gt; (p\\_1.yml:2)");
+    expect(text).toContain("- @\u200bops (task t\\_\\*)");
+  });
+
   test("the copied review of a pipeline nothing runs and nothing is wrong with", () => {
     const text = pipelineReviewSummary(buildPipelineView({ nodes: [], edges: [] }, parsed, "q")!, {
       bundleName: "demo",

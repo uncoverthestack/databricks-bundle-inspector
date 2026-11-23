@@ -6,6 +6,7 @@
 
 import type { PipelineDataFlow } from "../../bundle/pipelineDataFlow.js";
 import { orderBySeverity, severityMeta } from "./issueSeverity.js";
+import { escapeMarkdown } from "../../bundle/markdownText.js";
 import { reportLocation } from "../../bundle/reportLocation.js";
 
 interface GraphNode {
@@ -229,7 +230,10 @@ const STATUS_WORDS: Record<SourceStatus, string> = {
   not_checked: "not checked",
 };
 
-/** The "Copy review" text for one pipeline: only its own issues, runners and sources. */
+/**
+ * The "Copy review" text for one pipeline: only its own issues, runners and sources. Text from the
+ * bundle is escaped, so a pasted summary never shows a link, an image, HTML or a mention (#486).
+ */
 export function pipelineReviewSummary(
   view: PipelineViewModel,
   { bundleName, targetLabel, bundleRoot, resolveName = (value) => value }: {
@@ -242,22 +246,22 @@ export function pipelineReviewSummary(
   const lines = [
     "## Databricks Bundle Review",
     "",
-    `Bundle: ${bundleName}`,
-    `Target: ${targetLabel}`,
-    `Pipeline: ${resolveName(view.name)}`,
+    `Bundle: ${escapeMarkdown(bundleName)}`,
+    `Target: ${escapeMarkdown(targetLabel)}`,
+    `Pipeline: ${escapeMarkdown(resolveName(view.name))}`,
     "",
     "### Issues",
   ];
   if (view.issues.length === 0) lines.push("- No issues detected in this pipeline.");
   for (const issue of orderBySeverity(view.issues).slice(0, 12)) {
     const location = reportLocation(issue.file, issue.line, bundleRoot);
-    lines.push(`- **${severityMeta(issue.severity).label}** · ${issue.title}${location ? ` (${location})` : ""}`);
+    lines.push(`- **${severityMeta(issue.severity).label}** · ${escapeMarkdown(issue.title)}${location ? ` (${escapeMarkdown(location)})` : ""}`);
   }
   if (view.issues.length > 12) lines.push(`- ...and ${view.issues.length - 12} more.`);
 
   lines.push("", "### Run by");
   if (view.runBy.length === 0) lines.push("- No job in this bundle runs this pipeline.");
-  for (const runner of view.runBy) lines.push(`- ${resolveName(runner.jobName)} (task ${runner.taskKey})`);
+  for (const runner of view.runBy) lines.push(`- ${escapeMarkdown(resolveName(runner.jobName))} (task ${escapeMarkdown(runner.taskKey)})`);
 
   lines.push("", "### Sources", `- ${view.sources.length} source${view.sources.length === 1 ? "" : "s"} in libraries`);
   const counts = new Map<SourceStatus, number>();

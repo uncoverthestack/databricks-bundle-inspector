@@ -99,7 +99,7 @@ describe(`pipeline view (${cli})`, () => {
     expect(looped.runBy).toEqual([{ jobKey: "refresh_job", jobName: "refresh_job", taskKey: "refresh_each" }]);
     // Its copied review holds none of the other pipelines' problems.
     const review = pipelineReviewSummary(looped, { bundleName: "pipeline-sources", targetLabel: "dev" });
-    expect(review).toContain("Pipeline: looped_pipeline");
+    expect(review).toContain("Pipeline: looped\\_pipeline");
     expect(review).not.toMatch(/Job:|missing_notebook|bogus_pipeline_field|missing_file/);
     expect(review).toContain("- 1 a notebook listed as a file");
   });

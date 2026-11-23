@@ -1,16 +1,21 @@
 /**
  * The short Copy review summary for one job: its problems, parameter flows, schedule and file
- * counts, as Markdown. Shared by the panel and the command-line tool (#348, #392).
+ * counts, as Markdown. Shared by the panel and the command-line tool (#348, #392). Text from the
+ * bundle is escaped, so a pasted summary never shows a link, an image, HTML or a mention (#486).
  */
 
 import { fileStatusKey, type FileStatusReference } from "./fileStatus.js";
 import { orderBySeverity, severityLabel } from "./issueSeverity.js";
 import { getCurrentJobTaskNodes } from "./jobTasks.js";
 import { parameterFlowMarkdownLabel, type ParameterFlow } from "./parameterFlows.js";
+import { escapeMarkdown, markdownCode } from "./markdownText.js";
 import { reportLocation } from "./reportLocation.js";
 
 /** How many problems the summary lists before "...and N more." */
 export const REVIEW_SUMMARY_ISSUE_LIMIT = 12;
+
+/** Running text from the bundle, as the text it is. */
+const text = (value: unknown): string => escapeMarkdown(String(value));
 
 export interface ReviewSummaryIssue {
   severity?: string | undefined;
@@ -51,9 +56,9 @@ export function buildBundleReviewSummary({
   const lines = [
     "## Databricks Bundle Review",
     "",
-    `Bundle: ${bundleName}`,
-    `Target: ${targetLabel}`,
-    `Job: ${jobName}`,
+    `Bundle: ${text(bundleName)}`,
+    `Target: ${text(targetLabel)}`,
+    `Job: ${text(jobName)}`,
     "",
     "### Issues",
   ];
@@ -65,11 +70,11 @@ export function buildBundleReviewSummary({
     for (const issue of orderBySeverity(issues).slice(0, REVIEW_SUMMARY_ISSUE_LIMIT)) {
       const taskPrefix =
         issue.subtitle && issue.subtitle !== issue.title
-          ? `${issue.subtitle}: `
+          ? `${text(issue.subtitle)}: `
           : "";
       const location = reportLocation(issue.file, issue.line, bundleRoot);
       lines.push(
-        `- **${severityLabel(issue.severity)}** · ${taskPrefix}${issue.title}${location ? ` (${location})` : ""}`,
+        `- **${severityLabel(issue.severity)}** · ${taskPrefix}${text(issue.title)}${location ? ` (${text(location)})` : ""}`,
       );
     }
     if (issues.length > REVIEW_SUMMARY_ISSUE_LIMIT) {
@@ -88,12 +93,12 @@ export function buildBundleReviewSummary({
       const key = `${flow.taskName}:${flow.name}:${chain}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      lines.push(`- \`${flow.name}\` (${flow.taskName}): ${chain}`);
+      lines.push(`- ${markdownCode(flow.name)} (${text(flow.taskName)}): ${chain}`);
     }
   }
 
   if (jobNode?.trigger && jobNode.trigger !== "Not specified") {
-    lines.push("", "### Schedule", `- ${jobNode.trigger}`);
+    lines.push("", "### Schedule", `- ${text(jobNode.trigger)}`);
   }
 
   const tasks = getCurrentJobTaskNodes(graph, jobNode);

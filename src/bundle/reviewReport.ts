@@ -1,4 +1,4 @@
-import { escapeMarkdown } from "./markdownText.js";
+import { escapeMarkdown, markdownCode } from "./markdownText.js";
 import type { BundleGraph, BundleGraphNode, JobTask, ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { taskTypeLabel } from "./graph/bundleGraph.js";
 import { describeCronExpression } from "./graph/cronDescription.js";
@@ -447,10 +447,7 @@ function inline(text: string): string {
 
 /** Inline code that survives backticks and `|` inside it. A code span shows its text as it is. */
 function code(text: string): string {
-  const flat = oneLine(text).replace(/\|/g, "\\|");
-  const runs = flat.match(/`+/g) ?? [];
-  const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
-  return runs.length ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
+  return markdownCode(oneLine(text));
 }
 
 /** Text inside a quoted Mermaid label: quotes and angle brackets as entity codes. */

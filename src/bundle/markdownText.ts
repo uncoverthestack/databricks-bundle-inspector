@@ -21,3 +21,11 @@ export function escapeMarkdown(text: string): string {
       .replace(/\r?\n/g, " "),
   );
 }
+
+/** Inline code on one line that survives backticks and `|` inside it. A code span shows its text as it is. */
+export function markdownCode(text: string): string {
+  const flat = text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+  const runs = flat.match(/`+/g) ?? [];
+  const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+  return runs.length ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
+}

@@ -79,6 +79,7 @@ beforeAll(async () => {
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+const lines = (all: string[], ...starts: string[]) => all.filter((line) => starts.some((start) => line.startsWith(start)));
 const chains = (flows: ParameterFlow[]) =>
   flows.map((flow) => `${flow.taskName}:${flow.name}:${flow.segments.map((segment) => `${segment.label}@${segment.line}`).join(">")}`);
 
@@ -205,12 +206,32 @@ describe("Copy review summary (#392)", () => {
       "- `run_date` (report): task parameter -> SQL parameter",
       "",
       "### Schedule",
-      "- Schedule: 0 0 6 * * ? (UTC)",
+      "- Schedule: 0 0 6 \\* \\* ? (UTC)",
       "",
       "### Files",
       "- 3 file references",
       "- 1 missing file",
     ]);
+  });
+
+  test("names from the bundle show as text: never a link, an image, HTML or a mention (#486)", () => {
+    const text = buildBundleReviewSummary({
+      parsedBundle: { bundle: { name: "@platform-team" } },
+      bundleRoot: "/b",
+      graph: { nodes: [] },
+      jobNode: { id: "j", displayName: "nightly [click](https://example.com) <img src=x>", trigger: "Schedule: *_x_*" },
+      targetLabel: "dev_<b>",
+      headerPanelItems: { issues: [{ severity: "error", title: "Missing file ![x](https://example.com/p.png)", subtitle: "@someone", file: "/b/a_[b].yml", line: 3 }] },
+      parameterFlows: [{ id: "f", name: "a`b", taskName: "load*", segments: [{ label: "TASK", name: "a`b", file: null, line: 1, column: null }, { label: "NOTEBOOK", name: "a`b", file: null, line: 2, column: null }] }],
+    }).split("\n");
+    expect(lines(text, "Bundle:", "Target:", "Job:")).toEqual([
+      "Bundle: @\u200bplatform-team",
+      "Target: dev\\_&lt;b&gt;",
+      "Job: nightly \\[click\\](https://example.com) &lt;img src=x&gt;",
+    ]);
+    expect(text).toContain("- **Error** · @\u200bsomeone: Missing file !\\[x\\](https://example.com/p.png) (a\\_\\[b\\].yml:3)");
+    expect(text).toContain("- `` a`b `` (load\\*): task parameter -> notebook widget");
+    expect(text).toContain("- Schedule: \\*\\_x\\_\\*");
   });
 
   test("no problems, no flows, no schedule", () => {
