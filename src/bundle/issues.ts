@@ -131,6 +131,13 @@ function usesVariable(rawPath: string): boolean {
  * The variable's value can come from places the preview doesn't see (target, overrides,
  * BUNDLE_VAR_, --var), so the inspector doesn't resolve it itself.
  */
+/**
+ * How the Problems panel and graph say to check a path that uses a variable. The command-line
+ * tool shows {@link CHECK_WITH_TARGET_CLI} in its place.
+ */
+export const PICK_TARGET_IN_GRAPH = "Pick a target in the graph to check it.";
+export const CHECK_WITH_TARGET_CLI = "Use --target to check it.";
+
 function pathNotCheckedIssue(
   rawPath: string,
   targetName: string | null | undefined,
@@ -140,7 +147,7 @@ function pathNotCheckedIssue(
     kind: "path_not_checked",
     title: targetName
       ? `Not checked: "${rawPath}" still uses a variable for target "${targetName}", so the file isn't known.`
-      : `Not checked: "${rawPath}" uses a variable, so the file is only known once a target is resolved. Pick a target in the graph to check it.`,
+      : `Not checked: "${rawPath}" uses a variable, so the file is only known once a target is resolved. ${PICK_TARGET_IN_GRAPH}`,
     fixHint:
       "The structural preview leaves variables in paths unresolved, so the missing file, notebook and code checks don't run on this file.",
   };

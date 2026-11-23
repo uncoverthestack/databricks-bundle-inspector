@@ -2,7 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseCliArgs } from "../../../cli/args.js";
-import { cliErrorLine, findingsFromFailedValidate, type CheckReport, type Finding } from "../../../cli/check.js";
+import { cliErrorLine, findingFromIssue, findingsFromFailedValidate, type CheckReport, type Finding } from "../../../cli/check.js";
 import {
   escapeCommandData,
   escapeCommandProperty,
@@ -246,6 +246,22 @@ describe("a failed bundle validate (#348)", () => {
   test("the CLI's error line, not a warning before it", () => {
     expect(cliErrorLine("warning: x\nerror: the reason\nmore")).toBe("the reason");
     expect(cliErrorLine("just one line")).toBe("just one line");
+  });
+});
+
+describe("findings in the command line's words (#348)", () => {
+  test("a path that uses a variable says to check it with --target, not in the graph", () => {
+    const finding = findingFromIssue(
+      { id: "1", severity: "info", kind: "path_not_checked", title: 'Not checked: "${var.nb}" uses a variable, so the file is only known once a target is resolved. Pick a target in the graph to check it.' },
+      "/b",
+      "1.0.0",
+    );
+    expect(finding.message).toBe('Not checked: "${var.nb}" uses a variable, so the file is only known once a target is resolved. Use --target to check it.');
+  });
+
+  test("other findings keep their words", () => {
+    const title = "Pick a target in the graph to check it.";
+    expect(findingFromIssue({ id: "1", severity: "info", kind: "unused_parameter", title }, "/b", "1.0.0").message).toBe(title);
   });
 });
 

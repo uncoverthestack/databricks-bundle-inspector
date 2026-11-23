@@ -7,7 +7,7 @@ import path from "node:path";
 import { firstLine, targetFallback } from "../bundle/fallbackReason.js";
 import { cliDiagnosticsOf, inspectorFindings, inspectorFindingsAt, targetResolutionOf } from "../bundle/inspectBundle.js";
 import { issueDocsUrl } from "../bundle/issueDocs.js";
-import type { InspectorIssue, InspectorIssueKind } from "../bundle/issues.js";
+import { CHECK_WITH_TARGET_CLI, PICK_TARGET_IN_GRAPH, type InspectorIssue, type InspectorIssueKind } from "../bundle/issues.js";
 import { validateBundle, type BundleResult } from "../bundle/validateBundle.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
 import { databricksCliInstallUrl, resolveDatabricksCli, verifyCliPath } from "../databricksCli/validateDatabricksCli.js";
@@ -104,11 +104,17 @@ function checkVersion(cliPath: string, version: string | undefined) {
   return { ok: true as const, path: cliPath, version };
 }
 
+/** A finding's words as the command line says them: here a target is checked with --target, not in the graph. */
+function cliTitle(issue: InspectorIssue): string {
+  return issue.kind === "path_not_checked" ? issue.title.replace(PICK_TARGET_IN_GRAPH, CHECK_WITH_TARGET_CLI) : issue.title;
+}
+
 export function findingFromIssue(issue: InspectorIssue, cwd: string, version: string): Finding {
+  const title = cliTitle(issue);
   return {
     severity: issue.severity,
     code: issue.kind,
-    message: issue.detail ? `${issue.title}: ${issue.detail}` : issue.title,
+    message: issue.detail ? `${title}: ${issue.detail}` : title,
     ...(issue.file ? { file: displayPath(issue.file, cwd) } : {}),
     ...(issue.file && issue.line !== undefined ? { line: issue.line } : {}),
     ...(issue.file && issue.column !== undefined ? { column: issue.column } : {}),

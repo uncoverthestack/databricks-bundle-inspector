@@ -190,6 +190,18 @@ describe(`the command-line tool (${cli})`, () => {
       }
     });
 
+    test("a path that uses a variable is Not checked on the preview, with the command line's way to check it", async () => {
+      const dir = await tempBundle(
+        "dbi-cli-target-",
+        ["bundle:", "  name: dbi-cli-target", "variables:", "  nb:", "    default: ./src/load.py", "resources:", "  jobs:", "    nightly:", "      name: nightly", "      tasks:", "        - task_key: load", "          notebook_task:", "            notebook_path: ${var.nb}"],
+        NOTEBOOK,
+      );
+      const { code, stdout } = await run(["check", dir, "--databricks-cli", cli]);
+      expect(code).toBe(0);
+      expect(stdout).toContain("Use --target to check it.");
+      expect(stdout).not.toContain("in the graph");
+    });
+
     (profile ? test : test.skip)("with a sign-in: each target's own files and values are checked", async () => {
       const dir = await tempBundle(
         "dbi-cli-target-",
