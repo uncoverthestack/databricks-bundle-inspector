@@ -140,12 +140,12 @@ jobs:
     if: inputs.registry == 'npm' || inputs.registry == 'all'
     runs-on: ubuntu-latest
     environment:
-      name: npm
+      name: npm-registry
       url: https://www.npmjs.com/package/@uncoverthestack/databricks-bundle-inspector
     permissions:
       contents: read
       # Trusted publishing: npm swaps this job's GitHub OIDC token for a short-lived token. Each
-      # package trusts this workflow and the npm environment for staging only, so no npm token
+      # package trusts this workflow and the npm-registry environment for staging only, so no npm token
       # is stored anywhere and the token can't publish directly.
       id-token: write
 
