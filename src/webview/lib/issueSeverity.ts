@@ -1,4 +1,6 @@
-export type IssueSeverity = "error" | "warning" | "info";
+import { normalizeSeverity, orderBySeverity, severityLabel, severityRank, type IssueSeverity } from "../../bundle/issueSeverity.js";
+
+export { orderBySeverity, type IssueSeverity };
 
 export interface SeverityMeta {
   /** The word shown next to the icon, so the colour is never the only cue. */
@@ -14,21 +16,14 @@ export interface SeverityMeta {
   rank: number;
 }
 
-const META: Record<IssueSeverity, SeverityMeta> = {
-  error: { label: "Error", colorClass: "text-error", icon: "circle-x", rank: 0 },
-  warning: { label: "Warning", colorClass: "text-warning", icon: "triangle-alert", rank: 1 },
-  info: { label: "Note", colorClass: "text-info", icon: "info", rank: 2 },
+const LOOK: Record<IssueSeverity, Pick<SeverityMeta, "colorClass" | "icon">> = {
+  error: { colorClass: "text-error", icon: "circle-x" },
+  warning: { colorClass: "text-warning", icon: "triangle-alert" },
+  info: { colorClass: "text-info", icon: "info" },
 };
 
 /** How a severity looks. Anything unknown is shown as a warning, as VS Code does. */
 export function severityMeta(severity: string | undefined): SeverityMeta {
-  return META[severity as IssueSeverity] ?? META.warning;
-}
-
-/** Errors first, then warnings, then notes, keeping the order found within each. */
-export function orderBySeverity<T extends { severity?: string | undefined }>(items: readonly T[]): T[] {
-  return items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => severityMeta(a.item.severity).rank - severityMeta(b.item.severity).rank || a.index - b.index)
-    .map(({ item }) => item);
+  const known = normalizeSeverity(severity);
+  return { label: severityLabel(known), ...LOOK[known], rank: severityRank(known) };
 }

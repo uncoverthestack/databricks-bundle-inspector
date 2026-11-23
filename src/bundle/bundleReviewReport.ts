@@ -4,7 +4,7 @@ import { resolveVariableForTarget } from "./targetResolution.js";
 import { outsideReportVariables, type OutsideReportVariable } from "./reportVariableSources.js";
 import { reportLocation } from "./reportLocation.js";
 import { REVIEW_REPORT_MAX_CHARACTERS, REVIEW_REPORT_TASK_LIMIT, startsText, type ReviewReportContext } from "./reviewReport.js";
-import { buildBundleOverview, CHECKED_RESOURCE_GROUPS } from "../webview/lib/bundleOverview.js";
+import { buildBundleOverview, CHECKED_RESOURCE_GROUPS } from "./bundleOverview.js";
 import { own } from "./ownKeys.js";
 import { escapeMarkdown } from "./markdownText.js";
 

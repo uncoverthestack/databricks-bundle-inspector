@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { clusterSettings, serverlessSettings, warehouseSettings, words } from "../../../webview/lib/computeSettings.js";
+import { clusterSettings, serverlessSettings, warehouseSettings, words } from "../../../bundle/computeSettings.js";
 
 const rowsOf = (settings: { sections: { title: string; rows: { label: string; value: string; raw?: string; expression?: boolean; lines?: string[] }[] }[] }) =>
   Object.fromEntries(settings.sections.map((section) => [section.title, section.rows.map((row) => `${row.label}: ${row.lines ? row.lines.join(" | ") : row.value}${row.raw ? ` (${row.raw})` : ""}${row.expression ? " [as written]" : ""}`)]));

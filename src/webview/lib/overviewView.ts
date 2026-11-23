@@ -3,7 +3,7 @@
  * note beside its name, which boxes light up together, and which groups start folded.
  * Kept apart from the component so each rule has a unit test.
  */
-import type { BundleOverview, OverviewGroup, OverviewItem, OverviewLink } from "./bundleOverview.js";
+import type { BundleOverview, OverviewGroup, OverviewItem, OverviewLink } from "../../bundle/bundleOverview.js";
 
 /** Up to this many boxes, every line shows and no group is folded. Above it, lines show on demand. */
 export const SMALL_BUNDLE_MAX_ITEMS = 15;

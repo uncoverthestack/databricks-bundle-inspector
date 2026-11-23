@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { buildBundleOverview, type BundleOverview, type OverviewGraph, type OverviewItem, type OverviewLink } from "../../../webview/lib/bundleOverview.js";
+import { buildBundleOverview, type BundleOverview, type OverviewGraph, type OverviewItem, type OverviewLink } from "../../../bundle/bundleOverview.js";
 import {
   findMatches,
   foldedGroupIds,

@@ -5,6 +5,7 @@
  */
 import { fileStatusKey, type FileStatusKey } from "../../bundle/fileStatus.js";
 import { issueKindLabel } from "../../bundle/issueLabels.js";
+import { getCurrentJobTaskNodes as jobTaskNodes } from "../../bundle/jobTasks.js";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { isVariableResolvedForTarget } from "../../bundle/targetResolution.js";
 import { countsFor, problemTone, type TaskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
@@ -283,8 +284,7 @@ export function getTaskPath(taskNode: TaskNode, parentJob: { displayName?: strin
 
 /** The job's tasks, in graph order. */
 export function getCurrentJobTaskNodes(graph: GraphLike | null | undefined, jobNode: { id: string } | null | undefined): TaskNode[] {
-  if (!graph || !jobNode) return [];
-  return graph.nodes.filter((node) => node.nodeType === "task" && node.parentId === jobNode.id);
+  return jobTaskNodes(graph, jobNode);
 }
 
 /** Each task's upstream and downstream tasks, from `depends_on` edges between the given tasks. */
