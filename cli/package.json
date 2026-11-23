@@ -21,7 +21,8 @@
     "ci"
   ],
   "bin": {
-    "databricks-bundle-inspector": "dist/cli.cjs"
+    "databricks-bundle-inspector": "dist/cli.cjs",
+    "dabi": "dist/cli.cjs"
   },
   "files": [
     "dist/cli.cjs",

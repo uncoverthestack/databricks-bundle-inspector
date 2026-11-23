@@ -154,6 +154,8 @@ jobs:
           npm install --ignore-scripts "$T"/packages/uncoverthestack-databricks-bundle-inspector-*.tgz
           test "$(npx --no-install databricks-bundle-inspector --version)" = "$(node -p "require(process.argv[1]).version" "$W/cli/package.json")"
           npx --no-install databricks-bundle-inspector --help | grep -q "Usage: databricks-bundle-inspector check"
+          # dabi is the same tool under a short command name.
+          test "$(npx --no-install dabi --version)" = "$(npx --no-install databricks-bundle-inspector --version)"
           # No Databricks CLI at this path: a setup problem, exit code 3, with the reason.
           set +e
           npx --no-install databricks-bundle-inspector check "$W/src/test/fixtures/broken-job" --databricks-cli "$T/no-databricks" 2> err.txt

@@ -15,6 +15,8 @@ It runs the same checks as the [Databricks Bundle Inspector extension](https://m
 npx @uncoverthestack/databricks-bundle-inspector check
 ```
 
+Installed in a project or with `npm install --global`, it is also `dabi` for short: `dabi check`. With `npx`, use the full package name.
+
 That checks every `databricks.yml` or `databricks.yaml` under the current folder. Give folders or bundle files to check only those:
 
 ```sh

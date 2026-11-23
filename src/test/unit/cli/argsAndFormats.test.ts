@@ -273,6 +273,6 @@ describe("the npm package (#348)", () => {
     expect(cli.version).toBe(extension.version);
     expect(cli.engines.node).toBe(">=22");
     expect(cli.dependencies ?? {}).toEqual({});
-    expect(cli.bin).toEqual({ "databricks-bundle-inspector": "dist/cli.cjs" });
+    expect(cli.bin).toEqual({ "databricks-bundle-inspector": "dist/cli.cjs", dabi: "dist/cli.cjs" });
   });
 });
