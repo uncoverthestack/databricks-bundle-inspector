@@ -2,7 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseCliArgs } from "../../../cli/args.js";
-import type { CheckReport, Finding } from "../../../cli/check.js";
+import { cliErrorLine, findingsFromFailedValidate, type CheckReport, type Finding } from "../../../cli/check.js";
 import {
   escapeCommandData,
   escapeCommandProperty,
@@ -51,7 +51,14 @@ describe("arguments (#348)", () => {
       output: undefined,
       color: true,
       databricksCli: undefined,
+      target: undefined,
+      profile: undefined,
     });
+  });
+
+  test("a real target and its profile", () => {
+    expect(parseCliArgs(["check", "-t", "prod", "-p", "PROD"], {})).toMatchObject({ target: "prod", profile: "PROD" });
+    expect(parseCliArgs(["check", "--target", "dev"], {})).toMatchObject({ target: "dev", profile: undefined });
   });
 
   test("every option", () => {
@@ -65,6 +72,8 @@ describe("arguments (#348)", () => {
       output: "r.md",
       color: false,
       databricksCli: "/x/databricks",
+      target: undefined,
+      profile: undefined,
     });
   });
 
@@ -86,7 +95,9 @@ describe("arguments (#348)", () => {
     [["deploy"], 'Unknown command "deploy"'],
     [["check", "--format", "sarif"], "--format must be one of"],
     [["check", "--fail-on", "info"], "--fail-on must be one of"],
-    [["check", "--target", "prod"], "Unknown option"],
+    [["check", "--sarif"], "Unknown option"],
+    [["check", "--profile", "DEV"], "--profile is for --target"],
+    [["check", "--target", ""], "--target needs a value"],
     [["check", "--output", " "], "--output needs a value"],
     [["check", "--format"], "argument missing"],
   ])("wrong usage %j", (argv, message) => {
@@ -123,7 +134,8 @@ describe("failing and exit codes (#348)", () => {
   });
 
   test("the summary line", () => {
-    expect(summaryLine(report([finding(), finding({ severity: "info" })]))).toBe("1 error, 0 warnings and 1 note in 1 bundle");
+    expect(summaryLine(report([finding(), finding({ severity: "info" })]))).toBe("1 error, 0 warnings and 1 note in 1 bundle (the structural preview)");
+    expect(summaryLine(report([], { target: "prod" }))).toBe('0 errors, 0 warnings and 0 notes in 1 bundle (target "prod")');
   });
 });
 
@@ -131,7 +143,7 @@ describe("formats (#348)", () => {
   test("text: location, message and check, then a summary; colour only when asked", () => {
     const text = formatText(report([finding()]), false);
     expect(text).toBe(
-      "bundle (demo)\n  error   bundle/databricks.yml:12:5  File not found: ./src/a.py  [missing_file]\n\n1 error, 0 warnings and 0 notes in 1 bundle\n",
+      "bundle (demo)\n  error   bundle/databricks.yml:12:5  File not found: ./src/a.py  [missing_file]\n\n1 error, 0 warnings and 0 notes in 1 bundle (the structural preview)\n",
     );
     expect(formatText(report([finding()]), true)).toContain("\x1b[31merror  \x1b[0m");
     expect(formatText(report([]), false)).toContain("  no problems");
@@ -156,8 +168,10 @@ describe("formats (#348)", () => {
       tool: { name: "databricks-bundle-inspector", version: "1.2.3" },
       databricksCli: { version: "v1.27.0" },
       failOn: "error",
+      target: null,
       summary: { errors: 1, warnings: 1, notes: 0, bundles: 1 },
     });
+    expect(JSON.parse(formatJson(report([], { target: "prod" }), "error")).target).toBe("prod");
     expect(json.bundles[0].findings).toHaveLength(2);
     expect(JSON.stringify(json)).not.toContain("/usr/local/bin");
   });
@@ -179,7 +193,7 @@ describe("formats (#348)", () => {
         // A message keeps its `:`; only properties escape it.
         "::error file=bundle/databricks.yml,line=12,col=5,title=missing_file (bundle)::File not found: ./src/a.py",
         "::notice title=missing_file (bundle)::Bundle-wide (bundle (demo))",
-        "Databricks Bundle Inspector: 1 error, 0 warnings and 1 note in 1 bundle",
+        "Databricks Bundle Inspector: 1 error, 0 warnings and 1 note in 1 bundle (the structural preview)",
         "",
       ].join("\n"),
     );
@@ -210,6 +224,28 @@ describe("formats (#348)", () => {
       expect(out.split("\n").filter((line) => /^\s*::/.test(line))).toEqual([]);
     }
     expect(neutraliseCommands("::a\n  ::b\nok :: c")).toBe(":​:a\n  :​:b\nok :: c");
+  });
+});
+
+describe("a failed bundle validate (#348)", () => {
+  const failed = (diagnostics: Array<{ severity: "error" | "warning"; message: string; path?: string; line?: number }>, details?: string) => ({
+    ok: false as const,
+    error: { bundleDir: "/b", bundleName: "b", error: "Failed to validate Databricks bundle.", ...(details ? { details } : {}), diagnostics },
+  });
+
+  test("always fails: when the CLI printed only warnings, its failure is an error too", () => {
+    const findings = findingsFromFailedValidate(failed([{ severity: "warning", message: "odd", path: "databricks.yml", line: 3 }], "warning: odd\nerror: boom"), "/b", "/b", "1.0.0");
+    expect(findings.map((f) => `${f.severity}:${f.message}`)).toEqual(["error:Failed to validate Databricks bundle. boom", "warning:odd"]);
+  });
+
+  test("an error diagnostic is enough on its own", () => {
+    const findings = findingsFromFailedValidate(failed([{ severity: "error", message: "bad" }]), "/b", "/b", "1.0.0");
+    expect(findings.map((f) => `${f.severity}:${f.message}`)).toEqual(["error:bad"]);
+  });
+
+  test("the CLI's error line, not a warning before it", () => {
+    expect(cliErrorLine("warning: x\nerror: the reason\nmore")).toBe("the reason");
+    expect(cliErrorLine("just one line")).toBe("just one line");
   });
 });
 

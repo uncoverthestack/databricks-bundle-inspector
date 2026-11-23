@@ -4,7 +4,8 @@
  */
 
 import path from "node:path";
-import { cliDiagnosticsOf, inspectorFindings } from "../bundle/inspectBundle.js";
+import { firstLine, targetFallback } from "../bundle/fallbackReason.js";
+import { cliDiagnosticsOf, inspectorFindings, inspectorFindingsAt, targetResolutionOf } from "../bundle/inspectBundle.js";
 import { issueDocsUrl } from "../bundle/issueDocs.js";
 import type { InspectorIssue, InspectorIssueKind } from "../bundle/issues.js";
 import { validateBundle, type BundleResult } from "../bundle/validateBundle.js";
@@ -43,12 +44,22 @@ export interface BundleReport {
 export interface CheckReport {
   version: string;
   databricksCli: { path: string; version: string | undefined };
+  /** The real target checked, or undefined for the structural preview. */
+  target?: string;
   bundles: BundleReport[];
 }
 
 export type CheckOutcome =
   | { ok: true; report: CheckReport }
-  | { ok: false; kind: "setup"; message: string };
+  | { ok: false; kind: "setup" | "usage"; message: string };
+
+/** How long `--target` may take. The extension waits 15 seconds to stay responsive; CI networks are slower. */
+export const CLI_REAL_TARGET_TIMEOUT_MS = 60_000;
+
+export interface TargetOptions {
+  target: string | undefined;
+  profile: string | undefined;
+}
 
 /** The Databricks CLI to use, checked once before any bundle. */
 export async function findDatabricksCli(
@@ -116,10 +127,11 @@ export function findingsFromFailedValidate(
 ): Finding[] {
   const docs = issueDocsUrl("cli_diagnostic", version);
   const diagnostics = cliDiagnosticsOf(result);
-  if (diagnostics.length === 0) {
-    return [{ severity: "error", code: "cli_diagnostic", message: result.error.error, docs }];
-  }
-  return diagnostics.map((diagnostic) => {
+  // A failed validate always fails: when the CLI printed only warnings, its exit is the error.
+  const failure: Finding[] = diagnostics.some((diagnostic) => diagnostic.severity === "error")
+    ? []
+    : [{ severity: "error", code: "cli_diagnostic", message: `${result.error.error}${result.error.details ? ` ${cliErrorLine(result.error.details)}` : ""}`, docs }];
+  return [...failure, ...diagnostics.map((diagnostic) => {
     const file = diagnostic.path ? displayPath(path.resolve(bundleRoot, diagnostic.path), cwd) : undefined;
     return {
       severity: diagnostic.severity,
@@ -130,32 +142,88 @@ export function findingsFromFailedValidate(
       ...(file && diagnostic.column !== undefined ? { column: diagnostic.column } : {}),
       docs,
     };
-  });
+  })];
 }
 
-/** Checks every bundle in order. Throws only when the inspector itself fails (exit code 4). */
+/** The CLI's error line from its output, else its first line: the reason, not a warning before it. */
+export function cliErrorLine(output: string): string {
+  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const error = lines.find((line) => /^error:/i.test(line));
+  return firstLine(error ?? lines[0] ?? output);
+}
+
+function cliMissing(result: BundleResult): string | undefined {
+  return !result.ok && (result.error.errorCode === "CLI_NOT_FOUND" || result.error.errorCode === "CLI_NOT_EXECUTABLE")
+    ? result.error.error
+    : undefined;
+}
+
+/**
+ * Checks every bundle in order: the structural preview, or with `target`, the preview and then
+ * the target as the Databricks CLI resolves it. Unlike the graph, a target that can't be checked
+ * never falls back to the preview: CI that asked for a target must not pass on another. Throws
+ * only when the inspector itself fails (exit code 4).
+ */
 export async function checkBundles(
   roots: readonly string[],
   cli: { path: string; version: string | undefined },
   cwd: string,
   version: string,
+  { target, profile }: TargetOptions = { target: undefined, profile: undefined },
 ): Promise<CheckOutcome> {
   const bundles: BundleReport[] = [];
   for (const root of roots) {
-    const result = await validateBundle(root, undefined, cli.path);
-    if (!result.ok && (result.error.errorCode === "CLI_NOT_FOUND" || result.error.errorCode === "CLI_NOT_EXECUTABLE")) {
-      return { ok: false, kind: "setup", message: result.error.error };
-    }
-    const name = result.data?.bundle?.name;
-    const base = { path: displayPath(root, cwd), ...(name ? { name } : {}) };
-    if (!result.ok) {
-      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(result, root, cwd, version) });
+    const preview = await validateBundle(root, undefined, cli.path);
+    const missing = cliMissing(preview);
+    if (missing) return { ok: false, kind: "setup", message: missing };
+    const name = preview.data?.bundle?.name;
+    const shown = displayPath(root, cwd);
+    const base = { path: shown, ...(name ? { name } : {}) };
+    if (!preview.ok) {
+      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(preview, root, cwd, version) });
       continue;
     }
-    const { issues } = await inspectorFindings(result, root);
+    if (!target) {
+      const { issues } = await inspectorFindings(preview, root);
+      bundles.push({ ...base, validated: true, findings: issues.map((issue) => findingFromIssue(issue, cwd, version)) });
+      continue;
+    }
+
+    const atTarget = await validateBundle(root, target, cli.path, profile, { realTargetTimeoutMs: CLI_REAL_TARGET_TIMEOUT_MS });
+    const missingAtTarget = cliMissing(atTarget);
+    if (missingAtTarget) return { ok: false, kind: "setup", message: missingAtTarget };
+    if (!atTarget.ok) {
+      const fallback = targetFallback(atTarget.error);
+      if (fallback.code === "no_such_target") {
+        const known = preview.targetOptions?.length ? preview.targetOptions : Object.keys(preview.data.targets ?? {});
+        return {
+          ok: false,
+          kind: "usage",
+          message: `Bundle ${shown} has no target "${target}".${known.length ? ` Its targets: ${known.join(", ")}.` : ""}`,
+        };
+      }
+      if (fallback.code !== "other") {
+        // Signing in, a profile, or the workspace not answering: nothing to do with the bundle.
+        return {
+          ok: false,
+          kind: "setup",
+          message: `Can't check target "${target}" of bundle ${shown}: ${fallback.reason}.\nThe Databricks CLI said: ${cliErrorLine(fallback.message)}`,
+        };
+      }
+      // The Databricks CLI rejects the bundle for this target: that is a finding.
+      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(atTarget, root, cwd, version) });
+      continue;
+    }
+    const { resolutionBundle } = targetResolutionOf(
+      atTarget.data,
+      atTarget.targetOptions,
+      preview.targetOptions ?? [],
+      preview.data,
+    );
+    const { issues } = await inspectorFindingsAt(atTarget, root, resolutionBundle, target);
     bundles.push({ ...base, validated: true, findings: issues.map((issue) => findingFromIssue(issue, cwd, version)) });
   }
-  return { ok: true, report: { version, databricksCli: cli, bundles } };
+  return { ok: true, report: { version, databricksCli: cli, ...(target ? { target } : {}), bundles } };
 }
 
 /** Errors, warnings and notes across every bundle. */

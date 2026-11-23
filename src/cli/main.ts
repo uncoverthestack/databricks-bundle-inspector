@@ -42,10 +42,13 @@ async function check(options: CheckOptions, io: CliIo): Promise<number> {
     io.stderr(`${cli.message}\n`);
     return EXIT.setup;
   }
-  const outcome = await checkBundles(discovery.roots, { path: cli.path, version: cli.version }, io.cwd, VERSION);
+  const outcome = await checkBundles(discovery.roots, { path: cli.path, version: cli.version }, io.cwd, VERSION, {
+    target: options.target,
+    profile: options.profile,
+  });
   if (!outcome.ok) {
     io.stderr(`${outcome.message}\n`);
-    return EXIT.setup;
+    return outcome.kind === "usage" ? EXIT.usage : EXIT.setup;
   }
   const text = formatReport(outcome.report, options.format, options.failOn, options.color && !options.output && io.isTty);
   if (options.output) writeFileSync(path.resolve(io.cwd, options.output), text);

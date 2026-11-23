@@ -8,6 +8,8 @@ import { validateBundle } from "../../bundle/validateBundle.js";
 import { runCli, type CliIo } from "../../cli/main.js";
 
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
+/** A ~/.databrickscfg profile for the --target cases that need a sign-in. CI has none. */
+const profile = process.env.INSPECTOR_TEST_PROFILE?.trim() || undefined;
 const repoRoot = path.resolve(__dirname, "../../..");
 const created: string[] = [];
 
@@ -140,5 +142,94 @@ describe(`the command-line tool (${cli})`, () => {
   test("wrong usage exits with 2 before running anything", async () => {
     expect((await run(["check", "no-such-folder"])).code).toBe(2);
     expect((await run(["check", "--format", "sarif"])).code).toBe(2);
+  });
+
+  describe("--target", () => {
+    const TARGETS = [
+      "bundle:",
+      "  name: dbi-cli-target",
+      "targets:",
+      "  dev:",
+      "    default: true",
+      "    workspace:",
+      "      host: https://dbc-00000000-0000.cloud.databricks.com",
+      // Valid YAML the CLI only warns about: before the fix, its warning hid a missing target's error.
+      "  odd:",
+      "    resources:",
+      "      jobs:",
+      "        nightly:",
+      '          tasks: "not a list"',
+    ];
+
+    test("a target the bundle doesn't have is wrong usage (2), naming the targets it has", async () => {
+      const dir = await tempBundle("dbi-cli-target-", [...TARGETS, ...JOB], NOTEBOOK);
+      const { code, stdout, stderr } = await run(["check", dir, "--target", "prdo", "--databricks-cli", cli]);
+      expect(code).toBe(2);
+      expect(stdout).toBe("");
+      expect(stderr).toContain('has no target "prdo". Its targets: ');
+      expect(stderr).toMatch(/dev/);
+    });
+
+    test("no sign-in is a setup problem (3), never a pass on the structural preview", async () => {
+      const dir = await tempBundle("dbi-cli-target-", [...TARGETS, ...JOB], NOTEBOOK);
+      const saved = { ...process.env };
+      // No credentials anywhere: the SDK gives up before any request.
+      process.env.DATABRICKS_CONFIG_FILE = path.join(dir, "no-such.databrickscfg");
+      for (const name of Object.keys(process.env)) {
+        if (/^DATABRICKS_(HOST|TOKEN|CONFIG_PROFILE|AUTH_TYPE|CLIENT_ID|CLIENT_SECRET|ACCOUNT_ID)$/.test(name)) delete process.env[name];
+      }
+      try {
+        const { code, stdout, stderr } = await run(["check", dir, "--target", "dev", "--databricks-cli", cli]);
+        expect(code).toBe(3);
+        expect(stdout).toBe("");
+        expect(stderr).toContain(`Can't check target "dev"`);
+        expect(stderr).toContain("The Databricks CLI said:");
+        expect(stderr).not.toContain("expected sequence");
+      } finally {
+        process.env = saved;
+      }
+    });
+
+    (profile ? test : test.skip)("with a sign-in: each target's own files and values are checked", async () => {
+      const dir = await tempBundle(
+        "dbi-cli-target-",
+        [
+          "bundle:",
+          "  name: dbi-cli-target",
+          "variables:",
+          "  nb:",
+          "    default: ./src/load.py",
+          "targets:",
+          "  dev:",
+          "    default: true",
+          "  prod:",
+          "    variables:",
+          "      nb: ./src/missing_in_prod.py",
+          "resources:",
+          "  jobs:",
+          "    nightly:",
+          "      name: nightly",
+          "      tasks:",
+          "        - task_key: load",
+          "          notebook_task:",
+          "            notebook_path: ${var.nb}",
+        ],
+        { "src/load.py": '# Databricks notebook source\nrun_date = dbutils.widgets.get("run_date")\n' },
+      );
+      const kinds = (json: { bundles: Array<{ findings: Array<{ code: string }> }> }) => json.bundles[0]!.findings.map((f) => f.code);
+
+      const preview = JSON.parse((await run(["check", dir, "--format", "json", "--databricks-cli", cli])).stdout);
+      expect(preview.target).toBeNull();
+      expect(kinds(preview)).toEqual(["path_not_checked"]);
+
+      const dev = await run(["check", dir, "--format", "json", "-t", "dev", "-p", profile!, "--databricks-cli", cli]);
+      expect(dev.code).toBe(0);
+      expect(JSON.parse(dev.stdout).target).toBe("dev");
+      expect(kinds(JSON.parse(dev.stdout))).toContain("widget_not_set");
+
+      const prod = await run(["check", dir, "--format", "json", "-t", "prod", "-p", profile!, "--databricks-cli", cli]);
+      expect(prod.code).toBe(1);
+      expect(kinds(JSON.parse(prod.stdout))).toContain("missing_file");
+    });
   });
 });

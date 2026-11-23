@@ -677,4 +677,30 @@ describe("validateBundleWithDependencies: time limit per mode", () => {
     expect(waited).toBeGreaterThanOrEqual(LIMIT_MS - 500);
     expect(waited).toBeLessThan(LIMIT_MS + 5_000);
   }, LIMIT_MS + 10_000);
+
+  test("a real target the bundle doesn't have is reported, even after a warning (#348)", async () => {
+    const stderr = [
+      "Warning: expected sequence, found string",
+      "  at targets.odd.resources.jobs.nightly.tasks",
+      "  in databricks.yml:14:18",
+      "",
+      "Error: prdo: no such target. Available targets: dev, odd",
+    ].join("\n");
+    const error = Object.assign(new Error(`Command failed: databricks bundle validate\n${stderr}`), { stderr, stdout: JSON.stringify(createBundle()) });
+
+    const result = await validateBundleWithDependencies("/workspace/demo", "prdo", {
+      execFileAsync: async () => {
+        throw error;
+      },
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: "v1.27.0" }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.diagnostics?.map((d) => `${d.severity}: ${d.message}`)).toEqual([
+      "warning: expected sequence, found string",
+      "error: prdo: no such target. Available targets: dev, odd",
+    ]);
+    expect(result.error.details).toContain("prdo: no such target");
+  });
 });
