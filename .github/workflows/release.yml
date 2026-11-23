@@ -24,15 +24,18 @@ jobs:
     with:
       ref: ${{ github.ref }}
 
+  # Installs, tests, builds and packages: code from every dev dependency runs here, so this
+  # job can only read the repo. create-release, which can write, installs nothing (#492).
   package:
-    name: Package GitHub release
+    name: Package VSIX
     needs: e2e
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
+      package_name: ${{ steps.package.outputs.package_name }}
 
     steps:
       - name: Checkout
@@ -93,11 +96,50 @@ jobs:
       - name: Verify checksum
         run: sha256sum --check "${{ steps.package.outputs.package_name }}.sha256"
 
+      - name: Hand the VSIX to create-release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-vsix
+          path: |
+            ${{ steps.package.outputs.package_name }}
+            ${{ steps.package.outputs.package_name }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # For the release notes script and the changes/ files. It uses only Node's own
+      # modules, so nothing is installed.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Download the VSIX
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: release-vsix
+
+      - name: Verify checksum
+        run: sha256sum --check "${{ needs.package.outputs.package_name }}.sha256"
+
       # Only this version's section of CHANGELOG.md, not every version's (#294). Fails when
       # the version has no section or an empty one, before anything is created.
       - name: Write release notes
         env:
-          TAG: ${{ steps.version.outputs.tag_name }}
+          TAG: ${{ needs.package.outputs.tag_name }}
         run: node scripts/changelog.mjs notes "${TAG#v}" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create GitHub release
@@ -106,17 +148,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "${{ steps.version.outputs.tag_name }}" > /dev/null 2>&1; then
+          if gh release view "${{ needs.package.outputs.tag_name }}" > /dev/null 2>&1; then
             echo "Release already exists — uploading assets only"
-            gh release upload "${{ steps.version.outputs.tag_name }}" \
-              "${{ steps.package.outputs.package_name }}" \
-              "${{ steps.package.outputs.package_name }}.sha256" \
+            gh release upload "${{ needs.package.outputs.tag_name }}" \
+              "${{ needs.package.outputs.package_name }}" \
+              "${{ needs.package.outputs.package_name }}.sha256" \
               --clobber
           else
-            gh release create "${{ steps.version.outputs.tag_name }}" \
-              "${{ steps.package.outputs.package_name }}" \
-              "${{ steps.package.outputs.package_name }}.sha256" \
-              --title "${{ steps.version.outputs.tag_name }}" \
+            gh release create "${{ needs.package.outputs.tag_name }}" \
+              "${{ needs.package.outputs.package_name }}" \
+              "${{ needs.package.outputs.package_name }}.sha256" \
+              --title "${{ needs.package.outputs.tag_name }}" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
@@ -126,7 +168,7 @@ jobs:
   # from publish-release.yml, so its one registration covers both (#175).
   publish:
     name: Start publishing
-    needs: package
+    needs: [package, create-release]
     runs-on: ubuntu-latest
     permissions:
       actions: write

@@ -1,0 +1,3 @@
+Security
+
+- **Releases are built and published with less room for a hijacked npm package to interfere** ([#492](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/492)). The jobs that publish to the Marketplace and Open VSX no longer run any package's install script. The job that runs the tests and builds the extension can no longer write to the repository; a separate job that installs nothing creates the GitHub release. Dependabot now waits 7 days before offering a new version, and the commit hook no longer needs lint-staged and its 24 packages. Nothing changes in the extension itself.
