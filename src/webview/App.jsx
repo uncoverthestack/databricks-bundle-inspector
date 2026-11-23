@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ReactFlow,
   Background,
@@ -19,6 +19,7 @@ import UsesRow from "./components/UsesRow";
 import { resolveVariableForTarget } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
+import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
 import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
@@ -1624,6 +1625,26 @@ export default function App({
     focusIssuesNonce ? "issues" : "all",
   );
 
+  // Stable across renders: the graph hands its click handler to every task box, and a new
+  // function would redraw them all (issue 500).
+  const selectTaskNode = useCallback((nodeId) => {
+    // The Issues list sits above the task details, so picking a task closes it.
+    setActiveHeaderPanel(null);
+    setSelectedNodeId(nodeId);
+    setFocusRequest({ nodeId, nonce: Date.now() });
+  }, []);
+
+  const clearSelectedTask = useCallback(() => {
+    setSelectedNodeId(null);
+    setFocusRequest(null);
+  }, []);
+
+  // The clicked box's own `selected`, which is what the graph shows, decides select or clear.
+  const handleNodeClick = useCallback(
+    (_, node) => (node.selected ? clearSelectedTask() : selectTaskNode(node.id)),
+    [clearSelectedTask, selectTaskNode],
+  );
+
   const jobsByKey = useMemo(
     () => parsedBundle?.resources?.jobs ?? parsedBundle?.resources?.job ?? {},
     [parsedBundle],
@@ -1859,36 +1880,18 @@ export default function App({
     return issueTaskIds;
   }, [graphMode, issueTaskIds, usesTaskIds]);
 
+  // Built once per job; each click picks from them, so boxes that did not change keep their
+  // object and only those it changed are redrawn (issue 500).
+  const displayVariants = useMemo(() => buildDisplayVariants(flowNodes), [flowNodes]);
   const displayFlowNodes = useMemo(
     () =>
-      flowNodes.map((node) => {
-        const selected = node.id === selectedNodeId;
-        const related = focusedTaskIds?.has(node.id) ?? false;
-        const issueMatched = graphMode === "issues" && issueTaskIds.has(node.id);
-        return {
-          ...node,
-          selected,
-          data: {
-            ...node.data,
-            focusState: focusedTaskIds
-              ? selected
-                ? "selected"
-                : issueMatched
-                  ? "related"
-                  : related
-                    ? "related"
-                    : "dimmed"
-              : "normal",
-          },
-        };
+      buildDisplayNodes(flowNodes, displayVariants, {
+        selectedNodeId,
+        focusedTaskIds,
+        graphMode,
+        issueTaskIds,
       }),
-    [
-      flowNodes,
-      focusedTaskIds,
-      selectedNodeId,
-      graphMode,
-      issueTaskIds,
-    ],
+    [flowNodes, displayVariants, focusedTaskIds, selectedNodeId, graphMode, issueTaskIds],
   );
 
   const displayFlowEdges = useMemo(
@@ -1984,18 +1987,6 @@ export default function App({
     backgroundImage: `radial-gradient(circle at 1px 1px, color-mix(in srgb, ${UI_COLOR.fg} 6%, transparent) 1px, transparent 0)`,
     backgroundSize: "16px 16px",
   };
-
-  function selectTaskNode(nodeId) {
-    // The Issues list sits above the task details, so picking a task closes it.
-    setActiveHeaderPanel(null);
-    setSelectedNodeId(nodeId);
-    setFocusRequest({ nodeId, nonce: Date.now() });
-  }
-
-  function clearSelectedTask() {
-    setSelectedNodeId(null);
-    setFocusRequest(null);
-  }
 
   function selectPanelItem(item) {
     onTelemetry?.("issue_item_selected");
@@ -2266,11 +2257,7 @@ export default function App({
               nodeTypes={nodeTypes}
               colorMode={colorMode}
               className="bundle-flow"
-              onNodeClick={(_, node) =>
-                selectedNodeId === node.id
-                  ? clearSelectedTask()
-                  : selectTaskNode(node.id)
-              }
+              onNodeClick={handleNodeClick}
               onPaneClick={clearSelectedTask}
               nodesDraggable={false}
               nodesConnectable={false}
