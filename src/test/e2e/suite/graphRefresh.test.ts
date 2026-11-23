@@ -225,12 +225,12 @@ export function graphRefreshSuite() {
         // Copy review describes this pipeline, not a job, and only its own problems.
         await vscode.env.clipboard.writeText("");
         await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
-        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: alpha_pipeline"), "the copied pipeline review");
+        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: alpha\\_pipeline"), "the copied pipeline review");
         const review = await vscode.env.clipboard.readText();
         assert.doesNotMatch(review, /Job:|Selected job|file references/);
         // Its one problem, the notebook listed as a file, and none of the bundle's other issues.
         assert.match(review, /### Issues\n- \*\*Error\*\* · "\.\.\/src\/task\.py" may be a notebook, not a file\. \(resources\/jobs\.yml:\d+\)\n\n### Run by/);
-        assert.match(review, /### Run by\n- alpha_second \(task refresh\)\n- alpha_second \(task refresh_each\)/);
+        assert.match(review, /### Run by\n- alpha\\_second \(task refresh\)\n- alpha\\_second \(task refresh\\_each\)/);
         assert.match(review, /- 2 sources in libraries\n- 1 found\n- 1 a notebook listed as a file/);
 
         // A narrow editor keeps the source paths readable. Resizing the webview itself leaves
