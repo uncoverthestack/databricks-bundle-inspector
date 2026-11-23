@@ -8,6 +8,9 @@ on:
   push:
     tags:
       - "v*.*.*"
+      # A pre-release tag (v1.2.3-next.0) is for the npm packages only: its GitHub release is
+      # made by hand and published with publish-release.yml, registry npm.
+      - "!v*.*.*-*"
 
 permissions:
   contents: read
