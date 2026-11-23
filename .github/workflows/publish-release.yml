@@ -1,11 +1,11 @@
 name: Publish existing release
 
-# Publishes the VSIX already attached to a GitHub release, without rebuilding it,
-# so every registry serves the same bytes. release.yml starts it for each new tag;
+# Publishes the VSIX and the command-line tool's npm packages already attached to a GitHub
+# release, without rebuilding them, so every registry serves the same bytes. release.yml starts it for each new tag;
 # run it by hand to backfill a registry added after a release, or to retry one.
 # Versions a registry already has are skipped, so re-running is safe.
-# The publishing tools come from the branch this runs on; only the VSIX comes
-# from the release.
+# The publishing tools come from the branch this runs on; only the VSIX and the npm
+# packages come from the release. Releases before 0.10.0 have no npm packages.
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       registry:
-        description: "Where to publish"
+        description: "Where to publish: both = the two extension stores, all = both plus npm"
         required: true
         type: choice
         default: open-vsx
@@ -23,6 +23,8 @@ on:
           - open-vsx
           - vscode-marketplace
           - both
+          - npm
+          - all
 
 permissions:
   contents: read
@@ -34,7 +36,7 @@ concurrency:
 jobs:
   publish-marketplace:
     name: Publish to VS Code Marketplace
-    if: inputs.registry == 'vscode-marketplace' || inputs.registry == 'both'
+    if: inputs.registry == 'vscode-marketplace' || inputs.registry == 'both' || inputs.registry == 'all'
     runs-on: ubuntu-latest
     environment:
       name: vscode-marketplace
@@ -83,7 +85,7 @@ jobs:
 
   publish-open-vsx:
     name: Publish to Open VSX
-    if: inputs.registry == 'open-vsx' || inputs.registry == 'both'
+    if: inputs.registry == 'open-vsx' || inputs.registry == 'both' || inputs.registry == 'all'
     runs-on: ubuntu-latest
     environment:
       name: open-vsx
@@ -129,3 +131,87 @@ jobs:
         env:
           PACKAGE: ${{ steps.vsix.outputs.package_name }}
         run: npx ovsx publish "$PACKAGE" --skip-duplicate --trusted-publishing
+
+  # The command-line tool (#348) under both of its npm names.
+  publish-npm:
+    name: Publish to npm
+    if: inputs.registry == 'npm' || inputs.registry == 'all'
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@uncoverthestack/databricks-bundle-inspector
+    permissions:
+      contents: read
+      # Trusted publishing: npm swaps this job's GitHub OIDC token for a short-lived publishing
+      # token, and adds a provenance statement. Each package trusts this workflow and the npm
+      # environment, so no npm token is stored anywhere.
+      id-token: write
+
+    steps:
+      # Only for .nvmrc. Nothing is installed: publishing a packed file needs npm alone.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Check npm supports trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(npm --version)"
+          echo "npm $version"
+          node -e '
+            const [major, minor, patch] = process.argv[1].split(".").map(Number);
+            if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
+              console.error("Trusted publishing needs npm 11.5.1 or newer");
+              process.exit(1);
+            }' "$version"
+
+      - name: Download and verify the release's npm packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/npm-packages" && cd "$RUNNER_TEMP/npm-packages"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*.tgz" --pattern "*.tgz.sha256"
+          sha256sum --check ./*.tgz.sha256
+          test "$(ls ./*.tgz | wc -l)" -eq 2
+
+      # A version npm already has is skipped, so a re-run publishes only what is missing. A
+      # pre-release goes to the next tag, so a plain install never picks it up.
+      - name: Publish
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/npm-packages"
+          for package in ./*.tgz; do
+            manifest="$(tar -xOzf "$package" package/package.json)"
+            name="$(node -p 'JSON.parse(process.argv[1]).name' "$manifest")"
+            version="$(node -p 'JSON.parse(process.argv[1]).version' "$manifest")"
+            if [ "v$version" != "$TAG" ]; then
+              echo "$package is version $version, not ${TAG#v}" >&2
+              exit 1
+            fi
+            if found="$(npm view "$name@$version" version 2> view-error.txt)"; then
+              if [ "$found" = "$version" ]; then
+                echo "$name@$version is already on npm, skipped"
+                continue
+              fi
+            elif ! grep -q E404 view-error.txt; then
+              cat view-error.txt >&2
+              exit 1
+            fi
+            dist_tag=latest
+            case "$version" in *-*) dist_tag=next ;; esac
+            npm publish "$package" --access public --tag "$dist_tag" --ignore-scripts
+            echo "Published $name@$version ($dist_tag)"
+          done

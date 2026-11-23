@@ -1,12 +1,20 @@
 // Builds the command-line tool (#348) into cli/: one file with no runtime dependencies, plus the
 // licences of the libraries bundled into it. Kept apart from esbuild.js so the VSIX is unchanged.
+// `--version <x.y.z-pre.n>` builds a pre-release that reports that version (see pack-cli.mjs).
 import * as esbuild from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { parseArgs } from "node:util";
 
 const root = path.resolve(import.meta.dirname, "..");
 const cliDir = path.join(root, "cli");
 const pkg = JSON.parse(readFileSync(path.join(cliDir, "package.json"), "utf8"));
+const { values: args } = parseArgs({ options: { version: { type: "string" } } });
+const version = args.version ?? pkg.version;
+// Only a pre-release may differ from cli/package.json: a release version comes from the release PR.
+if (version !== pkg.version && !/^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/.test(version)) {
+  throw new Error(`--version must be a pre-release such as 1.2.3-next.0, not ${version}`);
+}
 
 const result = await esbuild.build({
   entryPoints: [path.join(root, "src/cli/bin.ts")],
@@ -20,7 +28,7 @@ const result = await esbuild.build({
   sourcemap: false,
   legalComments: "eof",
   banner: { js: "#!/usr/bin/env node" },
-  define: { __CLI_VERSION__: JSON.stringify(pkg.version) },
+  define: { __CLI_VERSION__: JSON.stringify(version) },
   metafile: true,
   logLevel: "warning",
 });
@@ -57,4 +65,4 @@ writeFileSync(
 
 if (!existsSync(cliDir)) mkdirSync(cliDir);
 copyFileSync(path.join(root, "LICENSE"), path.join(cliDir, "LICENSE"));
-console.log(`cli/dist/cli.cjs ${pkg.version}: ${notices.length} bundled packages (${notices.map((entry) => entry.name).join(", ")})`);
+console.log(`cli/dist/cli.cjs ${version}: ${notices.length} bundled packages (${notices.map((entry) => entry.name).join(", ")})`);

@@ -134,12 +134,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=optional --ignore-scripts
 
+      # The release's own pack step: one build under both npm names.
       - name: Build and pack the CLI
         run: |
-          npm run build:cli
           T="$(cd "$RUNNER_TEMP" && pwd)"
-          cd cli
-          npm pack --pack-destination "$T"
+          npm run pack:cli -- --out "$T/packages"
 
       - name: Use the oldest supported Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -152,7 +151,7 @@ jobs:
           W="$(pwd)"
           mkdir "$T/try" && cd "$T/try"
           npm init -y > /dev/null
-          npm install --ignore-scripts "$T"/uncoverthestack-databricks-bundle-inspector-*.tgz
+          npm install --ignore-scripts "$T"/packages/uncoverthestack-databricks-bundle-inspector-*.tgz
           test "$(npx --no-install databricks-bundle-inspector --version)" = "$(node -p "require(process.argv[1]).version" "$W/cli/package.json")"
           npx --no-install databricks-bundle-inspector --help | grep -q "Usage: databricks-bundle-inspector check"
           # No Databricks CLI at this path: a setup problem, exit code 3, with the reason.
@@ -163,3 +162,8 @@ jobs:
           cat err.txt
           test "$code" = 3
           grep -q "is not a working Databricks CLI" err.txt
+          # The same tool under its plain name.
+          mkdir "$T/try-plain" && cd "$T/try-plain"
+          npm init -y > /dev/null
+          npm install --ignore-scripts "$T"/packages/databricks-bundle-inspector-*.tgz
+          test "$(npx --no-install databricks-bundle-inspector --version)" = "$(node -p "require(process.argv[1]).version" "$W/cli/package.json")"

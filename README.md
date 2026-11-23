@@ -53,6 +53,16 @@ If the CLI can't be found, Open Graph says why and links to the install steps fo
 
 [Setup and usage in detail](docs/usage.md)
 
+## In a terminal or CI
+
+The same checks run from the command line, so a pull request can fail before anything is deployed. It needs the Databricks CLI too, and Node.js 22 or newer:
+
+```sh
+npx @uncoverthestack/databricks-bundle-inspector check
+```
+
+It checks every bundle under the folder and exits with `1` when it finds errors. `--format github` shows the findings as annotations in a pull request, and `--target` checks a real target. [Command-line tool](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/cli/README.md)
+
 ## Safety
 
 - It runs one program, the Databricks CLI you installed, to validate the bundle. To find it, Windows only, it may also read (never change) your stored `Path` with `reg.exe`. Nothing is deployed and your code is never run, including scripts and Python a bundle asks the CLI to run. That last part needs Databricks CLI v0.246.0 or newer: an older CLI runs them anyway.
