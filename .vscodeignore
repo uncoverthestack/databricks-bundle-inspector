@@ -9,6 +9,8 @@
 .tools/**
 node_modules/**
 out/**
+# The command-line tool is its own npm package (#348).
+cli/**
 src/**
 public/**
 .yarnrc

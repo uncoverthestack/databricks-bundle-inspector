@@ -376,6 +376,7 @@
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
     "prepare": "husky",
     "build:e2e": "node scripts/build-e2e.mjs",
+    "build:cli": "node scripts/build-cli.mjs",
     "test:e2e": "npm run build:ext && npm run build:webview && npm run build:e2e && node out/e2e/runTest.cjs",
     "test:e2e:watch": "npm run test:e2e -- --pause-ms 15000",
     "test:e2e:include": "npm run test:e2e -- --suite includeMistakes --fixture src/test/fixtures/include-mistakes",

@@ -1,0 +1,35 @@
+{
+  "name": "@uncoverthestack/databricks-bundle-inspector",
+  "version": "0.9.0",
+  "description": "Checks Databricks bundles for mistakes that pass bundle validate and deploy, then fail when the job runs. For terminals and CI.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uncoverthestack/databricks-bundle-inspector.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/cli/README.md",
+  "bugs": {
+    "url": "https://github.com/uncoverthestack/databricks-bundle-inspector/issues"
+  },
+  "keywords": [
+    "databricks",
+    "databricks asset bundles",
+    "declarative automation bundles",
+    "bundle validate",
+    "lakeflow jobs",
+    "ci"
+  ],
+  "bin": {
+    "databricks-bundle-inspector": "dist/cli.cjs"
+  },
+  "files": [
+    "dist/cli.cjs",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}
