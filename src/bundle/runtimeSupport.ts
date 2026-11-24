@@ -120,6 +120,15 @@ export function runtimeSupport(version: string, today: string): RuntimeSupport {
   return { state: "supported", version };
 }
 
+/**
+ * Today as YYYY-MM-DD. The test runners set DATABRICKS_BUNDLE_INSPECTOR_TODAY to a fixed day,
+ * so fixtures give the same findings every day; a value that isn't a date is ignored.
+ */
+export function todayForChecks(): string {
+  const fixed = typeof process !== "undefined" ? process.env?.DATABRICKS_BUNDLE_INSPECTOR_TODAY : undefined;
+  return fixed && /^\d{4}-\d{2}-\d{2}$/.test(fixed) ? fixed : new Date().toISOString().slice(0, 10);
+}
+
 export interface RuntimeSupportFinding {
   severity: "warning" | "info";
   /** `resources.clusters.x`, or `resources.jobs.x` with a task or job cluster. */
@@ -133,7 +142,7 @@ export interface RuntimeSupportFinding {
 }
 
 export interface RuntimeSupportOptions {
-  /** Today as YYYY-MM-DD; the tests pass a fixed day. */
+  /** Today as YYYY-MM-DD; the unit tests pass a fixed day. */
   today?: string;
   activeTarget?: string;
   /** A value with `${...}` in it as the CLI would read it, or undefined when that can't be told offline. */
@@ -206,7 +215,7 @@ export function findRuntimeSupportProblems(
   files: SourceFile[],
   options: RuntimeSupportOptions = {},
 ): RuntimeSupportFinding[] {
-  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  const today = options.today ?? todayForChecks();
   const locate = new Map(files.map((file) => [file, locator(file)]));
   const findings: RuntimeSupportFinding[] = [];
 

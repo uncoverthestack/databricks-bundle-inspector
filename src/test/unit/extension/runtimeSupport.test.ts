@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@jest/globals";
+import { afterAll, describe, expect, test } from "@jest/globals";
 import { parse } from "yaml";
 import type { SourceFile } from "../../../bundle/jobStructure.js";
 import {
@@ -8,6 +8,7 @@ import {
   runtimeName,
   runtimeSupport,
   runtimeVersionOf,
+  todayForChecks,
 } from "../../../bundle/runtimeSupport.js";
 
 // Issue 485: a hint a year before a runtime's end of support, a warning after it.
@@ -146,5 +147,23 @@ targets:
   test("a bundle with no clusters, or only current ones, has no findings", () => {
     expect(findRuntimeSupportProblems({}, [], { today: TODAY })).toEqual([]);
     expect(findRuntimeSupportProblems({ clusters: { a: { spark_version: "17.3.x-scala2.13" } } }, [], { today: TODAY })).toEqual([]);
+  });
+});
+
+describe("the day the check uses (issue 485)", () => {
+  const saved = process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY;
+  afterAll(() => {
+    if (saved === undefined) delete process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY;
+    else process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY = saved;
+  });
+
+  test("the test runners' fixed day is used, so fixtures don't change as real dates pass", () => {
+    process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY = "2030-01-02";
+    expect(todayForChecks()).toBe("2030-01-02");
+  });
+
+  test("a value that isn't a date is ignored", () => {
+    process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY = "tomorrow";
+    expect(todayForChecks()).toBe(new Date().toISOString().slice(0, 10));
   });
 });

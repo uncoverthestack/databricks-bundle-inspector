@@ -1,3 +1,7 @@
+// Runtime end-of-support findings depend on the day (#485): tests run on a fixed one, so a
+// fixture's note doesn't turn into a warning when a real date passes. Workers inherit it.
+process.env.DATABRICKS_BUNDLE_INSPECTOR_TODAY ??= "2026-11-24";
+
 const { createDefaultPreset } = require("ts-jest");
 
 const tsJestPreset = createDefaultPreset();
