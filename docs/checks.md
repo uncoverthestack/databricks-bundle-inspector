@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
@@ -49,6 +49,15 @@ A Lakeflow Spark Declarative Pipeline (formerly Delta Live Tables, DLT) lists a 
 - **Fix:** add the source files, or correct the path or glob.
 - **Did you mean and quick fix:** as for [`missing_file`](#missing_file), for a notebook or file path. Not for a glob.
 - **Globs Databricks refuses:** the only wildcard `glob.include` takes is a trailing `/**`. A single `*` (`../src/dlt/*`, `../src/dlt/*.sql`, `../src/dlt/**/*.sql`) fails deploy with "Single asterisk glob pattern is not supported", and `*` or `?` anywhere else with "Special characters *?\ are reserved". `bundle validate` passes them (checked by deploying, Databricks CLI v1.27.0). The finding says `Did you mean "../src/dlt/**"?` when the wildcard is only in the last part of the path, with a quick fix.
+
+### `unsupported_pipeline_file`
+
+A pipeline glob (`folder/**`) takes every file deploy uploads under its folder, hidden files included, and the pipeline update fails on some of them, even next to valid sources: `[UNSUPPORTED_LIBRARY_FILE_TYPE] The file at .../src/dlt/.gitkeep does not have .py or .sql suffix`. `bundle validate` and deploy pass.
+
+- **Severity:** error.
+- **Which files:** checked by deploying and running, Databricks CLI v1.27.0, each next to a valid `.sql` file. `.py` and `.sql` are sources, and `.md`, `.txt`, `.csv`, `.json` and `.ipynb` were skipped. Every other type tested failed: no extension (`.gitkeep`, `.DS_Store`, `.env`, `.gitignore`, `Makefile`), `.yml`, `.yaml`, `.toml`, `.cfg`, `.ini`, `.lock`, `.whl`, `.png`, `.html`, `.sh`, `.java`, `.r` and `.scala`, so any type not in the first two lists gets the finding. A file in a subfolder counts too.
+- **Example:** `include: ../src/dlt/**` with a `.gitkeep` or a `.DS_Store` in `src/dlt`: `Add "src/dlt/.gitkeep" to sync.exclude: deployed under "../src/dlt/**", it may fail the pipeline, which only takes .py and .sql files.`
+- **Fix:** add the file to `sync.exclude` or `.gitignore`, or move it out of the folder. A file left out of the upload gets no finding.
 
 ### `missing_library`
 
