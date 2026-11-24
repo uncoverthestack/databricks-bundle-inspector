@@ -205,6 +205,58 @@ describe("buildInspectorIssues", () => {
     expect(buildInspectorIssues(graph, { bundle: { name: "demo" } }, [], "/workspace/demo")).toEqual([]);
   });
 
+  describe("source: WORKSPACE in a job with git_source (#524)", () => {
+    // The CLI rewrites no path in such a job, so a relative path reaches the Jobs API as
+    // written, and deploy refuses it, whether or not the file is on disk (live, CLI 1.27.0).
+    const gitJob = () =>
+      jobNode({ git_source: { git_url: "https://github.com/acme/demo", git_provider: "gitHub", git_branch: "main" } });
+    const workspaceRef = (path: string, referenceType: "notebook" | "python_script" | "sql" = "notebook") => ({
+      path,
+      resolvedPath: `/workspace/demo/${path.replace(/^\.\.\//, "")}`,
+      exists: true,
+      source: "WORKSPACE" as const,
+      isInGitignore: false,
+      referenceType,
+      sourceFile: "/workspace/demo/resources/job.yml",
+      sourceLine: 14,
+      sourceColumn: 11,
+      yamlPath: "resources.jobs.ingest.tasks.extract.notebook_task.notebook_path",
+    });
+    const kinds = (job: BundleGraph["nodes"][number], path: string, type?: "notebook" | "python_script" | "sql") =>
+      buildInspectorIssues(
+        { nodes: [job, taskNode({ fileReferences: [workspaceRef(path, type)] })], edges: [] },
+        { bundle: { name: "demo" } },
+        [],
+        "/workspace/demo",
+      );
+
+    test.each(["notebook", "python_script", "sql"] as const)("a relative %s path is an error", (type) => {
+      expect(kinds(gitJob(), "../src/etl.py", type)).toMatchObject([
+        {
+          severity: "error",
+          kind: "git_source_not_recommended",
+          title: "Task has source: WORKSPACE with a relative path in a job with git_source, so deploy may fail.",
+          detail: "../src/etl.py",
+          file: "/workspace/demo/resources/job.yml",
+          line: 14,
+          column: 11,
+        },
+      ]);
+    });
+
+    test.each([
+      ["a workspace path", "/Workspace/Shared/etl"],
+      ["a path from a variable, which may resolve to an absolute one", "${workspace.file_path}/src/etl"],
+      ["a cloud storage URI", "s3://bucket/etl.py"],
+    ])("no finding for %s", (_name, path) => {
+      expect(kinds(gitJob(), path)).toEqual([]);
+    });
+
+    test("no finding without git_source: the CLI uploads the file and rewrites the path", () => {
+      expect(kinds(jobNode(), "../src/etl.py")).toEqual([]);
+    });
+  });
+
   test("reports a missing file in a for_each task's inner task against the outer task", () => {
     const graph: BundleGraph = {
       nodes: [

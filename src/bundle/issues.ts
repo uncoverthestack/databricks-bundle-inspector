@@ -942,6 +942,36 @@ export function buildInspectorIssues(
         });
       }
 
+      // The CLI rewrites no task path in a job with a git_source, so a relative WORKSPACE path
+      // reaches the Jobs API as written, and deploy refuses it (live, CLI 1.27.0, #524):
+      // "Only absolute paths are currently supported" (notebook, SQL file), "Relative paths
+      // are only supported when source is set to GIT" (Python file). A variable may resolve
+      // to an absolute path, and a cloud URI is not relative, so both are left alone.
+      if (
+        ref.source === "WORKSPACE" &&
+        parentJobHasGitSource(graph, task) &&
+        !ref.path.startsWith("/") &&
+        !ref.path.includes("${") &&
+        !/^[a-z][a-z0-9+.-]*:/i.test(ref.path)
+      ) {
+        issues.push({
+          id: `git-source-relative:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "error",
+          kind: "git_source_not_recommended",
+          title: "Task has source: WORKSPACE with a relative path in a job with git_source, so deploy may fail.",
+          detail: ref.path,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          fixHint: "Use a path from /Workspace, or remove source: WORKSPACE to read the path from the job's Git repository.",
+          ...issueLocation(
+            ref.sourceFile || sourceFileForTask(task),
+            ref.sourceLine || undefined,
+            ref.sourceColumn,
+          ),
+        });
+      }
+
       if (usesVariable(ref.path) && ref.source !== "GIT" && !parentJobHasGitSource(graph, task)) {
         const id = `path-not-checked:${task.id}:${ref.yamlPath}`;
         if (!issues.some((issue) => issue.id === id)) {

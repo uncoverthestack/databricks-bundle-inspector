@@ -309,6 +309,26 @@ describe("buildTaskNodeData — fileReferences", () => {
     expect(result.fileReferences[0]?.strayGitSource).toBeUndefined();
   });
 
+  // #524: the issue check needs a Python or SQL file's own source, as a notebook's has.
+  test("Python and SQL file tasks keep their source", () => {
+    const python = buildTaskNodeData(
+      { spark_python_task: { python_file: "../run.py", source: "WORKSPACE" } },
+      gitJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(python.fileReferences[0]?.source).toBe("WORKSPACE");
+    const sql = buildTaskNodeData(
+      { sql_task: { file: { path: "q.sql", source: "GIT" } } },
+      gitJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(sql.fileReferences[0]?.source).toBe("GIT");
+  });
+
   test("notebook_task source omitted requires exact local path", () => {
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "git_notebook" } },
