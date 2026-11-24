@@ -1360,12 +1360,12 @@ export function buildInspectorIssues(
         continue;
       }
       // Deployed files the pipeline refuses, next to its sources (#531).
-      const unsupported =
+      const refusedFiles =
         ref.checked && ref.exists && ref.kind === "glob" && ref.resolvedPath && ref.path.endsWith("/**")
           ? unsupportedPipelineFiles(ref.resolvedPath, syncExclusionOf)
           : [];
-      if (unsupported.length > 0) {
-        const shown = unsupported.map((file) => path.relative(bundleRoot, file).split(path.sep).join("/")).sort();
+      if (refusedFiles.length > 0) {
+        const shown = refusedFiles.map((file) => path.relative(bundleRoot, file).split(path.sep).join("/")).sort();
         const others = shown.length > 1 ? ` and ${shown.length - 1} other file${shown.length > 2 ? "s" : ""}` : "";
         issues.push({
           id: `unsupported-pipeline-file:${pipeline.id}:${ref.yamlPath}`,
