@@ -10,6 +10,7 @@ import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, syncsFromBundleRoot, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
+import { mayBeBuilt } from "./localLibraries.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
 import { filesUnder, movedFileSuggestion, type ExpectedFile, type FileList } from "./pathSuggestions.js";
@@ -1077,12 +1078,16 @@ export function buildInspectorIssues(
 
     for (const ref of checkedTaskData.flatMap((data) => data.libraryReferences)) {
       if (!ref.isLocal || ref.exists !== false) continue;
+      // Deploy builds artifacts before it checks library files (CLI phases/build.go), so a
+      // wheel the build writes isn't there yet on a fresh checkout (#525).
+      if (ref.resolvedPath && mayBeBuilt(ref.resolvedPath, graph.buildOutputs)) continue;
       issues.push({
         id: `missing-library:${task.id}:${ref.yamlPath}:${ref.identifier}`,
         severity: "error",
         kind: "missing_library",
         title: "Missing local library",
-        detail: ref.identifier,
+        // A glob fails deploy only when no file matches it ("no files match pattern").
+        detail: hasGlobCharacters(ref.identifier) ? `${ref.identifier} (no file matches)` : ref.identifier,
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: ref.yamlPath,

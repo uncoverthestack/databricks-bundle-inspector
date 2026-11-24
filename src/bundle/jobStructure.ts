@@ -16,7 +16,8 @@ export interface JobStructureFinding {
     | "duplicate_job_parameter"
     | "environment_version_missing"
     | "unknown_environment_key"
-    | "project_environment_version_missing";
+    | "project_environment_version_missing"
+    | "missing_library";
   /** The job's resource key, e.g. `nightly` for `resources.jobs.nightly`. */
   jobKey: string;
   /** The task the finding belongs to; none for a job parameter. */
@@ -408,6 +409,40 @@ export interface EnvironmentOptions extends JobStructureOptions {
    * can't be read (a workspace path, a variable, a missing file).
    */
   readProjectFile?: (jobKey: string, value: string) => string | undefined;
+  /**
+   * A local environment dependency that deploy will fail on: missing, or a glob no file
+   * matches, read from the job's YAML folder (#482). Undefined when it is there, or when
+   * deploy may build it first. `suggestion` is the path from the YAML folder to a file the
+   * value names from the bundle root, the usual mistake (#518).
+   */
+  missingDependency?: (jobKey: string, value: string) => { glob: boolean; suggestion?: string } | undefined;
+  /** Whether an environment dependency is a local file to the CLI (see localLibraries.ts). */
+  isLocalDependency?: (value: string) => boolean;
+}
+
+/** Where a dependency with this value is written in a job's environment, else the environment itself. */
+function environmentDependencyLocation(
+  files: SourceFile[],
+  locate: Map<SourceFile, (path: (string | number)[]) => YamlLocation | undefined>,
+  jobKey: string,
+  environmentKey: string,
+  value: string,
+  options: JobStructureOptions,
+): YamlLocation | undefined {
+  for (const file of files) {
+    for (const environments of jobLists(file.doc, "environments")) {
+      if (environments.jobKey !== jobKey) continue;
+      if (environments.target !== undefined && environments.target !== options.activeTarget) continue;
+      const target = environments.target ?? options.activeTarget;
+      for (const [index, environment] of environments.items.entries()) {
+        if (keyOf(record(environment).environment_key, target, options) !== environmentKey) continue;
+        const dependencies = list(record(record(environment).spec).dependencies);
+        const at = dependencies.findIndex((dependency) => dependency === value);
+        if (at !== -1) return locate.get(file)!([...environments.path, index, "spec", "dependencies", at]);
+      }
+    }
+  }
+  return environmentLocation(files, locate, jobKey, environmentKey, ["spec", "dependencies"], options);
 }
 
 /**
@@ -528,6 +563,29 @@ export function findEnvironmentProblems(
         });
         continue;
       }
+      // Local files in dependencies: deploy checks them after building artifacts, and
+      // fails on a missing one (live, CLI 1.27.0, #482): "file doesn't exist <path>", or
+      // "no files match pattern: <path>" for a glob. `bundle validate` passes.
+      for (const dependency of list(spec.dependencies)) {
+        if (typeof dependency !== "string" || dependency.includes("${")) continue;
+        if (!options.isLocalDependency?.(dependency)) continue;
+        const missing = options.missingDependency?.(jobKey, dependency);
+        if (!missing) continue;
+        const didYouMean = missing.suggestion ? ` Did you mean "${missing.suggestion}"?` : "";
+        findings.push({
+          kind: "missing_library",
+          jobKey,
+          subject: `${key}:${dependency}`,
+          title: missing.glob
+            ? `Environment "${key}": no file matches ${dependency}, so deploy may fail.${didYouMean}`
+            : `Environment "${key}": ${dependency} doesn't exist, so deploy may fail.${didYouMean}`,
+          fixHint: missing.glob
+            ? `Deploy fails with "no files match pattern". Paths are read from the YAML file's folder. Build the file, or correct the path.`
+            : `Deploy fails with "file doesn't exist". Paths are read from the YAML file's folder. Build the file, or correct the path.`,
+          ...located(environmentDependencyLocation(files, locate, jobKey, key, dependency, options)),
+        });
+      }
+
       const project = spec.project_environment;
       // Any other version field wins: deploy refuses project_environment combined with one.
       const versioned = ENVIRONMENT_VERSION_FIELDS.some((field) => field !== "project_environment" && isSet(spec[field]));

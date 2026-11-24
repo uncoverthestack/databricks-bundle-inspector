@@ -283,3 +283,81 @@ resources:
     expect(buildInspectorIssues(graph, output, [], bundleRoot).filter((issue) => issue.kind.includes("environment"))).toEqual([]);
   });
 });
+
+// #482, live on CLI v1.27.0 (2026-11-24, twice each): `bundle validate` passes, and deploy
+// fails on a local dependency that is missing ("file doesn't exist") or a glob no file
+// matches ("no files match pattern"), after building artifacts.
+describe("local files in environment dependencies (#482)", () => {
+  let parent: string;
+  let bundleRoot: string;
+
+  beforeEach(async () => {
+    parent = await mkdtemp(path.join(tmpdir(), "bdi-env-deps-"));
+    bundleRoot = path.join(parent, "proj");
+    await mkdir(path.join(bundleRoot, "resources"), { recursive: true });
+    await mkdir(path.join(bundleRoot, "dist"));
+    await writeFile(path.join(bundleRoot, "dist", "a-0.1-py3-none-any.whl"), "x");
+    await writeFile(path.join(bundleRoot, "databricks.yml"), "bundle:\n  name: deps\ninclude:\n  - resources/*.yml\n");
+  });
+  afterEach(async () => {
+    await rm(parent, { recursive: true, force: true });
+  });
+
+  const written = [
+    "../dist/a-0.1-py3-none-any.whl",
+    "./dist/a-0.1-py3-none-any.whl",
+    "../dist/*.whl",
+    "../dist/b-*.whl",
+    "six==1.16",
+    "-r ../requirements.txt",
+  ];
+  const jobYaml = (dependencies: string[]) =>
+    `resources:\n  jobs:\n    j:\n      environments:\n        - environment_key: e\n          spec:\n            environment_version: "4"\n            dependencies:\n${dependencies.map((d) => `              - "${d}"\n`).join("")}`;
+  const output = (dependencies: string[], target?: string) =>
+    ({
+      bundle: { name: "deps", ...(target ? { target } : {}) },
+      include: ["resources/job.yml"],
+      resources: { jobs: { j: { environments: [{ environment_key: "e", spec: { environment_version: "4", dependencies } }] } } },
+    }) as unknown as ParsedBundleConfig;
+  const findings = async (config: ParsedBundleConfig) => {
+    const graph = await extractBundleGraph(config, bundleRoot);
+    return buildInspectorIssues(graph, config, [], bundleRoot)
+      .filter((issue) => issue.kind === "missing_library")
+      .map((issue) => `${issue.severity} ${path.basename(issue.file ?? "")}:${issue.line}: ${issue.title}`);
+  };
+  const expected = [
+    'error job.yml:10: Environment "e": ./dist/a-0.1-py3-none-any.whl doesn\'t exist, so deploy may fail. Did you mean "../dist/a-0.1-py3-none-any.whl"?',
+    'error job.yml:12: Environment "e": no file matches ../dist/b-*.whl, so deploy may fail.',
+  ];
+
+  test("the structural preview reads them from the job's YAML folder", async () => {
+    await writeFile(path.join(bundleRoot, "resources", "job.yml"), jobYaml(written));
+    expect(await findings(output(written))).toEqual(expected);
+  });
+
+  test("a real target's paths, given from the bundle root, are read back from the YAML folder", async () => {
+    await writeFile(path.join(bundleRoot, "resources", "job.yml"), jobYaml(written));
+    // As `bundle validate -o json -t dev` gave them on CLI v1.27.0.
+    const reported = [
+      "./dist/a-0.1-py3-none-any.whl",
+      "./resources/dist/a-0.1-py3-none-any.whl",
+      "./dist/*.whl",
+      "./dist/b-*.whl",
+      "six==1.16",
+      "-r ./requirements.txt",
+    ];
+    expect(await findings(output(reported, "dev"))).toEqual(expected);
+  });
+
+  test("a wheel an artifact builds at deploy is no finding, even before it is built", async () => {
+    await writeFile(
+      path.join(bundleRoot, "databricks.yml"),
+      "bundle:\n  name: deps\ninclude:\n  - resources/*.yml\nartifacts:\n  w:\n    type: whl\n    path: ./pkg\n",
+    );
+    await writeFile(path.join(bundleRoot, "resources", "job.yml"), jobYaml(["../pkg/dist/*.whl", "./pkg/dist/*.whl"]));
+    const config = output(["../pkg/dist/*.whl", "./pkg/dist/*.whl"]);
+    (config as unknown as { artifacts: unknown }).artifacts = { w: { type: "whl", path: "./pkg" } };
+    // Only the second, which points at resources/pkg/dist where nothing is built.
+    expect(await findings(config)).toEqual(['error job.yml:10: Environment "e": no file matches ./pkg/dist/*.whl, so deploy may fail.']);
+  });
+});
