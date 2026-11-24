@@ -363,6 +363,7 @@
     "test:semantic:cli": "jest --config jest.semantic-cli.config.cjs",
     "test:variables:cli": "jest --config jest.variables-cli.config.cjs",
     "test:semantic:cli:matrix": "node scripts/run-semantic-cli-matrix.mjs",
+    "test:runtime-dates": "jest --config jest.runtime-dates.config.cjs",
     "test:schema-coverage": "jest --config jest.schema-coverage.config.cjs",
     "check:pipeline-sql-reference": "node scripts/pipeline-sql-reference.mjs",
     "update:pipeline-sql-reference": "node scripts/pipeline-sql-reference.mjs --update",
