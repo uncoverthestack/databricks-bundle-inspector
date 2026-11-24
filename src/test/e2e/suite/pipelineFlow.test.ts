@@ -201,11 +201,18 @@ export function pipelineFlowSuite() {
           return { width: innerWidth, page: document.scrollingElement.scrollWidth, canvasScrolls: canvas.scrollWidth > canvas.clientWidth };
         })()`);
         await screenshot("pipeline-flow-narrow");
+        // Cut-off boxes are counted at the edge (issue 550), and the count goes once scrolled to the end.
+        const more = () => evaluate(`Number(document.querySelector("[data-data-flow-more]")?.dataset.dataFlowMore ?? 0)`);
+        shown.more = await more();
+        await evaluate(`(() => { const canvas = document.querySelector("[data-data-flow-canvas]"); canvas.scrollLeft = canvas.scrollWidth; })()`);
+        await waitFor(async () => (await more()) === 0, "no count after scrolling to the end");
       } finally {
         await sizer.set(STANDARD_PANEL);
       }
       assert.ok(shown.page <= shown.width + 1, `no sideways page scroll: ${JSON.stringify(shown)}`);
       assert.equal(shown.canvasScrolls, true, `the data flow scrolls inside itself: ${JSON.stringify(shown)}`);
+      assert.ok(shown.more > 0, `the cut-off boxes are counted: ${JSON.stringify(shown)}`);
+      await waitFor(async () => !(await evaluate(`Boolean(document.querySelector("[data-data-flow-more]"))`)), "no count at the standard width");
     });
 
     it("a save that removes the focused table leaves no box faded and no stale scroll width", async () => {
