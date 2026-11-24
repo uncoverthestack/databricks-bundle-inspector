@@ -398,7 +398,8 @@ function RefItem({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {kind === "secret_scope" && !missing && !status ? (
+        {/* A type's icon (issue 546); a missing or flagged row keeps a dot in its problem colour. */}
+        {!missing && !status ? (
           <TypeDot kind={kind} />
         ) : (
           <span
@@ -2005,6 +2006,7 @@ export default function App({
               label: item.label,
               subtitle: typeWords(item),
               kind: item.kind,
+              source: item.source,
               issueCount: item.problems.errors + item.problems.warnings,
               problemTone: problemTone(item.problems),
             })),

@@ -390,6 +390,13 @@ export function overviewSuite() {
         assert.equal(await evaluate(inView), false, "the box starts out of view, or this proves nothing");
         await typeSearch(label);
         await waitFor(async () => await evaluate(`[...document.querySelectorAll("header button")].some((button) => button.textContent.includes(${JSON.stringify(label)}))`), "the search list");
+        // The result shows the same icon as its box (issue 546).
+        const boxIcon = await evaluate(`document.querySelector('[data-overview-item="${lowest}"] [data-type-icon]')?.dataset.typeIcon ?? null`);
+        assert.ok(boxIcon, "the box has an icon, or this proves nothing");
+        assert.equal(
+          await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes(${JSON.stringify(label)}))?.querySelector("[data-type-icon]")?.dataset.typeIcon ?? null`),
+          boxIcon,
+        );
         await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes(${JSON.stringify(label)})).click()`);
         await waitFor(async () => (await read()).details === lowest, "the picked box selected");
         await waitFor(async () => (await evaluate(inView)) === true, "the picked box in view");
