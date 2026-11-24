@@ -1,0 +1,88 @@
+resources:
+  postgres_projects:
+    orders_db:
+      project_id: orders-db
+      display_name: Orders
+      pg_version: 17
+      history_retention_duration: "604800s"
+
+  postgres_branches:
+    # Made from the project's first branch, which the project creates as "production".
+    dev:
+      parent: ${resources.postgres_projects.orders_db.id}
+      branch_id: dev-${workspace.current_user.short_name}
+      source_branch: ${resources.postgres_projects.orders_db.id}/branches/production
+      ttl: "604800s"
+    # Made from another branch in this bundle, at a point in its history.
+    feature_x:
+      parent: ${resources.postgres_projects.orders_db.id}
+      branch_id: feature-x
+      source_branch: ${resources.postgres_branches.dev.id}
+      source_branch_lsn: "0/1A2B3C"
+      no_expiry: true
+    # Made from a snapshot of production.
+    restore:
+      parent: ${resources.postgres_projects.orders_db.id}
+      branch_id: restore
+      source_snapshot: ${resources.postgres_projects.orders_db.id}/snapshots/daily-20261123
+      no_expiry: true
+    # In a project this bundle doesn't define, written as a plain path.
+    reports:
+      parent: projects/finance-db
+      branch_id: reports
+      is_protected: true
+
+  postgres_endpoints:
+    prod_rw:
+      parent: ${resources.postgres_projects.orders_db.id}/branches/production
+      endpoint_id: prod-rw
+      endpoint_type: ENDPOINT_TYPE_READ_WRITE
+      autoscaling_limit_min_cu: 1
+      autoscaling_limit_max_cu: 4
+    dev_rw:
+      parent: ${resources.postgres_branches.dev.id}
+      endpoint_id: dev-rw
+      endpoint_type: ENDPOINT_TYPE_READ_WRITE
+      autoscaling_limit_min_cu: 0.5
+      autoscaling_limit_max_cu: 2
+      suspend_timeout_duration: "300s"
+
+  postgres_roles:
+    app_owner:
+      parent: ${resources.postgres_projects.orders_db.id}/branches/production
+      role_id: app-owner
+      postgres_role: app_owner
+
+  postgres_databases:
+    app_db:
+      parent: ${resources.postgres_projects.orders_db.id}/branches/production
+      database_id: app-db
+      postgres_database: app_db
+      role: ${resources.postgres_roles.app_owner.id}
+
+  postgres_synced_tables:
+    orders:
+      synced_table_id: main.sales.orders_synced
+      branch: ${resources.postgres_projects.orders_db.id}/branches/production
+      postgres_database: app_db
+      source_table_full_name: main.sales.orders
+      primary_key_columns: [order_id]
+      scheduling_policy: TRIGGERED
+
+  postgres_snapshot_schedules:
+    daily:
+      branch: ${resources.postgres_projects.orders_db.id}/branches/production
+      schedule:
+        - daily_schedule:
+            hour: 3
+          retention: "604800s"
+
+  apps:
+    orders_app:
+      name: orders-app
+      source_code_path: ../src/app
+      resources:
+        - name: db
+          postgres:
+            database: ${resources.postgres_databases.app_db.id}
+            permission: CAN_CONNECT_AND_CREATE

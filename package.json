@@ -397,6 +397,7 @@
     "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes",
     "test:e2e:overview": "npm run test:e2e -- --suite overview --fixture src/test/e2e/fixtures/overview",
     "test:e2e:pipeline-flow": "npm run test:e2e -- --suite pipelineFlow --fixture src/test/e2e/fixtures/pipeline-flow",
+    "test:e2e:lakebase-branches": "npm run test:e2e -- --suite lakebaseBranches --fixture src/test/fixtures/lakebase-branches",
     "test:e2e:runtime-secrets": "npm run test:e2e -- --suite runtimeSecrets --fixture src/test/fixtures/runtime-secrets"
   },
   "dependencies": {
