@@ -51,12 +51,14 @@ A Lakeflow Spark Declarative Pipeline (formerly Delta Live Tables, DLT) lists a 
 
 ### `missing_library`
 
-A task installs a local wheel or JAR that isn't there.
+A task installs a local wheel or JAR that isn't there, or a job environment lists a local file in `dependencies` that isn't there. `bundle validate` passes; deploy fails with "file doesn't exist" (checked by deploying, Databricks CLI v1.27.0).
 
 - **Severity:** error.
-- **Example:** `libraries: [{ whl: ../dist/app-0.1-py3-none-any.whl }]` before the wheel is built.
-- **Fix:** build the library, or correct the path.
-- **Limits:** a library built by `artifacts` during `bundle deploy` may not exist yet when you edit.
+- **Example:** `libraries: [{ whl: ../dist/app-0.1-py3-none-any.whl }]` with no such file, or `dependencies: [./dist/app-0.1-py3-none-any.whl]` in `resources/job.yml`, which is read as `resources/dist/...`: `Did you mean "../dist/app-0.1-py3-none-any.whl"?`
+- **Globs:** deploy expands a `whl` or `jar` glob such as `../dist/*.whl`, in a task's libraries and in environment dependencies, and fails only when no file matches it ("no files match pattern"). The finding says "no file matches". An `egg` glob isn't expanded by the CLI.
+- **Built at deploy:** deploy builds artifacts before it checks these files, so no finding is shown for a file deploy may build: in an artifact's `files` folder, in `<path>/dist` for a `whl` artifact, in `dist` when there are no `artifacts` and a `setup.py` in the bundle root, or anywhere when an `experimental.scripts` build hook (`preinit`, `prebuild`, `postbuild`) or an artifact with a `build` and no `files` is set.
+- **Fix:** build the library, or correct the path. Paths are relative to the YAML file they are written in.
+- **Not checked:** `-r` and `-e` paths (a missing requirements file already fails `bundle validate`), cluster libraries and pipeline environment dependencies.
 
 ### `not_a_notebook`
 

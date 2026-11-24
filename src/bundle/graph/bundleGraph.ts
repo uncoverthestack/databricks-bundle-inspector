@@ -1,6 +1,8 @@
 import { readFileSync, statSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
+import { hasGlobCharacters } from "../goGlob.js";
+import { buildOutputs, isLocalDependency, localLibrary, mayBeBuilt, withoutWheelExtras, type BuildOutputs } from "../localLibraries.js";
 import { parse as parseYaml } from "yaml";
 import {
   buildTaskNodeData,
@@ -377,6 +379,8 @@ export interface BundleGraph {
   targetCheckFindings?: TargetCheckFinding[];
   /** The CLI version's rule for notebook headers, used again by the issue list's suggestions. */
   notebookRule?: NotebookHeaderRule;
+  /** Where deploy may build library files before checking them (#482, #525). */
+  buildOutputs?: BuildOutputs;
 }
 
 export interface ExtractBundleGraphOptions {
@@ -1455,10 +1459,21 @@ async function buildBundleGraph(
     ...(activeTarget ? { activeTarget } : {}),
     resolve: (value: string, target: string | undefined) => resolveExpressionForTarget(value, parsedBundle, target).value,
   };
+  // An artifact's relative paths are read from the folder of the YAML file defining it.
+  const artifactDir = (name: string) => {
+    for (const { file, doc } of sourceIndex.sourceDocuments) {
+      const d = toRecord(doc);
+      const targetArtifacts = activeTarget ? toRecord(toRecord(toRecord(d.targets)[activeTarget]).artifacts) : {};
+      if (name in toRecord(d.artifacts) || name in targetArtifacts) return dirname(file);
+    }
+    return bundleRoot!;
+  };
+  const outputs = bundleRoot ? buildOutputs(parsedBundle, bundleRoot, artifactDir) : undefined;
   return {
     nodes: [...nodeMap.values()],
     edges,
     notebookRule,
+    ...(outputs ? { buildOutputs: outputs } : {}),
     variableSources: findVariableSources(
       loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
         const text = sourceIndex.sourceTexts.get(file);
@@ -1472,6 +1487,20 @@ async function buildBundleGraph(
         ...jobStructureOptions,
         // Relative to the job's YAML folder, as the CLI reads it; a real target's workspace
         // path is already mapped back to the local file. Only a small file is read.
+        isLocalDependency,
+        missingDependency: (jobKey, value) => {
+          if (!bundleRoot) return undefined;
+          const written = withoutWheelExtras(value);
+          const { resolvedPath, exists } = localLibrary(written, dirOf("jobs", jobKey));
+          if (exists || mayBeBuilt(resolvedPath, outputs)) return undefined;
+          const glob = hasGlobCharacters(written);
+          // Written from the bundle root, the usual mistake (#518): name the path from the YAML folder.
+          const fromRoot = localLibrary(written, bundleRoot);
+          const suggestion = fromRoot.exists
+            ? relative(dirOf("jobs", jobKey), fromRoot.resolvedPath).split(sep).join("/")
+            : undefined;
+          return { glob, ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+        },
         readProjectFile: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);

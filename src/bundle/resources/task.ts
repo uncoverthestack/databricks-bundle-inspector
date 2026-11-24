@@ -2,6 +2,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
+import { hasGlobCharacters } from "../goGlob.js";
+import { localLibrary } from "../localLibraries.js";
 
 export interface TaskNodeData {
   taskKey: string;
@@ -575,6 +577,21 @@ function getFileReferences(
   return refs;
 }
 
+/**
+ * A task library's local file. Deploy expands a `whl` or `jar` glob (`../dist/*.whl`) and
+ * fails only when no file matches it (CLI v1.27.0, expand_glob_references.go), so a glob
+ * exists when one file matches (#525). An `egg` glob is not expanded by the CLI.
+ */
+function libraryPath(
+  rawPath: string,
+  primaryDir: string,
+  fallbackDir?: string,
+): { resolvedPath: string | undefined; exists: boolean } {
+  const plain = resolveLocalPath(rawPath, primaryDir, fallbackDir);
+  if (plain.resolvedPath === undefined || !hasGlobCharacters(rawPath)) return plain;
+  return localLibrary(rawPath, primaryDir);
+}
+
 function getLibraryReferences(
   task: Record<string, unknown>,
   taskKey: string,
@@ -621,11 +638,7 @@ function getLibraryReferences(
         yamlPath,
       });
     } else if (typeof lib.whl === "string") {
-      const { resolvedPath, exists } = resolveLocalPath(
-        lib.whl,
-        primaryDir,
-        fallbackDir,
-      );
+      const { resolvedPath, exists } = libraryPath(lib.whl, primaryDir, fallbackDir);
       const isLocal = resolvedPath !== undefined;
       refs.push({
         libraryType: "whl",
@@ -637,11 +650,7 @@ function getLibraryReferences(
         yamlPath,
       });
     } else if (typeof lib.jar === "string") {
-      const { resolvedPath, exists } = resolveLocalPath(
-        lib.jar,
-        primaryDir,
-        fallbackDir,
-      );
+      const { resolvedPath, exists } = libraryPath(lib.jar, primaryDir, fallbackDir);
       const isLocal = resolvedPath !== undefined;
       refs.push({
         libraryType: "jar",

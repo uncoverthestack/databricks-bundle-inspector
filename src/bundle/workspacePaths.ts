@@ -2,6 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { CLI_NOTEBOOK_EXTENSIONS } from "./notebookFiles.js";
+import { isLocalDependency } from "./localLibraries.js";
+import { BUNDLE_PROBE_TARGET } from "./validateBundle.js";
 import { own } from "./ownKeys.js";
 
 /**
@@ -30,9 +32,9 @@ interface PathSlot {
   kind: PathKind;
 }
 
-/** A task library's local file (`whl`, `jar` or `egg`), found by its task. */
+/** A task library's local file (`whl`, `jar` or `egg`) or a local environment dependency, found by its task or environment. */
 interface LibrarySlot {
-  /** `jobs.<key>.<task_key>[.<inner task_key>]`. */
+  /** `jobs.<key>.<task_key>[.<inner task_key>]`, or `jobs.<key>.environments:<environment_key>`. */
   task: string;
   holder: Record<string, unknown>;
   key: string;
@@ -60,6 +62,19 @@ function librarySlotsIn(resources: unknown): LibrarySlot[] {
   for (const [key, job] of Object.entries(record(record(resources)?.jobs) ?? {})) {
     const tasks = record(job)?.tasks;
     if (Array.isArray(tasks)) for (const t of tasks) task(`jobs.${key}`, t);
+    // Local files in environment dependencies come from the bundle root too (#482).
+    const environments = record(job)?.environments;
+    if (!Array.isArray(environments)) continue;
+    for (const environment of environments) {
+      const env = record(environment);
+      const dependencies = record(env?.spec)?.dependencies;
+      if (!Array.isArray(dependencies) || typeof env?.environment_key !== "string") continue;
+      dependencies.forEach((dependency, index) => {
+        if (typeof dependency === "string" && isLocalDependency(dependency)) {
+          slots.push({ task: `jobs.${key}.environments:${env.environment_key}`, holder: dependencies as unknown as Record<string, unknown>, key: String(index) });
+        }
+      });
+    }
   }
   return slots;
 }
@@ -337,6 +352,9 @@ export function localizeBundleRootPaths(
   // Task libraries: the CLI gives them from the bundle root with a real target too, even when
   // nothing failed (checked on CLI 1.27.0, #518). A target's libraries can be added to the
   // job's own, so a library is found by its task and the file it names, not by its position.
+  // The structural preview gives them as written: mapping them there could turn a path
+  // written from the bundle root into a right one when the same task also names that file.
+  if (typeof target !== "string" || target === BUNDLE_PROBE_TARGET) return mapped ? copy : config;
   const writtenLibraries = new Map<string, Set<string>>();
   for (const { file, doc } of sources) {
     const d = record(doc);
