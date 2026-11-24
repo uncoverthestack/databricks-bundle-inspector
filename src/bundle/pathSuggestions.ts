@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { SKIPPED_FOLDERS } from "./bundleDiscovery.js";
-import { isNotebookFile, type NotebookHeaderRule } from "./notebookFiles.js";
+import { CLI_NOTEBOOK_EXTENSIONS, isNotebookFile, type NotebookHeaderRule } from "./notebookFiles.js";
 
 /**
  * "Did you mean" for a local path that doesn't exist: the one file in the bundle with
@@ -85,17 +85,21 @@ export function movedFileSuggestion(options: {
   /** The CLI version's notebook header rule. The newer rule when left out. */
   notebookRule?: NotebookHeaderRule;
 }): string | undefined {
-  const name = path.basename(options.resolvedPath);
   const listed = options.files();
   if (!listed.complete) return undefined;
+  // A notebook written without its extension, as Git paths are, also matches `name.py` and
+  // the other notebook extensions: the CLI needs one, so the suggestion has it (#518).
+  const endings =
+    options.expects === "notebook" && !path.extname(options.resolvedPath) ? ["", ...CLI_NOTEBOOK_EXTENSIONS] : [""];
+  const names = new Set(endings.map((ending) => path.basename(options.resolvedPath) + ending));
+  const lowered = new Set(endings.map((ending) => (options.resolvedPath + ending).toLowerCase()));
   const usable = (file: string) =>
     file !== options.resolvedPath &&
     !options.excluded(file) &&
     fitsField(file, options.expects, options.notebookRule ?? "contains");
-  const lower = options.resolvedPath.toLowerCase();
-  const sameButCase = listed.files.filter((file) => file.toLowerCase() === lower && usable(file));
+  const sameButCase = listed.files.filter((file) => lowered.has(file.toLowerCase()) && usable(file));
   const matches =
-    sameButCase.length === 1 ? sameButCase : listed.files.filter((file) => path.basename(file) === name && usable(file));
+    sameButCase.length === 1 ? sameButCase : listed.files.filter((file) => names.has(path.basename(file)) && usable(file));
   if (matches.length !== 1) return undefined;
   const relative = path.relative(path.dirname(options.sourceFile), matches[0]!).split(path.sep).join("/");
   // Keep the way the path was written: `./src/x.py` stays with its `./`.

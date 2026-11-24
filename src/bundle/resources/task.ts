@@ -264,12 +264,24 @@ export function foundOnlyIgnoringCase(resolvedPath: string, exists: boolean): bo
   return !exists && existsSync(resolvedPath);
 }
 
+/**
+ * Where a relative path in the YAML points, and whether a file is there.
+ *
+ * Read from `primaryDir`, the folder of the YAML file that writes it, as the CLI does. Never
+ * from the bundle root as well: no CLI version from 0.299.0 on reads it from there, so a path
+ * written from the bundle root in `resources/job.yml` fails in the CLI (#518). The CLI's old
+ * fallback, removed in v1.22.0, used the folder of the file defining the job, which is
+ * `primaryDir` here too.
+ *
+ * @param bundleRoot The folder of `databricks.yml`: letter case is compared from there, and a
+ *   Git notebook (`bundleRootOnly`) is read from there, as the repo's top folder.
+ */
 export function resolveLocalPath(
   rawPath: string,
   primaryDir: string,
-  fallbackDir?: string,
+  bundleRoot?: string,
   options?: {
-    baseMode?: "primary_then_fallback" | "fallback_only";
+    bundleRootOnly?: boolean;
     extensions?: string[];
   },
 ): { resolvedPath: string | undefined; exists: boolean } {
@@ -280,12 +292,7 @@ export function resolveLocalPath(
     return { resolvedPath: rawPath, exists: existsSync(rawPath) };
   }
 
-  const baseDirs =
-    options?.baseMode === "fallback_only" && fallbackDir
-      ? [fallbackDir]
-      : fallbackDir && fallbackDir !== primaryDir
-        ? [primaryDir, fallbackDir]
-        : [primaryDir];
+  const baseDirs = options?.bundleRootOnly && bundleRoot ? [bundleRoot] : [primaryDir];
   const candidates = (baseDir: string) => {
     const exact = resolve(baseDir, rawPath);
     return [
@@ -294,8 +301,8 @@ export function resolveLocalPath(
     ];
   };
 
-  // Names are compared from the bundle folder (the fallback, when given) or the base folder.
-  const anchor = fallbackDir ?? primaryDir;
+  // Names are compared from the bundle folder, when given, or the base folder.
+  const anchor = bundleRoot ?? primaryDir;
   for (const baseDir of baseDirs) {
     for (const candidate of candidates(baseDir)) {
       if (existsWithCase(candidate, relative(anchor, candidate).startsWith("..") ? baseDir : anchor)) {
@@ -457,7 +464,7 @@ function getFileReferences(
       bundleRoot,
       gitNotebook
         ? {
-            baseMode: "fallback_only",
+            bundleRootOnly: true,
             extensions: GIT_NOTEBOOK_EXTENSIONS,
           }
         : undefined,

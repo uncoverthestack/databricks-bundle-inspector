@@ -61,6 +61,21 @@ describe("getPipelineLibraryReferences", () => {
     });
   });
 
+  test("a path written from the bundle root is not found, as in the CLI (#518)", () => {
+    // The CLI reads resources/src/dlt/bronze.py, and the pipeline update fails on the glob.
+    expect(
+      refsFor([
+        { notebook: { path: "src/dlt/bronze.py" } },
+        { file: { path: "src/dlt/helpers.py" } },
+        { glob: { include: "src/dlt/transforms/**" } },
+      ]),
+    ).toEqual([
+      { kind: "notebook", path: "src/dlt/bronze.py", exists: false, checked: true },
+      { kind: "file", path: "src/dlt/helpers.py", exists: false, checked: true },
+      { kind: "glob", path: "src/dlt/transforms/**", exists: false, checked: true },
+    ]);
+  });
+
   test("reports missing notebook and file sources", () => {
     expect(
       refsFor([

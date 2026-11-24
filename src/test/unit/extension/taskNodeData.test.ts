@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildTaskNodeData } from "../../../bundle/resources/task.js";
@@ -11,6 +11,8 @@ beforeAll(async () => {
   await writeFile(path.join(bundleRoot, "notebook.py"), "# notebook", "utf8");
   await writeFile(path.join(bundleRoot, "query.sql"), "SELECT 1", "utf8");
   await writeFile(path.join(bundleRoot, "git_notebook.py"), "# git", "utf8");
+  await writeFile(path.join(bundleRoot, "lib.whl"), "", "utf8");
+  await mkdir(path.join(bundleRoot, "resources"));
 });
 
 afterAll(async () => {
@@ -154,6 +156,52 @@ describe("buildTaskNodeData — taskType", () => {
 });
 
 describe("buildTaskNodeData — fileReferences", () => {
+  // #518: the CLI reads a path from the folder of the YAML file that writes it, never from
+  // the bundle root too (checked on CLI 0.299.0, 1.15.0 and 1.27.0).
+  test("a path written from the bundle root in resources/job.yml is not found, as in the CLI", () => {
+    const resources = path.join(bundleRoot, "resources");
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "notebook.py" }, libraries: [{ whl: "lib.whl" }] },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(result.fileReferences[0]).toMatchObject({ exists: false, resolvedPath: path.join(resources, "notebook.py") });
+    expect(result.libraryReferences[0]).toMatchObject({ exists: false, resolvedPath: path.join(resources, "lib.whl") });
+  });
+
+  test("the same path written from resources/job.yml's own folder is found", () => {
+    const resources = path.join(bundleRoot, "resources");
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "../notebook.py" }, libraries: [{ whl: "../lib.whl" }] },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(result.fileReferences[0]?.exists).toBe(true);
+    expect(result.libraryReferences[0]?.exists).toBe(true);
+  });
+
+  test("a Git notebook is still read from the top of the repo, wherever its YAML is", () => {
+    const resources = path.join(bundleRoot, "resources");
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "git_notebook", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(result.fileReferences[0]).toMatchObject({ exists: true, resolvedPath: path.join(bundleRoot, "git_notebook.py") });
+  });
+
   test("notebook_task with existing local file → exists true", () => {
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "notebook.py" } },
