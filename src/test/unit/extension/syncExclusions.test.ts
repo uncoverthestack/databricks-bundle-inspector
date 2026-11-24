@@ -71,10 +71,10 @@ describe("files excluded from sync", () => {
 
   test("warns about task and pipeline files skipped by sync.exclude", () => {
     expect(issueAt("tasks.sync_excluded.spark_python_task.python_file")?.title).toBe(
-      'Narrow the sync.exclude pattern that matches "../src/excluded/e.py": it stops the file from being deployed, so it may be missing at run time.',
+      'Change the sync.exclude pattern that matches "../src/excluded/e.py": it stops the file from being deployed, so it may be missing at run time.',
     );
     expect(issueAt("libraries[0].notebook.path")?.title).toBe(
-      'Narrow the sync.exclude pattern that matches "../src/excluded/pipeline_nb.py": it stops the file from being deployed, so it may be missing at run time.',
+      'Change the sync.exclude pattern that matches "../src/excluded/pipeline_nb.py": it stops the file from being deployed, so it may be missing at run time.',
     );
   });
 

@@ -764,8 +764,8 @@ function syncExclusionIssue(
   if (exclusion.rule === "sync_exclude") {
     return {
       kind: "excluded_from_sync",
-      title: `Narrow the sync.exclude pattern that matches "${filePath}": it stops the file from being deployed, ${missing}.`,
-      fixHint: "Remove or narrow the sync.exclude pattern in databricks.yml that matches this file.",
+      title: `Change the sync.exclude pattern that matches "${filePath}": it stops the file from being deployed, ${missing}.`,
+      fixHint: "Remove the pattern from sync.exclude in databricks.yml, or change it so it no longer matches this file.",
     };
   }
   const folder = filePath.split(/[\\/]/).includes(".git") ? ".git" : ".databricks";
