@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeAll } from "@jest/globals";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
 import {
@@ -61,19 +62,19 @@ describe("files excluded from sync", () => {
   // Expected values match `databricks bundle sync --dry-run`; see the fixture README.
   test("warns about task files skipped by .gitignore, naming the .gitignore", () => {
     expect(issueAt("tasks.gitignored.spark_python_task.python_file")?.title).toBe(
-      '"../src/ignored.py" may not be deployed: it matches .gitignore.',
+      'Add "../src/ignored.py" to sync.include: .gitignore stops it from being deployed, so it may be missing at run time.',
     );
     expect(issueAt("tasks.nested_gitignored.spark_python_task.python_file")?.title).toBe(
-      '"../src/nested/nested_ignored.py" may not be deployed: it matches src/nested/.gitignore.',
+      'Add "../src/nested/nested_ignored.py" to sync.include: src/nested/.gitignore stops it from being deployed, so it may be missing at run time.',
     );
   });
 
   test("warns about task and pipeline files skipped by sync.exclude", () => {
     expect(issueAt("tasks.sync_excluded.spark_python_task.python_file")?.title).toBe(
-      '"../src/excluded/e.py" may not be deployed: it matches sync.exclude.',
+      'Narrow the sync.exclude pattern that matches "../src/excluded/e.py": it stops the file from being deployed, so it may be missing at run time.',
     );
     expect(issueAt("libraries[0].notebook.path")?.title).toBe(
-      '"../src/excluded/pipeline_nb.py" may not be deployed: it matches sync.exclude.',
+      'Narrow the sync.exclude pattern that matches "../src/excluded/pipeline_nb.py": it stops the file from being deployed, so it may be missing at run time.',
     );
   });
 
@@ -104,6 +105,34 @@ describe("files excluded from sync", () => {
     // A real target writes [".", "../common"] relative to the new root.
     for (const paths of [["sync-exclusions", "common"], [".", "../common"], [".."]]) {
       expect(await syncIssues({ ...config, sync: { ...config.sync, paths } })).toEqual([]);
+    }
+  });
+});
+
+describe("files in .databricks or .git (#514)", () => {
+  test("the warning names the folder the file is in", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "always-skipped-"));
+    try {
+      for (const file of [".databricks/a.py", ".git/b.py"]) {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), "print(1)\n");
+      }
+      const task = (key: string, file: string) => ({ task_key: key, spark_python_task: { python_file: file } });
+      const config = {
+        bundle: { name: "always_skipped" },
+        resources: { jobs: { j: { name: "j", tasks: [task("in_databricks", "./.databricks/a.py"), task("in_git", "./.git/b.py")] } } },
+      } as unknown as ParsedBundleConfig;
+      const graph = await extractBundleGraph(config, root);
+      const titles = buildInspectorIssues(graph, config, [], root)
+        .filter((issue) => issue.kind === "excluded_from_sync")
+        .map((issue) => `${issue.taskName}: ${issue.title}`)
+        .sort();
+      expect(titles).toEqual([
+        `in_databricks: Move "./.databricks/a.py" out of .databricks: files there aren't deployed, so it may be missing at run time.`,
+        `in_git: Move "./.git/b.py" out of .git: files there aren't deployed, so it may be missing at run time.`,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

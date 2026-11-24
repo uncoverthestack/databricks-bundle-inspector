@@ -81,9 +81,9 @@ afterEach(() => rmSync(base, { recursive: true, force: true }));
       .map((issue) => [issue.taskName, issue.title])
       .sort();
     expect(found).toEqual([
-      ["run_link", '"./linked_nb" may not be deployed: it is a symbolic link.'],
-      ["task_in_linked_dir", '"./src/linked_dir/helper.py" may not be deployed: it is in "src/linked_dir", a symbolic link.'],
-      ["task_on_link", '"./src/linked_nb.py" may not be deployed: it is a symbolic link.'],
+      ["run_link", `Replace the link "./linked_nb" with the real file: links aren't deployed, so it may be missing at run time.`],
+      ["task_in_linked_dir", `Replace the link "src/linked_dir" with the real folder: links aren't deployed, so "./src/linked_dir/helper.py" may be missing at run time.`],
+      ["task_on_link", `Replace the link "./src/linked_nb.py" with the real file: links aren't deployed, so it may be missing at run time.`],
     ]);
     // A real target's output has the default sync.paths ["."] (#374): still checked.
     const withTarget = { ...config, sync: { paths: ["."] } } as ParsedBundleConfig;
