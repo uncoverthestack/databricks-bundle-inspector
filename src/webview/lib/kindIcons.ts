@@ -30,12 +30,14 @@ export const ICON_OF_KIND: Readonly<Record<string, string>> = {
   // Dashboards and alerts
   dashboards: "layout-dashboard",
   alerts: "bell",
-  genie_spaces: "sparkles",
+  // People ask a Genie space questions about data. Never sparkles: that reads as an AI button (issue 556).
+  genie_spaces: "messages-square",
   // Apps
   apps: "app-window",
   // Serving and search
   model_serving_endpoints: "plug",
-  vector_search_endpoints: "search",
+  // Never a magnifier: beside the search box it reads as a search button (issue 556).
+  vector_search_endpoints: "radar",
   vector_search_indexes: "text-search",
   // Unity Gateway
   model_services: "router",
@@ -73,6 +75,12 @@ export const ICON_OF_KIND: Readonly<Record<string, string>> = {
 
 /** Shapes that mean a problem or a status in the panel, never a type. */
 export const RESERVED_ICONS: readonly string[] = ["triangle-alert", "circle-alert", "circle-x", "x", "info", "check", "circle-check"];
+
+/**
+ * Shapes that read as a control the user can press, never a type (issue 556): a magnifier is
+ * the search box, sparkles is an AI action (VS Code's chat uses it beside the panel), play is Run.
+ */
+export const CONTROL_ICONS: readonly string[] = ["search", "sparkles", "play"];
 
 export function iconOfKind(kind: string | undefined): string | undefined {
   return kind ? ICON_OF_KIND[kind] : undefined;

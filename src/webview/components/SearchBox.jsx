@@ -41,7 +41,7 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                 className="flex w-full items-center gap-2 border-b border-line-soft px-2.5 py-2 text-left last:border-0 hover:bg-hover"
               >
                 {/* An overview box's result shows the box's icon; a task's keeps the task box's dot (issue 546). */}
-                <TypeDot kind={item.kind} dot={!item.overviewId || item.source === "default"} />
+                <TypeDot kind={item.kind} dot={!item.overviewId} ring={Boolean(item.overviewId) && item.source === "default"} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-fg">
                     {item.label}

@@ -343,6 +343,7 @@ export function graphRefreshSuite() {
           search: document.querySelector("header input")?.placeholder ?? null,
           taskGraph: Boolean(document.querySelector(".react-flow")),
           pipelineDetails: Boolean(document.querySelector('[data-pipeline-details="alpha_pipeline"]')),
+          rings: [...document.querySelectorAll('[data-overview-item] [data-type-mark="ring"]')].map((ring) => ring.closest("[data-overview-item]").textContent),
         })`);
         await waitFor(async () => {
           const { targetInfos } = await browser.call("Target.getTargets");
@@ -376,6 +377,9 @@ export function graphRefreshSuite() {
           { pressed: opened.pressed, back: opened.back, search: opened.search, taskGraph: opened.taskGraph },
           { pressed: [], back: false, search: "Find a resource", taskGraph: false },
         );
+        // Serverless or inherited compute shows a hollow ring, not a dot or a cluster icon (issue 556).
+        assert.equal(opened.rings.length, 1);
+        assert.ok(opened.rings[0].includes("Serverless or inherited"), opened.rings[0]);
 
         // A picture of the overview on a bundle with jobs, for a look by eye. Not compared.
         const { targetInfos: pages } = await browser.call("Target.getTargets");

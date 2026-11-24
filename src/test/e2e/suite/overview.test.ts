@@ -25,6 +25,7 @@ const READ = `(() => {
     pressed: box.getAttribute("aria-pressed") === "true",
     faded: box.dataset.dimmed === "true",
     icon: box.querySelector("[data-type-dot]")?.dataset.typeIcon ?? "dot",
+    iconSize: Math.round(box.querySelector("[data-type-dot]")?.getBoundingClientRect().width ?? 0),
   }));
   return {
     boxes,
@@ -57,7 +58,7 @@ export function overviewSuite() {
       (await vscode.commands.executeCommand<Logged[]>("databricksBundleInspector.test.telemetryEvents"))!;
     const selections = async () => (await logged()).filter((entry) => entry.event === "resource_selected");
     const read = () => evaluate(READ) as Promise<{
-      boxes: { id: string; pressed: boolean; faded: boolean; icon: string }[];
+      boxes: { id: string; pressed: boolean; faded: boolean; icon: string; iconSize: number }[];
       links: string[];
       unchecked: string[];
       details: string | null;
@@ -183,6 +184,8 @@ export function overviewSuite() {
         "resources.sql_warehouses.analytics": "warehouse",
         "resources.volumes.raw_files": "hard-drive",
       });
+      // Icons are 14 px, so a folder tree and a drive can be told apart (issue 556).
+      assert.deepEqual([...new Set(shown.boxes.map((box) => box.iconSize))], [14]);
       // The volume names its schema by plain catalog and schema name, which the bundle defines.
       assert.deepEqual(shown.links, [`${CLUSTER}->${SCOPE}`, "resources.volumes.raw_files->resources.schemas.sales"]);
       assert.equal(shown.boxes.some((box) => box.faded), false, "nothing is faded until a box is active");
