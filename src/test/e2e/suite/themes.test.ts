@@ -309,8 +309,10 @@ export function themesSuite() {
      * needs that room for its two columns and the line between them; the CI machines'
      * windows are too small for it otherwise.
      */
-    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => {
-      const width = 1200;
+    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => atPanelWidth(1200, measure);
+
+    /** Runs `measure` with the panel `width` px wide, then puts the window back. */
+    const atPanelWidth = async <T,>(width: number, measure: () => Promise<T>): Promise<T> => {
       const { targetInfos } = await browser.call("Target.getTargets");
       const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
       const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
@@ -492,6 +494,46 @@ export function themesSuite() {
       report.reopenedLight = { flowMode: first.flowMode, kind: first.kind };
       assert.equal(first.kind, "vscode-light");
       assert.equal(first.flowMode, "light");
+    });
+
+    // Issue 552: a job opens fitted to the panel, so no task starts out of view, and the view
+    // is the user's once they zoom. The 9-task job is wider than the panel at full size.
+    it("a job opens with every task in view, and stays where the user zoomed it", async () => {
+      const viewport = `document.querySelector(".react-flow__viewport").style.transform`;
+      const allInView = `(() => {
+        const pane = document.querySelector(".react-flow").getBoundingClientRect();
+        return [...document.querySelectorAll(".react-flow__node")].every((node) => {
+          const box = node.getBoundingClientRect();
+          return box.left >= pane.left - 1 && box.right <= pane.right + 1 && box.top >= pane.top - 1 && box.bottom <= pane.bottom + 1;
+        });
+      })()`;
+      // The job's width at full size, from the boxes' places in the graph (not on screen).
+      const natural = await evaluate(`(() => {
+        const boxes = [...document.querySelectorAll(".react-flow__node")].map((node) => ({ x: Number(/translate\\(([-\\d.]+)px/.exec(node.style.transform)[1]), w: node.offsetWidth }));
+        return Math.max(...boxes.map((box) => box.x + box.w)) - Math.min(...boxes.map((box) => box.x));
+      })()`);
+      // Narrower than the job, so at full size from the left edge (as before) a task is cut,
+      // and wide enough that the fit stays above the smallest readable zoom.
+      const width = Math.round(natural * 0.9);
+      let zoomed = "";
+      await atPanelWidth(width, async () => {
+        const outside = `(() => {
+          const pane = document.querySelector(".react-flow").getBoundingClientRect();
+          return { pane: [Math.round(pane.left), Math.round(pane.right), Math.round(pane.top), Math.round(pane.bottom)], view: document.querySelector(".react-flow__viewport").style.transform,
+            out: [...document.querySelectorAll(".react-flow__node")].map((node) => { const b = node.getBoundingClientRect(); return [node.textContent.slice(0, 12), Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.bottom)]; }) };
+        })()`;
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && (await evaluate(allInView)) !== true) await sleep(100);
+        assert.equal(await evaluate(allInView), true, `every task of the job in view: ${JSON.stringify({ natural, width, ...(await evaluate(outside)) })}`);
+        // Zoom in with the wheel, as a user would, then check the view is left alone.
+        await evaluate(`document.querySelector(".react-flow__pane").dispatchEvent(new WheelEvent("wheel", { deltaY: -400, ctrlKey: true, clientX: 300, clientY: 300, bubbles: true, cancelable: true }))`);
+        await sleep(400);
+        zoomed = await evaluate(viewport);
+        assert.equal(await evaluate(allInView), false, "the wheel zoomed in, or this proves nothing");
+      });
+      // The panel shrinks back to its own width: a fit would move the view, a user's zoom stays.
+      await sleep(600);
+      assert.equal(await evaluate(viewport), zoomed);
     });
   });
 }
