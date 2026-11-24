@@ -306,6 +306,23 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
         />
       )}
       {linkList("Uses", uses, "to")}
+      {item.runtimeSecrets?.length > 0 && (
+        // Secrets whose scope is set at run time (issue 535): listed, never joined into one box.
+        <div className="flex flex-col gap-1.5" data-overview-runtime-secrets>
+          {uses.length === 0 && <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Uses</div>}
+          {item.runtimeSecrets.map((secret, index) => (
+            <div
+              key={`${secret.label}-${index}`}
+              title="The code doesn't name the secret scope, so it is set when the job runs"
+              className="flex min-w-0 max-w-full items-center gap-2 px-1.5 py-1 text-xs"
+            >
+              <TypeDot kind="secret_scope" />
+              <span className="min-w-0 max-w-[65%] shrink-0 truncate text-fg-soft">{secret.label}</span>
+              <span className="min-w-0 flex-1 truncate text-muted">{secret.taskNames.length > 0 ? secret.taskNames.join(", ") : "secret scope"}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {/* A pipeline says what runs it under Run by. */}
       {!pipeline && linkList("Used by", usedBy, "from")}
       {item.source === "bundle" && !item.hasChecks && (

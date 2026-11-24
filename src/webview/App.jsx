@@ -18,6 +18,8 @@ import TaskNode from "./components/TaskNode";
 import UsesRow from "./components/UsesRow";
 import { resolveVariableForTarget } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
+import TypeDot from "./components/TypeDot";
+import { runtimeSecretLabel, taskRuntimeSecrets } from "../bundle/runtimeSecrets";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
 import {
@@ -157,6 +159,8 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
 
 function parameterLinkageLabel(linkage) {
   if (!linkage) return null;
+  // Issue 537: a job parameter with the same name wins over the task's value.
+  if (linkage.ignoredByJob) return "JOB PARAM WINS";
   if (linkage.kind === "job_override") return "JOB PARAM LINK";
   if (linkage.kind === "task") return "TASK DEFAULT";
   if (linkage.kind === "job") return "JOB DEFAULT";
@@ -165,6 +169,11 @@ function parameterLinkageLabel(linkage) {
 
 function parameterLinkageDetail(linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) {
+    return linkage.jobParameterDefault
+      ? `A job parameter with the same name wins, so this value isn't used; job default is ${linkage.jobParameterDefault}`
+      : "A job parameter with the same name wins, so this value isn't used";
+  }
   if (linkage.kind === "job_override") {
     return linkage.jobParameterDefault
       ? `Task value references a job parameter; job default is ${linkage.jobParameterDefault}`
@@ -177,6 +186,7 @@ function parameterLinkageDetail(linkage) {
 
 function widgetLinkageLabel(linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) return "SUPPLIED BY JOB";
   if (linkage.kind === "job_override") return "SUPPLIED VIA JOB";
   if (linkage.kind === "task") return "SUPPLIED BY TASK";
   if (linkage.kind === "job") return "SUPPLIED BY JOB";
@@ -185,6 +195,9 @@ function widgetLinkageLabel(linkage) {
 
 function widgetLinkageDetail(name, linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) {
+    return `Notebook widget "${name}" gets the job parameter's value; the task's own value isn't used`;
+  }
   if (linkage.kind === "job_override") {
     return `Notebook widget "${name}" is supplied by a task parameter that links to a job parameter`;
   }
@@ -385,10 +398,14 @@ function RefItem({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: dotColor }}
-        />
+        {kind === "secret_scope" && !missing && !status ? (
+          <TypeDot kind={kind} />
+        ) : (
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: dotColor }}
+          />
+        )}
         <span className="min-w-0">
           <span
             title={
@@ -1151,7 +1168,22 @@ function DetailPanel({
       };
     })
     .filter(Boolean);
-  const secretItems = [...fileSecretItems, ...configSecretItems];
+  // Secrets the code reads without naming the scope (issue 535): the scope a parameter gives by
+  // default, or a row saying it is set at run time, so the task never looks like it reads none.
+  const runtimeSecretItems = taskRuntimeSecrets(graph, nodeId, (value) =>
+    displayResolvedValue(value, parsedBundle, targetName),
+  ).map((read) => ({
+    name: read.scope ?? runtimeSecretLabel(read),
+    kind: "secret_scope",
+    detail: read.scope
+      ? `By default, from the ${read.parameter} parameter. A run can pass another value.`
+      : read.parameter
+        ? `Set when the job runs, from the ${read.parameter} parameter`
+        : "Set when the job runs: the code doesn't name the scope",
+    resolvedPath: read.file ?? null,
+    line: read.line,
+  }));
+  const secretItems = [...fileSecretItems, ...configSecretItems, ...runtimeSecretItems];
 
   // Parameters/widgets discovered in the task's referenced file — clickable, jumps to detected line
   const widgetItems = primaryFileNode

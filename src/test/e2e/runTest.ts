@@ -38,7 +38,7 @@ async function main() {
   const suite = options.suite;
   // Only the suites that read the rendered graph need Chromium's loopback debugging interface.
   let debuggingPort: number | undefined;
-  if (suite === "graphRefresh" || suite === "themes" || suite === "overview" || suite === "pipelineFlow") {
+  if (suite === "graphRefresh" || suite === "themes" || suite === "overview" || suite === "pipelineFlow" || suite === "runtimeSecrets") {
     const server = net.createServer();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -66,7 +66,8 @@ async function main() {
   }
   // These suites edit bundle and SQL files to exercise save refreshes. Run copies:
   // a debugger failure must not leave a tracked fixture changed for the next run.
-  if (suite === "pipelineFlow" || suite === "overview") {
+  // runtimeSecrets opens a unit-test fixture, which must stay free of a .databricks folder.
+  if (suite === "pipelineFlow" || suite === "overview" || suite === "runtimeSecrets") {
     const copy = path.join(await mkdtemp(path.join(os.tmpdir(), "dbi-fixture-")), suite);
     await cp(folder, copy, { recursive: true });
     folder = copy;

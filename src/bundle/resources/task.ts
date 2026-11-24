@@ -226,7 +226,15 @@ export interface TaskParameterReference {
   name: string;
   value: string | undefined;
   jobParameterDefault: string | undefined;
+  /**
+   * The task's value comes from a job parameter: a job parameter with the same name, which
+   * Databricks uses instead of the task's value, or a `{{job.parameters.<name>}}` reference.
+   */
   isOverriddenByJob: boolean;
+  /** The job parameter the value comes from, when `isOverriddenByJob`. */
+  jobParameterName?: string;
+  /** A job parameter has the same name, so the task's own value is never used (issue 537). */
+  ignoredByJob?: boolean;
   effectiveValue: string | undefined;
   confidence: "HIGH" | "MEDIUM" | "LOW";
   containsVariableRef: boolean;
@@ -240,6 +248,9 @@ export interface TaskParameterReference {
 // --- internals ---
 
 const VAR_PATTERN = /\$\{var\.([^}]+)\}/g;
+/** `{{job.parameters.<name>}}`, or the older `${job.parameters.<name>}`. */
+const JOB_PARAMETER_REFERENCE = /\{\{\s*job\.parameters\.([\w.-]+?)\s*\}\}|\$\{job\.parameters\.([\w.-]+?)\}/g;
+const JOB_PARAMETER_REFERENCE_TEST = /\{\{\s*job\.parameters\.|\$\{job\.parameters\./;
 const RESOURCE_PATTERN = /\$\{resources\.([^.}]+)\.([^.}]+)\.([^}]+)\}/g;
 export const NOTEBOOK_EXTENSIONS = [".py", ".sql", ".scala", ".r", ".ipynb"];
 const GIT_NOTEBOOK_EXTENSIONS = NOTEBOOK_EXTENSIONS;
@@ -813,10 +824,25 @@ function getTaskParameterReferences(
       typeof paramValue === "string" ? paramValue : String(paramValue ?? "");
     VAR_PATTERN.lastIndex = 0;
     const containsVariableRef = VAR_PATTERN.test(valueStr);
-    const isOverriddenByJob =
-      valueStr.includes("{{job.parameters.") ||
-      valueStr.includes("${job.parameters.");
-    const jobDefault = jobParamDefaults.get(paramName);
+    // Databricks pushes job parameters down to tasks with key-value parameters, and a job
+    // parameter wins over a task parameter with the same name (issue 537,
+    // https://docs.databricks.com/aws/en/jobs/job-parameters). Otherwise the task's value
+    // can still point at a job parameter, under any name.
+    const ignoredByJob = jobParamDefaults.has(paramName);
+    const referenced = [...valueStr.matchAll(JOB_PARAMETER_REFERENCE)].map((match) => match[1] ?? match[2]!);
+    const isOverriddenByJob = ignoredByJob || referenced.length > 0;
+    const jobParameterName = ignoredByJob ? paramName : referenced[0];
+    const jobDefault = jobParameterName !== undefined ? jobParamDefaults.get(jobParameterName) : undefined;
+    // The value the notebook or SQL file gets by default: the job parameter's, or the task's
+    // with each job parameter it names filled in, when every one has a default.
+    const filled = valueStr.replace(JOB_PARAMETER_REFERENCE, (whole, a: string | undefined, b: string | undefined) =>
+      jobParamDefaults.get((a ?? b)!) || whole,
+    );
+    const effectiveValue = ignoredByJob
+      ? jobDefault || undefined
+      : referenced.length > 0
+        ? JOB_PARAMETER_REFERENCE_TEST.test(filled) ? undefined : filled || undefined
+        : valueStr || undefined;
 
     let confidence: TaskParameterReference["confidence"];
     if (
@@ -835,7 +861,9 @@ function getTaskParameterReferences(
       value: valueStr || undefined,
       jobParameterDefault: jobDefault,
       isOverriddenByJob,
-      effectiveValue: isOverriddenByJob ? jobDefault : valueStr || undefined,
+      ...(jobParameterName !== undefined ? { jobParameterName } : {}),
+      ...(ignoredByJob ? { ignoredByJob } : {}),
+      effectiveValue,
       confidence,
       containsVariableRef,
       // TODO: Our Databricks Bundle Inspector Comment

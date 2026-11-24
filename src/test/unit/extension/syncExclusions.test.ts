@@ -198,3 +198,59 @@ describe("a pipeline glob whose files are all left out of the upload (#526)", ()
     expect(await globTitles({ ".gitignore": "src/dlt/*.sql\n", "src/dlt/t.sql": SQL }, undefined, "../src/dlt/*")).toEqual([]);
   });
 });
+
+// #531, live on CLI v1.27.0 (2026-11-24, twice each): deploy uploads every file under a
+// glob's folder, and the pipeline update fails on some of them next to a valid .sql file.
+describe("deployed files a pipeline glob refuses (#531)", () => {
+  const SQL = "CREATE OR REFRESH MATERIALIZED VIEW a AS SELECT 1;\n";
+  const findings = async (files: Record<string, string>, sync?: ParsedBundleConfig["sync"]) => {
+    const root = mkdtempSync(path.join(tmpdir(), "dbi-glob-types-"));
+    try {
+      for (const [relative, text] of Object.entries({ ...files, "src/dlt/t.sql": SQL, "resources/p.yml": "resources:\n  pipelines:\n    p:\n      libraries: []\n" })) {
+        mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+        writeFileSync(path.join(root, relative), text);
+      }
+      const config = {
+        bundle: { name: "types" },
+        include: ["resources/p.yml"],
+        ...(sync ? { sync } : {}),
+        resources: { pipelines: { p: { libraries: [{ glob: { include: "../src/dlt/**" } }] } } },
+      } as unknown as ParsedBundleConfig;
+      const graph = await extractBundleGraph(config, root);
+      return buildInspectorIssues(graph, config, [], root)
+        .filter((issue) => issue.kind === "unsupported_pipeline_file")
+        .map((issue) => `${issue.severity}: ${issue.title}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  test.each([
+    ".gitkeep", ".DS_Store", ".env", ".gitignore", "Makefile", "sub/.gitkeep",
+    "x.scala", "schema.yml", "conf.yaml", "pyproject.toml", "setup.cfg", "app.ini", "uv.lock",
+    "a-0.1-py3-none-any.whl", "img.png", "page.html", "run.sh", "X.java", "x.r", "y.R",
+  ])("%s fails the update", async (file) => {
+    const shown = `src/dlt/${file}`;
+    expect(await findings({ [`src/dlt/${file}`]: "x\n" })).toEqual([
+      `error: Add "${shown}" to sync.exclude: deployed under "../src/dlt/**", it may fail the pipeline, which only takes .py and .sql files.`,
+    ]);
+  });
+
+  test("several files are counted in one finding", async () => {
+    expect(await findings({ "src/dlt/.gitkeep": "", "src/dlt/.DS_Store": "x", "src/dlt/Makefile": "x", "src/dlt/README.md": "x" })).toEqual([
+      'error: Add "src/dlt/.DS_Store" and 2 other files to sync.exclude: deployed under "../src/dlt/**", it may fail the pipeline, which only takes .py and .sql files.',
+    ]);
+  });
+
+  test.each(["README.md", "notes.txt", "data.csv", "config.json", "nb.ipynb", "helpers.py", ".hidden.py"])(
+    "%s is skipped by the pipeline: no finding",
+    async (file) => {
+      expect(await findings({ [`src/dlt/${file}`]: "x\n" })).toEqual([]);
+    },
+  );
+
+  test("a file left out of the upload is no finding", async () => {
+    expect(await findings({ "src/dlt/.gitkeep": "" }, { exclude: ["src/dlt/.gitkeep"] })).toEqual([]);
+    expect(await findings({ "src/dlt/.DS_Store": "x", ".gitignore": ".DS_Store\n" })).toEqual([]);
+  });
+});

@@ -10,6 +10,8 @@ export interface FlowTaskParameterReference {
   value?: string | undefined;
   jobParameterDefault?: string | undefined;
   isOverriddenByJob?: boolean | undefined;
+  jobParameterName?: string | undefined;
+  ignoredByJob?: boolean | undefined;
   effectiveValue?: string | undefined;
   confidence?: string | undefined;
   sourceLine?: number | undefined;
@@ -54,6 +56,8 @@ export interface FlowGraph {
 /** Where a parameter's value is set: on the task, on the job, or on the job over the task's value. */
 export interface ParameterLinkage {
   kind: "task" | "job_override" | "job";
+  /** A job parameter with the same name wins, so the task's own value is never used (issue 537). */
+  ignoredByJob?: boolean | undefined;
   taskValue?: string | undefined;
   jobParameterDefault?: string | undefined;
   effectiveValue?: string | undefined;
@@ -98,9 +102,11 @@ export function parameterLinkageForName(
 ): ParameterLinkage | null {
   const taskParam = taskParams.get(name);
   if (taskParam) {
-    const jobParam = jobParams.get(name);
+    // The job parameter the value comes from: the same name, or the one the value names.
+    const jobParam = jobParams.get(taskParam.jobParameterName ?? name);
     return {
       kind: taskParam.isOverriddenByJob ? "job_override" : "task",
+      ...(taskParam.ignoredByJob ? { ignoredByJob: true } : {}),
       taskValue: taskParam.value,
       jobParameterDefault: taskParam.jobParameterDefault,
       effectiveValue: taskParam.effectiveValue,
@@ -178,7 +184,10 @@ export function buildParameterFlowsForTask(
     if (!linkage) continue;
 
     const segments: ParameterFlowSegment[] = [];
-    if (linkage.kind === "job_override") {
+    if (linkage.kind === "job_override" && linkage.ignoredByJob) {
+      // The task's own value is never used: the job parameter goes straight to the file.
+      segments.push(makeParameterFlowSegment("JOB", name, sourceFile, linkage.jobSourceLine, linkage.jobSourceColumn));
+    } else if (linkage.kind === "job_override") {
       segments.push(makeParameterFlowSegment("JOB", name, sourceFile, linkage.jobSourceLine, linkage.jobSourceColumn));
       segments.push(makeParameterFlowSegment("TASK", name, sourceFile, linkage.sourceLine, linkage.sourceColumn));
     } else if (linkage.kind === "job") {

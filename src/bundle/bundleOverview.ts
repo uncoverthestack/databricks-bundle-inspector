@@ -151,6 +151,11 @@ export interface OverviewItem {
   problems: ProblemCounts;
   /** A compute box's settings for its details (issue 417), when the bundle sets any. */
   settings?: ComputeSettings;
+  /**
+   * Secrets its code reads with a scope set at run time (issue 535). Listed in its details, never a
+   * box: one box would join every job that has one, and nobody knows if the scopes are the same.
+   */
+  runtimeSecrets?: Array<{ label: string; taskNames: string[] }>;
 }
 
 export interface OverviewLink {
@@ -334,6 +339,11 @@ export function buildBundleOverview(
   }
   for (const job of jobs) {
     for (const use of buildJobUses(graph, job.id, resolve)) {
+      if (use.source === "runtime") {
+        const item = items.get(job.id)!;
+        (item.runtimeSecrets ??= []).push({ label: use.label, taskNames: use.taskNames });
+        continue;
+      }
       const group = overviewGroupOf(RESOURCE_GROUP_OF_USES_KIND[use.kind]!);
       const reference = use.expression ? RESOURCE_REFERENCE.exec(use.expression) : null;
       let to: string;
@@ -428,6 +438,15 @@ export function buildBundleOverview(
     // A resource that is not a job, such as a pipeline or a cluster, reading a secret scope.
     if (!bundleItemIds.has(edge.source) || target?.nodeType !== "secret_scope") continue;
     addLink(edge.source, bundleItemIds.has(target.id) ? target.id : workspaceScope(target), "uses", [], []);
+  }
+
+  // A pipeline's code has no parameters to name a scope, so one it doesn't name is set at run time.
+  for (const node of graph.nodes) {
+    const reads = node.data?.runtimeSecrets;
+    const item = items.get(node.id);
+    if (node.resourceGroup === "pipelines" && item && Array.isArray(reads) && reads.length > 0) {
+      item.runtimeSecrets = [{ label: "Set at run time", taskNames: [] }];
+    }
   }
 
   // 4. Problems, counted on the box they belong to. A task's problem counts on its job.

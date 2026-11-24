@@ -1,0 +1,11 @@
+# Secrets whose scope the code doesn't name (issue 535): built in code, from a job parameter,
+# and from a task parameter set as text or by a variable.
+bundle:
+  name: runtime_secrets
+
+include:
+  - resources/*.yml
+
+variables:
+  scope:
+    default: app-dev-kv
