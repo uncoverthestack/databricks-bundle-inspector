@@ -34,7 +34,7 @@ export default function TaskNode({ data, selected }) {
       className="flex items-center gap-2.5 h-12 rounded-xl border px-3 cursor-pointer transition-all hover:border-fg-soft"
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <TypeDot kind={data.kind} />
+      <TypeDot kind={data.kind} dot />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-fg truncate leading-none mb-0.5">
           <span title={data.fullName ?? data.name}>{data.name}</span>

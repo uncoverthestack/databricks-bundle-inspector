@@ -24,6 +24,7 @@ const READ = `(() => {
     id: box.dataset.overviewItem,
     pressed: box.getAttribute("aria-pressed") === "true",
     faded: box.dataset.dimmed === "true",
+    icon: box.querySelector("[data-type-dot]")?.dataset.typeIcon ?? "dot",
   }));
   return {
     boxes,
@@ -52,7 +53,7 @@ export function overviewSuite() {
       return result.result?.value;
     };
     const read = () => evaluate(READ) as Promise<{
-      boxes: { id: string; pressed: boolean; faded: boolean }[];
+      boxes: { id: string; pressed: boolean; faded: boolean; icon: string }[];
       links: string[];
       unchecked: string[];
       details: string | null;
@@ -169,6 +170,15 @@ export function overviewSuite() {
         "resources.sql_warehouses.analytics",
         "resources.volumes.raw_files",
       ]);
+      // Each type shows its icon in place of a dot (issue 546).
+      assert.deepEqual(Object.fromEntries(shown.boxes.map((box) => [box.id, box.icon])), {
+        [CLUSTER]: "server",
+        "resources.experiments.tracking": "flask-conical",
+        "resources.schemas.sales": "folder-tree",
+        [SCOPE]: "key",
+        "resources.sql_warehouses.analytics": "warehouse",
+        "resources.volumes.raw_files": "hard-drive",
+      });
       // The volume names its schema by plain catalog and schema name, which the bundle defines.
       assert.deepEqual(shown.links, [`${CLUSTER}->${SCOPE}`, "resources.volumes.raw_files->resources.schemas.sales"]);
       assert.equal(shown.boxes.some((box) => box.faded), false, "nothing is faded until a box is active");
