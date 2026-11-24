@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import os from "node:os";
 import path from "node:path";
 import { discoverBundles, displayPath } from "../../../cli/discover.js";
+import { runCli } from "../../../cli/main.js";
 
 let dir: string;
 const bundle = (...parts: string[]) => {
@@ -62,5 +63,16 @@ describe("finding bundles (#348)", () => {
     expect(displayPath(path.join(dir, "a", "b.yml"), dir)).toBe("a/b.yml");
     expect(displayPath(dir, dir)).toBe(".");
     expect(displayPath(path.join(path.dirname(dir), "other"), dir)).toBe("../other");
+  });
+});
+
+describe("error messages", () => {
+  test("never print a line a CI log reads as a workflow command", async () => {
+    let stderr = "";
+    const io = { stdout: () => {}, stderr: (text: string) => (stderr += text), cwd: dir, env: {}, isTty: false };
+    const code = await runCli(["check", "missing\n::error::injected", "--format", "github"], io);
+    expect(code).toBe(2);
+    expect(stderr).toContain("injected");
+    expect(stderr.split(/\r?\n/).some((line) => /^\s*::/.test(line))).toBe(false);
   });
 });
