@@ -825,6 +825,50 @@ function syncExclusionIssue(
 }
 
 /**
+ * Why deploy refuses a pipeline glob, if it does (live, CLI v1.27.0, #530). The only
+ * wildcard Databricks takes in `glob.include` is a trailing `/**`: a single `*` gets
+ * "Single asterisk glob pattern is not supported ... Use a double asterisk '**'", and `*`
+ * or `?` anywhere else "Special characters *?\\ are reserved". The suggestion swaps a
+ * wildcard in the last part of the path, such as `dlt/*` or `dlt/*.sql`, for `dlt/**`.
+ */
+export function unsupportedGlob(include: string): { title: string; fixHint: string; suggestion?: string } | undefined {
+  const rest = include.endsWith("/**") ? include.slice(0, -3) : include;
+  if (!/[*?]/.test(rest)) return undefined;
+  const slash = rest.lastIndexOf("/");
+  const folder = rest.slice(0, slash);
+  const last = rest.slice(slash + 1);
+  const suggestion = slash > 0 && !/[*?]/.test(folder) && !include.endsWith("/**") ? `${folder}/**` : undefined;
+  const single = /(^|[^*])\*([^*]|$)/.test(rest);
+  return {
+    title:
+      single && last.includes("*")
+        ? "Pipeline glob uses a single *, which Databricks doesn't accept, so deploy may fail."
+        : "Pipeline glob uses * or ? where Databricks doesn't accept them, so deploy may fail.",
+    fixHint:
+      "Use a folder ending in /** (every file below it), or one library entry per file. Deploy fails with \"Single asterisk glob pattern is not supported\" or \"Special characters *?\\ are reserved\".",
+    ...(suggestion ? { suggestion } : {}),
+  };
+}
+
+/** The quick fix to the suggested glob, while the YAML still holds the glob as written there. */
+function globFix(
+  written: string,
+  suggestion: string | undefined,
+  file: string | undefined,
+  line: number | undefined,
+  column: number | undefined,
+): Pick<InspectorIssue, "fix"> {
+  if (!suggestion || !file || !line || !column) return {};
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  return writtenValueAt(text.split(/\r?\n/)[line - 1] ?? "", column) === written ? { fix: replacementFix(written, suggestion) } : {};
+}
+
+/**
  * The 0-based columns an editor highlights for an issue on its line: from its column to
  * `endColumn` when it has one (a `{{name}}` placeholder, #484), else to the end of the line.
  */
@@ -1091,6 +1135,23 @@ export function buildInspectorIssues(
 
   for (const pipeline of graph.nodes) {
     for (const ref of pipeline.pipelineLibraries ?? []) {
+      // Deploy refuses `*` and `?` anywhere but a trailing `/**`, whatever the files (#530).
+      const unsupported = ref.kind === "glob" ? unsupportedGlob(ref.path) : undefined;
+      if (unsupported) {
+        issues.push({
+          id: `pipeline-glob:${pipeline.id}:${ref.yamlPath}`,
+          severity: "error",
+          kind: "missing_pipeline_source",
+          title: unsupported.title,
+          detail: unsupported.suggestion ? `${ref.path}. Did you mean "${unsupported.suggestion}"?` : ref.path,
+          ...globFix(ref.path, unsupported.suggestion, ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          fixHint: unsupported.fixHint,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
       if (!ref.checked && usesVariable(ref.path)) {
         issues.push({
           id: `path-not-checked:${pipeline.id}:${ref.yamlPath}`,
