@@ -162,9 +162,9 @@ describe("describeCronExpression — L and # in day-of-week", () => {
 });
 
 describe("describeCronExpression — increment patterns", () => {
-  test("fires every 5 minutes", () => {
+  test("fires every 5 minutes, only in the 14:00 hour", () => {
     expect(describeCronExpression("0 0/5 14 * * ?")).toBe(
-      "Runs every 5 minutes",
+      "Runs every 5 minutes, 14:00 to 14:55",
     );
   });
 
@@ -242,5 +242,51 @@ describe("describeCronExpression — fallback behaviour", () => {
     // e.g. seconds wildcard with range in minutes — not described
     const raw = "0 0-5 14 * * ?";
     expect(describeCronExpression(raw)).toBe(raw);
+  });
+});
+
+describe("describeCronExpression — says every limit, or shows the expression (#506)", () => {
+  test.each([
+    ["0 0/15 9-17 ? * MON-FRI", "Runs every 15 minutes, 09:00 to 17:45, every weekday (Mon–Fri)"],
+    ["0 */15 9-17 ? * MON-FRI", "Runs every 15 minutes, 09:00 to 17:45, every weekday (Mon–Fri)"],
+    ["0 0 0/6 ? * SAT", "Runs every 6 hours, every Saturday"],
+    ["0 0 0/2 1 * ?", "Runs every 2 hours, on the 1st of every month"],
+    ["0 0 9-17 ? * MON-FRI", "Runs every hour, 09:00 to 17:00, every weekday (Mon–Fri)"],
+    ["0 30 9-17 ? * MON,WED,FRI", "Runs every hour, 09:30 to 17:30, on Monday, Wednesday, Friday"],
+    ["0 * * * * ?", "Runs every minute"],
+    ["0 0 * * * ?", "Runs every hour"],
+    ["0 30 * * * ?", "Runs every hour at 30 minutes past"],
+    ["0 5/15 * * * ?", "Runs every 15 minutes, from 5 minutes past the hour"],
+    ["0 0/10 * ? * 6L", "Runs every 10 minutes, on the last Friday of every month"],
+    ["0 0/10 * ? * 2#1", "Runs every 10 minutes, on the 1st Monday of every month"],
+    ["0 0/30 * L * ?", "Runs every 30 minutes, on the last day of every month"],
+    ["0 0/30 * 1-5 * ?", "Runs every 30 minutes, on days 1st–5th of every month"],
+    ["0 0/30 * * 3 ?", "Runs every 30 minutes, in March"],
+    ["0 0 9 1-5 3 ?", "Days 1st–5th of every month in March at 09:00"],
+    ["0 0 9 L MAR ?", "Last day of every month in March at 09:00"],
+    ["0 0 9,12,15 * * ?", "Every day at 09:00, 12:00 and 15:00"],
+    ["0 0 0/5 * * ?", "Every day at 00:00, 05:00, 10:00, 15:00 and 20:00"],
+    ["0 30 0/6 ? * SAT", "Every Saturday at 00:30, 06:30, 12:30 and 18:30"],
+    ["0 0 1/2 * * ?", "Runs every 2 hours, 01:00 to 23:00"],
+    ["0 0 12 * * ? 2027", "Every day at 12:00 in 2027"],
+  ])("%s", (expr, words) => {
+    expect(describeCronExpression(expr)).toBe(words);
+  });
+
+  test("keeps the time zone at the end", () => {
+    expect(describeCronExpression("0 0/15 9-17 ? * MON-FRI", "UTC")).toBe(
+      "Runs every 15 minutes, 09:00 to 17:45, every weekday (Mon–Fri) (UTC)",
+    );
+  });
+
+  test.each([
+    "0/30 * * * * ?", // repeats within a minute
+    "0 0/25 * * * ?", // restarts each hour, so not every 25 minutes
+    "0 0/15 9,17 * * ?", // a list of hours with a repeat
+    "0 0 9 * JAN-MAR ?", // a range of months
+    "0 0 9 * * ? 2027-2028", // a range of years
+    "0 0 9 1,L * ?",
+  ])("shows the expression when it can't say every limit: %s", (expr) => {
+    expect(describeCronExpression(expr)).toBe(expr);
   });
 });
