@@ -25,7 +25,8 @@ export const ICON_OF_KIND: Readonly<Record<string, string>> = {
   // Workflows
   job: "workflow",
   pipeline: "waypoints",
-  job_runs: "circle-play",
+  // A run that happened, never a play shape: the inspector runs nothing, and play reads as Run.
+  job_runs: "rotate-ccw-clock",
   // Dashboards and alerts
   dashboards: "layout-dashboard",
   alerts: "bell",
