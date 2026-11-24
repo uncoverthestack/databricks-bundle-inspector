@@ -5,7 +5,7 @@ import path from "node:path";
 import { HELP, parseCliArgs, type CheckOptions } from "./args.js";
 import { checkBundles, findDatabricksCli } from "./check.js";
 import { discoverBundles } from "./discover.js";
-import { exitCodeFor, formatMarkdown, formatReport } from "./formats.js";
+import { exitCodeFor, formatMarkdown, formatReport, neutraliseCommands } from "./formats.js";
 
 export const EXIT = { ok: 0, findings: 1, usage: 2, setup: 3, failed: 4 } as const;
 
@@ -61,7 +61,10 @@ async function check(options: CheckOptions, io: CliIo): Promise<number> {
 }
 
 /** Runs one command. Returns the exit code; never throws. */
-export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
+export async function runCli(argv: readonly string[], cliIo: CliIo): Promise<number> {
+  // Error messages quote paths and names from the bundle's folder, so they get the same
+  // protection as the report: no line of them is read as a workflow command in a CI log.
+  const io: CliIo = { ...cliIo, stderr: (text) => cliIo.stderr(neutraliseCommands(text)) };
   const args = parseCliArgs(argv, io.env);
   switch (args.command) {
     case "help":
