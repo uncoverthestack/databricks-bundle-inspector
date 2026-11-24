@@ -723,6 +723,44 @@ describe("buildTaskNodeData — taskParameterReferences", () => {
     expect(result.taskParameterReferences[0]?.effectiveValue).toBe("dev");
   });
 
+  // Issue 537: a job parameter wins over a task parameter with the same name
+  // (https://docs.databricks.com/aws/en/jobs/job-parameters).
+  test("a job parameter with the same name wins: the task's value is not used", () => {
+    const ref = buildTaskNodeData(
+      { notebook_task: { base_parameters: { env: "prod" } } },
+      rawJob([{ name: "env", default: "dev" }]),
+      "job-1",
+      "t",
+      bundleRoot,
+    ).taskParameterReferences[0];
+    expect(ref).toMatchObject({ isOverriddenByJob: true, ignoredByJob: true, jobParameterName: "env", effectiveValue: "dev" });
+    // A job parameter with no default: the value is only known at run time.
+    const noDefault = buildTaskNodeData(
+      { notebook_task: { base_parameters: { env: "prod" } } },
+      rawJob([{ name: "env" }]),
+      "job-1",
+      "t",
+      bundleRoot,
+    ).taskParameterReferences[0];
+    expect(noDefault).toMatchObject({ ignoredByJob: true, effectiveValue: undefined });
+  });
+
+  test("a value naming another job parameter takes that parameter's default", () => {
+    const refs = buildTaskNodeData(
+      { notebook_task: { base_parameters: { env: "{{job.parameters.stage}}", path: "/data/{{job.parameters.stage}}/in", other: "{{job.parameters.unset}}" } } },
+      rawJob([{ name: "stage", default: "qa" }]),
+      "job-1",
+      "t",
+      bundleRoot,
+    ).taskParameterReferences;
+    expect(refs.map((ref) => [ref.name, ref.jobParameterName, ref.ignoredByJob ?? false, ref.effectiveValue])).toEqual([
+      ["env", "stage", false, "qa"],
+      ["path", "stage", false, "/data/qa/in"],
+      // A job parameter the job doesn't define: no value to show.
+      ["other", "unset", false, undefined],
+    ]);
+  });
+
   test("no base_parameters → empty taskParameterReferences", () => {
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "notebook.py" } },
