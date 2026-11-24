@@ -111,6 +111,14 @@ describe("localizeWorkspacePaths: normal cases", () => {
     expect((out as any).resources).toEqual(written.resources);
   });
 
+  // #520: validate doesn't check globs, and the pipeline fails at run with LIBRARY_FILE_NOT_FOUND
+  // (live, CLI 1.27.0). Mapped back, the pipeline check finds the folder has no files.
+  test("a pipeline glob whose folder doesn't exist is mapped back too", () => {
+    const pipeline = (include: string) => ({ resources: { pipelines: { p: { libraries: [{ glob: { include } }] } } } });
+    const out = localizeWorkspacePaths(output(pipeline(`${FILES}/resources/src/dlt/**`)), writtenInResources(pipeline("src/dlt/**")), dirOf) as any;
+    expect(out.resources.pipelines.p.libraries[0].glob.include).toBe("./src/dlt/**");
+  });
+
   test("a resource defined in the bundle folder gets ./ paths", () => {
     const sources = [{ file: path.join(bundleRoot, "databricks.yml"), doc: job([notebookTask("t", "./src/nb.py")]) }];
     const out = localizeWorkspacePaths(output(job([notebookTask("t", `${FILES}/src/nb`)])), sources, () => bundleRoot);
