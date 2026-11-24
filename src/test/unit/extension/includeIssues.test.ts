@@ -119,7 +119,7 @@ describe("resource file that include does not load", () => {
       line: 3,
     });
     expect(issues[0]?.title).toBe(
-      '"resources/jobs/nested.yml" defines resources, but no include entry loads it, so they are not part of the bundle.',
+      '"resources/jobs/nested.yml" defines resources, but no include entry loads it, so they won\'t be deployed.',
     );
   });
 

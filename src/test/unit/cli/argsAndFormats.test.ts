@@ -252,11 +252,11 @@ describe("a failed bundle validate (#348)", () => {
 describe("findings in the command line's words (#348)", () => {
   test("a path that uses a variable says to check it with --target, not in the graph", () => {
     const finding = findingFromIssue(
-      { id: "1", severity: "info", kind: "path_not_checked", title: 'Not checked: "${var.nb}" uses a variable, so the file is only known once a target is resolved. Pick a target in the graph to check it.' },
+      { id: "1", severity: "info", kind: "path_not_checked", title: 'Not checked: "${var.nb}" uses a variable, so the file isn\'t known yet. Pick a target in the graph to check it.' },
       "/b",
       "1.0.0",
     );
-    expect(finding.message).toBe('Not checked: "${var.nb}" uses a variable, so the file is only known once a target is resolved. Use --target to check it.');
+    expect(finding.message).toBe('Not checked: "${var.nb}" uses a variable, so the file isn\'t known yet. Use --target to check it.');
   });
 
   test("other findings keep their words", () => {

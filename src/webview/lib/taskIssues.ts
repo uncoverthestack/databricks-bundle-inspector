@@ -102,7 +102,7 @@ export function getFileStatus(ref: FileReference): FileStatus {
         key: "template",
         label: "TEMPLATE",
         color: UI_COLOR.warning,
-        title: "Not checked: this path uses a variable, so the file is only known once a target is resolved. Pick a target to check it.",
+        title: "Not checked: this path uses a variable, so the file isn't known yet. Pick a target to check it.",
       };
     case "remote":
       return { key: "remote", label: "REMOTE", color: UI_COLOR.link };

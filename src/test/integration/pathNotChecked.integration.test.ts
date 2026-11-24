@@ -127,7 +127,7 @@ describe(`a path that uses a variable says it wasn't checked (${cli})`, () => {
     ]);
     // The structural preview wording points at the target picker.
     expect(issues.find((issue) => issue.kind === "path_not_checked" && issue.line === 20)?.title).toBe(
-      'Not checked: "${var.nb_dir}/load.py" uses a variable, so the file is only known once a target is resolved. Pick a target in the graph to check it.',
+      'Not checked: "${var.nb_dir}/load.py" uses a variable, so the file isn\'t known yet. Pick a target in the graph to check it.',
     );
     // The literal path is checked as usual: its notebook reads a widget the task passes.
     expect(issues.some((issue) => issue.taskName === "literal" && issue.kind === "missing_file")).toBe(false);
