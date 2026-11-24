@@ -49,3 +49,28 @@ describe("pipeline task selections (issue 539)", () => {
     expect(found.some((line) => line.startsWith("c6_flow_unknown"))).toBe(false);
   });
 });
+
+describe("full names after USE (issue 539)", () => {
+  test("a table created after USE SCHEMA may live elsewhere, so full names aren't judged", async () => {
+    const { mkdtempSync, cpSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const root = mkdtempSync(path.join(tmpdir(), "selection-use-"));
+    try {
+      cpSync(bundleRoot, root, { recursive: true });
+      writeFileSync(path.join(root, "src/silver.sql"), "USE SCHEMA other;\nCREATE OR REFRESH MATERIALIZED VIEW t_silver AS SELECT id * 2 AS id2 FROM main.sales.t_bronze;\n");
+      const text = readFileSync(path.join(root, "resources/selection.yml"), "utf8");
+      const config = {
+        bundle: { name: "pipeline_selection" },
+        include: ["resources/selection.yml"],
+        resources: (parse(text) as { resources: ParsedBundleConfig["resources"] }).resources,
+      } as ParsedBundleConfig;
+      const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, root));
+      const found = buildInspectorIssues(graph, config, [], root).filter((issue) => issue.kind === "pipeline_selection_not_found");
+      expect(found.some((issue) => issue.taskName === "c8_plain_full")).toBe(false);
+      // Short names are still compared.
+      expect(found.some((issue) => issue.taskName === "c2_unknown")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -1906,7 +1906,10 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
           const whole = full(name);
           return whole ? [whole.join(".")] : [];
         };
-        const wanted = parts.length === 1 ? selection.name : full(selection.name)?.join(".");
+        // After a USE, a table may live in another schema than the pipeline's, which the
+        // data flow doesn't keep: a full name can't be compared then.
+        const afterUse = flow.nodes.some((node) => node.afterUse);
+        const wanted = parts.length === 1 ? selection.name : afterUse ? undefined : full(selection.name)?.join(".");
         if (wanted === undefined) continue;
         const known = candidates.flatMap(forms);
         if (known.some((name) => name === wanted || name.toLowerCase() === wanted)) continue;
