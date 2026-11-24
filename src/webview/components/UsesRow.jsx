@@ -93,7 +93,8 @@ export default function UsesRow({ items, activeId, pinnedId, onHover, onTogglePi
               item.source === "bundle" ? "border-solid" : "border-dashed"
             } ${active || pinned ? "border-accent bg-hover" : "border-line-strong"}`}
           >
-            <TypeDot kind={item.kind} />
+            {/* Serverless or inherited compute isn't a cluster, so it gets no cluster icon. */}
+            <TypeDot kind={item.kind} dot={item.source === "default"} />
             <span className="truncate">{item.label}</span>
             <span className="shrink-0 text-muted">
               {/* Serverless isn't a cluster: Databricks calls it serverless compute. */}

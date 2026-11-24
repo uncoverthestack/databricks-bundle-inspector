@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { kindMeta } from "../lib/kindMeta";
+import TypeDot from "./TypeDot";
 
 export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {
   const normalized = value.trim().toLowerCase();
@@ -33,7 +33,6 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
       {matches.length > 0 && (
         <div className="absolute left-0 right-0 top-8 z-20 max-h-[calc(100vh-4rem)] overflow-auto overscroll-contain rounded-md border border-line-strong bg-widget shadow-popover">
           {matches.map((item) => {
-            const meta = kindMeta(item.kind);
             return (
               <button
                 key={item.id}
@@ -41,10 +40,8 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                 onClick={() => onSelect(item)}
                 className="flex w-full items-center gap-2 border-b border-line-soft px-2.5 py-2 text-left last:border-0 hover:bg-hover"
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: meta.color }}
-                />
+                {/* An overview box's result shows the box's icon; a task's keeps the task box's dot (issue 546). */}
+                <TypeDot kind={item.kind} dot={!item.overviewId || item.source === "default"} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-fg">
                     {item.label}
