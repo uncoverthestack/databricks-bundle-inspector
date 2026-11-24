@@ -1,5 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
+import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
+import { problemWords } from "../lib/taskProblems";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
 export default function TaskNode({ data, selected }) {
@@ -45,16 +47,7 @@ export default function TaskNode({ data, selected }) {
           </div>
         )}
       </div>
-      {issueCount > 0 && (
-        <span
-          title={`${issueCount} issue${issueCount === 1 ? "" : "s"}`}
-          className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-fg-strong ${
-            tone === "warning" ? "bg-warning/15" : tone === "error" ? "bg-error/15" : "bg-hover"
-          }`}
-        >
-          {issueCount}
-        </span>
-      )}
+      {issueCount > 0 && <ProblemBadge count={issueCount} tone={tone} title={problemWords(data.issueCounts)} />}
       {branchOutcomes.length > 0 && (
         <div className="flex shrink-0 flex-col items-end gap-0.5">
           {branchOutcomes.slice(0, 2).map((outcome) => {
