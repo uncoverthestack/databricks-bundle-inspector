@@ -1,0 +1,80 @@
+name: Databricks Runtime dates
+
+# The runtime_end_of_support check (#485) ships a table of Databricks Runtime versions and
+# their end-of-support dates, taken from the docs. Each week this compares the table with
+# the docs pages, so a new version, a moved date or an end-of-life date being announced
+# becomes a failing check and an issue, not a stale finding. Also runs on pull requests
+# that change the table or how the pages are read.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Mondays 06:30 UTC, the day after the weekly release
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/bundle/runtimeSupport.ts"
+      - "src/test/integration/runtimeDocs.ts"
+      - "src/test/integration/runtimeDates.integration.test.ts"
+      - ".github/workflows/runtime-dates.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Runtime dates match the docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      # Only jest and ts-jest are needed, so no package install scripts run.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Compare with the docs pages
+        run: npm run test:runtime-dates
+
+  # Opens one issue when the weekly run fails. Checks out and runs no repository code, so
+  # the write permission never reaches it; skipped while the same issue is still open.
+  report:
+    name: Open an issue
+    needs: check
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open an issue unless one is open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Databricks Runtime dates changed in the docs"
+          open=$(gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" --json title --jq "[.[] | select(.title == \"$title\")] | length")
+          if [ "$open" != "0" ]; then
+            echo "An issue is already open."
+            exit 0
+          fi
+          body="The weekly check found that the Databricks Runtime versions or dates on the docs pages differ from the table the extension ships, or that the end-of-life sentence changed.
+
+          Run: $RUN_URL
+
+          To fix: update RUNTIME_RELEASES and RUNTIME_DATES_CHECKED in src/bundle/runtimeSupport.ts from the two pages named in src/test/integration/runtimeDocs.ts, then run npm run test:runtime-dates."
+          gh issue create --repo "$REPO" --title "$title" --body "$body"
