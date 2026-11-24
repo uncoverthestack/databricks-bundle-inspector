@@ -545,7 +545,7 @@ function getFileReferences(
       py.python_file,
       "python_script",
       "spark_python_task.python_file",
-      undefined,
+      source,
       source === "GIT" ? undefined : "file",
       stray,
     );
@@ -559,7 +559,7 @@ function getFileReferences(
       sqlFile?.path,
       "sql",
       "sql_task.file.path",
-      undefined,
+      source,
       source === "GIT" ? undefined : "file",
       stray,
     );

@@ -495,10 +495,13 @@ A task type the inspector doesn't recognise. It does not mean the task is invali
 
 ### `git_source_not_recommended`
 
-A task loads its code from Git (`source: GIT`) while its job has no `git_source`. `bundle validate` passes, but deploy refuses it ("source is set to GIT but no git_source settings are provided"). This often happens after removing `git_source` from a job. The path is still checked as a local file, as the CLI reads it.
+A task's `source` doesn't fit its job's `git_source`, so `bundle validate` passes and deploy refuses the task. Two cases:
+
+- **`source: GIT` in a job with no `git_source`.** Deploy fails with "source is set to GIT but no git_source settings are provided". This often happens after removing `git_source` from a job. The path is still checked as a local file, as the CLI reads it.
+- **`source: WORKSPACE` with a relative path in a job with `git_source`.** The CLI rewrites no task path in such a job, so `../src/etl.py` reaches Databricks as written. Deploy fails with "Only absolute paths are currently supported" (notebook and SQL file tasks) or "Relative paths are only supported when source is set to GIT" (Python file tasks), even when the file is on disk (checked by deploying, Databricks CLI v1.27.0). A path from a variable is left alone, as it may resolve to a `/Workspace` path.
 
 - **Severity:** error.
-- **Fix:** keep the code in the bundle (omit `source`, or use `WORKSPACE`), or add `git_source` to the job.
+- **Fix:** for `source: GIT`, keep the code in the bundle (omit `source`, or use `WORKSPACE`), or add `git_source` to the job. For `source: WORKSPACE`, use a path from `/Workspace`, or remove `source: WORKSPACE` to read the path from the job's Git repository.
 
 ## Code it reads
 
