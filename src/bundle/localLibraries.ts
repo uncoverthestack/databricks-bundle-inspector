@@ -122,5 +122,11 @@ export function buildOutputs(
 /** Whether deploy may build `resolvedPath` before checking it, so a missing file there is no finding. */
 export function mayBeBuilt(resolvedPath: string, outputs: BuildOutputs | undefined): boolean {
   if (!outputs) return false;
-  return outputs.anywhere || outputs.folders.includes(path.dirname(resolvedPath));
+  if (outputs.anywhere) return true;
+  // Windows and macOS disks ignore letter case (a drive letter too), so the CLI finds the
+  // built file whatever case the path is written in.
+  const ignoreCase = process.platform === "win32" || process.platform === "darwin";
+  const key = (folder: string) => (ignoreCase ? path.resolve(folder).toLowerCase() : path.resolve(folder));
+  const folder = key(path.dirname(resolvedPath));
+  return outputs.folders.some((built) => key(built) === folder);
 }

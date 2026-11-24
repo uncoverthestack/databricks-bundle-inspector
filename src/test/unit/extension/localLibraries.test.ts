@@ -69,7 +69,8 @@ describe("localLibrary", () => {
 });
 
 describe("buildOutputs and mayBeBuilt", () => {
-  const root = path.join(path.sep, "b");
+  // Absolute on every OS: on Windows `\\b` has no drive, and path.resolve would add one.
+  const root = path.resolve(path.sep, "b");
   const definedIn = () => root;
   const built = (config: Parameters<typeof buildOutputs>[0], file: string) =>
     mayBeBuilt(path.join(root, file), buildOutputs(config, root, definedIn));
@@ -92,6 +93,12 @@ describe("buildOutputs and mayBeBuilt", () => {
   test("files without a build are already there: nothing is built (acceptance bundle glob_exact_whl)", () => {
     const config = { artifacts: { p: { type: "whl", files: [{ source: "prebuilt/a-0.0.1-py3-none-any.whl" }] } } };
     expect(built(config, "prebuilt/a-0.0.1-py3-none-any.whl")).toBe(false);
+  });
+
+  test("folders are compared ignoring letter case on Windows and macOS, as their disks do", () => {
+    const config = { artifacts: { a: { type: "whl" } } };
+    const upper = mayBeBuilt(path.join(root.toUpperCase(), "DIST", "a.whl"), buildOutputs(config, root, definedIn));
+    expect(upper).toBe(process.platform === "win32" || process.platform === "darwin");
   });
 
   test("a tgz the CLI builds from include names its output in files", () => {
