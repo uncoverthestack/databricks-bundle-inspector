@@ -12,7 +12,7 @@ import { Info, LocateFixed } from "lucide-react";
 import AppHeader from "./components/AppHeader";
 import BundleOverview from "./components/BundleOverview";
 import HeaderChipPanel from "./components/HeaderChipPanel";
-import PipelineView from "./components/PipelineView";
+import PipelineDataFlow from "./components/PipelineDataFlow";
 import SeverityIcon from "./components/SeverityIcon";
 import TaskNode from "./components/TaskNode";
 import UsesRow from "./components/UsesRow";
@@ -20,7 +20,14 @@ import { resolveVariableForTarget } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
-import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
+import {
+  buildPipelineView,
+  hasDataFlowPage,
+  pipelineKeysOf,
+  pipelinePanel,
+  pipelineReviewSummary,
+  taskPipelineKey,
+} from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
@@ -1652,9 +1659,41 @@ export default function App({
   const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
   const pipelineKeys = useMemo(() => pipelineKeysOf(parsedBundle), [parsedBundle]);
 
+  const effectiveTargetName =
+    inspectedTargetMode === "target"
+      ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
+      : null;
+  const effectiveResolutionBundle = resolutionBundle ?? parsedBundle;
+  const resolveName = useCallback(
+    (value) => displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+    [effectiveResolutionBundle, effectiveTargetName],
+  );
+  // Every pipeline's details for the overview's side panel, by box id (issue 436).
+  const pipelineModels = useMemo(() => {
+    const models = new Map();
+    if (!graph) return models;
+    for (const key of pipelineKeys) {
+      const view = buildPipelineView(graph, parsedBundle, key, inspectorIssues);
+      if (view) models.set(view.id, { view, panel: pipelinePanel(view, resolveName) });
+    }
+    return models;
+  }, [graph, parsedBundle, pipelineKeys, inspectorIssues, resolveName]);
+  // Only a pipeline with SQL sources has a page of its own: its data flow.
+  const dataFlowKeys = useMemo(
+    () => pipelineKeys.filter((key) => hasDataFlowPage(pipelineModels.get(`resources.pipelines.${key}`)?.view)),
+    [pipelineKeys, pipelineModels],
+  );
+
   const selection = useMemo(
-    () => resolveSelection(jobKeys, pipelineKeys, userSelection, initialResource),
-    [jobKeys, pipelineKeys, userSelection, initialResource],
+    () =>
+      resolveSelection(
+        jobKeys,
+        dataFlowKeys,
+        userSelection,
+        // A cursor in a pipeline selects its box on the overview instead (issue 436).
+        initialResource?.group === "jobs" ? initialResource : undefined,
+      ),
+    [jobKeys, dataFlowKeys, userSelection, initialResource],
   );
   // Empty while a pipeline is shown, so everything about tasks stands aside.
   const selectedJobKey = selection?.group === "jobs" ? selection.key : "";
@@ -1681,11 +1720,6 @@ export default function App({
             ? `Inspected target: ${inspectedTarget}.`
             : "No explicit Databricks target was reported by the bundle output."
         } The Problems panel and status bar show the structural preview.`;
-  const effectiveTargetName =
-    inspectedTargetMode === "target"
-      ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
-      : null;
-  const effectiveResolutionBundle = resolutionBundle ?? parsedBundle;
   const jobOptions = useMemo(
     () =>
       jobKeys.map((key) => {
@@ -1707,39 +1741,20 @@ export default function App({
     [jobKeys, jobsByKey, effectiveResolutionBundle, effectiveTargetName],
   );
   const pickerGroups = useMemo(() => {
-    const pipelinesByKey = parsedBundle?.resources?.pipelines ?? {};
-    const pipelineOptions = pipelineKeys.map((key) => {
-      const name = pipelinesByKey[key]?.name;
-      const displayName =
-        typeof name === "string" && name.trim() && name !== key
-          ? displayResolvedValue(name, effectiveResolutionBundle, effectiveTargetName)
-          : "";
-      return {
-        value: selectionValue({ group: "pipelines", key }),
-        key,
-        label: displayName && displayName !== key ? `${key} (${displayName})` : key,
-      };
-    });
+    // A pipeline's details are on the overview; the picker lists the data flow pages.
+    const pipelineOptions = dataFlowKeys.map((key) => ({
+      value: selectionValue({ group: "pipelines", key }),
+      key,
+      label: `${key} · data flow`,
+    }));
     return [
       ...(jobOptions.length > 0 ? [{ label: "Jobs", options: jobOptions }] : []),
       ...(pipelineOptions.length > 0 ? [{ label: "Pipelines", options: pipelineOptions }] : []),
     ];
-  }, [jobOptions, pipelineKeys, parsedBundle, effectiveResolutionBundle, effectiveTargetName]);
+  }, [jobOptions, dataFlowKeys]);
 
-  const pipelineView = useMemo(
-    () =>
-      graph && selectedPipelineKey !== undefined
-        ? buildPipelineView(graph, parsedBundle, selectedPipelineKey, inspectorIssues)
-        : undefined,
-    [graph, parsedBundle, selectedPipelineKey, inspectorIssues],
-  );
-  const otherPipelines = useMemo(() => {
-    if (!pipelineView) return [];
-    const counts = pipelineIssueCounts(pipelineKeys, inspectorIssues);
-    return pipelineKeys
-      .filter((key) => key !== pipelineView.key)
-      .map((key) => ({ key, issueCount: counts.get(key) ?? 0 }));
-  }, [pipelineView, pipelineKeys, inspectorIssues]);
+  const pipelineView =
+    selectedPipelineKey !== undefined ? pipelineModels.get(`resources.pipelines.${selectedPipelineKey}`)?.view : undefined;
 
   const { flowNodes, flowEdges, jobNode } = useMemo(
     () =>
@@ -1941,7 +1956,9 @@ export default function App({
   }, [graph, inspectorIssues, effectiveResolutionBundle, effectiveTargetName]);
   // The box kept selected on the overview. It stays while a job or pipeline is open, so
   // going back shows the overview as it was left.
-  const [overviewSelectedId, setOverviewSelectedId] = useState(null);
+  const [overviewSelectedId, setOverviewSelectedId] = useState(() =>
+    initialResource?.group === "pipelines" ? `resources.pipelines.${initialResource.key}` : null,
+  );
   const overviewScroll = useRef(null);
   const [overviewOpenedGroups, setOverviewOpenedGroups] = useState(() => new Set());
   const atOverview = !selection && bundleOverview !== null;
@@ -2023,6 +2040,13 @@ export default function App({
     setGraphMode("all");
   }
 
+  /** A pipeline's details live on the overview: show it there, selected (issue 436). */
+  function showPipelineOnOverview(key) {
+    onTelemetry?.("pipeline_selected");
+    setOverviewSelectedId(`resources.pipelines.${key}`);
+    showOverview();
+  }
+
   function showOverview() {
     setUserSelection({ group: "overview" });
     setSelectedNodeId(null);
@@ -2035,6 +2059,7 @@ export default function App({
   /** Opens a job or pipeline from its box on the overview. */
   function openFromOverview(item) {
     if (!item.resourceKey || (item.kind !== "job" && item.kind !== "pipeline")) return;
+    if (item.kind === "pipeline" && !dataFlowKeys.includes(item.resourceKey)) return;
     if (item.kind === "job") {
       // A selected warehouse, cluster or secret scope the job uses stays lit in its Uses row.
       const kept = overviewSelectedId
@@ -2205,16 +2230,10 @@ export default function App({
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 overflow-hidden">
           {pipelineView ? (
-            <PipelineView
-              view={pipelineView}
-              otherPipelines={otherPipelines}
-              background={rfStyle}
-              onSelect={handleSelectionChange}
-              onOpenFile={onOpenFile}
-              resolveName={(value) =>
-                displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName)
-              }
-            />
+            // The data flow page (issue 436): the pipeline's details are on the overview.
+            <div className="h-full overflow-auto p-6" style={rfStyle} data-data-flow-page={pipelineView.key}>
+              <PipelineDataFlow flow={pipelineView.dataFlow} onOpenFile={onOpenFile} resolveName={resolveName} />
+            </div>
           ) : atOverview ? (
             <BundleOverview
               overview={bundleOverview}
@@ -2229,6 +2248,8 @@ export default function App({
               scrollMemoryRef={overviewScroll}
               openedGroups={overviewOpenedGroups}
               onOpenGroup={(id) => setOverviewOpenedGroups((current) => new Set(current).add(id))}
+              pipelines={pipelineModels}
+              resolveName={resolveName}
             />
           ) : flowNodes.length === 0 ? (
             <div
@@ -2321,7 +2342,7 @@ export default function App({
             inspectorIssues={inspectorIssues}
             onSelectTask={selectTaskNode}
             pipelineKeys={pipelineKeys}
-            onSelectPipeline={(key) => handleSelectionChange({ group: "pipelines", key })}
+            onSelectPipeline={bundleOverview ? showPipelineOnOverview : undefined}
             onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
           />

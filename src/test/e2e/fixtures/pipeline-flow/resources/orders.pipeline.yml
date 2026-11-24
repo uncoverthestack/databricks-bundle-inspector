@@ -10,3 +10,11 @@ resources:
       libraries:
         - glob:
             include: ../src/transformations/**
+    # Python only: no data flow page, and its details say why (issue 436).
+    scores_py:
+      name: scores_py
+      catalog: main
+      schema: sales
+      libraries:
+        - file:
+            path: ../src/transformations/scores.py

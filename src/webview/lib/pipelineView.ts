@@ -209,18 +209,6 @@ export function buildPipelineView(
   };
 }
 
-/** Errors and warnings per pipeline, for the other pipelines' buttons. */
-export function pipelineIssueCounts(pipelineKeys: string[], inspectorIssues: Issue[] = []): Map<string, number> {
-  const counts = new Map(pipelineKeys.map((key) => [key, 0]));
-  for (const issue of inspectorIssues) {
-    const key = issue.resourceId?.startsWith("resources.pipelines.") && !issue.taskId
-      ? issue.resourceId.slice("resources.pipelines.".length)
-      : undefined;
-    if (key !== undefined && counts.has(key) && issue.severity !== "info") counts.set(key, counts.get(key)! + 1);
-  }
-  return counts;
-}
-
 const STATUS_WORDS: Record<SourceStatus, string> = {
   found: "found",
   missing: "missing",
@@ -268,4 +256,65 @@ export function pipelineReviewSummary(
   for (const source of view.sources) counts.set(source.status, (counts.get(source.status) ?? 0) + 1);
   for (const [status, count] of counts) lines.push(`- ${count} ${STATUS_WORDS[status]}`);
   return lines.join("\n");
+}
+
+/** A pipeline has a data flow page when it has SQL sources to read (issue 436). */
+export function hasDataFlowPage(view: Pick<PipelineViewModel, "dataFlow"> | undefined): boolean {
+  return (view?.dataFlow?.sqlFiles ?? 0) > 0;
+}
+
+export interface PipelineSourceRow extends PipelineSource {
+  /** The problems found on the `libraries` line that lists this source. */
+  issues: Issue[];
+}
+
+/** What the bundle overview's side panel shows for a pipeline (issue 436). */
+export interface PipelinePanel {
+  /** The `name` as written, when it differs from the key. */
+  name?: string;
+  /** "Serverless · Triggered · Development mode". */
+  settings: string;
+  /** The default catalog and schema, or undefined when neither is set. */
+  writesTo?: string;
+  sources: PipelineSourceRow[];
+  /** The pipeline's problems that are not on one of its sources' lines. */
+  otherIssues: Issue[];
+  /**
+   * The data flow line: a summary and a link when it has SQL sources, else why there is none.
+   * Absent when the pipeline lists no local sources at all.
+   */
+  dataFlow?: { summary: string; opens: boolean };
+}
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+function dataFlowLine(flow: PipelineDataFlow): PipelinePanel["dataFlow"] {
+  if (flow.sqlFiles === 0) {
+    const allPython = flow.notRead.length > 0 && flow.notRead.every((file) => file.reason === "Python");
+    return { summary: allPython ? "From SQL sources only. This pipeline's are Python." : "From SQL sources only. This pipeline has none.", opens: false };
+  }
+  const created = flow.nodes.filter((node) => node.kind !== "outside" && node.kind !== "files").length;
+  const outside = flow.nodes.length - created;
+  if (created === 0 && outside === 0) return { summary: "No tables or views found in this pipeline's SQL.", opens: true };
+  const parts = [`Creates ${plural(created, "table or view", "tables and views")}`];
+  if (outside > 0) parts.push(`reads ${outside} from outside`);
+  return { summary: `${parts.join(", ")}.`, opens: true };
+}
+
+export function pipelinePanel(view: PipelineViewModel, resolveName: (value: string) => string = (value) => value): PipelinePanel {
+  const sameLine = (issue: Issue, source: PipelineSource) => issue.file === source.file && issue.line === source.line;
+  const sources = view.sources.map((source) => ({ ...source, issues: view.issues.filter((issue) => sameLine(issue, source)) }));
+  const name = resolveName(view.name);
+  const writesTo = [view.catalog, view.schema].filter(Boolean).map((part) => resolveName(part!)).join(".");
+  const dataFlow = view.dataFlow ? dataFlowLine(view.dataFlow) : undefined;
+  return {
+    ...(name !== view.key ? { name } : {}),
+    // "Serverless" only when the bundle says so: without it, the workspace may still pick
+    // serverless, so "classic" would be a guess.
+    settings: [...(view.serverless ? ["Serverless"] : []), view.mode, ...(view.development ? ["Development mode"] : [])].join(" · "),
+    ...(writesTo ? { writesTo } : {}),
+    sources,
+    otherIssues: view.issues.filter((issue) => !view.sources.some((source) => sameLine(issue, source))),
+    ...(dataFlow ? { dataFlow } : {}),
+  };
 }
