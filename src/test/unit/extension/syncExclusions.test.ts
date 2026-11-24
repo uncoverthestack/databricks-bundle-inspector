@@ -136,3 +136,65 @@ describe("files in .databricks or .git (#514)", () => {
     }
   });
 });
+
+// #526, live on CLI v1.27.0 (2026-11-24, twice each): when deploy uploads no file under a
+// pipeline glob's folder, the folder isn't in the workspace and the pipeline update fails
+// with LIBRARY_FILE_NOT_FOUND. With one file left out of several, the update completed.
+describe("a pipeline glob whose files are all left out of the upload (#526)", () => {
+  const SQL = "CREATE OR REFRESH MATERIALIZED VIEW a AS SELECT 1;\n";
+  const globTitles = async (files: Record<string, string>, sync?: ParsedBundleConfig["sync"], glob = "../src/dlt/**") => {
+    const root = mkdtempSync(path.join(tmpdir(), "dbi-glob-sync-"));
+    try {
+      for (const [relative, text] of Object.entries({ ...files, "resources/p.yml": "resources:\n  pipelines:\n    p:\n      libraries: []\n" })) {
+        mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+        writeFileSync(path.join(root, relative), text);
+      }
+      const config = {
+        bundle: { name: "globs" },
+        include: ["resources/p.yml"],
+        ...(sync ? { sync } : {}),
+        resources: { pipelines: { p: { libraries: [{ glob: { include: glob } }] } } },
+      } as unknown as ParsedBundleConfig;
+      const graph = await extractBundleGraph(config, root);
+      return buildInspectorIssues(graph, config, [], root)
+        .filter((issue) => issue.kind === "excluded_from_sync")
+        .map((issue) => `${issue.severity}: ${issue.title}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  test("every file in .gitignore: a warning naming the sync.include pattern from the bundle root", async () => {
+    // `*.sql` matches in every folder; `src/dlt/*.sql` wouldn't reach src/dlt/sub/.
+    expect(await globTitles({ ".gitignore": "*.sql\n", "src/dlt/t.sql": SQL, "src/dlt/sub/u.sql": SQL })).toEqual([
+      'warning: Add "src/dlt/**" to sync.include: .gitignore stops every file in "../src/dlt/**" from being deployed, so the pipeline may find no source files at run time.',
+    ]);
+  });
+
+  test("every file matched by sync.exclude", async () => {
+    expect(await globTitles({ "src/dlt/t.sql": SQL }, { exclude: ["src/dlt/**"] })).toEqual([
+      'warning: Change the sync.exclude pattern that matches the files in "../src/dlt/**": none of them are deployed, so the pipeline may find no source files at run time.',
+    ]);
+  });
+
+  test("files left out by different rules get one general warning", async () => {
+    expect(await globTitles({ ".gitignore": "src/dlt/t.sql\n", "src/dlt/t.sql": SQL, "src/dlt/u.sql": SQL }, { exclude: ["src/dlt/u.sql"] })).toEqual([
+      'warning: No file in "../src/dlt/**" is deployed, so the pipeline may find no source files at run time.',
+    ]);
+  });
+
+  test.each([
+    ["a file in a subfolder that src/dlt/*.sql doesn't reach", { ".gitignore": "src/dlt/*.sql\n", "src/dlt/t.sql": SQL, "src/dlt/sub/u.sql": SQL }, undefined],
+    ["one file of two ignored", { ".gitignore": "src/dlt/u.sql\n", "src/dlt/t.sql": SQL, "src/dlt/u.sql": SQL }, undefined],
+    ["ignored, then brought back by sync.include", { ".gitignore": "src/dlt/\n", "src/dlt/t.sql": SQL }, { include: ["src/dlt/**"] }],
+    // Deploy uploads hidden files; the folder exists in the workspace then.
+    ["a .gitignore in the folder, which is uploaded itself", { "src/dlt/.gitignore": "*.sql\n", "src/dlt/t.sql": SQL }, undefined],
+    ["nothing ignored", { "src/dlt/t.sql": SQL }, undefined],
+  ])("no finding: %s", async (_name, files, sync) => {
+    expect(await globTitles(files, sync)).toEqual([]);
+  });
+
+  test("a folder/* glob is left to other checks: deploy refuses it whatever its files", async () => {
+    expect(await globTitles({ ".gitignore": "src/dlt/*.sql\n", "src/dlt/t.sql": SQL }, undefined, "../src/dlt/*")).toEqual([]);
+  });
+});
