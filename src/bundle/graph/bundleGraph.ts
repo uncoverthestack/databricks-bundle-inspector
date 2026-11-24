@@ -31,6 +31,7 @@ import {
   type JobStructureFinding,
 } from "../jobStructure.js";
 import { resolveExpressionForTarget } from "../targetResolution.js";
+import { findRuntimeSupportProblems, type RuntimeSupportFinding } from "../runtimeSupport.js";
 import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
 import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
@@ -377,6 +378,8 @@ export interface BundleGraph {
   jobStructureFindings?: JobStructureFinding[];
   /** Problems the CLI only reports once a target is picked (#389), for the issue list. */
   targetCheckFindings?: TargetCheckFinding[];
+  /** Clusters on a Databricks Runtime near or past end of support (#485), for the issue list. */
+  runtimeSupportFindings?: RuntimeSupportFinding[];
   /** The CLI version's rule for notebook headers, used again by the issue list's suggestions. */
   notebookRule?: NotebookHeaderRule;
   /** Where deploy may build library files before checking them (#482, #525). */
@@ -1480,6 +1483,7 @@ async function buildBundleGraph(
         return text === undefined ? [] : [{ file, text }];
       }),
     ),
+    runtimeSupportFindings: findRuntimeSupportProblems(toRecord(parsedBundle.resources), sourceFiles, jobStructureOptions),
     jobStructureFindings: [
       ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, jobStructureOptions),
       ...findDuplicateKeys(sourceFiles, jobStructureOptions),

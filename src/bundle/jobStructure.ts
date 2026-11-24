@@ -107,7 +107,7 @@ const pathKey = (path: (string | number)[]) =>
  * not in the location map, so the file is read again following them, and the location
  * is where the anchor writes the value.
  */
-function locator(file: SourceFile): (path: (string | number)[]) => YamlLocation | undefined {
+export function locator(file: SourceFile): (path: (string | number)[]) => YamlLocation | undefined {
   let parsed: { doc: Document; lineCounter: LineCounter; anchors: Map<string, Node[]> } | undefined;
   return (path) => {
     const mapped = file.locations?.get(pathKey(path));

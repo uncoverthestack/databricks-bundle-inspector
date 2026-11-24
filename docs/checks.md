@@ -13,6 +13,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `pipeline_selection_not_found`
+- [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
@@ -237,6 +238,18 @@ A pipeline task refreshes a table or flow its pipeline doesn't create.
 - **Fix:** use the name of a table, view or flow the pipeline creates, as written in its SQL. A full name, `catalog.schema.table`, works when its catalog and schema are the pipeline's. The finding suggests a close match.
 - **Checked fields:** `refresh_selection`, `full_refresh_selection` and `refresh_flow_selection`, also in a `for_each_task`'s inner task. Not `reset_checkpoint_selection` yet.
 - **Limits:** checked only when the pipeline's data flow lists every name: every source is a local SQL file the inspector read, with no name it could not read. A pipeline with Python sources, a source it doesn't check, a selection written as a variable, or a full name when the pipeline's catalog or schema is a variable, is not judged.
+
+## Compute
+
+### `runtime_end_of_support`
+
+A cluster's `spark_version` is a Databricks Runtime near or past its end of support.
+
+- **Severity:** note when end of support is within a year, warning once it has passed, or for 10.4 LTS and earlier, which Databricks lists as past end of life.
+- **Example:** `spark_version: 13.3.x-scala2.12`. Databricks Runtime 13.3 LTS reached end of support on 2026-08-22. `bundle validate` and `bundle deploy` don't read the version, and the cluster still starts: a job cluster on 12.2 LTS, past end of support since 2026-03-01, ran in a live test with CLI v1.27.0 on 2026-11-23. Databricks no longer fixes the version, security included. At end of life Databricks removes a version and workloads on it fail; it has announced no end-of-life date for 10.5 or later.
+- **Fix:** move to a supported long-term support (LTS) version, such as the newest one the finding names.
+- **Checked fields:** `spark_version` in `resources.clusters`, in a job's `job_clusters`, and in a task's `new_cluster`, also a `for_each_task`'s inner task. Photon, ML and GPU versions count as the version they are based on. A value from a variable counts once it resolves.
+- **Limits:** the dates come from the [Databricks Runtime release notes](https://docs.databricks.com/aws/en/release-notes/runtime/) and the [end-of-support list](https://docs.databricks.com/aws/en/release-notes/runtime/eos), read 2026-11-24, and ship with the extension; a newer version than the extension knows isn't judged. `existing_cluster_id`, a version set only by a cluster policy, and pipelines (which use `channel`) aren't checked.
 
 ## Code in notebooks and files
 

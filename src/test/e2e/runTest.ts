@@ -80,6 +80,8 @@ async function main() {
     extensionTestsEnv: {
       E2E_PAUSE_MS: options.pauseMs,
       E2E_SUITE: suite,
+      // Runtime end-of-support findings depend on the day (#485): a fixed one, as in the unit tests.
+      DATABRICKS_BUNDLE_INSPECTOR_TODAY: "2026-11-24",
       ...(debuggingPort ? { E2E_CDP_PORT: String(debuggingPort) } : {}),
       // A ~/.databrickscfg profile for the cases that need a login (see the targets fixture).
       // Always set, empty without one: VS Code can pick the variable up from the user's
