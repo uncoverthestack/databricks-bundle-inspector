@@ -1,0 +1,86 @@
+resources:
+  jobs:
+    sql_text:
+      name: sql_text
+      tasks:
+        - task_key: u_string
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_string.sql
+        - task_key: u_value
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_value.sql
+        - task_key: u_where
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_where.sql
+        - task_key: u_comment
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_comment.sql
+        - task_key: u_table
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_table.sql
+        - task_key: p_value
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/p_value.sql
+            parameters:
+              run_date: "2026-11-24"
+        - task_key: p_string
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/p_string.sql
+            parameters:
+              run_date: "2026-11-24"
+        - task_key: p_double
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/p_double.sql
+            parameters:
+              run_date: "2026-11-24"
+        - task_key: not_checked
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/not_checked.sql
+        - task_key: p_part
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/p_part.sql
+            parameters:
+              run_date: "2026-11-24"
+        - task_key: u_twice
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_twice.sql
+        - task_key: near_name
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/u_string.sql
+            parameters:
+              run_dt: "2026-11-24"
+    sql_text_job_parameter:
+      name: sql_text_job_parameter
+      parameters:
+        - name: run_date
+          default: "2026-11-24"
+      tasks:
+        - task_key: from_job
+          sql_task:
+            warehouse_id: abc123
+            file:
+              path: ../src/p_value.sql

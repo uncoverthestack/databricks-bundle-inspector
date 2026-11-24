@@ -5,7 +5,7 @@ import type { ParsedBundleConfig, TargetConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
-import type { TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
+import type { SqlTextParameter, TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, syncsFromBundleRoot, type SyncExclusion } from "./syncRules.js";
@@ -53,6 +53,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
+  "sql_parameter_quoted",
   "schema_renamed_in_target",
   "task_value_unknown_task",
   "task_value_not_upstream",
@@ -113,6 +114,8 @@ export interface InspectorIssue {
   file?: string;
   line?: number;
   column?: number;
+  /** 1-based column the highlight ends before, when it is not the rest of the line. */
+  endColumn?: number;
   yamlPath?: string;
   fixHint?: string;
   fix?: IssueFix;
@@ -584,8 +587,10 @@ function sqlParameterIssues(
     if (ref.referenceType !== "sql" || ref.source === "GIT" || !ref.exists) continue;
     const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
     const markers = (fileNode?.data.sqlParameterMarkers as Array<{ name: string; line: number }> | undefined) ?? [];
+    const textParameters = (fileNode?.data.sqlTextParameters as SqlTextParameter[] | undefined) ?? [];
     const passed = new Set([...taskData.taskParameterReferences.map((p) => p.name), ...jobParameterNames]);
-    const unread = [...passed].filter((name) => !markers.some((marker) => marker.name === name));
+    const read = new Set([...markers.map((marker) => marker.name), ...textParameters.map((use) => use.name)]);
+    const unread = [...passed].filter((name) => !read.has(name));
     const reported = new Set<string>();
     for (const marker of markers) {
       if (passed.has(marker.name) || reported.has(marker.name)) continue;
@@ -603,6 +608,49 @@ function sqlParameterIssues(
         yamlPath: ref.yamlPath,
         fixHint: `Pass "${marker.name}" in the task's sql_task.parameters or the job's parameters.`,
         ...issueLocation(ref.resolvedPath, marker.line),
+      });
+    }
+
+    // {{name}} text parameters (#484): the value is pasted in already quoted, and an
+    // unpassed one stays as written. In quotes the query still runs, on that text.
+    const reportedText = new Set<string>();
+    for (const use of textParameters) {
+      const where = { ...issueLocation(ref.resolvedPath, use.line, use.column), endColumn: use.endColumn };
+      if (passed.has(use.name)) {
+        if (!use.wholeString) continue;
+        // The quotes are the problem, so they are highlighted too.
+        where.column = use.column - 1;
+        where.endColumn = use.endColumn + 1;
+        issues.push({
+          id: `sql-parameter-quoted:${task.id}:${ref.resolvedPath}:${use.line}:${use.column}`,
+          severity: "warning",
+          kind: "sql_parameter_quoted",
+          title: `Remove the quotes around "{{${use.name}}}": Databricks already adds quotes, so the run may fail.`,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          fixHint: `Write {{${use.name}}} without quotes.`,
+          ...where,
+        });
+        continue;
+      }
+      const key = `${use.name}:${use.inString}`;
+      if (reportedText.has(key)) continue;
+      reportedText.add(key);
+      const suggestion = closestName(use.name, unread);
+      const title = use.inString
+        ? `Pass "${use.name}" to this task: without it, the query may succeed with wrong results.`
+        : `Pass "${use.name}" to this task: without it, the run may fail.`;
+      issues.push({
+        id: `sql-text-parameter-not-passed:${task.id}:${ref.resolvedPath}:${use.name}:${use.inString ? "string" : "code"}`,
+        severity: "warning",
+        kind: "sql_parameter_not_set",
+        title: suggestion ? `${title} Did you mean "${suggestion}"?` : title,
+        taskId: task.id,
+        taskName: task.displayName,
+        yamlPath: ref.yamlPath,
+        fixHint: `Pass "${use.name}" in the task's sql_task.parameters or the job's parameters.`,
+        ...where,
       });
     }
   }
@@ -769,6 +817,16 @@ function syncExclusionIssue(
     title: `"${filePath}" may not be deployed: .databricks and .git are never synced.`,
     fixHint: "Move the file out of .databricks or .git.",
   };
+}
+
+/**
+ * The 0-based columns an editor highlights for an issue on its line: from its column to
+ * `endColumn` when it has one (a `{{name}}` placeholder, #484), else to the end of the line.
+ */
+export function issueHighlight(issue: Pick<InspectorIssue, "column" | "endColumn">): { start: number; end: number } {
+  const start = Math.max(0, (issue.column ?? 1) - 1);
+  const end = issue.endColumn && issue.endColumn - 1 > start ? issue.endColumn - 1 : Number.MAX_SAFE_INTEGER;
+  return { start, end };
 }
 
 function issueLocation(file?: string, line?: number, column?: number) {

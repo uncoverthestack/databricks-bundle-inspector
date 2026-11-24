@@ -1,0 +1,4 @@
+bundle:
+  name: sql_text_parameters
+include:
+  - resources/*.yml

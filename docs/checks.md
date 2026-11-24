@@ -13,7 +13,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
@@ -237,12 +237,30 @@ A task passes a parameter that its notebook never reads as a widget. Often harml
 
 ### `sql_parameter_not_set`
 
-A SQL file run by a SQL file task (`sql_task.file`) reads a named parameter (`:catalog`) that neither the task's `sql_task.parameters` nor the job's `parameters` pass. `bundle validate` and `bundle deploy` succeed, and the run fails with `UNBOUND_SQL_PARAMETER`.
+A SQL file run by a SQL file task (`sql_task.file`) uses a parameter that neither the task's `sql_task.parameters` nor the job's `parameters` pass. `bundle validate` and `bundle deploy` succeed. What happens at run time depends on how the parameter is written:
+
+- **`:name`** (a named parameter marker): the run fails with `UNBOUND_SQL_PARAMETER`.
+- **`{{name}}` inside quotes**, such as `WHERE d = '{{run_date}}'`: the placeholder is left as written, so the query runs on the text `{{run_date}}`. It can succeed with wrong results and no error.
+- **`{{name}}` outside quotes**, such as `FROM {{table_name}}`: the run fails with `PARSE_SYNTAX_ERROR`.
 
 - **Severity:** warning.
-- **Example:** `FROM IDENTIFIER(:catalog || '.sales.orders')`, with no `catalog` in the task's `parameters` or the job's `parameters`.
+- **Example:** `FROM IDENTIFIER(:catalog || '.sales.orders')`, or `WHERE d = '{{run_date}}'`, with no `catalog` or `run_date` in the task's `parameters` or the job's `parameters`.
 - **Fix:** pass it in the task's `sql_task.parameters` or the job's `parameters`. When the name is close to one that is passed, the warning suggests it.
-- **Limits:** only `:name` markers in code are read: not `::` casts, JSON paths (`raw:owner`), comments or strings. Names are case sensitive: `:Catalog` is not filled by `catalog`. `{{name}}` text is not checked: an unpassed one stays in the SQL as written, so whether the run fails depends on where it is. Legacy `${name}` text is not checked either. A parameter the task passes but the file doesn't read is fine and not reported. SQL files from Git are not read.
+- **Limits:**
+  - `:name`: only markers in code are read, not `::` casts, JSON paths (`raw:owner`), comments or strings.
+  - `{{name}}`: only the form with a plain name and no spaces. `{{ name }}` and dotted names such as `{{job.start_time}}` are not checked. Comments are not read.
+  - Names are case sensitive: `:Catalog` and `{{Catalog}}` are not filled by `catalog`.
+  - Legacy `${name}` text is not checked. A parameter the task passes but the file doesn't read is fine and not reported. SQL files from Git are not read.
+  - Tested on a serverless SQL warehouse: `:name` with CLI v1.24.0 (2026-11-06); `{{name}}` with CLI v1.27.0 (2026-11-24, issue 484).
+
+### `sql_parameter_quoted`
+
+A SQL file run by a SQL file task puts a `{{name}}` parameter that the task or job passes inside quotes, such as `WHERE region = '{{region}}'`. Databricks fills `{{name}}` in with the value already quoted, so the query becomes `WHERE region = ''emea''` and the run fails with `PARSE_SYNTAX_ERROR`. `bundle validate` and `bundle deploy` succeed.
+
+- **Severity:** warning.
+- **Example:** `SELECT '{{run_date}}'`, with `run_date` in the task's `sql_task.parameters`.
+- **Fix:** write `{{region}}` without quotes: `WHERE region = {{region}}`.
+- **Limits:** only when the quotes hold nothing but the parameter. A parameter inside a longer string, such as `LIKE '%{{name}}%'`, was not tested and is not reported. Tested on a serverless SQL warehouse, CLI v1.27.0 (2026-11-24, issue 484).
 
 ### `schema_renamed_in_target`
 
