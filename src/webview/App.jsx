@@ -18,6 +18,8 @@ import TaskNode from "./components/TaskNode";
 import UsesRow from "./components/UsesRow";
 import { resolveVariableForTarget } from "../bundle/targetResolution";
 import { kindMeta } from "./lib/kindMeta";
+import TypeDot from "./components/TypeDot";
+import { runtimeSecretLabel, taskRuntimeSecrets } from "../bundle/runtimeSecrets";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
 import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
@@ -378,10 +380,14 @@ function RefItem({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: dotColor }}
-        />
+        {kind === "secret_scope" && !missing && !status ? (
+          <TypeDot kind={kind} />
+        ) : (
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: dotColor }}
+          />
+        )}
         <span className="min-w-0">
           <span
             title={
@@ -1144,7 +1150,22 @@ function DetailPanel({
       };
     })
     .filter(Boolean);
-  const secretItems = [...fileSecretItems, ...configSecretItems];
+  // Secrets the code reads without naming the scope (issue 535): the scope a parameter gives by
+  // default, or a row saying it is set at run time, so the task never looks like it reads none.
+  const runtimeSecretItems = taskRuntimeSecrets(graph, nodeId, (value) =>
+    displayResolvedValue(value, parsedBundle, targetName),
+  ).map((read) => ({
+    name: read.scope ?? runtimeSecretLabel(read),
+    kind: "secret_scope",
+    detail: read.scope
+      ? `By default, from the ${read.parameter} parameter. A run can pass another value.`
+      : read.parameter
+        ? `Set when the job runs, from the ${read.parameter} parameter`
+        : "Set when the job runs: the code doesn't name the scope",
+    resolvedPath: read.file ?? null,
+    line: read.line,
+  }));
+  const secretItems = [...fileSecretItems, ...configSecretItems, ...runtimeSecretItems];
 
   // Parameters/widgets discovered in the task's referenced file — clickable, jumps to detected line
   const widgetItems = primaryFileNode

@@ -11,6 +11,7 @@ import { graphRefreshSuite } from "./graphRefresh.test.js";
 import { inspectionRacesSuite } from "./inspectionRaces.test.js";
 import { overviewSuite } from "./overview.test.js";
 import { pipelineFlowSuite } from "./pipelineFlow.test.js";
+import { runtimeSecretsSuite } from "./runtimeSecrets.test.js";
 import { themesSuite } from "./themes.test.js";
 import { sidebarSuite } from "./sidebar.test.js";
 import { workspaceChangesSuite } from "./workspaceChanges.test.js";
@@ -33,6 +34,7 @@ export function run(): Promise<void> {
   else if (suite === "workspaceChanges") workspaceChangesSuite();
   else if (suite === "overview") overviewSuite();
   else if (suite === "pipelineFlow") pipelineFlowSuite();
+  else if (suite === "runtimeSecrets") runtimeSecretsSuite();
   else cliNotFoundSuite();
   return new Promise((resolve, reject) => {
     mocha.run((failures) =>

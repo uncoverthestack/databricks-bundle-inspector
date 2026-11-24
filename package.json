@@ -396,7 +396,8 @@
     "test:e2e:workspace-changes": "npm run test:e2e -- --suite workspaceChanges --fixture src/test/e2e/fixtures/workspace-changes",
     "test:e2e:themes": "npm run test:e2e -- --suite themes --fixture src/test/e2e/fixtures/themes",
     "test:e2e:overview": "npm run test:e2e -- --suite overview --fixture src/test/e2e/fixtures/overview",
-    "test:e2e:pipeline-flow": "npm run test:e2e -- --suite pipelineFlow --fixture src/test/e2e/fixtures/pipeline-flow"
+    "test:e2e:pipeline-flow": "npm run test:e2e -- --suite pipelineFlow --fixture src/test/e2e/fixtures/pipeline-flow",
+    "test:e2e:runtime-secrets": "npm run test:e2e -- --suite runtimeSecrets --fixture src/test/fixtures/runtime-secrets"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.1",

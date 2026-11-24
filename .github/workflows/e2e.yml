@@ -175,6 +175,9 @@ jobs:
       - name: E2E, bundle overview
         if: matrix.group == 1
         run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite overview --fixture src/test/e2e/fixtures/overview
+      - name: E2E, secret scopes set at run time
+        if: matrix.group == 1
+        run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite runtimeSecrets --fixture src/test/fixtures/runtime-secrets
       - name: E2E, pipeline data flow
         if: matrix.group == 2
         run: ${{ matrix.display }} node out/e2e/runTest.cjs --suite pipelineFlow --fixture src/test/e2e/fixtures/pipeline-flow
