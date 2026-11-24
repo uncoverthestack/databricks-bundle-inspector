@@ -430,6 +430,35 @@ export function themesSuite() {
       });
     }
 
+    // Issue 554: lines are grey at rest; only the selected task's own lines use the focus colour.
+    it("graph lines are grey at rest, and a selected task's lines turn blue", async () => {
+      await setTheme("Default Dark Modern");
+      await waitFor(async () => (await evaluate(`document.body.dataset.vscodeThemeKind`)) === "vscode-dark", "dark theme");
+      const lines = `(() => {
+        const colour = (value) => { const probe = document.createElement("div"); probe.style.color = value; document.body.append(probe); const read = getComputedStyle(probe).color; probe.remove(); return read; };
+        const reserved = { focus: colour("var(--ui-accent)"), ok: colour("var(--ui-ok)"), link: colour("var(--ui-link)") };
+        const edges = [...document.querySelectorAll(".react-flow__edge")].map((edge) => {
+          const stroke = getComputedStyle(edge.querySelector(".react-flow__edge-path")).stroke;
+          return { name: edge.getAttribute("aria-label") ?? edge.dataset.id, colour: Object.keys(reserved).find((key) => reserved[key] === stroke) ?? "grey" };
+        });
+        return edges;
+      })()`;
+      const rest = await evaluate(lines);
+      assert.ok(rest.length >= 4, `the job draws its lines: ${JSON.stringify(rest)}`);
+      assert.deepEqual(rest.filter((edge: any) => edge.colour !== "grey"), [], "no line is blue or green at rest");
+      await clickTask("is_weekday");
+      await sleep(300);
+      const picked = await evaluate(lines);
+      try {
+        // is_weekday's line in from load, and its True and False lines out.
+        assert.equal(picked.filter((edge: any) => edge.colour === "focus").length, 3, JSON.stringify(picked));
+        assert.deepEqual(picked.filter((edge: any) => !["focus", "grey"].includes(edge.colour)), []);
+      } finally {
+        await clickTask("is_weekday");
+        await sleep(200);
+      }
+    });
+
     it("a theme colour VS Code leaves out falls back to the default, never to nothing", async () => {
       await setTheme("Default Dark Modern");
       await waitFor(async () => (await evaluate(`document.body.dataset.vscodeThemeKind`)) === "vscode-dark", "dark theme");

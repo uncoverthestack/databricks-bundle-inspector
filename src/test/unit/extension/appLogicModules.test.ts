@@ -288,8 +288,12 @@ describe("job graph layout (#392)", () => {
     expect(dependencyOutcomeLabel({ data: { outcome: " TRUE " } })).toBe("True");
     expect(dependencyOutcomeLabel({ data: { outcome: "" } })).toBeNull();
     expect(dependencyOutcomeLabel({ data: { outcome: "maybe" } })).toBe("maybe");
-    expect(dependencyOutcomeTone("True").stroke).toBe(UI_COLOR.ok);
-    expect(dependencyOutcomeTone("False").stroke).toBe(UI_COLOR.muted);
-    expect(dependencyOutcomeTone(null).stroke).toBe(UI_COLOR.link);
+    // Issue 554: every line is grey; False is also dashed. No ok green, no link blue.
+    for (const label of ["True", "False", null]) {
+      expect(dependencyOutcomeTone(label).stroke).toBe(UI_COLOR.muted);
+      expect([UI_COLOR.ok, UI_COLOR.link, UI_COLOR.error, UI_COLOR.warning]).not.toContain(dependencyOutcomeTone(label).labelColor);
+    }
+    expect(dependencyOutcomeTone("False").dash).toBeDefined();
+    expect(dependencyOutcomeTone("True").dash).toBeUndefined();
   });
 });

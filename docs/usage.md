@@ -33,6 +33,8 @@ The graph opens in a new editor panel, on the [bundle overview](#bundle-overview
 
 In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The badge on a task shows the icon of its worst problem, as in the Problems panel (a circled X for an error, a triangle for warnings), and counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count. Point at it for the counts in words, such as *1 error, 2 warnings*. Boxes on the bundle overview and search results show the same badge.
 
+Lines between tasks are grey. An if/else task's lines are labelled **True** and **False**, and the False line is dashed. Select a task and its own lines, in and out, turn blue.
+
 The dropdown in the graph's header lists the bundle's **Jobs**, then the **Pipelines** that have a data flow page, then each **Lakebase** project's branches page.
 
 #### Pipelines
