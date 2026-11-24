@@ -36,16 +36,20 @@ export function dependencyOutcomeLabel(edge: { data?: Record<string, unknown> } 
   return normalized;
 }
 
-/** A branch line's colours: green for True, grey for False, link blue otherwise. */
+/**
+ * A line's colours: grey for every line (issue 554). Blue means focus or a link and green
+ * means ok (#424), so neither marks a plain dependency or a True branch. True and False are
+ * told apart by their labels, and False is also dashed, so no colour is needed.
+ */
 export function dependencyOutcomeTone(label: string | null | undefined) {
-  const normalized = label?.toLowerCase();
-  if (normalized === "true") {
-    return { stroke: UI_COLOR.ok, labelColor: UI_COLOR.ok, labelBg: UI_COLOR.widget, labelBorder: UI_COLOR.ok };
-  }
-  if (normalized === "false") {
-    return { stroke: UI_COLOR.muted, labelColor: UI_COLOR.fg, labelBg: UI_COLOR.widget, labelBorder: UI_COLOR.muted };
-  }
-  return { stroke: UI_COLOR.link, labelColor: UI_COLOR.link, labelBg: UI_COLOR.widget, labelBorder: UI_COLOR.link };
+  const dashed = label?.toLowerCase() === "false";
+  return {
+    stroke: UI_COLOR.muted,
+    labelColor: UI_COLOR.fg,
+    labelBg: UI_COLOR.widget,
+    labelBorder: UI_COLOR.muted,
+    ...(dashed ? { dash: "5 4" } : {}),
+  };
 }
 
 export function buildDagFlow(
@@ -191,7 +195,7 @@ export function buildDagFlow(
             labelBgBorderRadius: 4,
           }
         : {}),
-      style: { stroke: outcomeTone.stroke, strokeWidth: 2 },
+      style: { stroke: outcomeTone.stroke, strokeWidth: 2, ...(outcomeTone.dash ? { strokeDasharray: outcomeTone.dash } : {}) },
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: outcomeTone.stroke },
     });
   });

@@ -53,11 +53,10 @@ export default function TaskNode({ data, selected }) {
           {branchOutcomes.slice(0, 2).map((outcome) => {
             const normalized = String(outcome).toLowerCase();
             const className =
-              normalized === "true"
-                ? "border-ok/40 bg-ok/15 text-ok"
-                : normalized === "false"
-                  ? "border-line bg-hover text-fg-soft"
-                  : "border-accent/40 bg-accent/15 text-link-active";
+              // True and False look alike but for the word: green means ok (issue 554).
+              normalized === "true" || normalized === "false"
+                ? "border-line bg-hover text-fg-soft"
+                : "border-accent/40 bg-accent/15 text-link-active";
             return (
               <span
                 key={outcome}

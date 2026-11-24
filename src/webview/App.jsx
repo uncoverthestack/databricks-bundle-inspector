@@ -26,6 +26,7 @@ import TypeDot from "./components/TypeDot";
 import { runtimeSecretLabel, taskRuntimeSecrets } from "../bundle/runtimeSecrets";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
+import { buildDisplayEdges } from "./lib/displayEdges";
 import {
   buildPipelineView,
   hasDataFlowPage,
@@ -1998,32 +1999,10 @@ export default function App({
     [flowNodes, displayVariants, focusedTaskIds, selectedNodeId, graphMode, issueTaskIds],
   );
 
+  // Grey at rest; the selected task's lines and lit lines in the focus colour (issue 554).
   const displayFlowEdges = useMemo(
-    () =>
-      flowEdges.map((edge) => {
-        // Tasks sharing a warehouse aren't linked by that, so a Uses chip fades every arrow.
-        const highlighted =
-          !usesTaskIds && focusedTaskIds?.has(edge.source) && focusedTaskIds?.has(edge.target);
-        const dimmed = focusedTaskIds && !highlighted;
-        return {
-          ...edge,
-          animated: highlighted,
-          style: {
-            ...edge.style,
-            opacity: dimmed ? 0.18 : 1,
-            stroke: highlighted ? UI_COLOR.accent : edge.style?.stroke,
-            strokeDasharray: highlighted
-              ? undefined
-              : edge.style?.strokeDasharray,
-            strokeWidth: highlighted ? 2.8 : edge.style?.strokeWidth,
-          },
-          markerEnd: {
-            ...edge.markerEnd,
-            color: highlighted ? UI_COLOR.accent : edge.markerEnd?.color,
-          },
-        };
-      }),
-    [flowEdges, focusedTaskIds, usesTaskIds],
+    () => buildDisplayEdges(flowEdges, { selectedNodeId, focusedTaskIds, usesTaskIds }),
+    [flowEdges, selectedNodeId, focusedTaskIds, usesTaskIds],
   );
 
   const nonJobResourceTypes = useMemo(() => {
