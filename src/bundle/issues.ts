@@ -56,6 +56,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "unknown_environment_key",
   "project_environment_version_missing",
   "pipeline_selection_not_found",
+  "runtime_end_of_support",
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
@@ -1445,6 +1446,7 @@ export function buildInspectorIssues(
   issues.push(...taskValueIssues(graph));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
+  issues.push(...runtimeSupportIssues(graph));
   // The files deploy uploads are the same with or without a target.
   if (syncRulesApply) {
     issues.push(...workspacePathClashIssues(bundleRoot, bundleFiles().files, (file) => !excludedFromSync(file), graph.notebookRule));
@@ -1515,6 +1517,24 @@ function targetCheckIssues(graph: BundleGraph, bundleRoot: string): InspectorIss
       fixHint: finding.fixHint,
       yamlPath: finding.yamlPath,
       ...(finding.resourceId ? { resourceId: finding.resourceId } : {}),
+      ...issueLocation(file, line, column),
+    };
+  });
+}
+
+/** Clusters on a Databricks Runtime near or past end of support (issue 485). */
+function runtimeSupportIssues(graph: BundleGraph): InspectorIssue[] {
+  return (graph.runtimeSupportFindings ?? []).map((finding) => {
+    const { file, line, column } = finding.location ?? {};
+    return {
+      id: `runtime-support:${finding.resourceId}:${finding.subject}`,
+      severity: finding.severity,
+      kind: "runtime_end_of_support",
+      title: finding.title,
+      ...(finding.taskKey
+        ? { taskId: `${finding.resourceId}.tasks.${finding.taskKey}`, taskName: finding.taskKey }
+        : { resourceId: finding.resourceId }),
+      fixHint: finding.fixHint,
       ...issueLocation(file, line, column),
     };
   });
