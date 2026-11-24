@@ -1,0 +1,3 @@
+Added
+
+- **A branches page for each Lakebase project** ([#543](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/543)). On the bundle overview a `postgres_projects` resource is one box, with **Branches ›**, like a job's **Open ›** and a pipeline's **Data flow ›**. Its branches, endpoints, databases, roles, synced tables and snapshot schedules fold into that box, which takes their lines. The page shows each branch under the branch it was made from, the project's first branch (`production` unless `default_branch` names another), branches made from a snapshot, and each branch's expiry, compute, what it holds and what uses it. Read from the YAML only: nothing is looked up in the workspace.

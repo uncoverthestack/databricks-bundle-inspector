@@ -5,6 +5,7 @@
  */
 import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
 import { clusterSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
+import { buildLakebaseProjects } from "./lakebaseBranches.js";
 
 export type OverviewColumn = "workloads" | "uses";
 
@@ -156,6 +157,8 @@ export interface OverviewItem {
    * box: one box would join every job that has one, and nobody knows if the scopes are the same.
    */
   runtimeSecrets?: Array<{ label: string; taskNames: string[] }>;
+  /** A Lakebase project's branches in words (issue 543): `4 branches`. The page splits the count. */
+  branchWords?: string;
 }
 
 export interface OverviewLink {
@@ -467,6 +470,30 @@ export function buildBundleOverview(
       .sort((a, b) => (taskOrder.get(a.id) ?? 0) - (taskOrder.get(b.id) ?? 0));
     link.taskIds = pairs.map((pair) => pair.id);
     link.taskNames = pairs.map((pair) => pair.name);
+  }
+
+  // A Lakebase project's branches, and what they hold, are shown on its own page (issue 543):
+  // their boxes fold into the project's, which takes their lines and problem counts.
+  for (const project of buildLakebaseProjects(graph.nodes, graph.edges, resolve)) {
+    const projectItem = items.get(project.id);
+    if (!projectItem) continue;
+    const count = project.tree.length + project.fromSnapshot.length;
+    projectItem.branchWords = `${count} branch${count === 1 ? "" : "es"}`;
+    const folded = new Set(project.memberIds.filter((id) => items.has(id)));
+    if (folded.size === 0) continue;
+    for (const id of folded) {
+      const item = items.get(id)!;
+      projectItem.problems.errors += item.problems.errors;
+      projectItem.problems.warnings += item.problems.warnings;
+      items.delete(id);
+    }
+    for (const [key, link] of [...links]) {
+      if (!folded.has(link.from) && !folded.has(link.to)) continue;
+      links.delete(key);
+      const from = folded.has(link.from) ? project.id : link.from;
+      const to = folded.has(link.to) ? project.id : link.to;
+      addLink(from, to, link.kind, link.taskIds, link.taskNames);
+    }
   }
 
   // 5. A compute box's settings, from the resolved config, with the lines they are written on.

@@ -31,14 +31,20 @@ const COLUMNS = [
  */
 function opens(item, pipelines) {
   if (item.source !== "bundle" || !item.resourceKey) return false;
-  if (item.kind === "job") return true;
+  // A Lakebase project opens its branches (issue 543).
+  if (item.kind === "job" || item.kind === "postgres_projects") return true;
   return item.kind === "pipeline" && Boolean(pipelines?.get(item.id)?.panel.dataFlow?.opens);
 }
 
 /** What the box's link and the details' button open. */
 function openWords(item) {
+  if (item.kind === "postgres_projects") return "branches";
   return item.kind === "pipeline" ? "data flow" : `${typeWords(item)} graph`;
 }
+
+/** The link on the box: `Open ›`, `Data flow ›`, `Branches ›`. */
+const LINK_WORDS = { pipeline: "Data flow ›", postgres_projects: "Branches ›" };
+const LINK_ROOM = { pipeline: "pr-[5.75rem]", postgres_projects: "pr-[5.5rem]" };
 
 function problemCount(item) {
   return item.problems.errors + item.problems.warnings;
@@ -82,7 +88,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
       onKeyDown={
         canOpen
           ? (event) => {
-              // Enter opens the job, or the pipeline's data flow. Space selects it, as on every box.
+              // Enter opens the job, the pipeline's data flow or the project's branches. Space selects it, as on every box.
               if (event.key !== "Enter") return;
               event.preventDefault();
               onOpen(item);
@@ -105,7 +111,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
           : UI_COLOR.widget,
       }}
       className={`relative z-10 flex h-10 w-full items-center gap-2.5 rounded-xl border pl-3 text-left transition-colors hover:border-fg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        canOpen ? (item.kind === "pipeline" ? "pr-[5.75rem]" : "pr-[4.25rem]") : "pr-3"
+        canOpen ? (LINK_ROOM[item.kind] ?? "pr-[4.25rem]") : "pr-3"
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       <span className={`flex shrink-0 ${dimmed ? "opacity-45" : ""}`}>
@@ -133,14 +139,26 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
       <button
         type="button"
         data-overview-open={item.id}
-        aria-label={item.kind === "pipeline" ? `Open the data flow of pipeline ${item.label}` : `Open ${typeWords(item)} ${item.label}`}
-        title={item.kind === "pipeline" ? "Open the pipeline's data flow" : `Open the ${typeWords(item)}'s graph`}
+        aria-label={
+          item.kind === "pipeline"
+            ? `Open the data flow of pipeline ${item.label}`
+            : item.kind === "postgres_projects"
+              ? `Open the branches of Postgres project ${item.label}`
+              : `Open ${typeWords(item)} ${item.label}`
+        }
+        title={
+          item.kind === "pipeline"
+            ? "Open the pipeline's data flow"
+            : item.kind === "postgres_projects"
+              ? "Open the project's branches"
+              : `Open the ${typeWords(item)}'s graph`
+        }
         onClick={() => onOpen(item)}
         onMouseEnter={() => onHover(item.id)}
         onMouseLeave={() => onHover(null)}
         className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-md px-1.5 py-1 text-[11px] text-link hover:bg-hover hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        {item.kind === "pipeline" ? "Data flow ›" : "Open ›"}
+        {LINK_WORDS[item.kind] ?? "Open ›"}
       </button>
     </div>
   );

@@ -13,6 +13,8 @@ import AppHeader from "./components/AppHeader";
 import BundleOverview from "./components/BundleOverview";
 import HeaderChipPanel from "./components/HeaderChipPanel";
 import PipelineDataFlow from "./components/PipelineDataFlow";
+import LakebaseBranches from "./components/LakebaseBranches";
+import { buildLakebaseProjects } from "../bundle/lakebaseBranches";
 import SeverityIcon from "./components/SeverityIcon";
 import TaskNode from "./components/TaskNode";
 import UsesRow from "./components/UsesRow";
@@ -1715,6 +1717,15 @@ export default function App({
     () => pipelineKeys.filter((key) => hasDataFlowPage(pipelineModels.get(`resources.pipelines.${key}`)?.view)),
     [pipelineKeys, pipelineModels],
   );
+  // Every Lakebase project's branches (issue 543), by key: each project opens a page of its own.
+  const lakebaseProjects = useMemo(() => {
+    const projects = new Map();
+    if (!graph) return projects;
+    for (const project of buildLakebaseProjects(graph.nodes, graph.edges, resolveName)) projects.set(project.key, project);
+    return projects;
+  }, [graph, resolveName]);
+  const projectKeys = useMemo(() => [...lakebaseProjects.keys()], [lakebaseProjects]);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
 
   const selection = useMemo(
     () =>
@@ -1724,12 +1735,14 @@ export default function App({
         userSelection,
         // A cursor in a pipeline selects its box on the overview instead (issue 436).
         initialResource?.group === "jobs" ? initialResource : undefined,
+        projectKeys,
       ),
-    [jobKeys, dataFlowKeys, userSelection, initialResource],
+    [jobKeys, dataFlowKeys, userSelection, initialResource, projectKeys],
   );
   // Empty while a pipeline is shown, so everything about tasks stands aside.
   const selectedJobKey = selection?.group === "jobs" ? selection.key : "";
   const selectedPipelineKey = selection?.group === "pipelines" ? selection.key : undefined;
+  const lakebaseProject = selection?.group === "postgres_projects" ? lakebaseProjects.get(selection.key) : undefined;
 
   const targetOptions = useMemo(
     () =>
@@ -1779,11 +1792,17 @@ export default function App({
       key,
       label: `${key} · data flow`,
     }));
+    const projectOptions = projectKeys.map((key) => ({
+      value: selectionValue({ group: "postgres_projects", key }),
+      key,
+      label: `${key} · branches`,
+    }));
     return [
       ...(jobOptions.length > 0 ? [{ label: "Jobs", options: jobOptions }] : []),
       ...(pipelineOptions.length > 0 ? [{ label: "Pipelines", options: pipelineOptions }] : []),
+      ...(projectOptions.length > 0 ? [{ label: "Lakebase", options: projectOptions }] : []),
     ];
-  }, [jobOptions, dataFlowKeys]);
+  }, [jobOptions, dataFlowKeys, projectKeys]);
 
   const pipelineView =
     selectedPipelineKey !== undefined ? pipelineModels.get(`resources.pipelines.${selectedPipelineKey}`)?.view : undefined;
@@ -2064,8 +2083,10 @@ export default function App({
 
   function handleSelectionChange(next) {
     if (!next) return;
-    onTelemetry?.(next.group === "pipelines" ? "pipeline_selected" : "job_selected");
+    // The branches page has no event of its own yet, so it sends none.
+    if (next.group !== "postgres_projects") onTelemetry?.(next.group === "pipelines" ? "pipeline_selected" : "job_selected");
     setUserSelection(next);
+    setSelectedBranchId(null);
     setSelectedNodeId(null);
     setSearchValue("");
     setActiveHeaderPanel(null);
@@ -2088,8 +2109,13 @@ export default function App({
     setGraphMode("all");
   }
 
-  /** Opens a job or pipeline from its box on the overview. */
+  /** Opens a job, a pipeline's data flow or a Lakebase project's branches from its box on the overview. */
   function openFromOverview(item) {
+    if (item.resourceKey && item.kind === "postgres_projects" && lakebaseProjects.has(item.resourceKey)) {
+      if (!overviewSelectedId) setOverviewSelectedId(item.id);
+      handleSelectionChange({ group: "postgres_projects", key: item.resourceKey });
+      return;
+    }
     if (!item.resourceKey || (item.kind !== "job" && item.kind !== "pipeline")) return;
     if (item.kind === "pipeline" && !dataFlowKeys.includes(item.resourceKey)) return;
     if (item.kind === "job") {
@@ -2172,7 +2198,7 @@ export default function App({
         }
         overviewValue={bundleOverview ? OVERVIEW_VALUE : undefined}
         onBack={selection && bundleOverview ? showOverview : undefined}
-        showTaskTools={!pipelineView}
+        showTaskTools={!pipelineView && !lakebaseProject}
         searchPlaceholder={atOverview ? "Find a resource" : undefined}
         searchValue={searchValue}
         searchItems={atOverview ? overviewSearchItems : searchItems}
@@ -2183,7 +2209,7 @@ export default function App({
         issueCount={selectedJobIssueCount}
         nothingToFilterNote={nothingToFilterNote}
         onCopyReviewSummary={
-          onCopyReviewSummary ? handleCopyReviewSummary : undefined
+          onCopyReviewSummary && !lakebaseProject ? handleCopyReviewSummary : undefined
         }
         // The full report is for a job; a pipeline has the summary only, for now.
         onCopyReviewReport={
@@ -2237,7 +2263,7 @@ export default function App({
         </div>
       )}
 
-      {!pipelineView && !atOverview && (
+      {!pipelineView && !lakebaseProject && !atOverview && (
         <UsesRow
           items={jobUses}
           activeId={usesHoverId ?? usesPinnedId}
@@ -2261,7 +2287,18 @@ export default function App({
       {/* Canvas + Detail */}
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 overflow-hidden">
-          {pipelineView ? (
+          {lakebaseProject ? (
+            // The branches page (issue 543): the project's facts are on the overview too.
+            <div className="h-full" style={rfStyle}>
+              <LakebaseBranches
+                project={lakebaseProject}
+                selectedBranchId={selectedBranchId}
+                onSelectBranch={setSelectedBranchId}
+                onOpenFile={onOpenFile}
+                resolveName={resolveName}
+              />
+            </div>
+          ) : pipelineView ? (
             // The data flow page (issue 436): the pipeline's details are on the overview.
             <div className="h-full overflow-auto p-6" style={rfStyle} data-data-flow-page={pipelineView.key}>
               <PipelineDataFlow flow={pipelineView.dataFlow} onOpenFile={onOpenFile} resolveName={resolveName} />
@@ -2365,7 +2402,7 @@ export default function App({
           )}
         </div>
 
-        {selectedNodeId && !pipelineView && (
+        {selectedNodeId && !pipelineView && !lakebaseProject && (
           <DetailPanel
             nodeId={selectedNodeId}
             graph={graph}

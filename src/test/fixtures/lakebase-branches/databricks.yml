@@ -1,0 +1,14 @@
+# A Lakebase project with branches made from each other and from a snapshot (issue 543).
+# See README.md for what was checked against the CLI.
+bundle:
+  name: lakebase_branches
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production
