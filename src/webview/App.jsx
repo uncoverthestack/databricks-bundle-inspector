@@ -46,6 +46,7 @@ import { basename, buildTaskAdjacency, collectReachable, formatSourceLocation, g
 import { buildIssueItems } from "./lib/issueItems";
 import { buildSearchItems, buildStatPanelItems, displayResolvedValue, variableResolutionLabel } from "./lib/headerItems";
 import { NODE_H, NODE_W, buildDagFlow, compactTaskName, dependencyOutcomeLabel, dependencyOutcomeTone } from "./lib/dagFlow";
+import { missingJobsReason } from "./lib/missingJobsReason";
 import { problemTone } from "./lib/taskProblems";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -1998,6 +1999,18 @@ export default function App({
       .forEach((n) => seen.add(n.resourceGroup));
     return [...seen];
   }, [graph, jobKeys]);
+  // Jobs the preview can't show: defined in Python, or set only inside a target (issue 549).
+  // A real target's output may not list the targets, so they come from the resolution bundle.
+  const missingJobsLine = useMemo(
+    () =>
+      jobKeys.length > 0
+        ? undefined
+        : missingJobsReason(
+            { python: parsedBundle?.python, targets: effectiveResolutionBundle?.targets },
+            effectiveTargetName ?? undefined,
+          ),
+    [jobKeys, parsedBundle, effectiveResolutionBundle, effectiveTargetName],
+  );
 
   // Every bundle opens on its overview: each resource it has, and what uses what.
   const bundleOverview = useMemo(() => {
@@ -2342,11 +2355,16 @@ export default function App({
                     ? "No jobs or pipelines found in this bundle."
                     : "No tasks found for the selected job."}
               </span>
-              {jobKeys.length === 0 && (
+              {jobKeys.length === 0 && (nonJobResourceTypes.length > 0 || !missingJobsLine) && (
                 <span className="text-xs text-muted">
                   {nonJobResourceTypes.length > 0
                     ? `Contains: ${nonJobResourceTypes.join(", ")}.`
                     : "The graph shows jobs and pipelines; this bundle defines neither."}
+                </span>
+              )}
+              {missingJobsLine && (
+                <span className="text-xs text-fg-soft" data-missing-jobs-reason>
+                  {missingJobsLine}
                 </span>
               )}
             </div>
