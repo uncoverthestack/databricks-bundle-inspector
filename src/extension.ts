@@ -54,7 +54,7 @@ import {
   type BundleChange,
   type BundleWatchSpec,
 } from "./bundle/watchedFiles.js";
-import { QUICK_FIX_KINDS, type SidebarAction, type TelemetryProperties } from "./telemetry/schema.js";
+import { QUICK_FIX_KINDS, telemetryResourceType, type SidebarAction, type TelemetryProperties } from "./telemetry/schema.js";
 import { createTelemetry, type Telemetry } from "./telemetry/telemetry.js";
 import {
   BundleProgressTracker,
@@ -1633,7 +1633,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             }
 
             const targetPath = path.resolve(message.path);
-            telemetry?.logUsage("file_opened", { file_kind: fileKind(targetPath) });
+            telemetry?.logUsage("file_opened", {
+              file_kind: fileKind(targetPath),
+              ...(message.resourceType !== undefined ? { resource_type: telemetryResourceType(message.resourceType) } : {}),
+            });
             const uri = vscode.Uri.file(targetPath);
             if (targetPath.endsWith(".ipynb")) {
               // Jupyter editor has no line-jump API — open at top

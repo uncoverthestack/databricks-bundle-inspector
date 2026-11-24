@@ -18,10 +18,14 @@ import {
 import {
   COMMON_KEYS,
   EVENT_SCHEMA,
+  RESOURCE_TYPES,
   outgoingProperties,
   validateProperties,
   validateWireEvent,
+  telemetryResourceType,
 } from "../../../telemetry/schema.js";
+import { resourceSelectionProperties } from "../../../webview/lib/resourceTelemetry.js";
+import { OVERVIEW_GROUPS } from "../../../bundle/bundleOverview.js";
 import { handleTelemetryRequest, type ProxyEnv } from "../../../telemetry/proxy.js";
 import { MAX_BATCH_BYTES, TelemetryQueue, type QueueStorage } from "../../../telemetry/queue.js";
 import { UNINSTALL_STATE_FILE } from "../../../telemetry/config.js";
@@ -261,6 +265,33 @@ describe("postBatch", () => {
 });
 
 describe("event helpers", () => {
+  it("records explicit resource selections without names or IDs, and ignores closing or reselecting", () => {
+    const item = { id: "resources.schemas.private_customer_name", kind: "schemas" };
+    const properties = resourceSelectionProperties(item, "resources.jobs.daily");
+    expect(properties).toEqual({ resource_type: "schemas" });
+    expect(parseWebviewTelemetryMessage({ event: "resource_selected", properties })).toEqual({
+      event: "resource_selected", properties: { resource_type: "schemas" },
+    });
+    expect(resourceSelectionProperties(item, item.id)).toBeUndefined();
+    expect(resourceSelectionProperties(undefined, item.id)).toBeUndefined();
+    expect(resourceSelectionProperties({ id: "unknown", kind: "/private/resource" }, null)).toEqual({ resource_type: "other" });
+  });
+
+  it("covers known overview resource types and reduces unknown types to other", () => {
+    const mapped: Record<string, string> = { jobs: "job", pipelines: "pipeline", sql_warehouses: "warehouse", clusters: "cluster", secret_scopes: "secret_scope" };
+    for (const group of OVERVIEW_GROUPS.flatMap((entry) => entry.resourceGroups)) {
+      expect(RESOURCE_TYPES).toContain(mapped[group] ?? group);
+    }
+    expect(telemetryResourceType("constructor")).toBe("other");
+    expect(telemetryResourceType({ name: "private" })).toBe("other");
+  });
+
+  it("allows resource context on file opens while stripping names, paths and invalid types", () => {
+    expect(outgoingProperties("file_opened", { file_kind: "yml", resource_type: "warehouse", name: "private", path: "/private/file.yml" })).toEqual({ file_kind: "yml", resource_type: "warehouse" });
+    expect(outgoingProperties("file_opened", { file_kind: "yml", resource_type: "/private/file.yml" })).toEqual({ file_kind: "yml" });
+    expect(outgoingProperties("resource_selected", { resource_type: "schemas", resource_key: "private" })).toEqual({ resource_type: "schemas" });
+  });
+
   it("accepts only allow-listed webview events and properties", () => {
     expect(
       parseWebviewTelemetryMessage({
@@ -581,6 +612,19 @@ describe("telemetry proxy", () => {
     const fetchImpl = okFetch();
     await handleTelemetryRequest(post({ batch: [wireEvent(), wireEvent({ event: "spam" })] }), env, fetchImpl, NOW);
     expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)).batch).toHaveLength(1);
+  });
+
+  it("forwards resource selections and definition context through the proxy without private fields", async () => {
+    const fetchImpl = okFetch();
+    await handleTelemetryRequest(post({ batch: [
+      wireEvent({ event: "resource_selected", properties: { resource_type: "secret_scope", resource_key: "private" } }),
+      wireEvent({ event: "file_opened", properties: { file_kind: "yml", resource_type: "secret_scope", path: "/private/file.yml" } }),
+    ] }), env, fetchImpl, NOW);
+    const batch = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)).batch;
+    expect(batch).toHaveLength(2);
+    expect(batch[0].properties.resource_type).toBe("secret_scope");
+    expect(batch[1].properties).toMatchObject({ file_kind: "yml", resource_type: "secret_scope" });
+    expect(JSON.stringify(batch)).not.toContain("private");
   });
 
   it("accepts but does not forward a batch with no valid events", async () => {
