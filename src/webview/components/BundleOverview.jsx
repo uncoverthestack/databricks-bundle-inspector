@@ -115,7 +115,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       <span className={`flex shrink-0 ${dimmed ? "opacity-45" : ""}`}>
-        <TypeDot kind={item.kind} dot={item.source === "default"} />
+        <TypeDot kind={item.kind} ring={item.source === "default"} />
       </span>
       <span className={`max-w-[65%] shrink-0 truncate text-[13px] font-medium ${dimmed ? "text-muted" : "text-fg"}`}>{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>

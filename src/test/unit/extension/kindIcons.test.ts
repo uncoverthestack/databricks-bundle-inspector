@@ -2,7 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { KIND_OF_RESOURCE_GROUP, OVERVIEW_GROUPS } from "../../../bundle/bundleOverview.js";
-import { ICON_OF_KIND, RESERVED_ICONS, iconOfKind } from "../../../webview/lib/kindIcons.js";
+import { CONTROL_ICONS, ICON_OF_KIND, RESERVED_ICONS, iconOfKind } from "../../../webview/lib/kindIcons.js";
 
 // Issue 546: resource types show an icon in place of the type dot.
 const typeDot = readFileSync(path.join(__dirname, "../../../webview/components/TypeDot.jsx"), "utf8");
@@ -24,6 +24,16 @@ describe("type icons", () => {
 
   test.each(icons)("%s is not a problem or status shape", (icon) => {
     expect(RESERVED_ICONS).not.toContain(icon);
+  });
+
+  // Issue 556: a type icon must not look like something to press.
+  test.each(icons)("%s is not a control shape (search, AI, run)", (icon) => {
+    expect(CONTROL_ICONS).not.toContain(icon);
+  });
+
+  test("vector search and Genie use the shapes picked in issue 556", () => {
+    expect(iconOfKind("vector_search_endpoints")).toBe("radar");
+    expect(iconOfKind("genie_spaces")).toBe("messages-square");
   });
 
   test.each(icons.filter((icon) => icon !== "key"))("%s is drawn by TypeDot and exists in lucide-react", (icon) => {

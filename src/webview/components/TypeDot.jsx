@@ -16,13 +16,13 @@ import {
   Library,
   ListTree,
   LockKeyhole,
+  MessagesSquare,
   Plug,
+  Radar,
   RotateCcwClock,
   Router,
   ScrollText,
-  Search,
   Server,
-  Sparkles,
   SquareFunction,
   Table,
   TextSearch,
@@ -51,13 +51,13 @@ const ICONS = {
   library: Library,
   "list-tree": ListTree,
   "lock-keyhole": LockKeyhole,
+  "messages-square": MessagesSquare,
   plug: Plug,
+  radar: Radar,
   "rotate-ccw-clock": RotateCcwClock,
   router: Router,
   "scroll-text": ScrollText,
-  search: Search,
   server: Server,
-  sparkles: Sparkles,
   "square-function": SquareFunction,
   table: Table,
   "text-search": TextSearch,
@@ -74,9 +74,25 @@ const ICONS = {
  *
  * A secret scope gets its own key drawing, in the same grey. Never yellow: amber means a
  * warning across the panel (issue 535). Job graph task boxes pass `dot`: they print their type.
+ *
+ * Icons are 14 px (issue 556): at 12 px a schema's folder tree and a volume's drive were hard
+ * to tell apart, worst on a faded box. `ring` draws a hollow dashed ring in place of the icon,
+ * for Serverless or inherited compute: it isn't a cluster, and a filled dot beside icons reads
+ * as a status light. The dashes match the dashed border that means "not defined in this bundle".
  */
-export default function TypeDot({ kind, dot = false }) {
+export default function TypeDot({ kind, dot = false, ring = false }) {
   const color = kindMeta(kind).color;
+  if (ring) {
+    return (
+      <span
+        aria-hidden="true"
+        data-type-dot={kind}
+        data-type-mark="ring"
+        style={{ borderColor: color }}
+        className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] border-dashed"
+      />
+    );
+  }
   const icon = dot ? undefined : iconOfKind(kind);
   if (icon === "key") {
     return (
@@ -85,7 +101,7 @@ export default function TypeDot({ kind, dot = false }) {
         data-type-dot={kind}
         data-type-icon="key"
         viewBox="0 0 16 16"
-        className="h-3 w-3 shrink-0"
+        className="h-3.5 w-3.5 shrink-0"
         fill="none"
         stroke={color}
         strokeWidth="1.8"
@@ -103,7 +119,7 @@ export default function TypeDot({ kind, dot = false }) {
         aria-hidden="true"
         data-type-dot={kind}
         data-type-icon={icon}
-        className="h-3 w-3 shrink-0"
+        className="h-3.5 w-3.5 shrink-0"
         color={color}
         strokeWidth={2}
       />
