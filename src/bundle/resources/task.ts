@@ -19,12 +19,57 @@ export interface TaskNodeData {
   resourceReferences: ResourceReference[];
   jobParameterReferences: JobParameterReference[];
   taskParameterReferences: TaskParameterReference[];
+  /** A pipeline task's selected tables and flows (issue 539), when it sets any. */
+  pipelineSelections?: PipelineSelection[];
 
   dependsOn: string[];
   runIf: string | undefined;
   // TODO: Our Databricks Bundle Inspector Comment
   dbiComment: string | undefined;
   nestedTask: TaskNodeData | undefined;
+}
+
+/** One name in a `pipeline_task`'s refresh selection, with where it is written. */
+export interface PipelineSelection {
+  field: "refresh_selection" | "full_refresh_selection" | "refresh_flow_selection";
+  name: string;
+  yamlPath: string;
+  sourceLine: number;
+  sourceColumn?: number;
+}
+
+/**
+ * The selection fields checked against the pipeline (issue 539). Each was run live with an
+ * unknown name, which failed the run; `reset_checkpoint_selection` has not been, so it isn't read.
+ */
+const PIPELINE_SELECTION_FIELDS = ["refresh_selection", "full_refresh_selection", "refresh_flow_selection"] as const;
+
+function getPipelineSelections(
+  rawTask: Record<string, unknown>,
+  taskKey: string,
+  resolveSourceLocation?: SourceLocationResolver,
+): PipelineSelection[] {
+  const pipelineTask = rawTask.pipeline_task;
+  if (typeof pipelineTask !== "object" || pipelineTask === null) return [];
+  const selections: PipelineSelection[] = [];
+  for (const field of PIPELINE_SELECTION_FIELDS) {
+    // The structural preview keeps `${var.tables}` as text: not a list, so not checked.
+    const names = (pipelineTask as Record<string, unknown>)[field];
+    if (!Array.isArray(names)) continue;
+    names.forEach((name, index) => {
+      if (typeof name !== "string" || !name.trim()) return;
+      const yamlPath = `tasks.${taskKey}.pipeline_task.${field}[${index}]`;
+      const location = resolveSourceLocation?.(yamlPath);
+      selections.push({
+        field,
+        name,
+        yamlPath,
+        sourceLine: location?.line ?? 0,
+        ...(location?.column ? { sourceColumn: location.column } : {}),
+      });
+    });
+  }
+  return selections;
 }
 
 export type TaskType =
@@ -889,6 +934,8 @@ export function buildTaskNodeData(
     resolveSourceLocation,
   );
 
+  const pipelineSelections = getPipelineSelections(rawTask, taskKey, resolveSourceLocation);
+
   const dependsOn = Array.isArray(rawTask.depends_on)
     ? (rawTask.depends_on as Array<Record<string, unknown>>)
         .filter((d) => typeof d.task_key === "string")
@@ -937,6 +984,7 @@ export function buildTaskNodeData(
     resourceReferences,
     jobParameterReferences,
     taskParameterReferences,
+    ...(pipelineSelections.length > 0 ? { pipelineSelections } : {}),
     dependsOn,
     runIf,
     dbiComment: undefined,

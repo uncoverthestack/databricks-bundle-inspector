@@ -1,0 +1,110 @@
+resources:
+  schemas:
+    s:
+      name: pipeline_selection
+      catalog_name: sandbox
+  pipelines:
+    p:
+      name: pipeline_selection_p
+      serverless: true
+      catalog: sandbox
+      schema: ${resources.schemas.s.name}
+      libraries:
+        - file:
+            path: ../src/bronze.sql
+        - file:
+            path: ../src/silver.sql
+    # Not in the live test: a plain catalog and schema, so full names are compared.
+    plain:
+      name: pipeline_selection_plain
+      serverless: true
+      catalog: main
+      schema: sales
+      libraries:
+        - file:
+            path: ../src/bronze.sql
+        - file:
+            path: ../src/silver.sql
+    # Python sources: the data flow can't list its tables, so nothing is judged.
+    with_python:
+      name: pipeline_selection_python
+      serverless: true
+      catalog: main
+      schema: sales
+      libraries:
+        - file:
+            path: ../src/silver.sql
+        - file:
+            path: ../src/py_table.py
+  jobs:
+    j:
+      name: pipeline_selection_j
+      tasks:
+        - task_key: c0_full
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+        - task_key: c1_known
+          depends_on:
+            - task_key: c0_full
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_selection: ["t_silver"]
+        - task_key: c2_unknown
+          depends_on:
+            - task_key: c1_known
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_selection: ["t_nope"]
+        - task_key: c3_case
+          depends_on:
+            - task_key: c2_unknown
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_selection: ["T_SILVER"]
+        - task_key: c4_mixed
+          depends_on:
+            - task_key: c3_case
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_selection: ["t_silver", "t_nope"]
+        - task_key: c5_full_unknown
+          depends_on:
+            - task_key: c4_mixed
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            full_refresh_selection: ["t_nope"]
+        - task_key: c6_flow_unknown
+          depends_on:
+            - task_key: c5_full_unknown
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_flow_selection: ["t_nope"]
+        - task_key: c7_qualified
+          depends_on:
+            - task_key: c6_flow_unknown
+          run_if: ALL_DONE
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}
+            refresh_selection: ["sandbox.pipeline_selection.t_silver"]
+        - task_key: c8_plain_full
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.plain.id}
+            refresh_selection: ["main.sales.t_silver", "main.other.t_silver"]
+        - task_key: c9_python
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.with_python.id}
+            refresh_selection: ["t_nope"]
+        - task_key: c10_loop
+          for_each_task:
+            inputs: "[1]"
+            task:
+              task_key: c10_loop_inner
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.p.id}
+                refresh_selection: ["t_silvr"]
