@@ -48,6 +48,7 @@ A Lakeflow Spark Declarative Pipeline (formerly Delta Live Tables, DLT) lists a 
 - **Example:** `libraries: [{ glob: { include: ../src/dlt/** } }]` with an empty `src/dlt`.
 - **Fix:** add the source files, or correct the path or glob.
 - **Did you mean and quick fix:** as for [`missing_file`](#missing_file), for a notebook or file path. Not for a glob.
+- **Globs Databricks refuses:** the only wildcard `glob.include` takes is a trailing `/**`. A single `*` (`../src/dlt/*`, `../src/dlt/*.sql`, `../src/dlt/**/*.sql`) fails deploy with "Single asterisk glob pattern is not supported", and `*` or `?` anywhere else with "Special characters *?\ are reserved". `bundle validate` passes them (checked by deploying, Databricks CLI v1.27.0). The finding says `Did you mean "../src/dlt/**"?` when the wildcard is only in the last part of the path, with a quick fix.
 
 ### `missing_library`
 
