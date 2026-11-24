@@ -7,6 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { RESTRICTED_EXECUTION_VARIABLE } from "../../databricksCli/restrictedExecution.js";
 import { BUNDLE_PROBE_TARGET, validateBundle } from "../../bundle/validateBundle.js";
+import { missingJobsReason } from "../../webview/lib/missingJobsReason.js";
 
 const execFileAsync = promisify(execFile);
 const cli = process.env.SEMANTIC_CLI_COMMAND?.trim() || "databricks";
@@ -89,5 +90,66 @@ describe(`a bundle's scripts are not run by the inspector (${cli})`, () => {
         column: 3,
       },
     ]);
+  });
+});
+
+/** A bundle folder with the given databricks.yml lines, cleaned up after the run. */
+async function bundleWith(lines: string[]): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-missing-jobs-"));
+  created.push(dir);
+  await writeFile(path.join(dir, "databricks.yml"), [...lines, ""].join("\n"));
+  return dir;
+}
+
+/**
+ * Issue 549: the preview's empty panel says why jobs may be missing. That depends on the
+ * CLI's preview output keeping the python section and each target's resources, though it
+ * merges no target and never runs the Python.
+ */
+describe(`the preview's output says why jobs may be missing (${cli})`, () => {
+  test("jobs defined in Python", async () => {
+    const dir = await bundleWith([
+      "bundle:",
+      "  name: python_jobs",
+      "python:",
+      "  venv_path: .venv",
+      "  resources:",
+      '    - "resources:load_resources"',
+      "targets:",
+      "  dev:",
+      "    default: true",
+    ]);
+    const result = await validateBundle(dir, undefined, cli);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.keys(result.data.resources?.jobs ?? {})).toEqual([]);
+    expect(missingJobsReason(result.data as never)).toBe(
+      "Jobs defined in Python may be missing: the inspector doesn't run bundle code.",
+    );
+  });
+
+  test("jobs set only inside targets", async () => {
+    const job = (name: string) => [`          ${name}:`, `            name: ${name}`];
+    const dir = await bundleWith([
+      "bundle:",
+      "  name: target_jobs",
+      "targets:",
+      "  dev:",
+      "    default: true",
+      "    resources:",
+      "      jobs:",
+      ...job("dev_job"),
+      "  prod:",
+      "    resources:",
+      "      jobs:",
+      ...job("prod_job"),
+    ]);
+    const result = await validateBundle(dir, undefined, cli);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.keys(result.data.resources?.jobs ?? {})).toEqual([]);
+    expect(missingJobsReason(result.data as never)).toBe(
+      "Jobs set inside the dev and prod targets may be missing until you pick one.",
+    );
   });
 });
