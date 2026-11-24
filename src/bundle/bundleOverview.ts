@@ -219,7 +219,8 @@ export interface OverviewIssue {
 }
 
 const RESOURCE_REFERENCE = /^\$\{resources\.([^.}]+)\.([^.}]+)\.[^}]+\}$/;
-const KIND_OF_RESOURCE_GROUP: Record<string, string> = {
+/** The kind of a box from a bundle resource group; any group not listed keeps its own name. */
+export const KIND_OF_RESOURCE_GROUP: Record<string, string> = {
   jobs: "job",
   pipelines: "pipeline",
   sql_warehouses: "warehouse",

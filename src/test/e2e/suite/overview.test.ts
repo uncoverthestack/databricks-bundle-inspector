@@ -24,6 +24,7 @@ const READ = `(() => {
     id: box.dataset.overviewItem,
     pressed: box.getAttribute("aria-pressed") === "true",
     faded: box.dataset.dimmed === "true",
+    icon: box.querySelector("[data-type-dot]")?.dataset.typeIcon ?? "dot",
   }));
   return {
     boxes,
@@ -51,8 +52,12 @@ export function overviewSuite() {
       assert.ok(!result.exceptionDetails, `overview script must run: ${JSON.stringify(result.exceptionDetails)}`);
       return result.result?.value;
     };
+    type Logged = { event: string; properties: Record<string, unknown> };
+    const logged = async () =>
+      (await vscode.commands.executeCommand<Logged[]>("databricksBundleInspector.test.telemetryEvents"))!;
+    const selections = async () => (await logged()).filter((entry) => entry.event === "resource_selected");
     const read = () => evaluate(READ) as Promise<{
-      boxes: { id: string; pressed: boolean; faded: boolean }[];
+      boxes: { id: string; pressed: boolean; faded: boolean; icon: string }[];
       links: string[];
       unchecked: string[];
       details: string | null;
@@ -169,12 +174,22 @@ export function overviewSuite() {
         "resources.sql_warehouses.analytics",
         "resources.volumes.raw_files",
       ]);
+      // Each type shows its icon in place of a dot (issue 546).
+      assert.deepEqual(Object.fromEntries(shown.boxes.map((box) => [box.id, box.icon])), {
+        [CLUSTER]: "server",
+        "resources.experiments.tracking": "flask-conical",
+        "resources.schemas.sales": "folder-tree",
+        [SCOPE]: "key",
+        "resources.sql_warehouses.analytics": "warehouse",
+        "resources.volumes.raw_files": "hard-drive",
+      });
       // The volume names its schema by plain catalog and schema name, which the bundle defines.
       assert.deepEqual(shown.links, [`${CLUSTER}->${SCOPE}`, "resources.volumes.raw_files->resources.schemas.sales"]);
       assert.equal(shown.boxes.some((box) => box.faded), false, "nothing is faded until a box is active");
       assert.equal(shown.details, null);
       // Groups the inspector has no checks or lines for say so. Compute, Secrets and Unity Catalog do not.
       assert.deepEqual(shown.unchecked.sort(), ["machine_learning"]);
+      assert.equal((await selections()).length, 0, "rendering the overview sends no resource selection");
       await screenshot("overview");
     });
 
@@ -187,6 +202,8 @@ export function overviewSuite() {
       assert.equal(state[CLUSTER]!.faded, false);
       assert.equal(state[SCOPE]!.faded, false, "the linked secret scope stays lit");
       assert.equal(shown.boxes.filter((box) => box.faded).length, 4, "the four unlinked boxes fade");
+      await waitFor(async () => (await selections()).length === 1, "the resource selection event");
+      assert.deepEqual((await selections())[0]!.properties, { resource_type: "cluster" });
       await screenshot("overview-selected");
     });
 
@@ -197,6 +214,8 @@ export function overviewSuite() {
         return Boolean(editor?.document.fileName.endsWith("databricks.yml")) &&
           editor!.document.lineAt(editor!.selection.active.line).text.trim() === "shared_etl:";
       }, "the cursor on the cluster's key");
+      const opened = (await logged()).filter((entry) => entry.event === "file_opened").at(-1);
+      assert.deepEqual(opened?.properties, { file_kind: "yml", resource_type: "cluster" });
     });
 
     it("a compute box's details show its settings, and an Also set field opens its line (issue 417)", async () => {
@@ -209,12 +228,16 @@ export function overviewSuite() {
         return Boolean(editor?.document.fileName.endsWith("databricks.yml")) &&
           editor!.document.lineAt(editor!.selection.active.line).text.trim() === "spark_env_vars:";
       }, "the cursor on the field's key");
+      const opened = (await logged()).filter((entry) => entry.event === "file_opened").at(-1);
+      assert.deepEqual(opened?.properties, { file_kind: "yml", resource_type: "cluster" });
     });
 
     it("clicking the box again clears the selection", async () => {
       await click(CLUSTER);
       await waitFor(async () => (await read()).details === null, "the details to close");
       assert.equal((await read()).boxes.some((box) => box.pressed), false);
+      await sleep(100);
+      assert.equal((await selections()).length, 1, "closing details sends no selection event");
     });
 
     it("typing in the header's search lights the matching box and fades the rest; Esc clears it", async () => {
@@ -378,10 +401,23 @@ export function overviewSuite() {
         const label = await evaluate(`document.querySelector('[data-overview-item="${lowest}"] .truncate').textContent`);
         const inView = `(() => { const box = document.querySelector('[data-overview-item="${lowest}"]').getBoundingClientRect(); const view = ${scroller}.getBoundingClientRect(); return box.top >= view.top - 1 && box.bottom <= view.bottom + 1; })()`;
         assert.equal(await evaluate(inView), false, "the box starts out of view, or this proves nothing");
+        const beforeSelections = (await selections()).length;
         await typeSearch(label);
         await waitFor(async () => await evaluate(`[...document.querySelectorAll("header button")].some((button) => button.textContent.includes(${JSON.stringify(label)}))`), "the search list");
+        // The result shows the same icon as its box (issue 546).
+        const boxIcon = await evaluate(`document.querySelector('[data-overview-item="${lowest}"] [data-type-icon]')?.dataset.typeIcon ?? null`);
+        assert.ok(boxIcon, "the box has an icon, or this proves nothing");
+        assert.equal(
+          await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes(${JSON.stringify(label)}))?.querySelector("[data-type-icon]")?.dataset.typeIcon ?? null`),
+          boxIcon,
+        );
         await evaluate(`[...document.querySelectorAll("header button")].find((button) => button.textContent.includes(${JSON.stringify(label)})).click()`);
         await waitFor(async () => (await read()).details === lowest, "the picked box selected");
+        await waitFor(async () => (await selections()).length === beforeSelections + 1, "search resource telemetry");
+        const graph = await vscode.commands.executeCommand<any>("databricksBundleInspector.test.graphData");
+        const selectedNode = graph.graph.nodes.find((node: any) => node.id === lowest);
+        const kind = ({ jobs: "job", pipelines: "pipeline", sql_warehouses: "warehouse", clusters: "cluster", secret_scopes: "secret_scope" } as Record<string, string>)[selectedNode.resourceGroup] ?? selectedNode.resourceGroup;
+        assert.deepEqual((await selections()).at(-1)!.properties, { resource_type: kind });
         await waitFor(async () => (await evaluate(inView)) === true, "the picked box in view");
       } finally {
         await typeSearch("");
@@ -423,6 +459,31 @@ export function overviewSuite() {
         }
         await waitFor(async () => (await read()).boxes.some((box) => box.id === VOLUME), "the volume back");
       }
+    });
+
+    it("resource links count selections, but reopening the panel and closing details do not", async () => {
+      await showPanel();
+      await evaluate(`document.querySelector("[data-overview-details] [aria-label='Close details']")?.click()`);
+      await waitFor(async () => (await read()).details === null, "no selection");
+      const before = (await selections()).length;
+      await click(CLUSTER);
+      await waitFor(async () => (await selections()).length === before + 1, "cluster selected");
+      const linked = await evaluate(`(() => {
+        const buttons = [...document.querySelectorAll("[data-overview-details] button")];
+        const target = buttons.find((button) => button.title === "app_secrets");
+        target?.click();
+        return Boolean(target);
+      })()`);
+      assert.equal(linked, true, "the cluster links to its secret scope");
+      await waitFor(async () => (await read()).details === SCOPE && (await selections()).length === before + 2, "linked scope selected");
+      assert.deepEqual((await selections()).at(-1)!.properties, { resource_type: "secret_scope" });
+      await showPanel();
+      await sleep(100);
+      assert.equal((await selections()).length, before + 2, "restoring the panel sends no selection");
+      await click(SCOPE);
+      await waitFor(async () => (await read()).details === null, "scope details closed");
+      await sleep(100);
+      assert.equal((await selections()).length, before + 2, "closing details sends no selection");
     });
 
     it("long file and resource names in the details never scroll them sideways (issue 395)", async () => {

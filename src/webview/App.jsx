@@ -37,6 +37,7 @@ import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { buildBundleOverview } from "../bundle/bundleOverview";
 import { typeWords } from "./lib/overviewView";
+import { resourceSelectionProperties } from "./lib/resourceTelemetry";
 import { buildJobUses } from "../bundle/jobUses";
 import { buildBundleReviewSummary } from "../bundle/bundleReviewSummary";
 import { buildParameterFlowsForJob, buildParameterFlowsForTask, buildParameterLinkageMaps, getPrimaryFileNode, parameterLinkageForName } from "../bundle/parameterFlows";
@@ -400,7 +401,8 @@ function RefItem({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {kind === "secret_scope" && !missing && !status ? (
+        {/* A type's icon (issue 546); a missing or flagged row keeps a dot in its problem colour. */}
+        {!missing && !status ? (
           <TypeDot kind={kind} />
         ) : (
           <span
@@ -2024,6 +2026,7 @@ export default function App({
               label: item.label,
               subtitle: typeWords(item),
               kind: item.kind,
+              source: item.source,
               issueCount: item.problems.errors + item.problems.warnings,
               problemTone: problemTone(item.problems),
             })),
@@ -2075,10 +2078,17 @@ export default function App({
     onTelemetry?.("search_result_selected");
     setSearchValue(item.label);
     if (item.overviewId) {
-      setOverviewSelectedId(item.overviewId);
+      handleOverviewSelect(item.overviewId);
       return;
     }
     selectTaskNode(item.taskId);
+  }
+
+  function handleOverviewSelect(id) {
+    const item = bundleOverview?.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+    const properties = resourceSelectionProperties(item, overviewSelectedId);
+    if (properties) onTelemetry?.("resource_selected", properties);
+    setOverviewSelectedId(id);
   }
 
   function handleSelectionChange(next) {
@@ -2096,7 +2106,7 @@ export default function App({
   /** A pipeline's details live on the overview: show it there, selected (issue 436). */
   function showPipelineOnOverview(key) {
     onTelemetry?.("pipeline_selected");
-    setOverviewSelectedId(`resources.pipelines.${key}`);
+    handleOverviewSelect(`resources.pipelines.${key}`);
     showOverview();
   }
 
@@ -2128,7 +2138,7 @@ export default function App({
       if (usesIt) setUsesPin({ job: item.resourceKey, id: kept.usesId ?? kept.id });
     }
     // With nothing selected, the opened box is the one selected on the way back.
-    if (!overviewSelectedId) setOverviewSelectedId(item.id);
+    if (!overviewSelectedId) handleOverviewSelect(item.id);
     handleSelectionChange({ group: item.kind === "job" ? "jobs" : "pipelines", key: item.resourceKey });
   }
 
@@ -2308,7 +2318,7 @@ export default function App({
               overview={bundleOverview}
               background={rfStyle}
               selectedId={overviewSelectedId}
-              onSelect={setOverviewSelectedId}
+              onSelect={handleOverviewSelect}
               onOpen={openFromOverview}
               onOpenFile={onOpenFile}
               find={searchValue}

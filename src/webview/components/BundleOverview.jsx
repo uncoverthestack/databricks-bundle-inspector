@@ -115,7 +115,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       <span className={`flex shrink-0 ${dimmed ? "opacity-45" : ""}`}>
-        <TypeDot kind={item.kind} />
+        <TypeDot kind={item.kind} dot={item.source === "default"} />
       </span>
       <span className={`max-w-[65%] shrink-0 truncate text-[13px] font-medium ${dimmed ? "text-muted" : "text-fg"}`}>{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
@@ -301,7 +301,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {item.file && (
         <button
           type="button"
-          onClick={() => onOpenFile?.(item.file, item.line)}
+          onClick={() => onOpenFile?.(item.file, item.line, undefined, item.kind)}
           data-overview-open-file
           className="max-w-full self-start break-all text-left text-xs text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
@@ -312,7 +312,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {problemCount(item) > 0 && !pipeline && (
         <div className="text-xs text-fg-soft">{problemWords(item)}. The Problems panel lists them.</div>
       )}
-      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={onOpenFile} />}
+      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => onOpenFile?.(file, line, undefined, item.kind)} />}
       {pipeline && (
         <PipelineDetails
           view={pipeline.view}
