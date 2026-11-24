@@ -13,7 +13,17 @@ Tasks `c0` to `c7` are the live test of 2026-11-24: CLI v1.27.0, a serverless SQ
 | `c6_flow_unknown` | `refresh_flow_selection: [t_nope]` | `INVALID_REFRESH_SELECTION.FLOW_NOT_FOUND` | warning |
 | `c7_qualified` | `refresh_selection: [<catalog>.<schema>.t_silver]` | succeeded | nothing (the schema is a `${resources...}` reference, so full names aren't judged) |
 
-Each failing update was retried 6 times, about 11 minutes, before the task failed.
+Each failing update was retried 6 times, about 11 minutes, before the task failed: 1 try plus the default 5 retries (`pipelines.numUpdateRetryAttempts`).
+
+A second live test the same day (two runs, `pipelines.numUpdateRetryAttempts: "0"`, so each failure was tried once) asked whether a name only needs to be a table in the catalog:
+
+| Selection | In the catalog? | Run |
+|---|---|---|
+| `t_silver`, the pipeline's own (control) | yes | succeeded |
+| `t_other`, made by another pipeline in the same schema | yes | `TABLE_NOT_FOUND`, "does not exist in the graph" |
+| `t_gone`, once defined by this pipeline, its SQL since removed and the pipeline updated | yes, still | `TABLE_NOT_FOUND`, "does not exist in the graph" |
+
+So a selection names the tables in the pipeline's code, which for a SQL pipeline its SQL files describe.
 
 `c8` to `c10` were not run live: a full name in another schema (`main.other.t_silver`) is a different table; a pipeline with Python sources is not judged; a `for_each_task`'s inner pipeline task is checked like any other.
 
