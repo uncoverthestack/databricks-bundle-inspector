@@ -39,7 +39,10 @@
     },
     "file_opened": {
       "description": "A file was opened from the inspector.",
-      "properties": { "file_kind": "py | ipynb | sql | yml | json | whl | jar | scala | r | other" }
+      "properties": {
+        "file_kind": "py | ipynb | sql | yml | json | whl | jar | scala | r | other",
+        "resource_type": "When opening an overview resource definition or its compute settings: its fixed resource type, as for resource_selected. No resource name or path."
+      }
     },
     "review_summary_copied": {
       "description": "Copy review was used in the graph.",
@@ -51,7 +54,13 @@
     },
     "job_selected": { "description": "A different job was picked in the header." },
     "pipeline_selected": { "description": "A pipeline was picked in the header, or opened from a job's pipeline task." },
-    "search_result_selected": { "description": "A task was picked from search results." },
+    "resource_selected": {
+      "description": "A different resource was explicitly selected in the overview, through a box, related-resource link, search result, or opening a view. Closing details and restoring selections are not counted. Job and pipeline view events remain separate.",
+      "properties": {
+        "resource_type": "A fixed type from RESOURCE_TYPES in src/telemetry/schema.ts: job, pipeline, warehouse, cluster, secret_scope, or another known bundle resource group such as dashboards, schemas or postgres_branches. Unknown types become other. Never a resource name, key or path."
+      }
+    },
+    "search_result_selected": { "description": "A task or overview resource was picked from search results." },
     "issue_item_selected": { "description": "An item in the issues panel was clicked." },
     "quick_fix_applied": {
       "description": "A suggested fix was applied from the Quick Fix menu.",

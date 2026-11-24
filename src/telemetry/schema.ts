@@ -27,6 +27,27 @@ const bucket = oneOf("0", "1", "2-5", "6-20", "21-50", "51+");
 /** `major.minor` only, e.g. `1.21` (see telemetryCliVersion). */
 const cliVersion: Rule = { type: "pattern", pattern: /^\d{1,3}\.\d{1,4}$/, maxLength: 8 };
 
+/** Fixed resource types only; unknown future types never send bundle-authored text. */
+export const RESOURCE_TYPES: readonly string[] = [
+  "job", "pipeline", "warehouse", "cluster", "secret_scope", "job_runs",
+  "dashboards", "alerts", "genie_spaces", "apps", "model_serving_endpoints",
+  "vector_search_endpoints", "vector_search_indexes", "model_services",
+  "model_provider_services", "mcp_services", "instance_pools", "cluster_policies",
+  "secrets", "catalogs", "schemas", "volumes", "external_locations",
+  "quality_monitors", "data_quality_monitors", "experiments", "models",
+  "registered_models", "features", "feature_specs", "materialization_sets",
+  "database_instances", "database_catalogs", "synced_database_tables",
+  "postgres_projects", "postgres_branches", "postgres_endpoints", "postgres_databases",
+  "postgres_roles", "postgres_catalogs", "postgres_synced_tables",
+  "postgres_snapshot_schedules", "postgres_data_apis", "other",
+];
+
+export function telemetryResourceType(kind: unknown): string {
+  return typeof kind === "string" && RESOURCE_TYPES.includes(kind) ? kind : "other";
+}
+
+const resourceType = oneOf(...RESOURCE_TYPES);
+
 /** The findings whose quick fix is counted, by kind. */
 export const QUICK_FIX_KINDS: readonly string[] = [
   "notebook_missing_extension",
@@ -103,11 +124,13 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
   bundle_refreshed_on_save: { bundle_file: bool },
   file_opened: {
     file_kind: oneOf("py", "ipynb", "sql", "yml", "json", "whl", "jar", "scala", "r", "other"),
+    resource_type: resourceType,
   },
   review_summary_copied: { format: oneOf("summary", "report") },
   graph_mode_changed: { mode: oneOf("all", "issues") },
   job_selected: {},
   pipeline_selected: {},
+  resource_selected: { resource_type: resourceType },
   search_result_selected: {},
   issue_item_selected: {},
   quick_fix_applied: { kind: oneOf(...QUICK_FIX_KINDS) },

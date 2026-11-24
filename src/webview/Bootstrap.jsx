@@ -157,12 +157,13 @@ export default function Bootstrap() {
     );
   }
 
-  function handleOpenFile(filePath, line, column) {
+  function handleOpenFile(filePath, line, column, resourceType) {
     vscodeApi?.postMessage({
       type: "openFile",
       path: filePath,
       line: line ?? undefined,
       column: column ?? undefined,
+      resourceType,
     });
   }
 
