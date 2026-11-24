@@ -56,44 +56,39 @@ function hhmm(h: string, m: string): string {
   return `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
 }
 
+/** A day-of-week token ("MON", "2"), only when it is one: never a name like "toString". */
+function dayName(token: string): string | undefined {
+  return Object.hasOwn(QUARTZ_DOW, token) ? QUARTZ_DOW[token] : undefined;
+}
+
 function describeDow(dow: string): string | undefined {
   // "6#3" = 3rd Friday of the month
-  if (dow.includes("#")) {
-    const [dayPart, nthPart] = dow.split("#");
-    const dayName = (dayPart && QUARTZ_DOW[dayPart]) ?? dayPart ?? "";
-    const nth = parseInt(nthPart ?? "", 10);
-    if (!isNaN(nth)) return `${ordinal(nth)} ${dayName} of every month`;
+  const nth = /^([^#]+)#([1-5])$/.exec(dow);
+  if (nth) {
+    const name = dayName(nth[1]!);
+    return name && `${ordinal(Number(nth[2]))} ${name} of every month`;
   }
   // "6L" = last Friday of the month
-  if (dow.endsWith("L") && dow.length > 1) {
-    const dayPart = dow.slice(0, -1);
-    const dayName = QUARTZ_DOW[dayPart] ?? dayPart;
-    return `Last ${dayName} of every month`;
+  const last = /^(.+)L$/.exec(dow);
+  if (last) {
+    const name = dayName(last[1]!);
+    return name && `Last ${name} of every month`;
   }
   // "MON-FRI" or "2-6"
-  if (dow.includes("-")) {
-    const [from, to] = dow.split("-");
-    if (
-      (from === "MON" || from === "2") &&
-      (to === "FRI" || to === "6")
-    ) {
-      return "Every weekday (Mon–Fri)";
-    }
-    const fromName = (from && QUARTZ_DOW[from]) ?? from ?? "";
-    const toName = (to && QUARTZ_DOW[to]) ?? to ?? "";
-    return `${fromName} through ${toName}`;
+  const range = /^([^,-]+)-([^,-]+)$/.exec(dow);
+  if (range) {
+    const [from, to] = [dayName(range[1]!), dayName(range[2]!)];
+    if (!from || !to) return undefined;
+    if (from === "Monday" && to === "Friday") return "Every weekday (Mon–Fri)";
+    return `${from} through ${to}`;
   }
   // "MON,WED,FRI"
   if (dow.includes(",")) {
-    return dow
-      .split(",")
-      .map((d) => QUARTZ_DOW[d] ?? d)
-      .join(", ");
+    const names = dow.split(",").map(dayName);
+    return names.every(Boolean) ? names.join(", ") : undefined;
   }
-  // single day
-  const dayName = QUARTZ_DOW[dow];
-  if (dayName) return `Every ${dayName}`;
-  return undefined;
+  const name = dayName(dow);
+  return name && `Every ${name}`;
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -102,6 +97,8 @@ function listInWords(items: string[]): string {
 }
 
 const isNumber = (field: string) => /^\d+$/.test(field);
+/** A plain number from `min` to `max`. */
+const inRange = (field: string, min: number, max: number) => isNumber(field) && Number(field) >= min && Number(field) <= max;
 
 /** The values a step field such as "0/15" or "*\/15" takes between 0 and `max`, when it is one. */
 function stepValues(field: string, max: number): number[] | undefined {
@@ -117,9 +114,9 @@ function stepValues(field: string, max: number): number[] | undefined {
 
 /** An hour field that is one hour or a range of hours: the first and last hour. */
 function hourSpan(hour: string): [number, number] | undefined {
-  if (isNumber(hour)) return [Number(hour), Number(hour)];
+  if (inRange(hour, 0, 23)) return [Number(hour), Number(hour)];
   const match = /^(\d+)-(\d+)$/.exec(hour);
-  if (!match || Number(match[1]) > Number(match[2])) return undefined;
+  if (!match || Number(match[1]) > Number(match[2]) || Number(match[2]) > 23) return undefined;
   return [Number(match[1]), Number(match[2])];
 }
 
@@ -130,8 +127,11 @@ type Times =
   | { kind: "repeat"; text: string };
 
 /** The times of day, or undefined when they can't be said in words without leaving something out. */
-function describeTimes(min: string, hour: string): Times | undefined {
-  const time = (h: number, m: number) => hhmm(String(h), String(m));
+function describeTimes(sec: string, min: string, hour: string): Times | undefined {
+  if (!inRange(sec, 0, 59)) return undefined;
+  const s = Number(sec);
+  const time = (h: number, m: number) => `${hhmm(String(h), String(m))}${s ? `:${String(s).padStart(2, "0")}` : ""}`;
+  const repeat = (text: string): Times | undefined => (s ? undefined : { kind: "repeat", text });
   const minutes = min === "*" ? stepValues("0/1", 59) : stepValues(min, 59);
 
   if (minutes) {
@@ -139,31 +139,33 @@ function describeTimes(min: string, hour: string): Times | undefined {
     const step = (minutes[1] ?? 60) - minutes[0]!;
     if (minutes[0]! >= step || 60 % step !== 0) return undefined;
     const every = step === 1 ? "Runs every minute" : `Runs every ${step} minutes`;
-    if (hour === "*") return { kind: "repeat", text: minutes[0] === 0 ? every : `${every}, from ${minutes[0]} minutes past the hour` };
+    if (hour === "*") return repeat(minutes[0] === 0 ? every : `${every}, from ${minutes[0]} minutes past the hour`);
     const span = hourSpan(hour);
     if (!span) return undefined;
-    return { kind: "repeat", text: `${every}, ${time(span[0], minutes[0]!)} to ${time(span[1], minutes.at(-1)!)}` };
+    return repeat(`${every}, ${time(span[0], minutes[0]!)} to ${time(span[1], minutes.at(-1)!)}`);
   }
 
-  if (!isNumber(min)) return undefined;
+  if (!inRange(min, 0, 59)) return undefined;
   const m = Number(min);
-  if (isNumber(hour)) return { kind: "at", text: ` at ${hhmm(hour, min)}` };
-  if (hour === "*") return { kind: "repeat", text: m === 0 ? "Runs every hour" : `Runs every hour at ${m} minutes past` };
+  if (inRange(hour, 0, 23)) return { kind: "at", text: ` at ${time(Number(hour), m)}` };
+  if (hour === "*") return repeat(m === 0 ? "Runs every hour" : `Runs every hour at ${m} minutes past`);
   if (/^\d+(,\d+)+$/.test(hour)) {
-    return { kind: "at", text: ` at ${listInWords(hour.split(",").map((h) => time(Number(h), m)))}` };
+    const hours = hour.split(",");
+    if (!hours.every((h) => inRange(h, 0, 23))) return undefined;
+    return { kind: "at", text: ` at ${listInWords(hours.map((h) => time(Number(h), m)))}` };
   }
   const range = /^\d+-\d+$/.test(hour) ? hourSpan(hour) : undefined;
-  if (range) return { kind: "repeat", text: `Runs every hour, ${time(range[0], m)} to ${time(range[1], m)}` };
+  if (range) return repeat(`Runs every hour, ${time(range[0], m)} to ${time(range[1], m)}`);
 
   const hours = stepValues(hour, 23);
   if (!hours) return undefined;
   const step = (hours[1] ?? 24) - hours[0]!;
   if (m === 0 && hours[0] === 0 && 24 % step === 0) {
-    return { kind: "repeat", text: step === 1 ? "Runs every hour" : `Runs every ${step} hours` };
+    return repeat(step === 1 ? "Runs every hour" : `Runs every ${step} hours`);
   }
   // Not evenly through the day: name the times while there are few enough to read.
   if (hours.length <= 6) return { kind: "at", text: ` at ${listInWords(hours.map((h) => time(h, m)))}` };
-  return { kind: "repeat", text: `Runs every ${step} hours, ${time(hours[0]!, m)} to ${time(hours.at(-1)!, m)}` };
+  return repeat(`Runs every ${step} hours, ${time(hours[0]!, m)} to ${time(hours.at(-1)!, m)}`);
 }
 
 interface Days {
@@ -175,7 +177,7 @@ interface Days {
 
 /** The days the schedule runs on, or undefined when they can't be said in words. */
 function describeDays(dom: string, month: string, dow: string): Days | undefined {
-  const monthName = QUARTZ_MONTH[month];
+  const monthName = Object.hasOwn(QUARTZ_MONTH, month) ? QUARTZ_MONTH[month] : undefined;
   if (month !== "*" && !monthName) return undefined;
   const inMonth = monthName ? ` in ${monthName}` : "";
   const days = (lead: string, after: string): Days => ({ lead: `${lead}${inMonth}`, after: `${after}${inMonth}` });
@@ -197,16 +199,18 @@ function describeDays(dom: string, month: string, dow: string): Days | undefined
   if (dom === "L") return days("Last day of every month", "on the last day of every month");
   // "15W" = nearest weekday to the 15th
   if (dom.endsWith("W")) {
-    const d = parseInt(dom.slice(0, -1), 10);
-    if (isNaN(d)) return undefined;
+    if (!inRange(dom.slice(0, -1), 1, 31)) return undefined;
+    const d = Number(dom.slice(0, -1));
     return days(`Nearest weekday to the ${ordinal(d)}`, `on the nearest weekday to the ${ordinal(d)}`);
   }
   const range = /^(\d+)-(\d+)$/.exec(dom);
   if (range) {
+    if (!inRange(range[1]!, 1, 31) || !inRange(range[2]!, 1, 31) || Number(range[1]) > Number(range[2])) return undefined;
     const text = `${ordinal(Number(range[1]))}–${ordinal(Number(range[2]))} of every month`;
     return days(`Days ${text}`, `on days ${text}`);
   }
   if (/^\d+(,\d+)*$/.test(dom)) {
+    if (!dom.split(",").every((d) => inRange(d, 1, 31))) return undefined;
     const text = `${dom.split(",").map((d) => ordinal(Number(d))).join(", ")} of every month`;
     return days(text, `on the ${text}`);
   }
@@ -221,13 +225,13 @@ function describeDays(dom: string, month: string, dow: string): Days | undefined
 export function describeCronExpression(expr: string, tz?: string): string {
   const parts = expr.trim().split(/\s+/);
   if (parts.length < 6 || parts.length > 7) return expr;
-  const [sec = "", min = "", hour = "", dom = "", month = "", dow = "", year = "*"] = parts;
+  // Quartz reads names in any case: "jan" is "JAN".
+  const [sec = "", min = "", hour = "", dom = "", month = "", dow = "", year = "*"] = parts.map((part) => part.toUpperCase());
   const tzSuffix = tz ? ` (${tz})` : "";
 
-  // A seconds field that repeats ("0/30") runs more than once a minute.
-  if (!isNumber(sec)) return expr;
-  const inYear = year === "*" ? "" : isNumber(year) ? ` in ${year}` : undefined;
-  const times = describeTimes(min, hour);
+  // A seconds field that repeats ("0/30") runs more than once a minute: describeTimes says no.
+  const inYear = year === "*" ? "" : inRange(year, 1970, 2099) ? ` in ${year}` : undefined;
+  const times = describeTimes(sec, min, hour);
   const days = describeDays(dom, month, dow);
   if (inYear === undefined || !times || !days) return expr;
 

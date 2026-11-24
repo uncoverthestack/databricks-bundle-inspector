@@ -269,6 +269,11 @@ describe("describeCronExpression — says every limit, or shows the expression (
     ["0 30 0/6 ? * SAT", "Every Saturday at 00:30, 06:30, 12:30 and 18:30"],
     ["0 0 1/2 * * ?", "Runs every 2 hours, 01:00 to 23:00"],
     ["0 0 12 * * ? 2027", "Every day at 12:00 in 2027"],
+    ["30 0 9 * * ?", "Every day at 09:00:30"],
+    ["0 0 9 * jan ?", "Every day in January at 09:00"],
+    ["0 0 9 ? * mon", "Every Monday at 09:00"],
+    ["0 0 9 L FEB ?", "Last day of every month in February at 09:00"],
+    ["0 0 9 15W JAN ?", "Nearest weekday to the 15th in January at 09:00"],
   ])("%s", (expr, words) => {
     expect(describeCronExpression(expr)).toBe(words);
   });
@@ -286,6 +291,25 @@ describe("describeCronExpression — says every limit, or shows the expression (
     "0 0 9 * JAN-MAR ?", // a range of months
     "0 0 9 * * ? 2027-2028", // a range of years
     "0 0 9 1,L * ?",
+    "30 0/15 * * * ?", // a repeat that isn't on the minute
+    "0 0 9 ? * MON-WED,FRI", // a range and a list together
+    "0 0 9 1/5 * ?",
+    "0 0 9 LW * ?",
+    // Not valid: no words for a schedule that can't exist.
+    "60 0 9 * * ?",
+    "0 60 9 * * ?",
+    "0 0 24 * * ?",
+    "0 0 9 0 * ?",
+    "0 0 9 32 * ?",
+    "0 0 9 ? * MON-BOGUS",
+    "0 0 9 ? * 6#0",
+    "0 0 9 ? * 6#6",
+    "0 0 9 ? * 6#3junk",
+    "0 0/0 * * * ?",
+    "0 0 9 * constructor ?",
+    "0 0 9 ? * __proto__",
+    "0 0 9 ? * toString",
+    "0 0 9 * * ? * EXTRA",
   ])("shows the expression when it can't say every limit: %s", (expr) => {
     expect(describeCronExpression(expr)).toBe(expr);
   });
