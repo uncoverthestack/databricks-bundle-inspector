@@ -7,8 +7,10 @@ import {
   MiniMap,
   MarkerType,
   useReactFlow,
+  useStore,
 } from "@xyflow/react";
 import { Info, LocateFixed } from "lucide-react";
+import { openingViewport } from "./lib/graphFit";
 import AppHeader from "./components/AppHeader";
 import BundleOverview from "./components/BundleOverview";
 import HeaderChipPanel from "./components/HeaderChipPanel";
@@ -1517,6 +1519,37 @@ function FocusViewportSync({ focusRequest, flowNodes }) {
   return null;
 }
 
+/**
+ * Fits a job to the panel when it opens (issue 552), and again when the panel's size changes,
+ * such as the task details closing. Never while a task is selected (selecting one centres it)
+ * or once the user has dragged or zoomed: their view stays theirs until another job opens.
+ */
+// Every box has its size. Read from React Flow's own node store: useNodesInitialized only
+// updates when the app applies React Flow's size changes, which this graph doesn't.
+const allBoxesMeasured = (state) =>
+  state.nodeLookup.size > 0 && [...state.nodeLookup.values()].every((node) => node.measured?.width > 0 && node.measured?.height > 0);
+
+function FitJobOnOpen({ jobKey, hasSelection, userMovedRef }) {
+  const { getNodes, getNodesBounds, setViewport } = useReactFlow();
+  const measured = useStore(allBoxesMeasured);
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const fittedJob = useRef(null);
+
+  useEffect(() => {
+    if (!measured || !width || !height) return;
+    const opening = fittedJob.current !== jobKey;
+    if (!opening && (hasSelection || userMovedRef.current)) return;
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+    fittedJob.current = jobKey;
+    if (opening) userMovedRef.current = false;
+    void setViewport(openingViewport(getNodesBounds(nodes), width, height), { duration: opening ? 0 : 200 });
+  }, [measured, width, height, jobKey, hasSelection, userMovedRef, getNodes, getNodesBounds, setViewport]);
+
+  return null;
+}
+
 function subscribeToThemeKind(onChange) {
   const observer = new MutationObserver(onChange);
   observer.observe(document.body, { attributes: true, attributeFilter: ["data-vscode-theme-kind"] });
@@ -1661,6 +1694,8 @@ export default function App({
   const [userSelection, setUserSelection] = useState(undefined);
   const [searchValue, setSearchValue] = useState("");
   const [focusRequest, setFocusRequest] = useState(null);
+  // Set when the user drags or zooms the job graph, so it is never refitted under them (issue 552).
+  const graphMovedByUser = useRef(false);
   const [activeHeaderPanel, setActiveHeaderPanel] = useState(() =>
     focusIssuesNonce ? "issues" : null,
   );
@@ -2363,9 +2398,22 @@ export default function App({
               nodesConnectable={false}
               edgesReconnectable={false}
               defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+              // A move with an event is the user's (drag, wheel, pinch); ours have none.
+              onMoveStart={(event) => {
+                if (event) graphMovedByUser.current = true;
+              }}
+              // Dragging the minimap moves the view with no event either.
+              onPointerDownCapture={(event) => {
+                if (event.target.closest?.(".react-flow__minimap")) graphMovedByUser.current = true;
+              }}
               proOptions={{ hideAttribution: true }}
               style={rfStyle}
             >
+              <FitJobOnOpen
+                jobKey={jobNode?.id ?? null}
+                hasSelection={Boolean(selectedNodeId)}
+                userMovedRef={graphMovedByUser}
+              />
               <FocusViewportSync
                 focusRequest={focusRequest}
                 flowNodes={flowNodes}
@@ -2375,6 +2423,8 @@ export default function App({
                 position="bottom-left"
                 showFitView={false}
                 showInteractive={false}
+                onZoomIn={() => (graphMovedByUser.current = true)}
+                onZoomOut={() => (graphMovedByUser.current = true)}
               >
                 <RecenterJobControl />
               </Controls>
