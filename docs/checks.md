@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `pipeline_selection_not_found`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
@@ -227,6 +227,16 @@ A job environment's `project_environment` names a `pyproject.toml` that has neit
   ```
 
 - **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
+
+### `pipeline_selection_not_found`
+
+A pipeline task refreshes a table or flow its pipeline doesn't create.
+
+- **Severity:** warning.
+- **Example:** `refresh_selection: [orders_silvr]` in a task that runs a pipeline whose SQL creates `orders_silver`. `bundle validate` and `bundle deploy` accept it; the run fails with `INVALID_REFRESH_SELECTION.TABLE_NOT_FOUND` (or `FLOW_NOT_FOUND` for `refresh_flow_selection`). Letter case counts: `ORDERS_SILVER` fails the same way. Only the pipeline's own tables count: a table in the same schema made by another pipeline, or one this pipeline no longer defines but which is still in the catalog, fails too. Checked live with CLI v1.27.0 on 2026-11-24, two runs each. By default a production pipeline retries a failed update 5 times, about 11 minutes in that test, before the task fails; `pipelines.numUpdateRetryAttempts` in the pipeline's `configuration` changes that.
+- **Fix:** use the name of a table, view or flow the pipeline creates, as written in its SQL. A full name, `catalog.schema.table`, works when its catalog and schema are the pipeline's. The finding suggests a close match.
+- **Checked fields:** `refresh_selection`, `full_refresh_selection` and `refresh_flow_selection`, also in a `for_each_task`'s inner task. Not `reset_checkpoint_selection` yet.
+- **Limits:** checked only when the pipeline's data flow lists every name: every source is a local SQL file the inspector read, with no name it could not read. A pipeline with Python sources, a source it doesn't check, a selection written as a variable, or a full name when the pipeline's catalog or schema is a variable, is not judged.
 
 ## Code in notebooks and files
 

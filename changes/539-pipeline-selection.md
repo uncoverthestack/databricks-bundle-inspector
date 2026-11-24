@@ -1,0 +1,3 @@
+Added
+
+- **A warning when a pipeline task refreshes a table or flow its pipeline doesn't create** ([#539](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/539)). `refresh_selection`, `full_refresh_selection` and `refresh_flow_selection` are compared with the tables, views and flows in the pipeline's SQL, letter case included: `Rename "orders_silvr" in refresh_selection: pipeline "orders" may not have this table, so the run may fail. Did you mean "orders_silver"?` Such a name passes validate and deploy, and the run fails. Pipelines with Python sources, or with names the inspector couldn't read, aren't judged.

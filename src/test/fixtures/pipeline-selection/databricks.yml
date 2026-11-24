@@ -1,0 +1,7 @@
+# Pipeline tasks that refresh only some tables or flows (issue 539). The job's first eight
+# tasks are the live test of 2026-11-24 (CLI v1.27.0, two runs); see README.md.
+bundle:
+  name: pipeline_selection
+
+include:
+  - resources/*.yml

@@ -18,6 +18,7 @@ import { writtenValueAt } from "./quickFix.js";
 import { filesUnder, movedFileSuggestion, type ExpectedFile, type FileList } from "./pathSuggestions.js";
 import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
+import { splitName } from "./pipelineDataFlow.js";
 import { checkRunTarget, unquote } from "./runTargets.js";
 import type { RunTarget } from "./taskFileDetections.js";
 import { findVariableLoops } from "./variableLoops.js";
@@ -54,6 +55,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "environment_version_missing",
   "unknown_environment_key",
   "project_environment_version_missing",
+  "pipeline_selection_not_found",
   "widget_not_set",
   "unused_parameter",
   "sql_parameter_not_set",
@@ -1439,6 +1441,7 @@ export function buildInspectorIssues(
   }
 
   issues.push(...secretScopeNameIssues(graph));
+  issues.push(...pipelineSelectionIssues(graph));
   issues.push(...taskValueIssues(graph));
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
@@ -1842,6 +1845,97 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
     }
   }
   return [...issues.values()];
+}
+
+const SELECTION_PIPELINE = /^\$\{resources\.pipelines\.([^.}]+)\.id\}$/;
+
+/**
+ * Warns where a pipeline task selects a table or flow its pipeline doesn't create (issue 539).
+ * `bundle validate` and `bundle deploy` accept any name; the run fails with
+ * INVALID_REFRESH_SELECTION, and letter case counts (live, CLI v1.27.0, 2026-11-24). Only
+ * checked when the pipeline's data flow lists every name: all its sources are local SQL the
+ * inspector read, and no name was left unread.
+ */
+function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const issues: InspectorIssue[] = [];
+  const text = (value: unknown) => (typeof value === "string" && value && !value.includes("${") ? value : undefined);
+
+  for (const task of graph.nodes) {
+    if (task.nodeType !== "task" || !task.taskData) continue;
+    const raw = task.data as Record<string, unknown>;
+    const inner = (raw.for_each_task as { task?: Record<string, unknown> } | undefined)?.task;
+    for (const [data, pipelineTask] of [
+      [task.taskData, raw.pipeline_task],
+      [task.taskData.nestedTask, inner?.pipeline_task],
+    ] as const) {
+      const selections = data?.pipelineSelections;
+      const pipelineId = (pipelineTask as { pipeline_id?: unknown } | undefined)?.pipeline_id;
+      const key = typeof pipelineId === "string" ? SELECTION_PIPELINE.exec(pipelineId.trim())?.[1] : undefined;
+      if (!selections?.length || !key) continue;
+      const pipeline = nodeById.get(`resources.pipelines.${key}`);
+      const flow = pipeline?.pipelineDataFlow;
+      const complete =
+        flow &&
+        flow.sqlFiles > 0 &&
+        flow.notRead.length === 0 &&
+        flow.unread.length === 0 &&
+        (pipeline.pipelineLibraries ?? []).every((library) => library.checked && library.exists);
+      if (!pipeline || !complete) continue;
+
+      const datasets = flow.nodes.filter((node) => node.kind !== "outside" && node.kind !== "files").map((node) => node.name);
+      // A table's own flow has its name; CREATE FLOW and AUTO CDC name theirs.
+      const flows = [...new Set([...datasets, ...flow.edges.flatMap((edge) => (edge.flow ? [edge.flow] : []))])];
+      const catalog = text(pipeline.data.catalog);
+      const schema = text(pipeline.data.schema ?? pipeline.data.target);
+      const full = (name: string): string[] | undefined => {
+        const parts = splitName(name);
+        if (parts.length === 3) return parts;
+        if (parts.length === 2) return catalog ? [catalog, ...parts] : undefined;
+        return catalog && schema ? [catalog, schema, ...parts] : undefined;
+      };
+
+      for (const selection of selections) {
+        if (selection.name.includes("${") || selection.name.includes("{{")) continue;
+        const candidates = selection.field === "refresh_flow_selection" ? flows : datasets;
+        const parts = splitName(selection.name);
+        // Compared as written, or as Unity Catalog stores it (lower case); a qualified name
+        // needs the pipeline's catalog and schema to compare.
+        const forms = (name: string) => {
+          if (parts.length === 1) return [splitName(name).at(-1)!];
+          const whole = full(name);
+          return whole ? [whole.join(".")] : [];
+        };
+        // After a USE, a table may live in another schema than the pipeline's, which the
+        // data flow doesn't keep: a full name can't be compared then.
+        const afterUse = flow.nodes.some((node) => node.afterUse);
+        const wanted = parts.length === 1 ? selection.name : afterUse ? undefined : full(selection.name)?.join(".");
+        if (wanted === undefined) continue;
+        const known = candidates.flatMap(forms);
+        if (known.some((name) => name === wanted || name.toLowerCase() === wanted)) continue;
+        if (known.length === 0) continue;
+        const suggestion = closestName(wanted, known.map((name) => name.toLowerCase()));
+        const what = selection.field === "refresh_flow_selection" ? "flow" : "table";
+        issues.push({
+          id: `pipeline-selection:${task.id}:${selection.yamlPath}`,
+          severity: "warning",
+          kind: "pipeline_selection_not_found",
+          title: suggestion
+            ? `Rename "${selection.name}" in ${selection.field}: pipeline "${key}" may not have this ${what}, so the run may fail. Did you mean "${suggestion}"?`
+            : `Remove "${selection.name}" from ${selection.field}: pipeline "${key}" may not have this ${what}, so the run may fail.`,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: selection.yamlPath,
+          fixHint:
+            what === "flow"
+              ? `Use the name of a flow pipeline "${key}" defines, written as in its SQL.`
+              : `Use the name of a table or view pipeline "${key}" creates, written as in its SQL.`,
+          ...issueLocation(task.taskData.sourceFile || undefined, selection.sourceLine || undefined, selection.sourceColumn),
+        });
+      }
+    }
+  }
+  return issues;
 }
 
 // `{{tasks.<task_key>.values.<key>}}` in task settings.

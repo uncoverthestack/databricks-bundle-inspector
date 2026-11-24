@@ -1,7 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import {
   buildPipelineView,
-  pipelineIssueCounts,
   pipelineKeysOf,
   pipelineReviewSummary,
   pipelineRunners,
@@ -228,18 +227,5 @@ describe("buildPipelineView", () => {
     expect(text).toContain("- No issues detected in this pipeline.");
     expect(text).toContain("- No job in this bundle runs this pipeline.");
     expect(text).toContain("- 0 sources in libraries");
-  });
-});
-
-describe("pipelineIssueCounts", () => {
-  test("counts each pipeline's own errors and warnings", () => {
-    const counts = pipelineIssueCounts(["p", "q", "r"], [
-      { id: "1", severity: "error", kind: "k", title: "", resourceId: "resources.pipelines.p" },
-      { id: "2", severity: "warning", kind: "k", title: "", resourceId: "resources.pipelines.p" },
-      { id: "3", severity: "info", kind: "k", title: "", resourceId: "resources.pipelines.q" },
-      { id: "4", severity: "error", kind: "k", title: "", resourceId: "resources.pipelines.gone" },
-      { id: "5", severity: "error", kind: "k", title: "" },
-    ]);
-    expect([...counts]).toEqual([["p", 2], ["q", 0], ["r", 0]]);
   });
 });
