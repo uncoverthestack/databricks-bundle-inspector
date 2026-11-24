@@ -238,11 +238,15 @@ export function themesSuite() {
           const avoid = [...document.querySelectorAll(".react-flow__node, .react-flow__controls, .react-flow__minimap, .react-flow__edge")]
             .map(el => el.getBoundingClientRect());
           const clear = (x, y) => avoid.every(r => x < r.left - 48 || x > r.right + 48 || y < r.top - 48 || y > r.bottom + 48);
-          // A bare spot of the header itself, not one of its controls.
+          // A bare spot of the header itself, not one of its controls. The header's two layout
+          // groups have no background of their own, so their bare spots show the header's paint;
+          // the place group covers most of the header's width (issue 553).
+          const bare = (el) => el === headerElement || (el && el.parentElement === headerElement
+            && (el.hasAttribute("data-header-place") || el.hasAttribute("data-header-tools")));
           let headerSpot = null;
           const headerY = Math.max(header.top + 3, EDGE);
           for (let x = header.right - EDGE; x >= header.left + EDGE && !headerSpot; x -= 1) {
-            if (inside(x, headerY) && document.elementFromPoint(x, headerY) === headerElement) headerSpot = { x, y: headerY };
+            if (inside(x, headerY) && bare(document.elementFromPoint(x, headerY))) headerSpot = { x, y: headerY };
           }
           if (!headerSpot) return null;
           for (let y = pane.top + 9; y < pane.bottom; y += 16) {
