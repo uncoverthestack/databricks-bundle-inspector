@@ -92,17 +92,18 @@ describe("buildInspectorIssues", () => {
     ]);
   });
 
-  test("warns when task file references use Git source without job git_source", () => {
+  test("flags source: GIT in a job without git_source as an error: deploy refuses it (#521)", () => {
     const graph: BundleGraph = {
       nodes: [
         jobNode(),
         taskNode({
           fileReferences: [
             {
-              path: "ingest/highlights",
+              path: "ingest/highlights.py",
               resolvedPath: "/workspace/demo/ingest/highlights.py",
               exists: true,
-              source: "GIT",
+              source: undefined,
+              strayGitSource: true,
               isInGitignore: false,
               referenceType: "notebook",
               sourceFile: "/workspace/demo/resources/job.yml",
@@ -125,10 +126,10 @@ describe("buildInspectorIssues", () => {
       ),
     ).toMatchObject([
       {
-        severity: "warning",
+        severity: "error",
         kind: "git_source_not_recommended",
-        title: "Git-sourced task path is not recommended for bundles",
-        detail: "ingest/highlights",
+        title: "Task has source: GIT, but its job has no git_source, so deploy may fail.",
+        detail: "ingest/highlights.py",
         taskName: "extract",
         file: "/workspace/demo/resources/job.yml",
         line: 14,
@@ -175,6 +176,33 @@ describe("buildInspectorIssues", () => {
         "/workspace/demo",
       ),
     ).toEqual([]);
+  });
+
+  test("no missing file in a job with git_source, where the task's source is left out (#521)", () => {
+    // The CLI sets source: GIT on such tasks and reads the path from the repo, not the disk.
+    const graph: BundleGraph = {
+      nodes: [
+        jobNode({ git_source: { git_url: "https://github.com/acme/demo", git_provider: "gitHub", git_branch: "main" } }),
+        taskNode({
+          fileReferences: [
+            {
+              path: "../src/etl",
+              resolvedPath: "/workspace/demo/src/etl",
+              exists: false,
+              source: undefined,
+              isInGitignore: false,
+              referenceType: "notebook",
+              sourceFile: "/workspace/demo/resources/job.yml",
+              sourceLine: 14,
+              sourceColumn: 11,
+              yamlPath: "resources.jobs.ingest.tasks.extract.notebook_task.notebook_path",
+            },
+          ],
+        }),
+      ],
+      edges: [],
+    };
+    expect(buildInspectorIssues(graph, { bundle: { name: "demo" } }, [], "/workspace/demo")).toEqual([]);
   });
 
   test("reports a missing file in a for_each task's inner task against the outer task", () => {

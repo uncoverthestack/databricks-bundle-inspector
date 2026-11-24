@@ -25,6 +25,11 @@ function rawJob(
   return { parameters: params };
 }
 
+/** A job with a `git_source`: only then does the CLI read a task's `source: GIT` (#521). */
+function gitJob(): Record<string, unknown> {
+  return { ...rawJob(), git_source: { git_url: "https://github.com/acme/demo", git_provider: "gitHub", git_branch: "main" } };
+}
+
 // --- taskType detection ---
 
 describe("buildTaskNodeData — taskType", () => {
@@ -192,7 +197,7 @@ describe("buildTaskNodeData — fileReferences", () => {
     const resources = path.join(bundleRoot, "resources");
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "git_notebook", source: "GIT" } },
-      rawJob(),
+      gitJob(),
       "job-1",
       "t",
       bundleRoot,
@@ -221,7 +226,7 @@ describe("buildTaskNodeData — fileReferences", () => {
   test("notebook_task source GIT resolves extensionless notebook paths locally", () => {
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "git_notebook", source: "GIT" } },
-      rawJob(),
+      gitJob(),
       "job-1",
       "t",
       bundleRoot,
@@ -237,7 +242,7 @@ describe("buildTaskNodeData — fileReferences", () => {
   test("notebook_task source GIT prefers an exact local path before extension probing", () => {
     const result = buildTaskNodeData(
       { notebook_task: { notebook_path: "notebook.py", source: "GIT" } },
-      rawJob(),
+      gitJob(),
       "job-1",
       "t",
       bundleRoot,
@@ -247,6 +252,61 @@ describe("buildTaskNodeData — fileReferences", () => {
     expect(result.fileReferences[0]?.resolvedPath).toBe(
       path.join(bundleRoot, "notebook.py"),
     );
+  });
+
+  // #521: without git_source the CLI reads the path as a local file, and deploy refuses the setting.
+  test("source: GIT in a job without git_source is read as a local path and marked", () => {
+    const resources = path.join(bundleRoot, "resources");
+    const result = buildTaskNodeData(
+      { notebook_task: { notebook_path: "../git_notebook", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(result.fileReferences[0]).toMatchObject({
+      source: undefined,
+      strayGitSource: true,
+      exists: false,
+      notebookProblem: { kind: "missing_extension", suggestedPath: "../git_notebook.py" },
+    });
+  });
+
+  test("source: GIT on Python and SQL file tasks without git_source is marked too", () => {
+    const resources = path.join(bundleRoot, "resources");
+    const result = buildTaskNodeData(
+      { spark_python_task: { python_file: "../notebook.py", source: "GIT" } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(result.fileReferences[0]).toMatchObject({ strayGitSource: true, exists: true });
+    const sql = buildTaskNodeData(
+      { sql_task: { file: { path: "../query.sql", source: "GIT" } } },
+      rawJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+      path.join(resources, "job.yml"),
+      resources,
+    );
+    expect(sql.fileReferences[0]).toMatchObject({ strayGitSource: true, exists: true });
+  });
+
+  test("source: GIT in a job with git_source is not marked", () => {
+    const result = buildTaskNodeData(
+      { spark_python_task: { python_file: "notebook.py", source: "GIT" } },
+      gitJob(),
+      "job-1",
+      "t",
+      bundleRoot,
+    );
+    expect(result.fileReferences[0]?.strayGitSource).toBeUndefined();
   });
 
   test("notebook_task source omitted requires exact local path", () => {

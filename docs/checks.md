@@ -495,7 +495,7 @@ A task type the inspector doesn't recognise. It does not mean the task is invali
 
 ### `git_source_not_recommended`
 
-A task loads its code from Git (`source: GIT`) while its job has no `git_source`.
+A task loads its code from Git (`source: GIT`) while its job has no `git_source`. `bundle validate` passes, but deploy refuses it ("source is set to GIT but no git_source settings are provided"). This often happens after removing `git_source` from a job. The path is still checked as a local file, as the CLI reads it.
 
 - **Severity:** error.
 - **Fix:** keep the code in the bundle (omit `source`, or use `WORKSPACE`), or add `git_source` to the job.

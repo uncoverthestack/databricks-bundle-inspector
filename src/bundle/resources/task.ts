@@ -109,6 +109,12 @@ export interface FileReference {
   resolvedPath: string | undefined;
   exists: boolean;
   source: "GIT" | "WORKSPACE" | undefined;
+  /**
+   * `source: GIT` on a task whose job has no `git_source` (#521). The CLI reads the path as a
+   * local file then, so `source` is left out and the path is checked like any other; deploy
+   * fails on the setting itself ("source is set to GIT but no git_source settings are provided").
+   */
+  strayGitSource?: true;
   isInGitignore: boolean;
   /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
   notebookProblem?: NotebookPathProblem;
@@ -445,8 +451,23 @@ function getFileReferences(
   sourceFile: string,
   resolveSourceLocation?: SourceLocationResolver,
   notebookRule: NotebookHeaderRule = "contains",
+  jobHasGitSource = false,
 ): FileReference[] {
   const refs: FileReference[] = [];
+
+  /**
+   * A task block's `source`, as the CLI uses it: GIT only in a job with a `git_source`.
+   * Without one, the CLI reads the path as a local file whatever `source` says (CLI
+   * `translate_paths_jobs.go` keys off the job's `git_source` only).
+   */
+  function sourceOf(block: Record<string, unknown> | undefined): {
+    source: FileReference["source"];
+    stray: boolean;
+  } {
+    const declared = normalizedNotebookSource(block?.source);
+    if (declared === "GIT" && !jobHasGitSource) return { source: undefined, stray: true };
+    return { source: declared, stray: false };
+  }
 
   function addRef(
     rawPath: unknown,
@@ -454,6 +475,7 @@ function getFileReferences(
     yamlSubPath: string,
     source?: FileReference["source"],
     expects?: "notebook" | "file",
+    stray = false,
   ): void {
     if (typeof rawPath !== "string" || !rawPath) return;
     const gitNotebook =
@@ -480,6 +502,7 @@ function getFileReferences(
       resolvedPath,
       exists,
       source,
+      ...(stray ? { strayGitSource: true as const } : {}),
       isInGitignore: false,
       ...(notebookProblem ? { notebookProblem } : {}),
       referenceType,
@@ -492,12 +515,14 @@ function getFileReferences(
 
   const nb = task.notebook_task as Record<string, unknown> | undefined;
   if (nb) {
+    const { source, stray } = sourceOf(nb);
     addRef(
       nb.notebook_path,
       "notebook",
       "notebook_task.notebook_path",
-      normalizedNotebookSource(nb.source),
-      normalizedNotebookSource(nb.source) === "GIT" ? undefined : "notebook",
+      source,
+      source === "GIT" ? undefined : "notebook",
+      stray,
     );
   }
 
@@ -515,24 +540,28 @@ function getFileReferences(
 
   const py = task.spark_python_task as Record<string, unknown> | undefined;
   if (py) {
+    const { source, stray } = sourceOf(py);
     addRef(
       py.python_file,
       "python_script",
       "spark_python_task.python_file",
       undefined,
-      normalizedNotebookSource(py.source) === "GIT" ? undefined : "file",
+      source === "GIT" ? undefined : "file",
+      stray,
     );
   }
 
   const sql = task.sql_task as Record<string, unknown> | undefined;
   if (sql) {
     const sqlFile = sql.file as Record<string, unknown> | undefined;
+    const { source, stray } = sourceOf(sqlFile);
     addRef(
       sqlFile?.path,
       "sql",
       "sql_task.file.path",
       undefined,
-      normalizedNotebookSource(sqlFile?.source) === "GIT" ? undefined : "file",
+      source === "GIT" ? undefined : "file",
+      stray,
     );
   }
 
@@ -819,6 +848,7 @@ export function buildTaskNodeData(
 ): TaskNodeData {
   const taskType = getTaskType(rawTask);
   const resolveBase = sourceFileDir || bundleRoot;
+  const gitSource = rawJob.git_source;
   const fileReferences = getFileReferences(
     rawTask,
     taskKey,
@@ -827,6 +857,7 @@ export function buildTaskNodeData(
     sourceFile,
     resolveSourceLocation,
     notebookRule,
+    Boolean(gitSource && typeof gitSource === "object"),
   );
   const libraryReferences = getLibraryReferences(
     rawTask,

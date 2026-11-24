@@ -920,18 +920,20 @@ export function buildInspectorIssues(
     }
 
     for (const ref of checkedTaskData.flatMap((data) => data.fileReferences)) {
-      if (ref.source === "GIT" && !parentJobHasGitSource(graph, task)) {
+      // Deploy refuses it (live, CLI 1.27.0): "source is set to GIT but no git_source settings
+      // are provided" for a notebook, "Invalid use of git source" for a Python file (#521).
+      // The path itself is checked as a local file below, as the CLI reads it.
+      if (ref.strayGitSource) {
         issues.push({
           id: `git-source:${task.id}:${ref.yamlPath}:${ref.path}`,
-          severity: "warning",
+          severity: "error",
           kind: "git_source_not_recommended",
-          title: "Git-sourced task path is not recommended for bundles",
+          title: "Task has source: GIT, but its job has no git_source, so deploy may fail.",
           detail: ref.path,
           taskId: task.id,
           taskName: task.displayName,
           yamlPath: ref.yamlPath,
-          fixHint:
-            "Prefer workspace-synced local task files by omitting source or using WORKSPACE.",
+          fixHint: "Remove source: GIT to use the bundle's file, or add git_source to the job.",
           ...issueLocation(
             ref.sourceFile || sourceFileForTask(task),
             ref.sourceLine || undefined,
@@ -1011,7 +1013,9 @@ export function buildInspectorIssues(
         continue;
       }
 
-      if (!isMissingLocalPath(ref)) continue;
+      // A job with a git_source reads its task paths from the repo, which the CLI doesn't check
+      // locally, and sets source: GIT on tasks that leave it out (CLI apply_default_task_source.go).
+      if (!isMissingLocalPath(ref) || parentJobHasGitSource(graph, task)) continue;
       issues.push({
         id: `missing-file:${task.id}:${ref.yamlPath}:${ref.path}`,
         severity: "error",
