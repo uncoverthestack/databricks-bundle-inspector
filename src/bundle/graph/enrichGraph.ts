@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
@@ -65,7 +65,12 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
   }
 
   const localFileNodes = graph.nodes.filter(
-    (n) => n.nodeType === "file" && n.location === "local" && n.data.exists === true,
+    (n) =>
+      n.nodeType === "file" &&
+      n.location === "local" &&
+      n.data.exists === true &&
+      typeof n.data.resolvedPath === "string" &&
+      isRegularFile(n.data.resolvedPath),
   );
 
   await Promise.all(
@@ -231,6 +236,18 @@ async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
   });
 }
 
+/**
+ * Whether a path is a regular file, through links. Only those are read: reading a named
+ * pipe waits for data that never comes, so the inspection never finished (#508).
+ */
+function isRegularFile(filePath: string): boolean {
+  try {
+    return statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 const SCANNED_SOURCE_EXTENSIONS = new Set([".py", ".sql", ".ipynb"]);
 /** Upper bound on files read from one pipeline's glob folders, so a huge folder can't stall inspection. */
 const MAX_GLOB_FILES = 200;
@@ -252,7 +269,7 @@ function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (recursive) walk(full, true);
-      } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+      } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase()) && isRegularFile(full)) {
         files.push(full);
         globFiles += 1;
       }
@@ -262,7 +279,7 @@ function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
   for (const ref of pipeline.pipelineLibraries ?? []) {
     if (!ref.checked || !ref.exists || !ref.resolvedPath) continue;
     if (ref.kind === "glob" && /\/\*\*?$/.test(ref.path)) walk(ref.resolvedPath, ref.path.endsWith("**"));
-    else files.push(ref.resolvedPath);
+    else if (isRegularFile(ref.resolvedPath)) files.push(ref.resolvedPath);
   }
   return [...new Set(files)];
 }
