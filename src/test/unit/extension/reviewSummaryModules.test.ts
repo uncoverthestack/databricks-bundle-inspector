@@ -85,11 +85,13 @@ const chains = (flows: ParameterFlow[]) =>
 
 describe("parameter flows (#392)", () => {
   test("a job's flows: task parameters and a job parameter to notebook widgets, and to a SQL parameter", () => {
+    // region and run_date are also job parameters, which win over the task's own value
+    // (issue 537, https://docs.databricks.com/aws/en/jobs/job-parameters).
     expect(chains(buildParameterFlowsForJob(graph, job()))).toEqual([
-      "load:region:TASK@20>NOTEBOOK@2",
+      "load:region:JOB@13>NOTEBOOK@2",
       "load:catalog:TASK@21>NOTEBOOK@3",
       "load:run_date:JOB@11>NOTEBOOK@4",
-      "report:run_date:TASK@29>SQL@1",
+      "report:run_date:JOB@11>SQL@1",
     ]);
   });
 
@@ -98,7 +100,7 @@ describe("parameter flows (#392)", () => {
     expect(flow!.segments[0]!.file).toMatch(/databricks\.yml$/);
     expect(flow!.segments[1]!.file).toMatch(/load\.py$/);
     expect(flow!.segments[1]!.column).toBeNull();
-    expect(flow!.id).toBe("resources.jobs.daily.tasks.load:region:TASK>NOTEBOOK");
+    expect(flow!.id).toBe("resources.jobs.daily.tasks.load:region:JOB>NOTEBOOK");
   });
 
   test("a task whose file is missing: its file box has no widgets, so no flows", () => {
@@ -200,10 +202,10 @@ describe("Copy review summary (#392)", () => {
       "- **Note** · Same title",
       "",
       "### Parameter Flow",
-      "- `region` (load): task parameter -> notebook widget",
+      "- `region` (load): job parameter -> notebook widget",
       "- `catalog` (load): task parameter -> notebook widget",
       "- `run_date` (load): job parameter -> notebook widget",
-      "- `run_date` (report): task parameter -> SQL parameter",
+      "- `run_date` (report): job parameter -> SQL parameter",
       "",
       "### Schedule",
       "- Schedule: 0 0 6 \\* \\* ? (UTC)",

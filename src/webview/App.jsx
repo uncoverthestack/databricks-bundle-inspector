@@ -150,6 +150,8 @@ function ConfigRow({ label, value, title, detail, tone = "default", onClick, chi
 
 function parameterLinkageLabel(linkage) {
   if (!linkage) return null;
+  // Issue 537: a job parameter with the same name wins over the task's value.
+  if (linkage.ignoredByJob) return "JOB PARAM WINS";
   if (linkage.kind === "job_override") return "JOB PARAM LINK";
   if (linkage.kind === "task") return "TASK DEFAULT";
   if (linkage.kind === "job") return "JOB DEFAULT";
@@ -158,6 +160,11 @@ function parameterLinkageLabel(linkage) {
 
 function parameterLinkageDetail(linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) {
+    return linkage.jobParameterDefault
+      ? `A job parameter with the same name wins, so this value isn't used; job default is ${linkage.jobParameterDefault}`
+      : "A job parameter with the same name wins, so this value isn't used";
+  }
   if (linkage.kind === "job_override") {
     return linkage.jobParameterDefault
       ? `Task value references a job parameter; job default is ${linkage.jobParameterDefault}`
@@ -170,6 +177,7 @@ function parameterLinkageDetail(linkage) {
 
 function widgetLinkageLabel(linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) return "SUPPLIED BY JOB";
   if (linkage.kind === "job_override") return "SUPPLIED VIA JOB";
   if (linkage.kind === "task") return "SUPPLIED BY TASK";
   if (linkage.kind === "job") return "SUPPLIED BY JOB";
@@ -178,6 +186,9 @@ function widgetLinkageLabel(linkage) {
 
 function widgetLinkageDetail(name, linkage) {
   if (!linkage) return null;
+  if (linkage.ignoredByJob) {
+    return `Notebook widget "${name}" gets the job parameter's value; the task's own value isn't used`;
+  }
   if (linkage.kind === "job_override") {
     return `Notebook widget "${name}" is supplied by a task parameter that links to a job parameter`;
   }
