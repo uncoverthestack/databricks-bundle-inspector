@@ -89,6 +89,23 @@ describe("movedFileSuggestion", () => {
     expect(suggest("../x/missing.py", "any")).toBeUndefined();
   });
 
+  test("a notebook written without its extension, as Git paths are, gets the file with it (#518)", () => {
+    expect(suggest("src/train", "notebook")).toBe("../src/train.py");
+    // Only for notebooks: a file field's path is used as written, and run.py is no notebook.
+    expect(suggest("src/run", "file")).toBeUndefined();
+    expect(suggest("src/run", "notebook")).toBeUndefined();
+  });
+
+  test("nothing when a name without extension fits two notebooks", async () => {
+    const extra = path.join(root, "src", "train.sql");
+    await writeFile(extra, "-- Databricks notebook source\nselect 1\n");
+    try {
+      expect(suggest("src/train", "notebook")).toBeUndefined();
+    } finally {
+      await rm(extra);
+    }
+  });
+
   test("nothing when the bundle has too many files to list them all", () => {
     // Folders left unread could hold a second train.py, so one match proves nothing.
     expect(filesUnder(root).complete).toBe(true);

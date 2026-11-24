@@ -147,4 +147,63 @@ describe(`a real target's workspace paths are read as local files (${cli})`, () 
       .sort();
     expect(issues).toEqual(["missing: missing_file", "no_extension: notebook_missing_extension"]);
   });
+
+  /**
+   * #518: a library file comes from the bundle root even when nothing fails. Read from the
+   * folder it is written in, a right path is found and one written from the bundle root is not.
+   */
+  (profile ? test : test.skip)("task libraries are read from the folder they are written in", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-root-libraries-"));
+    created.push(dir);
+    await mkdir(path.join(dir, "src"));
+    await mkdir(path.join(dir, "dist"));
+    await mkdir(path.join(dir, "resources"));
+    await writeFile(path.join(dir, "src", "nb.py"), "# Databricks notebook source\nprint(1)\n");
+    await writeFile(path.join(dir, "dist", "a-0.1-py3-none-any.whl"), "x");
+    await writeFile(path.join(dir, "dist", "b-0.1-py3-none-any.whl"), "x");
+    await writeFile(
+      path.join(dir, "databricks.yml"),
+      "bundle:\n  name: root-libraries\ninclude:\n  - resources/*.yml\ntargets:\n  dev:\n    default: true\n",
+    );
+    await writeFile(
+      path.join(dir, "resources", "job.yml"),
+      [
+        "resources:",
+        "  jobs:",
+        "    nightly:",
+        "      tasks:",
+        "        - task_key: right",
+        "          notebook_task:",
+        "            notebook_path: ../src/nb.py",
+        "          libraries:",
+        "            - whl: ../dist/a-0.1-py3-none-any.whl",
+        "        - task_key: from_root",
+        "          notebook_task:",
+        "            notebook_path: ../src/nb.py",
+        "          libraries:",
+        "            - whl: dist/b-0.1-py3-none-any.whl",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await validateBundle(dir, "dev", cli, profile);
+    if (!result.ok) throw new Error(result.error.details ?? result.error.error);
+    const reported = Object.fromEntries(
+      (result.data.resources?.jobs?.nightly?.tasks ?? []).map((task: any) => [task.task_key, task.libraries?.[0]?.whl]),
+    );
+    // If this fails, the CLI stopped giving library files from the bundle root and the rest proves less.
+    expect(reported).toEqual({ right: "dist/a-0.1-py3-none-any.whl", from_root: "resources/dist/b-0.1-py3-none-any.whl" });
+
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(result.data, dir));
+    const found = Object.fromEntries(
+      graph.nodes
+        .filter((node) => node.nodeType === "task")
+        .map((node) => [node.taskData!.taskKey, node.taskData!.libraryReferences[0]?.exists]),
+    );
+    expect(found).toEqual({ right: true, from_root: false });
+    const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir, "dev")
+      .filter((issue) => issue.kind !== "cli_diagnostic")
+      .map((issue) => `${issue.taskName}: ${issue.kind}`);
+    expect(issues).toEqual(["from_root: missing_library"]);
+  });
 });

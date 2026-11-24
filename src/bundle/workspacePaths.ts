@@ -30,6 +30,40 @@ interface PathSlot {
   kind: PathKind;
 }
 
+/** A task library's local file (`whl`, `jar` or `egg`), found by its task. */
+interface LibrarySlot {
+  /** `jobs.<key>.<task_key>[.<inner task_key>]`. */
+  task: string;
+  holder: Record<string, unknown>;
+  key: string;
+}
+
+const LIBRARY_KEYS = ["whl", "jar", "egg"];
+
+/** The library files of every task under one `resources` mapping, written or resolved. */
+function librarySlotsIn(resources: unknown): LibrarySlot[] {
+  const slots: LibrarySlot[] = [];
+  const task = (prefix: string, value: unknown) => {
+    const t = record(value);
+    if (!t || typeof t.task_key !== "string") return;
+    const id = `${prefix}.${t.task_key}`;
+    if (Array.isArray(t.libraries)) {
+      for (const library of t.libraries) {
+        const holder = record(library);
+        for (const key of LIBRARY_KEYS) {
+          if (holder && typeof holder[key] === "string") slots.push({ task: id, holder, key });
+        }
+      }
+    }
+    task(id, record(t.for_each_task)?.task);
+  };
+  for (const [key, job] of Object.entries(record(record(resources)?.jobs) ?? {})) {
+    const tasks = record(job)?.tasks;
+    if (Array.isArray(tasks)) for (const t of tasks) task(`jobs.${key}`, t);
+  }
+  return slots;
+}
+
 /** A YAML file of the bundle, as written. */
 export interface SourceDocument {
   file: string;
@@ -255,7 +289,8 @@ export function localizeWorkspacePaths(
  * (a missing file, a notebook without its extension), the CLI stops there and leaves every
  * path in that form, without the `workspace.file_path` prefix that
  * {@link localizeWorkspacePaths} maps. The inspector reads paths from their YAML file's
- * folder, so it would look for `src/etl` in `resources/src/etl`.
+ * folder, so it would look for `src/etl` in `resources/src/etl`. Task library files (`whl`,
+ * `jar`, `egg`) come from the bundle root with a real target even when nothing failed (#518).
  *
  * A path is only mapped when the CLI's value, read from the bundle root, and the value
  * written in the YAML, read from its own file, name the same file. So the file never
@@ -295,6 +330,37 @@ export function localizeBundleRootPaths(
       slot.holder[slot.key] = relative.startsWith(".") ? relative : `./${relative}`;
       mapped = true;
     }
+  }
+
+  // Task libraries: the CLI gives them from the bundle root with a real target too, even when
+  // nothing failed (checked on CLI 1.27.0, #518). A target's libraries can be added to the
+  // job's own, so a library is found by its task and the file it names, not by its position.
+  const writtenLibraries = new Map<string, Set<string>>();
+  for (const { file, doc } of sources) {
+    const d = record(doc);
+    const written = [
+      ...librarySlotsIn(d?.resources),
+      ...(typeof target === "string" ? librarySlotsIn(record(record(record(d?.targets)?.[target]))?.resources) : []),
+    ];
+    for (const anchor of written) {
+      const value = substituted(anchor.holder[anchor.key] as string, output);
+      if (!value || path.isAbsolute(value)) continue;
+      const files = writtenLibraries.get(anchor.task) ?? new Set<string>();
+      files.add(path.resolve(path.dirname(file), value));
+      writtenLibraries.set(anchor.task, files);
+    }
+  }
+  for (const slot of librarySlotsIn(record(copy)?.resources)) {
+    const reported = slot.holder[slot.key] as string;
+    if (path.isAbsolute(reported) || reported.includes("${")) continue;
+    const local = path.resolve(bundleRoot, reported);
+    if (!writtenLibraries.get(slot.task)?.has(local)) continue;
+    const [, key] = slot.task.split(".");
+    const relative = path.relative(dirOf("jobs", key!), local).split(path.sep).join("/") || ".";
+    const value = relative.startsWith(".") ? relative : `./${relative}`;
+    if (value === reported) continue;
+    slot.holder[slot.key] = value;
+    mapped = true;
   }
   return mapped ? copy : config;
 }

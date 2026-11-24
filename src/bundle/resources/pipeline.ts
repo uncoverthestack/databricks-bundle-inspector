@@ -78,20 +78,19 @@ function checkGlob(
     return { resolvedPath, exists, checked: true };
   }
   const recursive = suffix[1] === "**";
-  for (const dir of new Set([sourceFileDir, bundleRoot])) {
-    const candidate = resolve(dir, base);
-    // With the letter case written: the pipeline reads the glob in the workspace, which is
-    // case sensitive, so `./Transformations/**` finds nothing in `transformations/` (#477).
-    if (isDirectory(candidate) && existsWithCase(candidate, bundleRoot) && hasFile(candidate, recursive)) {
-      return { resolvedPath: candidate, exists: true, checked: true };
-    }
+  // From the YAML file's folder only, as the CLI reads it: never the bundle root too (#518).
+  const candidate = resolve(sourceFileDir, base);
+  // With the letter case written: the pipeline reads the glob in the workspace, which is
+  // case sensitive, so `./Transformations/**` finds nothing in `transformations/` (#477).
+  if (isDirectory(candidate) && existsWithCase(candidate, bundleRoot) && hasFile(candidate, recursive)) {
+    return { resolvedPath: candidate, exists: true, checked: true };
   }
-  return { resolvedPath: resolve(sourceFileDir, base), exists: false, checked: true };
+  return { resolvedPath: candidate, exists: false, checked: true };
 }
 
 /**
  * Local notebook, file and glob sources in a pipeline's `libraries`, resolved
- * relative to the YAML file that declares the pipeline (then the bundle root).
+ * relative to the YAML file that declares the pipeline, as the CLI reads them (#518).
  */
 export function getPipelineLibraryReferences(
   pipeline: Record<string, unknown>,
