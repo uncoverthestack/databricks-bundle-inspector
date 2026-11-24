@@ -80,14 +80,14 @@
     {
       "severity": "warning",
       "kind": "resource_not_included",
-      "title": "\"resources/jobs/nested.job.yml\" defines resources, but no include entry loads it, so they are not part of the bundle.",
+      "title": "\"resources/jobs/nested.job.yml\" defines resources, but no include entry loads it, so they won't be deployed.",
       "file": "resources/jobs/nested.job.yml",
       "line": 1
     },
     {
       "severity": "warning",
       "kind": "resource_not_included",
-      "title": "\"resources/legacy.job.yaml\" defines resources, but no include entry loads it, so they are not part of the bundle.",
+      "title": "\"resources/legacy.job.yaml\" defines resources, but no include entry loads it, so they won't be deployed.",
       "file": "resources/legacy.job.yaml",
       "line": 1
     }

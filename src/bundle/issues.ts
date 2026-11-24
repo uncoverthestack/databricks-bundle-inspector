@@ -150,7 +150,7 @@ function pathNotCheckedIssue(
     kind: "path_not_checked",
     title: targetName
       ? `Not checked: "${rawPath}" still uses a variable for target "${targetName}", so the file isn't known.`
-      : `Not checked: "${rawPath}" uses a variable, so the file is only known once a target is resolved. ${PICK_TARGET_IN_GRAPH}`,
+      : `Not checked: "${rawPath}" uses a variable, so the file isn't known yet. ${PICK_TARGET_IN_GRAPH}`,
     fixHint:
       "The structural preview leaves variables in paths unresolved, so the missing file, notebook and code checks don't run on this file.",
   };
@@ -601,8 +601,8 @@ function sqlParameterIssues(
         severity: "warning",
         kind: "sql_parameter_not_set",
         title: suggestion
-          ? `SQL file reads parameter ":${marker.name}", which this task may not pass. Did you mean "${suggestion}"?`
-          : `SQL file reads parameter ":${marker.name}", which this task may not pass.`,
+          ? `Pass "${marker.name}" to this task: the SQL file reads ":${marker.name}", so without it the run may fail. Did you mean "${suggestion}"?`
+          : `Pass "${marker.name}" to this task: the SQL file reads ":${marker.name}", so without it the run may fail.`,
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: ref.yamlPath,
@@ -1373,7 +1373,7 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
         id: `include:not-included:${file}`,
         severity: "warning",
         kind: "resource_not_included",
-        title: `"${file}" defines resources, but no include entry loads it, so they are not part of the bundle.`,
+        title: `"${file}" defines resources, but no include entry loads it, so they won't be deployed.`,
         fixHint:
           "Add a pattern that covers this file to include in databricks.yml, or remove the file if it is unused." +
           (caveat ? ` ${caveat}` : ""),
@@ -1679,7 +1679,10 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           issues.push({
             ...base,
             kind: "task_value_not_upstream",
-            title: `Task "${read.taskKey}" isn't upstream of this task, so its value ${valueName} may not be set yet.`,
+            // "Upstream" is graph jargon; the surprise is that reading a value doesn't wait (#516).
+            title: read.key
+              ? `Add "${read.taskKey}" to this task's depends_on: reading its value "${read.key}" doesn't make this task wait, so the value may not be set yet.`
+              : `Add "${read.taskKey}" to this task's depends_on: reading its values doesn't make this task wait, so they may not be set yet.`,
             fixHint: `Add "${read.taskKey}" to this task's depends_on, directly or through another dependency, so it runs first.`,
           });
           continue;

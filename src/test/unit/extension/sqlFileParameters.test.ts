@@ -39,10 +39,10 @@ describe("SQL file task parameters (issue 234)", () => {
   // See the fixture README for why each case is or isn't reported.
   test("reports each :name the task and the job don't pass, once per file and task", () => {
     expect(issues.filter((issue) => issue.kind === "sql_parameter_not_set").map(summary).sort()).toEqual([
-      'warning each_day: SQL file reads parameter ":catalog", which this task may not pass. @ src/day_and_catalog.sql:2',
-      'warning near_name: SQL file reads parameter ":schema", which this task may not pass. Did you mean "schema_name"? @ src/uses_schema.sql:2',
-      'warning not_passed: SQL file reads parameter ":catalog", which this task may not pass. @ src/uses_catalog.sql:2',
-      'warning other_case: SQL file reads parameter ":Catalog", which this task may not pass. Did you mean "catalog"? @ src/upper_case.sql:1',
+      'warning each_day: Pass "catalog" to this task: the SQL file reads ":catalog", so without it the run may fail. @ src/day_and_catalog.sql:2',
+      'warning near_name: Pass "schema" to this task: the SQL file reads ":schema", so without it the run may fail. Did you mean "schema_name"? @ src/uses_schema.sql:2',
+      'warning not_passed: Pass "catalog" to this task: the SQL file reads ":catalog", so without it the run may fail. @ src/uses_catalog.sql:2',
+      'warning other_case: Pass "Catalog" to this task: the SQL file reads ":Catalog", so without it the run may fail. Did you mean "catalog"? @ src/upper_case.sql:1',
     ]);
   });
 
