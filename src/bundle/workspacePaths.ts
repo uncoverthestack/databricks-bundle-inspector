@@ -185,10 +185,12 @@ function localTarget(root: string, rest: string, kind: PathKind): string | undef
   switch (kind) {
     case "directory":
       return isDir(exact) ? exact : undefined;
-    case "glob": {
-      const base = rest.replace(GLOB_TAIL, "");
-      return isDir(path.join(root, ...base.split("/"))) ? exact : undefined;
-    }
+    // Where the CLI uploads the glob's folder from, whether or not it exists: validate doesn't
+    // check globs, so a missing folder only fails when the pipeline runs (#520). The pipeline
+    // check then finds no files there. Nothing is guessed: the sync root and the CLI's path
+    // after `/files/` name the folder exactly.
+    case "glob":
+      return exact;
     case "file":
       return isFile(exact) ? exact : undefined;
     case "notebook": {

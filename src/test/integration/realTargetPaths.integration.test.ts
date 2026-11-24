@@ -206,4 +206,47 @@ describe(`a real target's workspace paths are read as local files (${cli})`, () 
       .map((issue) => `${issue.taskName}: ${issue.kind}`);
     expect(issues).toEqual(["from_root: missing_library"]);
   });
+
+  /**
+   * #520: validate doesn't check globs and leaves one with a missing folder as a workspace
+   * path; the pipeline then fails at run with LIBRARY_FILE_NOT_FOUND. It must still be checked.
+   */
+  (profile ? test : test.skip)("a pipeline glob whose folder doesn't exist is still checked", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dbi-root-glob-"));
+    created.push(dir);
+    await mkdir(path.join(dir, "src", "dlt"), { recursive: true });
+    await mkdir(path.join(dir, "resources"));
+    await writeFile(path.join(dir, "src", "dlt", "t.sql"), "select 1\n");
+    await writeFile(
+      path.join(dir, "databricks.yml"),
+      "bundle:\n  name: root-glob\ninclude:\n  - resources/*.yml\ntargets:\n  dev:\n    default: true\n",
+    );
+    await writeFile(
+      path.join(dir, "resources", "pipeline.yml"),
+      [
+        "resources:",
+        "  pipelines:",
+        "    p:",
+        "      serverless: true",
+        "      libraries:",
+        "        - glob:",
+        "            include: ../src/dlt/**",
+        "        - glob:",
+        "            include: src/dlt/**",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await validateBundle(dir, "dev", cli, profile);
+    if (!result.ok) throw new Error(result.error.details ?? result.error.error);
+    const reported = (result.data.resources?.pipelines?.p as any)?.libraries?.map((library: any) => library.glob.include);
+    // If this fails, the CLI stopped giving globs as workspace paths and the rest proves less.
+    expect(reported).toEqual([expect.stringMatching(/\/files\/src\/dlt\/\*\*$/), expect.stringMatching(/\/files\/resources\/src\/dlt\/\*\*$/)]);
+
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(result.data, dir));
+    const issues = buildInspectorIssues(graph, result.data, result.issues ?? [], dir, "dev")
+      .filter((issue) => issue.kind !== "cli_diagnostic")
+      .map((issue) => `${issue.kind}: ${issue.detail}`);
+    expect(issues).toEqual(["missing_pipeline_source: ./src/dlt/**"]);
+  });
 });
