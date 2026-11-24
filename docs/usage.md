@@ -31,7 +31,7 @@ To see the graph:
 
 The graph opens in a new editor panel, on the [bundle overview](#bundle-overview). From a resource file, it opens on the job your cursor is in, otherwise the file's first job. With the cursor in a pipeline, or in a file with only pipelines, it opens on the overview with that pipeline selected. A resource file gets the button once the bundle has been checked, which happens when the folder opens; a file `include` doesn't load gets none. It refreshes automatically when you save a file the bundle uses and keeps the job you selected.
 
-In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The number on a task counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count.
+In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The badge on a task shows the icon of its worst problem, as in the Problems panel (a circled X for an error, a triangle for warnings), and counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count. Point at it for the counts in words, such as *1 error, 2 warnings*. Boxes on the bundle overview and search results show the same badge.
 
 The dropdown in the graph's header lists the bundle's **Jobs**, then the **Pipelines** that have a data flow page, then each **Lakebase** project's branches page.
 

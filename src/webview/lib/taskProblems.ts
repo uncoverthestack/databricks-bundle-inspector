@@ -40,6 +40,12 @@ export function countsFor(counts: Map<string, TaskProblemCounts>, taskId: string
   return counts.get(taskId) ?? NONE;
 }
 
+/** A box's problems in words, worst first: "1 error, 2 warnings" (issue 555). */
+export function problemWords(counts: { errors: number; warnings: number; infos?: number | undefined }): string {
+  const part = (n: number, word: string) => (n ? `${n} ${word}${n === 1 ? "" : "s"}` : "");
+  return [part(counts.errors, "error"), part(counts.warnings, "warning"), part(counts.infos ?? 0, "note")].filter(Boolean).join(", ");
+}
+
 export function problemTone(counts: TaskProblemCounts | undefined): TaskProblemTone {
   if (!counts) return "none";
   if (counts.errors > 0) return "error";

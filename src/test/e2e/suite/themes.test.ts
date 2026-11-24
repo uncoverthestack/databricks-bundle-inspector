@@ -403,7 +403,8 @@ export function themesSuite() {
           const boxes = [...document.querySelectorAll(".react-flow__node")].map((node) => ({
             name: node.querySelector("[title]")?.getAttribute("title") ?? node.textContent,
             tone: node.querySelector("[data-problem-tone]")?.dataset.problemTone,
-            count: Number(node.querySelector('[title$=" issue"], [title$=" issues"]')?.textContent ?? 0),
+            count: Number(node.querySelector("[data-problem-count]")?.dataset.problemCount ?? 0),
+            badge: node.querySelector("[data-problem-badge]")?.dataset.problemBadge ?? null,
           }));
           const issues = document.querySelector('[data-graph-mode="issues"]');
           return { boxes, issuesCount: Number(issues?.querySelector("span")?.textContent ?? 0) };
@@ -411,6 +412,9 @@ export function themesSuite() {
         const toneOf = Object.fromEntries(problems.boxes.map((box: any) => [box.name, box.tone]));
         assert.equal(toneOf.missing_step, "error", `the task with a missing file is red: ${JSON.stringify(problems.boxes)}`);
         assert.ok(problems.boxes.some((box: any) => box.tone === "warning"), `a task with only a warning is amber: ${JSON.stringify(problems.boxes)}`);
+        // The badge shows the worst problem's icon, not a plain number (issue 555).
+        assert.equal(Object.fromEntries(problems.boxes.map((box: any) => [box.name, box.badge])).missing_step, "error");
+        assert.ok(problems.boxes.filter((box: any) => box.tone === "warning").every((box: any) => box.badge === "warning"), `warning boxes show the warning badge: ${JSON.stringify(problems.boxes)}`);
         assert.equal(problems.boxes.reduce((sum: number, box: any) => sum + box.count, 0), problems.issuesCount, `the boxes add up to Issues: ${JSON.stringify(problems)}`);
 
         assert.ok(overview.overviewBoxes.length >= 2, "the overview shows its boxes");

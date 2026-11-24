@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { countsFor, problemTone, taskProblemCounts, type TaskProblemIssue } from "../../../webview/lib/taskProblems.js";
+import { countsFor, problemTone, problemWords, taskProblemCounts, type TaskProblemIssue } from "../../../webview/lib/taskProblems.js";
 
 const issue = (taskId: string | undefined, severity: TaskProblemIssue["severity"]): TaskProblemIssue => ({ taskId, severity });
 
@@ -40,5 +40,16 @@ describe("task box problems (issue 393)", () => {
   test("a task with several problems counts each one", () => {
     const counts = taskProblemCounts([issue("t", "error"), issue("t", "warning"), issue("t", "info")]);
     expect(countsFor(counts, "t")).toEqual({ errors: 1, warnings: 1, infos: 1, total: 3 });
+  });
+});
+
+describe("problem words on a badge (issue 555)", () => {
+  test("worst first, plural only above one", () => {
+    expect(problemWords({ errors: 1, warnings: 2, infos: 1 })).toBe("1 error, 2 warnings, 1 note");
+  });
+
+  test("leaves out what there is none of", () => {
+    expect(problemWords({ errors: 0, warnings: 1 })).toBe("1 warning");
+    expect(problemWords({ errors: 3, warnings: 0, infos: 0 })).toBe("3 errors");
   });
 });
