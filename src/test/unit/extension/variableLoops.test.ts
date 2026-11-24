@@ -115,6 +115,43 @@ describe("findVariableLoops", () => {
   test("a lookup or a variable with no default has nothing to follow", () => {
     expect(loops(bundle({ a: { lookup: { warehouse: "w" } }, b: { description: "set elsewhere" } }))).toEqual([]);
   });
+
+  // CLI v1.27.0 validates both; the check used to run out of stack from about 6,000 (#509).
+  function chain(count: number, last: string): Record<string, unknown> {
+    const variables: Record<string, unknown> = {};
+    for (let i = 0; i < count; i++) variables[`v${i}`] = { default: i === count - 1 ? last : `\${var.v${i + 1}}` };
+    return variables;
+  }
+
+  test("a chain of 20,000 variables with no loop is checked without running out of stack", () => {
+    expect(loops(bundle(chain(20_000, "main")))).toEqual([]);
+  });
+
+  test("a ring of 20,000 variables is one loop", () => {
+    const [loop, ...rest] = findVariableLoops(bundle(chain(20_000, "${var.v0}")));
+    expect(rest).toEqual([]);
+    expect(loop?.path).toHaveLength(20_001);
+    expect(loop?.path[0]).toBe("v0");
+    expect(loop?.path.at(-1)).toBe("v0");
+  });
+
+  test("a long chain that runs into a loop reports only the loop", () => {
+    const variables = { ...chain(5_000, "${var.x}"), x: { default: "${var.y}" }, y: { default: "${var.x}" } };
+    expect(loops(bundle(variables))).toEqual([{ path: "x -> y -> x", severity: "error", targets: "every target" }]);
+  });
+
+  test("two loops joined by a one-way link are two loops", () => {
+    const variables = {
+      a: { default: "${var.b}" },
+      b: { default: "${var.a}_${var.c}" },
+      c: { default: "${var.d}" },
+      d: { default: "${var.c}" },
+    };
+    expect(loops(bundle(variables))).toEqual([
+      { path: "c -> d -> c", severity: "error", targets: "every target" },
+      { path: "a -> b -> a", severity: "error", targets: "every target" },
+    ]);
+  });
 });
 
 describe("variableLoopIssues", () => {

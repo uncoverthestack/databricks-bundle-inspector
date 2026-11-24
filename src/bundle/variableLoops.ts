@@ -99,29 +99,41 @@ function loopsIn(nodes: string[], edges: Map<string, Set<string>>): string[][] {
   const stack: string[] = [];
   const onStack = new Set<string>();
   const parts: string[][] = [];
-  function visit(node: string): void {
+  function enter(node: string): { node: string; next: Iterator<string> } {
     order.set(node, index);
     low.set(node, index);
     index += 1;
     stack.push(node);
     onStack.add(node);
-    for (const next of edges.get(node) ?? []) {
-      if (!order.has(next)) {
-        visit(next);
-        low.set(node, Math.min(low.get(node)!, low.get(next)!));
-      } else if (onStack.has(next)) {
-        low.set(node, Math.min(low.get(node)!, order.get(next)!));
+    return { node, next: (edges.get(node) ?? new Set<string>()).values() };
+  }
+  // Keeps its own list of steps instead of calling itself, so a chain of thousands of
+  // variables can't run out of stack (#509).
+  function visit(start: string): void {
+    const walk = [enter(start)];
+    while (walk.length > 0) {
+      const step = walk[walk.length - 1]!;
+      const following = step.next.next();
+      if (!following.done) {
+        const next = following.value;
+        if (!order.has(next)) walk.push(enter(next));
+        else if (onStack.has(next)) low.set(step.node, Math.min(low.get(step.node)!, order.get(next)!));
+        continue;
       }
-    }
-    if (low.get(node) === order.get(node)) {
-      const part: string[] = [];
-      let member: string;
-      do {
-        member = stack.pop()!;
-        onStack.delete(member);
-        part.push(member);
-      } while (member !== node);
-      if (part.length > 1 || edges.get(node)?.has(node)) parts.push(part.reverse());
+      walk.pop();
+      const { node } = step;
+      const parent = walk[walk.length - 1];
+      if (parent) low.set(parent.node, Math.min(low.get(parent.node)!, low.get(node)!));
+      if (low.get(node) === order.get(node)) {
+        const part: string[] = [];
+        let member: string;
+        do {
+          member = stack.pop()!;
+          onStack.delete(member);
+          part.push(member);
+        } while (member !== node);
+        if (part.length > 1 || edges.get(node)?.has(node)) parts.push(part.reverse());
+      }
     }
   }
   for (const node of nodes) if (!order.has(node)) visit(node);
