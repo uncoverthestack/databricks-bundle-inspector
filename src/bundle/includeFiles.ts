@@ -102,7 +102,24 @@ export function findUnloadedResourceFiles(
   // The CLI lists the files with the operating system's separator, which is `\` on Windows,
   // and keeps the folder casing of the pattern. Windows and macOS file systems ignore case,
   // so `Resources/a.yml` and `resources/a.yml` are the same file there.
-  const loaded = new Set(loadedFiles.map((file) => posix.normalize(file.replace(/\\/g, "/")).toLowerCase()));
+  const loaded = loadedFiles.map((file) => posix.normalize(file.replace(/\\/g, "/")));
+  const loadedExact = new Set(loaded);
+  const loadedByLowerCase = new Map<string, string[]>();
+  for (const file of loaded) loadedByLowerCase.set(file.toLowerCase(), [...(loadedByLowerCase.get(file.toLowerCase()) ?? []), file]);
+  const isLoaded = (file: string): boolean => {
+    if (loadedExact.has(file)) return true;
+    const sameButCase = loadedByLowerCase.get(file.toLowerCase());
+    if (!sameButCase) return false;
+    // A case-sensitive file system (Linux) can hold both `job.yml` and `JOB.yml` (#504):
+    // only a name that leads to this very file counts. One that leads nowhere is the
+    // CLI's casing on a file system that ignores case.
+    return sameButCase.some((other) => {
+      const otherStat = statSync(join(bundleRoot, other), { bigint: true, throwIfNoEntry: false });
+      if (!otherStat) return true;
+      const own = statSync(join(bundleRoot, file), { bigint: true, throwIfNoEntry: false });
+      return !own || (own.dev === otherStat.dev && own.ino === otherStat.ino);
+    });
+  };
   const candidates: string[] = [];
   const pending = [""];
   let foldersSeen = 0;
@@ -135,7 +152,7 @@ export function findUnloadedResourceFiles(
 
   const found: UnloadedResourceFile[] = [];
   for (const file of candidates.sort()) {
-    if (loaded.has(file.toLowerCase()) || isMentioned(bundleText, file)) continue;
+    if (isLoaded(file) || isMentioned(bundleText, file)) continue;
     const absolute = join(bundleRoot, file);
     try {
       if (!existsSync(absolute) || statSync(absolute).size > MAX_FILE_BYTES) continue;

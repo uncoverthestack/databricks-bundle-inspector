@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "@jest/globals";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
@@ -175,6 +175,17 @@ describe("resource file that include does not load", () => {
       "Resources/B.yml": JOB_FILE,
     });
     expect(includeIssues(config(["resources/b.yml"]), root)).toEqual([]);
+  });
+
+  test("a name that differs only in case is another file where the file system tells them apart (#504)", () => {
+    const root = makeBundle({ "databricks.yml": "include:\n  - resources/JOB.yml\n", "resources/JOB.yml": JOB_FILE });
+    writeFileSync(path.join(root, "resources/job.yml"), JOB_FILE);
+    // Two files on Linux; one file, written twice, on a file system that ignores case.
+    const twoFiles = readdirSync(path.join(root, "resources")).length === 2;
+    const flagged = includeIssues(config(["resources/JOB.yml"]), root)
+      .filter((i) => i.kind === "resource_not_included")
+      .map((i) => path.relative(root, i.file ?? ""));
+    expect(flagged).toEqual(twoFiles ? [path.join("resources", "job.yml")] : []);
   });
 
   test("says nothing when the include list is not the CLI's expanded answer", () => {
