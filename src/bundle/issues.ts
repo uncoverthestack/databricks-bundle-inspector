@@ -824,6 +824,83 @@ function syncExclusionIssue(
   };
 }
 
+/** Most files read from one glob folder: past it, no finding rather than a slow check. */
+const MAX_GLOB_FOLDER_FILES = 2000;
+
+/**
+ * The rule that leaves out every file under a pipeline glob's folder (`folder/**`), when
+ * each one is left out. Hidden files count: deploy uploads them, and the pipeline reads
+ * them (a `.gitignore` in the folder failed the update as UNSUPPORTED_LIBRARY_FILE_TYPE,
+ * live, CLI 1.27.0). Undefined when any file is deployed, or when the folder holds more
+ * than {@link MAX_GLOB_FOLDER_FILES}.
+ */
+function everyFileExcluded(
+  folder: string,
+  exclusionOf: (file: string) => SyncExclusion | undefined,
+): SyncExclusion | undefined {
+  const files: string[] = [];
+  const walk = (dir: string): boolean => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return true;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!walk(full)) return false;
+      } else {
+        files.push(full);
+        if (files.length > MAX_GLOB_FOLDER_FILES) return false;
+      }
+    }
+    return true;
+  };
+  if (!walk(folder) || files.length === 0) return undefined;
+  const exclusions = files.map(exclusionOf);
+  if (exclusions.some((exclusion) => exclusion === undefined)) return undefined;
+  // One rule named only when it is the same for every file.
+  const [first] = exclusions;
+  const same = exclusions.every((exclusion) =>
+    exclusion!.rule === first!.rule &&
+    (exclusion!.rule !== "gitignore" || first!.rule !== "gitignore" || exclusion!.gitignoreFile === first!.gitignoreFile),
+  );
+  return same ? first : { rule: "always" };
+}
+
+/** The title and fix for a pipeline glob none of whose files is deployed (#526). */
+function globExclusionIssue(
+  written: string,
+  folder: string,
+  exclusion: SyncExclusion,
+  bundleRoot: string,
+): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  const missing = "so the pipeline may find no source files at run time";
+  // sync.include is read from the bundle root, not from the YAML file's folder.
+  const include = `${path.relative(bundleRoot, folder).split(path.sep).join("/") || "."}/**`;
+  if (exclusion.rule === "gitignore") {
+    const gitignore = path.relative(bundleRoot, exclusion.gitignoreFile).split(path.sep).join("/");
+    return {
+      kind: "excluded_from_sync",
+      title: `Add "${include}" to sync.include: ${gitignore} stops every file in "${written}" from being deployed, ${missing}.`,
+      fixHint: `Add the files to sync.include in databricks.yml, or remove the rule that matches them from ${gitignore}.`,
+    };
+  }
+  if (exclusion.rule === "sync_exclude") {
+    return {
+      kind: "excluded_from_sync",
+      title: `Change the sync.exclude pattern that matches the files in "${written}": none of them are deployed, ${missing}.`,
+      fixHint: "Remove the pattern from sync.exclude in databricks.yml, or change it so it no longer matches these files.",
+    };
+  }
+  return {
+    kind: "excluded_from_sync",
+    title: `No file in "${written}" is deployed, ${missing}.`,
+    fixHint: "Each file is left out by .gitignore, sync.exclude, a symbolic link or the .databricks folder. Add them to sync.include, or change the rules that leave them out.",
+  };
+}
+
 /**
  * The 0-based columns an editor highlights for an issue on its line: from its column to
  * `endColumn` when it has one (a `{{name}}` placeholder, #484), else to the end of the line.
@@ -1129,6 +1206,26 @@ export function buildInspectorIssues(
           id: `excluded-from-sync:${pipeline.id}:${ref.yamlPath}`,
           severity: "warning",
           ...syncExclusionIssue(ref.path, exclusion, bundleRoot),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
+      // A glob whose every file is left out of the upload: the folder isn't in the workspace,
+      // and the update fails with LIBRARY_FILE_NOT_FOUND (live, CLI 1.27.0, #526). One file
+      // deployed is enough: with some files ignored, the update completed.
+      // Only `folder/**`: deploy refuses a `folder/*` glob whatever its files ("Single
+      // asterisk glob pattern is not supported", live, CLI 1.27.0).
+      const globExclusion =
+        ref.checked && ref.exists && ref.kind === "glob" && ref.resolvedPath && ref.path.endsWith("/**")
+          ? everyFileExcluded(ref.resolvedPath, syncExclusionOf)
+          : undefined;
+      if (globExclusion) {
+        issues.push({
+          id: `excluded-from-sync:${pipeline.id}:${ref.yamlPath}`,
+          severity: "warning",
+          ...globExclusionIssue(ref.path, ref.resolvedPath!, globExclusion, bundleRoot),
           resourceId: pipeline.id,
           yamlPath: `${pipeline.id}.${ref.yamlPath}`,
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
