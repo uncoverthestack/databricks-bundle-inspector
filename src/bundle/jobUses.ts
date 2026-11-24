@@ -4,6 +4,8 @@
  * so it shows only what the bundle says.
  */
 
+import { runtimeSecretGroup, runtimeSecretLabel, taskRuntimeSecrets } from "./runtimeSecrets.js";
+
 export type UsesKind = "warehouse" | "cluster" | "secret_scope";
 
 /**
@@ -13,8 +15,9 @@ export type UsesKind = "warehouse" | "cluster" | "secret_scope";
  * - `fixed`: an ID or name written in, which the inspector can't look up.
  * - `default`: no compute set, so the task gets serverless or inherited compute.
  * - `workspace`: a secret scope the bundle doesn't define.
+ * - `runtime`: a secret scope the code reads without naming it, so it is set at run time (issue 535).
  */
-export type UsesSource = "bundle" | "variable" | "fixed" | "default" | "workspace";
+export type UsesSource = "bundle" | "variable" | "fixed" | "default" | "workspace" | "runtime";
 
 export interface UsesItem {
   id: string;
@@ -29,6 +32,10 @@ export interface UsesItem {
   taskNames: string[];
   /** A cluster defined in the job itself (`job_clusters`), so it belongs to that job only. */
   jobCluster?: true;
+  /** Secret scopes only: tasks whose code reads it by a parameter's default value (issue 535). */
+  byDefault?: Array<{ taskId: string; parameter: string }>;
+  /** Run-time scopes only: the reads it stands for. */
+  reads?: Array<{ taskId: string; file?: string; line: number }>;
 }
 
 interface GraphNode {
@@ -38,6 +45,10 @@ interface GraphNode {
   parentId?: string;
   resourceGroup?: string;
   data?: Record<string, unknown>;
+  taskData?: {
+    taskParameterReferences?: Array<{ name: string; value?: string | undefined }> | undefined;
+    jobParameterReferences?: Array<{ name: string; default?: string | undefined }> | undefined;
+  };
 }
 
 interface GraphEdge {
@@ -131,11 +142,51 @@ export function buildJobUses(
     }
   }
 
+  // Secrets the code reads without naming the scope (issue 535): a scope a parameter gives by
+  // default joins that scope's chip; one still unknown gets its own, shared only through a
+  // job parameter, as no one knows whether two unknown scopes are the same.
+  for (const task of tasks) {
+    for (const read of taskRuntimeSecrets(graph, task.id, resolve, nodeById)) {
+      if (read.scope) {
+        // The bundle's own scope with that name, matched as the code's scope names are.
+        const own = graph.nodes.find((node) => {
+          if (node.resourceGroup !== "secret_scopes" || !node.id.startsWith("resources.secret_scopes.")) return false;
+          const name = typeof node.data?.name === "string" ? node.data.name : node.id.slice("resources.secret_scopes.".length);
+          return name === read.scope;
+        });
+        const id = own?.id ?? `secret:${read.scope}`;
+        let item = items.get(id);
+        if (!item) {
+          item = { id, kind: "secret_scope", label: read.scope, source: own ? "bundle" : "workspace", taskIds: [], taskNames: [] };
+          items.set(id, item);
+        }
+        if (!item.taskIds.includes(task.id)) item.taskIds.push(task.id);
+        const byDefault = (item.byDefault ??= []);
+        if (!byDefault.some((entry) => entry.taskId === task.id)) byDefault.push({ taskId: task.id, parameter: read.parameter! });
+        continue;
+      }
+      const id = `runtime-secret:${runtimeSecretGroup(read)}`;
+      let item = items.get(id);
+      if (!item) {
+        item = { id, kind: "secret_scope", label: runtimeSecretLabel(read), source: "runtime", taskIds: [], taskNames: [], reads: [] };
+        items.set(id, item);
+      }
+      if (!item.taskIds.includes(task.id)) item.taskIds.push(task.id);
+      item.reads!.push({ taskId: task.id, ...(read.file ? { file: read.file } : {}), line: read.line });
+    }
+  }
+
   const taskName = new Map(tasks.map((task) => [task.id, task.displayName]));
   return [...items.values()]
     .map((item) => {
       const taskIds = [...item.taskIds].sort((a, b) => taskOrder.get(a)! - taskOrder.get(b)!);
       return { ...item, taskIds, taskNames: taskIds.map((id) => taskName.get(id) ?? id) };
     })
-    .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.label.localeCompare(b.label));
+    // Scopes set at run time come after the named ones.
+    .sort(
+      (a, b) =>
+        KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+        Number(a.source === "runtime") - Number(b.source === "runtime") ||
+        a.label.localeCompare(b.label),
+    );
 }

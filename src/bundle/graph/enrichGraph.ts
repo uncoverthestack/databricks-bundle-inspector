@@ -112,7 +112,16 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
           : undefined,
       ]);
-      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || sqlTextParameters?.length || qualifiedNames?.length) {
+      // Secrets whose scope isn't written in the code: kept, so the task never looks like it
+      // reads none, with the parameter the scope comes from when the code shows it (issue 535).
+      const runtimeSecrets = secrets
+        .filter((detection) => !detection.scope)
+        .map((detection) => ({
+          line: detection.line,
+          ...(detection.key ? { key: detection.key } : {}),
+          ...(detection.scopeParameter ? { parameter: detection.scopeParameter } : {}),
+        }));
+      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || sqlTextParameters?.length || qualifiedNames?.length || runtimeSecrets.length) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
           data: {
@@ -123,6 +132,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
             ...(sqlParameterMarkers?.length ? { sqlParameterMarkers } : {}),
             ...(sqlTextParameters?.length ? { sqlTextParameters } : {}),
             ...(qualifiedNames?.length ? { qualifiedNames } : {}),
+            ...(runtimeSecrets.length ? { runtimeSecrets } : {}),
           },
         });
       }
@@ -179,7 +189,13 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         pipelineSourceFiles(pipeline).map(async (filePath) => {
           const secrets = await detectSecretInNotebook(filePath).catch(() => []);
           for (const detection of secrets) {
-            if (!detection.scope) continue;
+            if (!detection.scope) {
+              // A pipeline has no notebook parameters, so its scope is only known at run time.
+              const current = nodeMap.get(pipeline.id)!;
+              const reads = (current.data.runtimeSecrets as Array<{ file: string; line: number }> | undefined) ?? [];
+              nodeMap.set(pipeline.id, { ...current, data: { ...current.data, runtimeSecrets: [...reads, { file: filePath, line: detection.line }] } });
+              continue;
+            }
             const nodeId = secretScopeNode(detection.scope);
             addEdge({
               id: `${pipeline.id}->secret->${nodeId}@${filePath}:${detection.line}`,

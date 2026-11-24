@@ -34,6 +34,12 @@ export interface SecretDetection {
    */
   key: string | null;
   /**
+   * When `scope` is `null` and the scope comes from a notebook parameter: that parameter's
+   * name. Set for `dbutils.widgets.get("x")` as the scope itself, or for a name assigned
+   * from one exactly once in the file (issue 535).
+   */
+  scopeParameter?: string;
+  /**
    * Optional human-readable note for contextual information surfaced to the
    * user — for example, a warning that the detected function is a preview
    * feature. Absent when there is nothing extra to communicate.
@@ -200,6 +206,10 @@ interface DbutilsCall {
   method: string;
   args: PythonArgument[];
   offset: number;
+  /** Offset just past the call's closing `)`. */
+  end: number;
+  /** Index of the token after the closing `)`. */
+  after: number;
   /** Whether the receiver can be traced to dbutils (see {@link isDbutilsReceiver}). */
   knownReceiver: boolean;
 }
@@ -251,7 +261,7 @@ function dbutilsCalls(
     if (!isOp(tokens[methodIndex + 1], "(")) continue;
     const call = readArguments(tokens, methodIndex + 1);
     if (!call) continue;
-    calls.push({ method: method.value, args: call.args, offset, knownReceiver });
+    calls.push({ method: method.value, args: call.args, offset, end: tokens[call.close]!.end, after: call.close + 1, knownReceiver });
   }
   return calls;
 }
@@ -279,12 +289,19 @@ function viewsFor(
 function scanPythonSecrets(view: string, document: string): SecretDetection[] {
   const tokens = tokenizePython(view);
   const names = dbutilsNames(tokens);
-  const detection = (call: { args: PythonArgument[]; offset: number }): SecretDetection => ({
-    line: getStartLine(document, call.offset),
-    raw: getLineText(document, call.offset),
-    scope: literalValue(argument(call.args, "scope", 0)),
-    key: literalValue(argument(call.args, "key", 1)),
-  });
+  const parameterOf = scopeParameterReader(tokens, names);
+  const detection = (call: { args: PythonArgument[]; offset: number }): SecretDetection => {
+    const scopeArgument = argument(call.args, "scope", 0);
+    const scope = literalValue(scopeArgument);
+    const parameter = scope === null ? parameterOf(scopeArgument) : undefined;
+    return {
+      line: getStartLine(document, call.offset),
+      raw: getLineText(document, call.offset),
+      scope,
+      key: literalValue(argument(call.args, "key", 1)),
+      ...(parameter ? { scopeParameter: parameter } : {}),
+    };
+  };
   // Only calls on something traceable to dbutils: `settings.secrets.get("db", "pw")`
   // on a plain object has the same shape. In Databricks' own examples every
   // `.secrets.get` is called on `dbutils` itself.
@@ -294,6 +311,63 @@ function scanPythonSecrets(view: string, document: string): SecretDetection[] {
   return [...secretCalls, ...sdkSecretCalls(tokens, names)]
     .sort((a, b) => a.offset - b.offset)
     .map(detection);
+}
+
+/**
+ * The notebook parameter a secret's scope argument comes from, when the file shows it plainly
+ * (issue 535): the argument is `dbutils.widgets.get("x")` itself, or a name assigned from such a
+ * call once in the file, and never assigned or bound any other way. Anything else, such as an
+ * f-string, a function's argument or a name set twice, has no parameter: its value is only known
+ * at run time.
+ */
+function scopeParameterReader(tokens: PythonToken[], names: DbutilsNames): (arg: PythonArgument | undefined) => string | undefined {
+  const reads = dbutilsCalls(tokens, "widgets", ["get", "getArgument"], names).filter((call) => call.knownReceiver);
+  const readAt = new Map(reads.map((call) => [call.offset, call]));
+  const widgetName = (call: DbutilsCall | undefined) => (call ? literalValue(argument(call.args, "name", 0)) ?? undefined : undefined);
+  // Each name's plain assignments, and names bound some other way (loops, `as`, augmented
+  // assignment, tuple targets, parameters), which make its value unknowable here.
+  const assigned = new Map<string, Array<string | undefined>>();
+  const boundOtherwise = new Set<string>();
+  tokens.forEach((token, i) => {
+    if (token.kind !== "name") return;
+    const previous = tokens[i - 1];
+    const next = tokens[i + 1];
+    if (previous?.kind === "name" && ["for", "as", "def", "global", "nonlocal", "lambda"].includes(previous.value)) boundOtherwise.add(token.value);
+    // `a, b = ...` and `x += ...`.
+    // A tuple target starts a statement, so the token before it ends the one before (or there is none).
+    const startsStatement = !previous || previous.kind !== "op" || ")]}".includes(previous.value);
+    if (isOp(next, ",") && startsStatement) boundOtherwise.add(token.value);
+    if (next?.kind === "op" && "+-*/%|&^@<>".includes(next.value) && isOp(tokens[i + 2], "=")) boundOtherwise.add(token.value);
+    // `name := ...`
+    if (isOp(next, ":") && isOp(tokens[i + 2], "=")) boundOtherwise.add(token.value);
+    // Every name in a `def f(...)` parameter list: a function's own `scope` is not the file's.
+    if (previous?.kind === "name" && previous.value === "def" && isOp(next, "(")) {
+      const params = readArguments(tokens, i + 1);
+      for (const param of params?.args ?? []) {
+        const name = param.keyword ?? param.tokens.find((t) => t.kind === "name")?.value;
+        if (name) boundOtherwise.add(name);
+      }
+    }
+    if (!isOp(next, "=") || isOp(tokens[i + 2], "=")) return;
+    if (previous && previous.kind === "op" && "(,.=".includes(previous.value)) return;
+    const value = tokens[i + 2];
+    const call = value ? readAt.get(value.start) : undefined;
+    // Only `name = dbutils.widgets.get("x")` with nothing after the call.
+    const whole = call && !(tokens[call.after]?.kind === "op" && ".[(+-*/%|&^@<>=".includes(tokens[call.after]!.value));
+    const list = assigned.get(token.value) ?? [];
+    list.push(whole ? widgetName(call) : undefined);
+    assigned.set(token.value, list);
+  });
+  return (arg) => {
+    const first = arg?.tokens[0];
+    const last = arg?.tokens[arg.tokens.length - 1];
+    if (!first || !last) return undefined;
+    const direct = readAt.get(first.start);
+    if (direct && direct.end === last.end) return widgetName(direct);
+    if (arg!.tokens.length !== 1 || first.kind !== "name" || boundOtherwise.has(first.value)) return undefined;
+    const values = assigned.get(first.value);
+    return values?.length === 1 ? values[0] : undefined;
+  };
 }
 
 /**

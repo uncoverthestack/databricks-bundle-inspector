@@ -1,0 +1,36 @@
+resources:
+  secret_scopes:
+    app:
+      name: app-dev-kv
+  jobs:
+    runtime_secrets:
+      name: runtime_secrets
+      parameters:
+        - name: shared_scope
+          default: ${var.scope}
+      tasks:
+        - task_key: a_built
+          notebook_task:
+            notebook_path: ../src/built.py
+        - task_key: b_built
+          notebook_task:
+            notebook_path: ../src/built.py
+        - task_key: c_shared
+          notebook_task:
+            notebook_path: ../src/shared.py
+        # The job parameter wins over a task parameter with the same name.
+        - task_key: d_shared
+          notebook_task:
+            notebook_path: ../src/shared.py
+            base_parameters:
+              shared_scope: ignored-kv
+        - task_key: e_literal
+          notebook_task:
+            notebook_path: ../src/task_scope.py
+            base_parameters:
+              task_scope: billing-kv
+        - task_key: f_variable
+          notebook_task:
+            notebook_path: ../src/task_scope.py
+            base_parameters:
+              task_scope: ${var.scope}

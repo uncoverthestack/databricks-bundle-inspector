@@ -320,7 +320,7 @@ Code reads a secret using a secret scope's resource key from the bundle instead 
 
 - **Severity:** warning.
 - **Example:** `dbutils.secrets.get(scope="app_secrets", ...)`, where `resources.secret_scopes.app_secrets` has `name: prod-app-secrets`.
-- **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings.
+- **Checked calls:** `dbutils.secrets.get`, `getBytes` and `list` in Python, the SDK's `secrets.get_secret`, `secret()` and `try_secret()` in SQL, and `{{secrets/<scope>/<key>}}` in cluster settings. Also a scope the code reads from a notebook parameter, by that parameter's value in the bundle: a job parameter's over the task's own.
 - **Fix:** use the scope's `name`.
 - **Limits:** a scope with that name that exists outside the bundle is fine.
 

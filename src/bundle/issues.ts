@@ -3,6 +3,8 @@ import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import type { ParsedBundleConfig, TargetConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
+import { bundleSecretScopes } from "./graph/bundleGraph.js";
+import { taskRuntimeSecrets } from "./runtimeSecrets.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
 import type { SqlTextParameter, TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
@@ -1814,6 +1816,28 @@ function secretScopeNameIssues(graph: BundleGraph): InspectorIssue[] {
         ...(typeof edge.data?.yamlPath === "string" ? { yamlPath: edge.data.yamlPath } : {}),
         fixHint: `"${used}" is the resource key of the bundle's secret scope named "${misuse.scopeName}". Unless a scope called "${used}" exists outside this bundle, use "${misuse.scopeName}".`,
         ...issueLocation(file, line, column),
+      });
+    }
+  }
+
+  // A scope the code reads from a parameter, by that parameter's value in the bundle (issue 535).
+  const scopes = bundleSecretScopes(graph.nodes);
+  for (const task of graph.nodes) {
+    if (task.nodeType !== "task") continue;
+    for (const read of taskRuntimeSecrets(graph, task.id, undefined, nodeById)) {
+      if (!read.scope || scopes.some((scope) => scope.name === read.scope)) continue;
+      const byKey = scopes.find((scope) => scope.resourceKey === read.scope);
+      if (!byKey) continue;
+      const id = `secret-scope-name:parameter:${task.id}:${read.file ?? ""}:${read.line}`;
+      issues.set(id, {
+        id,
+        severity: "warning",
+        kind: "secret_scope_name_mismatch",
+        title: `Secret scope "${read.scope}" may not exist. Did you mean "${byKey.name}"?`,
+        taskId: task.id,
+        taskName: task.displayName,
+        fixHint: `The ${read.parameter} parameter gives "${read.scope}", the resource key of the bundle's secret scope named "${byKey.name}". Unless a scope called "${read.scope}" exists outside this bundle, set the parameter to "${byKey.name}".`,
+        ...issueLocation(read.file, read.line, undefined),
       });
     }
   }

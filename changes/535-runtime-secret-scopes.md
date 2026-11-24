@@ -1,0 +1,3 @@
+Added
+
+- **Secrets whose scope is set at run time show up, and secret scopes get a key** ([#535](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/535)). Code such as `dbutils.secrets.get(scope=dbutils.widgets.get("env_scope"), ...)` used to make a task look like it read no secrets. It now shows in the job's Uses row, the task's details and the overview's details as **From job parameter env_scope**, **From parameter env_scope** or **Set at run time**. Two tasks share one only when both read the same job parameter; otherwise each task has its own. When the bundle gives the parameter a value, the task shows that scope marked **by default**, and the secret scope name check runs on it. Secret scopes show a grey key instead of a dot.
