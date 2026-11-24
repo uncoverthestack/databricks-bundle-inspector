@@ -67,7 +67,7 @@ describe("%run and dbutils.notebook.run targets", () => {
   });
 
   test("a notebook that isn't uploaded gets excluded_from_sync", () => {
-    expect(finding("run_gitignored")).toEqual([["excluded_from_sync", '"./ignored_nb" may not be deployed: it matches .gitignore.']]);
+    expect(finding("run_gitignored")).toEqual([["excluded_from_sync", 'Add "./ignored_nb" to sync.include: .gitignore stops it from being deployed, so it may be missing at run time.']]);
   });
 
   test("notebooks that run are not reported: with or without extension, ../, SQL and .ipynb", () => {

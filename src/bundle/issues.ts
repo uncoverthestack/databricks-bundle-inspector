@@ -785,6 +785,9 @@ function syncExclusionIssue(
   exclusion: SyncExclusion,
   bundleRoot: string,
 ): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  // Action first, then why, then what it means at run time (#514). One line: the second
+  // way to fix it goes in the fix hint. Not "this task": pipelines and %run get it too.
+  const missing = "so it may be missing at run time";
   if (exclusion.rule === "gitignore") {
     const gitignore = path
       .relative(bundleRoot, exclusion.gitignoreFile)
@@ -792,29 +795,31 @@ function syncExclusionIssue(
       .join("/");
     return {
       kind: "excluded_from_sync",
-      title: `"${filePath}" may not be deployed: it matches ${gitignore}.`,
-      fixHint: `bundle deploy skips gitignored files. Add the file to sync.include in databricks.yml, or remove it from ${gitignore}.`,
+      title: `Add "${filePath}" to sync.include: ${gitignore} stops it from being deployed, ${missing}.`,
+      fixHint: `Add the file to sync.include in databricks.yml, or remove the rule that matches it from ${gitignore}.`,
     };
   }
   if (exclusion.rule === "symlink") {
     const link = path.relative(bundleRoot, exclusion.link).split(path.sep).join("/");
-    const linked = exclusion.folder ? `it is in "${link}", a symbolic link` : "it is a symbolic link";
     return {
       kind: "excluded_from_sync",
-      title: `"${filePath}" may not be deployed: ${linked}.`,
+      title: exclusion.folder
+        ? `Replace the link "${link}" with the real folder: links aren't deployed, so "${filePath}" may be missing at run time.`
+        : `Replace the link "${filePath}" with the real file: links aren't deployed, ${missing}.`,
       fixHint: "bundle deploy skips symbolic links, files and folders alike. Point the path at the real file, or replace the link with a copy.",
     };
   }
   if (exclusion.rule === "sync_exclude") {
     return {
       kind: "excluded_from_sync",
-      title: `"${filePath}" may not be deployed: it matches sync.exclude.`,
-      fixHint: "Remove or narrow the sync.exclude pattern in databricks.yml that matches this file.",
+      title: `Change the sync.exclude pattern that matches "${filePath}": it stops the file from being deployed, ${missing}.`,
+      fixHint: "Remove the pattern from sync.exclude in databricks.yml, or change it so it no longer matches this file.",
     };
   }
+  const folder = filePath.split(/[\\/]/).includes(".git") ? ".git" : ".databricks";
   return {
     kind: "excluded_from_sync",
-    title: `"${filePath}" may not be deployed: .databricks and .git are never synced.`,
+    title: `Move "${filePath}" out of ${folder}: files there aren't deployed, ${missing}.`,
     fixHint: "Move the file out of .databricks or .git.",
   };
 }
