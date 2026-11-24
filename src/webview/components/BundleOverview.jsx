@@ -1,6 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import PipelineDetails from "./PipelineDetails";
+import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
+import { problemTone, problemWords as wordsForProblems } from "../lib/taskProblems";
 import {
   findMatches,
   foldedGroupIds,
@@ -51,13 +53,7 @@ function problemCount(item) {
 }
 
 function problemWords(item) {
-  const { errors, warnings } = item.problems;
-  return [
-    errors ? `${errors} error${errors === 1 ? "" : "s"}` : "",
-    warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
+  return wordsForProblems(item.problems);
 }
 
 /** One box: a resource, or something the bundle names from outside. */
@@ -119,16 +115,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
       </span>
       <span className={`max-w-[65%] shrink-0 truncate text-[13px] font-medium ${dimmed ? "text-muted" : "text-fg"}`}>{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
-      {problems > 0 && (
-        <span
-          title={problemWords(item)}
-          className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-fg-strong ${
-            item.problems.errors ? "bg-error/15" : "bg-warning/15"
-          }`}
-        >
-          {problems}
-        </span>
-      )}
+      {problems > 0 && <ProblemBadge count={problems} tone={problemTone(item.problems)} title={problemWords(item)} />}
     </button>
   );
   if (!canOpen) return row;

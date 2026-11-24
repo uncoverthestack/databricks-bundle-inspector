@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
 
 export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {
@@ -50,16 +51,8 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                     {item.subtitle}
                   </span>
                 </span>
-                {item.issueCount > 0 && (
-                  // The same colours as the task's box: red for an error, amber for warnings only.
-                  <span
-                    className={`shrink-0 rounded px-1.5 text-[10px] font-semibold text-fg-strong ${
-                      item.problemTone === "warning" ? "bg-warning/15" : item.problemTone === "error" ? "bg-error/15" : "bg-hover"
-                    }`}
-                  >
-                    {item.issueCount}
-                  </span>
-                )}
+                {/* The same badge as the box: icon and colour of its worst problem (issue 555). */}
+                {item.issueCount > 0 && <ProblemBadge count={item.issueCount} tone={item.problemTone} shape="rounded" />}
               </button>
             );
           })}

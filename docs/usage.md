@@ -33,7 +33,7 @@ The graph opens in a new editor panel, on the [bundle overview](#bundle-overview
 
 A job's graph opens fitted to the panel, so every task is in view, and fits again when the panel changes size, such as when the task details close. It never zooms in past full size, or out so far that task names can't be read: a job too big for that opens at its first task, and the minimap in the corner shows the rest. Once you drag or zoom, the view stays where you put it until you open another job.
 
-In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The number on a task counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count.
+In a job's graph, a task with an error has a red border, and one with only warnings an amber border. The badge on a task shows the icon of its worst problem, as in the Problems panel (a circled X for an error, a triangle for warnings), and counts all its problems, including a for-each task's inner task, so the tasks add up to the **Issues** count. Point at it for the counts in words, such as *1 error, 2 warnings*. Boxes on the bundle overview and search results show the same badge.
 
 The dropdown in the graph's header lists the bundle's **Jobs**, then the **Pipelines** that have a data flow page, then each **Lakebase** project's branches page.
 
