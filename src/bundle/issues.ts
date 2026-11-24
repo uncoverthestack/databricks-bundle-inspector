@@ -35,6 +35,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "missing_file",
   "notebook_missing_extension",
   "missing_pipeline_source",
+  "unsupported_pipeline_file",
   "missing_library",
   "not_a_notebook",
   "file_is_a_notebook",
@@ -829,16 +830,10 @@ function syncExclusionIssue(
 const MAX_GLOB_FOLDER_FILES = 2000;
 
 /**
- * The rule that leaves out every file under a pipeline glob's folder (`folder/**`), when
- * each one is left out. Hidden files count: deploy uploads them, and the pipeline reads
- * them (a `.gitignore` in the folder failed the update as UNSUPPORTED_LIBRARY_FILE_TYPE,
- * live, CLI 1.27.0). Undefined when any file is deployed, or when the folder holds more
- * than {@link MAX_GLOB_FOLDER_FILES}.
+ * Every file under a pipeline glob's folder, hidden files included, or undefined past
+ * {@link MAX_GLOB_FOLDER_FILES}, so a huge folder can't slow the check.
  */
-function everyFileExcluded(
-  folder: string,
-  exclusionOf: (file: string) => SyncExclusion | undefined,
-): SyncExclusion | undefined {
+function globFolderFiles(folder: string): string[] | undefined {
   const files: string[] = [];
   const walk = (dir: string): boolean => {
     let entries;
@@ -858,7 +853,43 @@ function everyFileExcluded(
     }
     return true;
   };
-  if (!walk(folder) || files.length === 0) return undefined;
+  return walk(folder) ? files : undefined;
+}
+
+/**
+ * The file types a pipeline glob takes or skips (live, CLI v1.27.0, #531, twice each next
+ * to a valid .sql file): `.py` and `.sql` are its sources; `.md`, `.txt`, `.csv`, `.json`
+ * and `.ipynb` were skipped. Every other type tested failed the update with
+ * "[UNSUPPORTED_LIBRARY_FILE_TYPE] ... does not have .py or .sql suffix": no extension
+ * (`.gitkeep`, `.DS_Store`, `.env`, `Makefile`), `.yml`, `.yaml`, `.toml`, `.cfg`, `.ini`,
+ * `.lock`, `.whl`, `.png`, `.html`, `.sh`, `.java`, `.r`, `.R` and `.scala`. So any type not
+ * listed here may fail, which the finding says with "may".
+ */
+const PIPELINE_GLOB_ACCEPTS = new Set([".py", ".sql", ".md", ".txt", ".csv", ".json", ".ipynb"]);
+
+export function failsPipelineGlob(file: string): boolean {
+  // `.gitkeep` has no extension to Node either: path.extname gives "".
+  return !PIPELINE_GLOB_ACCEPTS.has(path.extname(path.basename(file)).toLowerCase());
+}
+
+/** The deployed files under a glob's folder that fail the pipeline update (#531). */
+function unsupportedPipelineFiles(folder: string, exclusionOf: (file: string) => SyncExclusion | undefined): string[] {
+  return (globFolderFiles(folder) ?? []).filter((file) => !exclusionOf(file) && failsPipelineGlob(file));
+}
+
+/**
+ * The rule that leaves out every file under a pipeline glob's folder (`folder/**`), when
+ * each one is left out. Hidden files count: deploy uploads them, and the pipeline reads
+ * them (a `.gitignore` in the folder failed the update as UNSUPPORTED_LIBRARY_FILE_TYPE,
+ * live, CLI 1.27.0). Undefined when any file is deployed, or when the folder holds more
+ * than {@link MAX_GLOB_FOLDER_FILES}.
+ */
+function everyFileExcluded(
+  folder: string,
+  exclusionOf: (file: string) => SyncExclusion | undefined,
+): SyncExclusion | undefined {
+  const files = globFolderFiles(folder);
+  if (!files || files.length === 0) return undefined;
   const exclusions = files.map(exclusionOf);
   if (exclusions.some((exclusion) => exclusion === undefined)) return undefined;
   // One rule named only when it is the same for every file.
@@ -1324,6 +1355,28 @@ export function buildInspectorIssues(
           ...globExclusionIssue(ref.path, ref.resolvedPath!, globExclusion, bundleRoot),
           resourceId: pipeline.id,
           yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
+        continue;
+      }
+      // Deployed files the pipeline refuses, next to its sources (#531).
+      const refusedFiles =
+        ref.checked && ref.exists && ref.kind === "glob" && ref.resolvedPath && ref.path.endsWith("/**")
+          ? unsupportedPipelineFiles(ref.resolvedPath, syncExclusionOf)
+          : [];
+      if (refusedFiles.length > 0) {
+        const shown = refusedFiles.map((file) => path.relative(bundleRoot, file).split(path.sep).join("/")).sort();
+        const others = shown.length > 1 ? ` and ${shown.length - 1} other file${shown.length > 2 ? "s" : ""}` : "";
+        issues.push({
+          id: `unsupported-pipeline-file:${pipeline.id}:${ref.yamlPath}`,
+          severity: "error",
+          kind: "unsupported_pipeline_file",
+          title: `Add "${shown[0]}"${others} to sync.exclude: deployed under "${ref.path}", it may fail the pipeline, which only takes .py and .sql files.`,
+          detail: shown.join(", "),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          fixHint:
+            'The pipeline update fails with "UNSUPPORTED_LIBRARY_FILE_TYPE ... does not have .py or .sql suffix". Add the file to sync.exclude or .gitignore, or move it out of the folder.',
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
         });
         continue;
