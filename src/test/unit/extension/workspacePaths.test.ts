@@ -337,6 +337,29 @@ describe("localizeBundleRootPaths", () => {
     expect(notebookPathOf(result)).toBe("../src/other.py");
   });
 
+  // #518, CLI 1.27.0 with a login: library files come from the bundle root even when nothing
+  // failed, and a target's libraries are added to the job's own.
+  test("maps task libraries back, found by their task and file, not their position", () => {
+    const withLibraries = (libraries: unknown[]) => job([{ ...notebookTask("nb", "../src/nb.py"), libraries }]);
+    const sources: SourceDocument[] = [
+      { file: path.join(resourcesDir, "job.yml"), doc: withLibraries([{ whl: "../dist/a.whl" }, { jar: "dist/wrong.jar" }]) },
+      { file: path.join(bundleRoot, "databricks.yml"), doc: { targets: { dev: withLibraries([{ whl: "dist/b.whl" }]) } } },
+    ];
+    const reported = rootOutput(
+      withLibraries([{ whl: "dist/b.whl" }, { whl: "dist/a.whl" }, { jar: "resources/dist/wrong.jar" }, { whl: "other/c.whl" }, { pypi: { package: "x" } }]),
+    );
+    const result = localizeBundleRootPaths(reported, sources, dirOf, bundleRoot) as any;
+    expect(result.resources.jobs.j.tasks[0].libraries).toEqual([
+      { whl: "../dist/b.whl" },
+      { whl: "../dist/a.whl" },
+      // Written from the bundle root in resources/job.yml: kept pointing where the CLI reads it.
+      { jar: "./dist/wrong.jar" },
+      // Not written anywhere for this task: left as the CLI gave it.
+      { whl: "other/c.whl" },
+      { pypi: { package: "x" } },
+    ]);
+  });
+
   test("leaves the output alone when it is already as written, as in the structural preview", () => {
     const reported = rootOutput(job([notebookTask("nb", "../src/nb.py")]));
     expect(localizeBundleRootPaths(reported, writtenInResources(job([notebookTask("nb", "../src/nb.py")])), dirOf, bundleRoot)).toBe(reported);
