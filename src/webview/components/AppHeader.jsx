@@ -38,131 +38,137 @@ export default function AppHeader({
   const options = pickerGroups.flatMap((group) => group.options);
   return (
     <header
-      className="flex h-12 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-3 md:px-4"
+      className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-1 gap-y-1.5 border-b border-line-soft px-2 py-1.5 md:gap-x-3 md:px-4"
       style={{ backgroundColor: UI_COLOR.panel }}
     >
-      {onBack ? (
-        <button
-          type="button"
-          onClick={onBack}
-          data-back-to-overview
-          aria-label="Back to bundle overview"
-          title="Back to bundle overview"
-          className="-ml-1 flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold text-fg outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <ArrowLeft size={14} className="shrink-0 text-fg-soft" />
-          <span className="truncate">{bundleName ?? "Databricks Bundle Inspector"}</span>
-        </button>
-      ) : (
-        <span className="min-w-0 truncate text-sm font-semibold text-fg">
-          {bundleName ?? "Databricks Bundle Inspector"}
-        </span>
-      )}
-      {targetOptions.length > 0 ? (
-        <select
-          aria-label="Target"
-          title={targetTitle}
-          value={selectedTarget ?? ""}
-          onChange={(e) => onTargetChange?.(e.target.value || undefined)}
-          className={[
-            "min-w-12 max-w-44 shrink cursor-pointer truncate rounded-md border px-2 py-1 text-xs outline-none focus:border-accent",
-            targetMode === "probe"
-              ? "border-line bg-widget text-fg-soft"
-              : "border-accent/40 bg-accent/10 text-link-active",
-          ].join(" ")}
-        >
-          <option value="">structural preview</option>
-          {targetOptions.map((target) => (
-            <option key={target} value={target}>
-              target: {target}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <span
-          title={targetTitle}
-          className="inline-flex min-w-0 max-w-44 truncate rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-fg-soft"
-        >
-          {targetLabel ?? "structural preview"}
-        </span>
-      )}
-      {options.length > 0 && <span className="text-xs text-muted">·</span>}
-      {options.length > 1 || (options.length === 1 && overviewValue) ? (
-        <select
-          aria-label="Job or pipeline"
-          value={selectedValue ?? ""}
-          onChange={(e) => onPickerChange(e.target.value)}
-          className="min-w-0 max-w-56 shrink cursor-pointer truncate rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
-        >
-          {overviewValue && <option value={overviewValue}>Bundle overview</option>}
-          {pickerGroups.length > 1 || overviewValue
-            ? pickerGroups.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))
-            : options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-        </select>
-      ) : options.length === 1 ? (
-        <span className="truncate text-xs text-fg-soft">{options[0].key}</span>
-      ) : null}
-      {/* Search and the Issues toggle work on a job's tasks; a pipeline has none. */}
-      {showTaskTools ? (
-        <>
-          {/* Search finds a job's tasks, so the bundle overview has none. */}
-          {showSearch ? (
-            <SearchBox
-              value={searchValue}
-              items={searchItems}
-              onChange={onSearchChange}
-              onSelect={onSearchSelect}
-              placeholder={searchPlaceholder}
-            />
-          ) : (
-            <div className="flex-1" />
-          )}
-          <GraphModeToggle
-            value={graphMode}
-            onChange={onGraphModeChange}
-            issueCount={issueCount}
-            nothingToFilterNote={nothingToFilterNote}
-          />
-        </>
-      ) : (
-        <div className="flex-1" />
-      )}
-      {onCopyReviewSummary && onCopyReviewReport ? (
-        <CopyReviewMenu onCopySummary={onCopyReviewSummary} onCopyReport={onCopyReviewReport} />
-      ) : (
-        onCopyReviewSummary && (
+      {/* Where you are: the name and the job picker shorten as the panel narrows, the target
+          never does. Both start at w-16 and grow to their full text, so this group's minimum
+          width is small, and the tools wrap to a second row only below it (issue 553). */}
+      <div className="flex flex-1 basis-0 items-center gap-1 md:gap-3" data-header-place>
+        {onBack ? (
           <button
             type="button"
-            onClick={onCopyReviewSummary}
-            className={COPY_BUTTON}
-            title={copyReviewTitle ?? "Copy bundle review summary as Markdown"}
-            aria-label="Copy review"
+            onClick={onBack}
+            data-back-to-overview
+            aria-label="Back to bundle overview"
+            title="Back to bundle overview"
+            className="-ml-1 flex w-16 max-w-max grow items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold text-fg outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <ClipboardCopy size={13} />
-            <span className={COPY_LABEL}>Copy review</span>
+            <ArrowLeft size={14} className="shrink-0 text-fg-soft" />
+            <span className="truncate">{bundleName ?? "Databricks Bundle Inspector"}</span>
           </button>
-        )
-      )}
+        ) : (
+          <span className="w-16 max-w-max grow truncate text-sm font-semibold text-fg">
+            {bundleName ?? "Databricks Bundle Inspector"}
+          </span>
+        )}
+        {targetOptions.length > 0 ? (
+          <select
+            aria-label="Target"
+            title={targetTitle}
+            value={selectedTarget ?? ""}
+            onChange={(e) => onTargetChange?.(e.target.value || undefined)}
+            className={[
+              // The target is never cut: it says how far to trust what the panel shows (issue 553).
+              "shrink-0 cursor-pointer rounded-md border px-2 py-1 text-xs outline-none focus:border-accent",
+              targetMode === "probe"
+                ? "border-line bg-widget text-fg-soft"
+                : "border-accent/40 bg-accent/10 text-link-active",
+            ].join(" ")}
+          >
+            <option value="">structural preview</option>
+            {targetOptions.map((target) => (
+              <option key={target} value={target}>
+                target: {target}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            title={targetTitle}
+            className="inline-flex shrink-0 rounded-md border border-line bg-widget px-2 py-0.5 text-[11px] text-fg-soft"
+          >
+            {targetLabel ?? "structural preview"}
+          </span>
+        )}
+        {options.length > 0 && <span className="text-xs text-muted">·</span>}
+        {options.length > 1 || (options.length === 1 && overviewValue) ? (
+          <select
+            aria-label="Job or pipeline"
+            value={selectedValue ?? ""}
+            onChange={(e) => onPickerChange(e.target.value)}
+            className="w-16 max-w-56 grow cursor-pointer truncate rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+          >
+            {overviewValue && <option value={overviewValue}>Bundle overview</option>}
+            {pickerGroups.length > 1 || overviewValue
+              ? pickerGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              : options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+          </select>
+        ) : options.length === 1 ? (
+          <span className="w-16 max-w-max grow truncate text-xs text-fg-soft">{options[0].key}</span>
+        ) : null}
+      </div>
+      {/* The tools: they keep their size, and go to a second row when the place can't shrink further. */}
+      <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-3" data-header-tools>
+        {/* Search and the Issues toggle work on a job's tasks; a pipeline has none. */}
+        {showTaskTools ? (
+          <>
+            {/* Search finds a job's tasks, so the bundle overview has none. */}
+            {showSearch ? (
+              <SearchBox
+                value={searchValue}
+                items={searchItems}
+                onChange={onSearchChange}
+                onSelect={onSearchSelect}
+                placeholder={searchPlaceholder}
+              />
+            ) : null}
+            <GraphModeToggle
+              value={graphMode}
+              onChange={onGraphModeChange}
+              issueCount={issueCount}
+              nothingToFilterNote={nothingToFilterNote}
+            />
+          </>
+        ) : null}
+        {onCopyReviewSummary && onCopyReviewReport ? (
+          <CopyReviewMenu onCopySummary={onCopyReviewSummary} onCopyReport={onCopyReviewReport} />
+        ) : (
+          onCopyReviewSummary && (
+            <button
+              type="button"
+              onClick={onCopyReviewSummary}
+              className={COPY_BUTTON}
+              title={copyReviewTitle ?? "Copy bundle review summary as Markdown"}
+              aria-label="Copy review"
+            >
+              <ClipboardCopy size={13} />
+              <span className={COPY_LABEL}>Copy review</span>
+            </button>
+          )
+        )}
+      </div>
     </header>
   );
 }
 
 const COPY_BUTTON =
   "inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-widget px-2 py-1 text-xs text-fg-soft outline-none hover:border-line-strong hover:bg-hover hover:text-fg focus:border-accent";
-// A narrow panel keeps the button and drops its words; the tooltip still names it.
-const COPY_LABEL = "hidden md:inline";
+// Below lg the button drops its words, after the search box and before the name or the
+// target are cut (issues 551, 553). The tooltip still names it.
+const COPY_LABEL = "hidden lg:inline";
 
 /** Copy review, as a menu: the short summary, or the full report with the task graph. */
 function CopyReviewMenu({ onCopySummary, onCopyReport }) {

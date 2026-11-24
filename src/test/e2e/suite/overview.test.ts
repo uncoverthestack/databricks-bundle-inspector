@@ -327,6 +327,61 @@ export function overviewSuite() {
       }
     });
 
+    it("the header gives up space in order and never cuts the target (issues 551, 553)", async () => {
+      await showPanel();
+      const measure = () => evaluate(`(() => {
+        const header = document.querySelector("header");
+        const target = header.querySelector("select[aria-label='Target']");
+        // The target's text is cut when it is narrower than an unconstrained copy of itself.
+        const copy = target.cloneNode(true);
+        copy.style.cssText = "position:absolute;visibility:hidden;width:auto;min-width:0;max-width:none";
+        document.body.appendChild(copy);
+        const natural = copy.offsetWidth;
+        copy.remove();
+        const place = header.querySelector("[data-header-place]").getBoundingClientRect();
+        const tools = header.querySelector("[data-header-tools]").getBoundingClientRect();
+        const search = header.querySelector("[data-search-open]");
+        const words = header.querySelector("button[aria-label='Copy review'] span");
+        return {
+          width: innerWidth,
+          targetWhole: target.offsetWidth >= natural,
+          rows: tools.top >= place.bottom ? 2 : 1,
+          searchOpen: search.dataset.searchOpen === "true",
+          copyWords: getComputedStyle(words).display !== "none",
+          sideways: document.scrollingElement.scrollWidth > innerWidth || header.scrollWidth > header.clientWidth + 1,
+        };
+      })()`);
+      const measured: any[] = [];
+      let focused: any;
+      try {
+        for (const width of [1100, 790, 360]) {
+          await sizer.set({ width, height: STANDARD_PANEL.height });
+          await sleep(300);
+          measured.push(await measure());
+          await screenshot(`header-${width}`);
+        }
+        // A click on the search icon opens the box.
+        await sizer.set({ width: 790, height: STANDARD_PANEL.height });
+        await sleep(300);
+        await evaluate(`document.querySelector("header [data-search-open] input").focus()`);
+        await sleep(100);
+        focused = await measure();
+        await evaluate(`document.querySelector("header [data-search-open] input").blur()`);
+      } finally {
+        await sizer.set(STANDARD_PANEL);
+      }
+      assert.deepEqual(
+        measured.map(({ width, targetWhole, rows, searchOpen, copyWords, sideways }) => ({ width, targetWhole, rows, searchOpen, copyWords, sideways })),
+        [
+          { width: 1100, targetWhole: true, rows: 1, searchOpen: false, copyWords: true, sideways: false },
+          { width: 790, targetWhole: true, rows: 1, searchOpen: false, copyWords: false, sideways: false },
+          { width: 360, targetWhole: true, rows: 2, searchOpen: false, copyWords: false, sideways: false },
+        ],
+        JSON.stringify(measured),
+      );
+      assert.equal(focused.searchOpen, true, `the search opens when clicked: ${JSON.stringify(focused)}`);
+    });
+
     it("in a short panel, the details never push the overview out of view", async () => {
       await showPanel();
       await click(CLUSTER);
