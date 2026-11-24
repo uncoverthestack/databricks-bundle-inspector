@@ -15,4 +15,4 @@ A SQL file task (`sql_task.file`) fills the file's `:name` parameter markers fro
 | `each_day` inner task | `:day`, `:catalog` twice | `day` | Warning once: may not pass `catalog` |
 | `from_git` job | `:catalog` | nothing | No issue: the file comes from Git |
 
-`{{name}}` text is not checked. Databricks' own examples use it (`USE CATALOG \`{{catalog}}\``), but it works differently: a passed value replaces the text, quotes included (`'main'`), and an unpassed one stays in the SQL as written, so `SELECT '{{catalog}}'` runs fine with nothing passed. Whether the run fails depends on where the text is, so it is not a sure failure (tested on a serverless SQL warehouse, CLI v1.25.0, 2026-11-11).
+`{{name}}` text is checked separately, with its own fixture: see `../sql-text-parameters` (issue 484).

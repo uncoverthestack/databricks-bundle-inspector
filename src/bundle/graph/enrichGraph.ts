@@ -5,6 +5,7 @@ import {
   detectQualifiedNamesInFile,
   detectSecretInNotebook,
   detectSqlParameterMarkersInFile,
+  detectSqlTextParametersInFile,
   detectTaskValuesInFile,
   detectRunTargetsInFile,
   detectWidgetUsageInFile,
@@ -83,7 +84,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           : undefined;
 
       const referenceType = fileNode.data.referenceType;
-      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, qualifiedNames] = await Promise.all([
+      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, sqlTextParameters, qualifiedNames] = await Promise.all([
         detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
         detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
         // Notebook tasks pass their parameters as widgets, so compare them later.
@@ -102,12 +103,16 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
         referenceType === "sql"
           ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => undefined)
           : undefined,
+        // ...and its {{name}} text parameters, pasted in as quoted text (#484).
+        referenceType === "sql"
+          ? detectSqlTextParametersInFile(resolvedPath).catch(() => undefined)
+          : undefined,
         // Dotted names in task code, to find schemas a target renames (#235).
         referenceType === "notebook" || referenceType === "python_script" || referenceType === "sql"
           ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
           : undefined,
       ]);
-      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || qualifiedNames?.length) {
+      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || sqlTextParameters?.length || qualifiedNames?.length) {
         nodeMap.set(fileNode.id, {
           ...fileNode,
           data: {
@@ -116,6 +121,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
             ...(taskValueUsage ? { taskValueUsage } : {}),
             ...(runTargets?.length ? { runTargets } : {}),
             ...(sqlParameterMarkers?.length ? { sqlParameterMarkers } : {}),
+            ...(sqlTextParameters?.length ? { sqlTextParameters } : {}),
             ...(qualifiedNames?.length ? { qualifiedNames } : {}),
           },
         });

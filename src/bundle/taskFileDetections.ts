@@ -718,6 +718,64 @@ export async function detectSqlParameterMarkersInFile(filePath: string): Promise
     .map((read) => ({ name: read.name!, line: read.line }));
 }
 
+/** A `{{name}}` text parameter in a SQL file (#484), with where it sits. */
+export interface SqlTextParameter {
+  name: string;
+  line: number;
+  /** 1-based columns of `{{name}}` itself: `endColumn` is the column just after it. */
+  column: number;
+  endColumn: number;
+  /** Inside a string, where an unpassed one stays as text and the query still runs. */
+  inString: boolean;
+  /** The whole string is `'{{name}}'`: a passed value, already quoted, makes `''value''`. */
+  wholeString: boolean;
+}
+
+const TEXT_PARAMETER_NAME = /^[A-Za-z_]\w*$/;
+const TEXT_PARAMETER_IN_STRING = /\{\{([A-Za-z_]\w*)\}\}/g;
+
+/**
+ * The `{{name}}` text parameters a SQL file run by a SQL file task uses, in order, one per
+ * use. The task's `sql_task.parameters` and the job's parameters fill them by pasting in the
+ * value already quoted; an unpassed one stays as written (tested on a serverless SQL warehouse,
+ * CLI v1.27.0, issue 484). Only the exact form with a plain name: not `{{ name }}` with spaces
+ * or dotted names such as `{{job.start_time}}`, which were not tested, and never comments.
+ */
+export async function detectSqlTextParametersInFile(filePath: string): Promise<SqlTextParameter[]> {
+  const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), "sql");
+  const document = views.document;
+  const at = (offset: number) => ({ line: getStartLine(document, offset), column: offset - document.lastIndexOf("\n", offset - 1) });
+  const found: SqlTextParameter[] = [];
+  const tokens = tokenizeSql(views.sql);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token.kind === "string") {
+      const body = token.bodyStart ?? token.start;
+      // A plain quoted string (not r'...' or $$...$$) that holds only the parameter.
+      const wholeString = token.end - token.start === token.value.length + 2 && /^\{\{[A-Za-z_]\w*\}\}$/.test(token.value);
+      for (const match of token.value.matchAll(TEXT_PARAMETER_IN_STRING)) {
+        const { line, column } = at(body + match.index!);
+        found.push({ name: match[1]!, line, column, endColumn: column + match[0].length, inString: true, wholeString });
+      }
+      continue;
+    }
+    // In code: `{` `{` name `}` `}`, written with nothing between them.
+    const parts = tokens.slice(i, i + 5);
+    if (
+      parts.length === 5 &&
+      parts[0]!.value === "{" && parts[1]!.value === "{" && parts[3]!.value === "}" && parts[4]!.value === "}" &&
+      parts.slice(0, 4).every((part) => part.kind === "op" || part.kind === "word") &&
+      parts[2]!.kind === "word" && TEXT_PARAMETER_NAME.test(parts[2]!.value) &&
+      parts.every((part, k) => k === 0 || part.start === parts[k - 1]!.end)
+    ) {
+      const { line, column } = at(token.start);
+      found.push({ name: parts[2]!.value, line, column, endColumn: column + (parts[4]!.end - token.start), inString: false, wholeString: false });
+      i += 4;
+    }
+  }
+  return found;
+}
+
 /**
  * How a notebook reads its parameters: the widgets it reads by name, the widgets it
  * gives a default, and whether it pulls in other notebooks with `%run`, which can

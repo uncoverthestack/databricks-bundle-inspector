@@ -6,7 +6,7 @@ import { BUNDLE_FILE_NAMES } from "../bundle/includeFiles.js";
 import { validateBundle } from "../bundle/validateBundle.js";
 import type { BundleDiagnostic } from "../bundle/validateBundle.js";
 import { checkedGraphOf, cliDiagnosticsOf } from "../bundle/inspectBundle.js";
-import { buildInspectorIssues, type InspectorIssue } from "../bundle/issues.js";
+import { buildInspectorIssues, issueHighlight, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "./bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
@@ -66,8 +66,8 @@ function inspectorIssuesToVsCodeDiagnostics(
   for (const issue of issues) {
     if (!issue.file) continue;
     const line = Math.max(0, (issue.line ?? 1) - 1);
-    const column = Math.max(0, (issue.column ?? 1) - 1);
-    const range = new vscode.Range(line, column, line, Number.MAX_SAFE_INTEGER);
+    const { start: column, end } = issueHighlight(issue);
+    const range = new vscode.Range(line, column, line, end);
     const severity =
       issue.severity === "error"
         ? vscode.DiagnosticSeverity.Error
