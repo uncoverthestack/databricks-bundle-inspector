@@ -19,6 +19,9 @@ const KINDS = new Set([
   "outcome_without_condition",
   "invalid_outcome",
   "for_each_inputs_not_array",
+  "unknown_job_parameter",
+  "job_parameter_reference_with_dot",
+  "job_parameter_in_default",
 ]);
 
 /** `file: line text` for each finding, so a test reads the line it points at. */
@@ -49,7 +52,32 @@ describe("job-settings fixture", () => {
       expect(severity).toBe("error");
       return rest;
     });
-    expect(rows).toEqual([
+    const unknown = (task: string, line: string, name: string, suggestion?: string) => ({
+      at: at(line),
+      kind: "unknown_job_parameter",
+      task,
+      title: `Job parameter "${name}" may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+    });
+    const REFERENCES = ["unknown_job_parameter", "job_parameter_reference_with_dot", "job_parameter_in_default"];
+    expect(rows.filter((row) => REFERENCES.includes(row.kind))).toEqual([
+      unknown("check", 'condition_task: { op: EQUAL_TO, left: "{{job.parameters.env}}", right: "{{job.parameters.Env}}" }', "Env", "env"),
+      {
+        at: at('default: "{{job.parameters.env}}"'),
+        kind: "job_parameter_in_default",
+        task: undefined,
+        title: 'Remove {{job.parameters.env}} from the default of job parameter "copy": a default can\'t use another job parameter, so deploy may fail.',
+      },
+      {
+        at: at('dotted: "{{job.parameters.a.b}}"'),
+        kind: "job_parameter_reference_with_dot",
+        task: "nb",
+        title: "Use a job parameter name without a dot in {{job.parameters.a.b}}: Databricks can't read the dot, so deploy may fail.",
+      },
+      unknown("loop", 'inputs: "{{job.parameters.items}}"', "items"),
+      unknown("loop", 'notebook_task: { notebook_path: ../src/nb.py, base_parameters: { p: "{{job.parameters.missing}}" } }', "missing"),
+      unknown("nb", 'typo: "pre-{{job.parameters.evn}}-post"', "evn", "env"),
+    ]);
+    expect(rows.filter((row) => !REFERENCES.includes(row.kind))).toEqual([
       {
         at: at("- name: bad name"),
         kind: "invalid_job_parameter_name",

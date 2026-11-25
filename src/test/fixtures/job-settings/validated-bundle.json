@@ -234,6 +234,71 @@
           }
         ]
       },
+      "parameter_references": {
+        "name": "parameter_references",
+        "parameters": [
+          {
+            "default": "dev",
+            "name": "env"
+          },
+          {
+            "default": "x",
+            "name": "a.b"
+          },
+          {
+            "default": "{{job.parameters.env}}",
+            "name": "copy"
+          }
+        ],
+        "tasks": [
+          {
+            "condition_task": {
+              "left": "{{job.parameters.env}}",
+              "op": "EQUAL_TO",
+              "right": "{{job.parameters.Env}}"
+            },
+            "task_key": "check"
+          },
+          {
+            "description": "{{job.parameters.not_checked}}",
+            "notebook_task": {
+              "base_parameters": {
+                "bracket": "{{job.parameters.[env]}}",
+                "dotted": "{{job.parameters.a.b}}",
+                "other": "{{job.id}}",
+                "spaces": "{{ job.parameters.env }}",
+                "typo": "pre-{{job.parameters.evn}}-post"
+              },
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "nb"
+          },
+          {
+            "run_job_task": {
+              "job_id": "${resources.jobs.one_trigger.id}",
+              "job_parameters": {
+                "x": "{{job.parameters.not_checked}}"
+              }
+            },
+            "task_key": "run_other"
+          },
+          {
+            "for_each_task": {
+              "inputs": "{{job.parameters.items}}",
+              "task": {
+                "notebook_task": {
+                  "base_parameters": {
+                    "p": "{{job.parameters.missing}}"
+                  },
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          }
+        ]
+      },
       "task_keys": {
         "name": "task_keys",
         "tasks": [
