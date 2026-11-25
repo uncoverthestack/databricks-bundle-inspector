@@ -146,9 +146,9 @@ Checked by deploying one bundle per case (Databricks CLI v1.24.0). These fail: t
 
 The inspector could not finish one or more checks on a local source file. This reports a gap in the inspection, not a mistake in the code.
 
-- **Severity:** warning.
+- **Severity:** warning for a failed file check; error when a pipeline source folder cannot be listed, which blocks validation and deploy.
 - **Example:** a notebook exists but its contents cannot be read because of file permissions. The warning names the checks that failed and belongs to its task. Pipeline source read failures are reported on the pipeline too.
-- **Fix:** make the file readable and check the bundle again. Findings from other checks do not cover the failed checks.
+- **Fix:** make the file or folder readable and check the bundle again. An unreadable pipeline folder marks the data flow incomplete and suppresses missing-table suggestions, because its tables are unknown. The error points at the pipeline YAML and names the folder. Findings from other checks do not cover the failed checks.
 - **Limits:** the warning records the file and check names. It does not expose the exception's text, source contents or variable values.
 
 ## `include`

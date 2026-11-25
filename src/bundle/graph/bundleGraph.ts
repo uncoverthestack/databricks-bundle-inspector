@@ -336,7 +336,7 @@ export type BundleNodeType =
 
 export interface BundleGraphNode {
   /** File checks that failed; a failed scan never means the source was clean. */
-  scanFailures?: Array<{ file: string; checks: string[] }>;
+  scanFailures?: Array<{ file: string; checks: string[]; directory?: true }>;
   id: string;
   kind: string;
   nodeType: BundleNodeType;
@@ -394,6 +394,8 @@ export interface BundleGraph {
   notebookRule?: NotebookHeaderRule;
   /** Where deploy may build library files before checking them (#482, #525). */
   buildOutputs?: BuildOutputs;
+  /** Upload rules for local source scans. Absent when external sync roots are not modelled. */
+  sourceUpload?: { root: string; sync?: Sync };
   /**
    * Local files the environment checks read: `project_environment` files and local
    * `dependencies`, as absolute paths that may hold Go glob characters. Watched, so
@@ -1503,6 +1505,8 @@ async function buildBundleGraph(
     notebookRule,
     environmentPaths,
     ...(outputs ? { buildOutputs: outputs } : {}),
+    ...(bundleRoot && syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
+      ? { sourceUpload: { root: bundleRoot, ...(parsedBundle.sync ? { sync: parsedBundle.sync } : {}) } } : {}),
     variableSources: findVariableSources(
       loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
         const text = sourceIndex.sourceTexts.get(file);
