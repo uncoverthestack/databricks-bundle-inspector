@@ -61,6 +61,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "outcome_without_condition",
   "invalid_outcome",
   "for_each_inputs_not_array",
+  "for_each_inputs_too_long",
   "pipeline_selection_not_found",
   "runtime_end_of_support",
   "widget_not_set",

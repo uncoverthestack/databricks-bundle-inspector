@@ -1459,9 +1459,14 @@ async function buildBundleGraph(
     typeof parsedBundle.bundle?.target === "string" && parsedBundle.bundle.target !== BUNDLE_PROBE_TARGET
       ? parsedBundle.bundle.target
       : undefined;
+  // A BUNDLE_VAR_ environment variable wins over a variable's default and target value (docs,
+  // precedence order), so a value that uses one is not judged by the value in the files.
+  const setOutsideFiles = (value: string) =>
+    [...value.matchAll(/\$\{var\.([A-Za-z0-9_-]+)/g)].some((match) => process.env[`BUNDLE_VAR_${match[1]}`] !== undefined);
   const jobStructureOptions = {
     ...(activeTarget ? { activeTarget } : {}),
-    resolve: (value: string, target: string | undefined) => resolveExpressionForTarget(value, parsedBundle, target).value,
+    resolve: (value: string, target: string | undefined) =>
+      setOutsideFiles(value) ? undefined : resolveExpressionForTarget(value, parsedBundle, target).value,
   };
   // An artifact's relative paths are read from the folder of the YAML file defining it.
   const artifactDir = (name: string) => {

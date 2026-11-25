@@ -23,7 +23,8 @@ export interface JobStructureFinding {
     | "invalid_task_key"
     | "outcome_without_condition"
     | "invalid_outcome"
-    | "for_each_inputs_not_array";
+    | "for_each_inputs_not_array"
+    | "for_each_inputs_too_long";
   /** The job's resource key, e.g. `nightly` for `resources.jobs.nightly`. */
   jobKey: string;
   /** The task the finding belongs to; none for a job parameter. */
@@ -198,7 +199,34 @@ export function dependencyLocation(
   upstream: string,
   options: JobStructureOptions,
   field: "task_key" | "outcome" = "task_key",
+  /**
+   * Which entry naming `upstream` to point at, counted from 0 in the order the CLI joins them:
+   * the job's own list, then the picked target's. Without it, the first entry, target's first.
+   */
+  occurrence?: number,
 ): YamlLocation | undefined {
+  if (occurrence !== undefined) {
+    const entries: YamlLocation[] = [];
+    for (const fromTarget of [false, true]) {
+      for (const file of files) {
+        for (const tasks of jobLists(file.doc, "tasks")) {
+          if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
+          if (fromTarget && tasks.target !== options.activeTarget) continue;
+          const target = tasks.target ?? options.activeTarget;
+          for (const [index, task] of tasks.items.entries()) {
+            if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
+            for (const [position, dependency] of list(record(task).depends_on).entries()) {
+              if (keyOf(record(dependency).task_key, target, options) !== upstream) continue;
+              const base = [...tasks.path, index, "depends_on", position];
+              const found = locate.get(file)!([...base, field]) ?? locate.get(file)!([...base, "task_key"]);
+              if (found) entries.push(found);
+            }
+          }
+        }
+      }
+    }
+    if (entries[occurrence]) return entries[occurrence];
+  }
   let taskLocation: YamlLocation | undefined;
   // The picked target's list first: a dependency it writes again is the one the CLI keeps.
   for (const fromTarget of [true, false]) {

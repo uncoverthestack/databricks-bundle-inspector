@@ -81,6 +81,7 @@ describe("problem names and Issues groups (#392)", () => {
       "outcome_without_condition",
       "invalid_outcome",
       "for_each_inputs_not_array",
+      "for_each_inputs_too_long",
       "run_target_not_found",
       "variable_reference_loop",
       "internal_resource_set",

@@ -17,4 +17,6 @@ Fixture for the job setting checks from #237. `bundle validate` accepts every ca
 | `for_each_inputs`: `not_json`, `an_object`, `nested`, `has_null`, `mixed` | `not json`, `{"a": 1}`, `[[1, 2]]`, `[null, 1]`, `["a", {"k": "v"}]` | fails: `The JSON string in the inputs field should be an array of primitives or objects.` | `for_each_inputs_not_array` |
 | `for_each_inputs`: `plain_values`, `objects`, `empty`, `from_parameter` | `["a", 1, 2.5, true]`, `[{"a": 1}, {"b": [1, 2]}]`, `[]`, `{{job.parameters.items}}` | deploys | nothing |
 
+Checked the same way, in unit tests rather than this fixture: an empty `task_key` (fails: `Missing required field: settings.tasks.task_key.`), a 101-character key (fails: `The provided task key (of 101 characters) exceeds the maximum allowed length of 100 characters.`; 100 deploys), inputs of 5,001 characters (fails: `Invalid inputs: cannot exceed 5000 characters`; 5,000 deploys), and two tasks named `loop` (the CLI merges them; deploy fails when the later one's inputs are `not json`, and deploys when the later one's are `[1]`).
+
 `validated-bundle.json` is the CLI's structural preview output, captured with no credentials (`DATABRICKS_CONFIG_FILE=/dev/null`): the findings need no login. The baseline is the same on CLI v0.299.0 to v1.28.0.
