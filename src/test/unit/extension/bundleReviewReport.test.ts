@@ -139,6 +139,34 @@ describe("whole-bundle review (#410)", () => {
     expect(markdown).toContain("jobs.daily (dev override), variable derived");
   });
 
+  test("a short outside value is omitted where it stands alone, not inside other words or line numbers", async () => {
+    const outside = (value: string, jobName: string) => {
+      const parsed = fixture();
+      parsed.variables = { outside: { default: "old", value } };
+      parsed.resources!.jobs = { daily: { name: jobName, tasks: [{ task_key: "load", pipeline_task: { pipeline_id: "x" } }] } } as never;
+      return report(parsed, [{ ...problem(12), detail: `Full explanation ${value}` }], { ...context, structuralPreview: false, targetName: "dev" });
+    };
+    const one = await outside("1", "Daily orders 1");
+    expect(one).toContain("resources/daily.yml:12");
+    expect(one).toContain("Daily orders \\[omitted\\]");
+    expect(one).toContain("| outside | omitted | outside repository; value omitted |");
+    const letter = await outside("r", "Daily orders");
+    expect(letter).toContain("Daily orders");
+    expect(letter).toContain("resources/daily.yml:12");
+    // Joined to other text by _ or -, a short value is still its own word.
+    const word = await outside("dev", "dev_sales dev-x devices");
+    expect(word).toContain("\\[omitted\\]\\_sales \\[omitted\\]-x devices");
+  });
+
+  test("a longer outside value is omitted wherever it appears, even inside a word", async () => {
+    const parsed = fixture();
+    parsed.variables = { outside: { default: "old", value: "Tok9x" } };
+    parsed.resources!.jobs = { daily: { name: "a-Tok9x-b xTok9xy", tasks: [] } };
+    const markdown = await report(parsed, [], { ...context, structuralPreview: false, targetName: "dev" });
+    expect(markdown).not.toContain("Tok9x");
+    expect(markdown).toContain("a-\\[omitted\\]-b x\\[omitted\\]y");
+  });
+
   test("a one-character outside value is omitted without rewriting Markdown or diagram identifiers", async () => {
     const parsed = fixture();
     parsed.variables = { outside: { default: "old", value: "r" } };
