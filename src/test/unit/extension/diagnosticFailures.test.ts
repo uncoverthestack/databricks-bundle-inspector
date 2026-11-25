@@ -173,3 +173,15 @@ test("distinct tasks keep their old findings when they share one YAML location",
   await updateBundleDiagnostics(result(), root, collection, new Map());
   expect(messages().filter((message) => message === "Out of date: shared finding")).toHaveLength(2);
 });
+
+test("current raw CLI warnings replace their formatted copies from the last complete check", async () => {
+  const checked = result();
+  checked.issues = [{ code: "BUNDLE_DIAGNOSTICS", message: "warnings", diagnostics: [{ severity: "warning", message: "unknown field: typo", path: "databricks.yml", line: 3, column: 1 }] }];
+  jest.mocked(issues.buildInspectorIssues).mockReturnValueOnce([
+    { ...warning("Unknown or deprecated field"), kind: "unknown_or_deprecated_field", detail: "typo", line: 3, column: 1 },
+  ]);
+  await updateBundleDiagnostics(checked, root, collection, new Map());
+  jest.mocked(issues.buildInspectorIssues).mockImplementation(() => { throw new Error("checker failed"); });
+  await updateBundleDiagnostics(checked, root, collection, new Map());
+  expect(messages().filter((message) => message.includes("typo"))).toEqual(["unknown field: typo"]);
+});

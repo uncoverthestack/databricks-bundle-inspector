@@ -387,10 +387,18 @@ export async function updateBundleDiagnostics(
   if (checkFailed) {
     for (const [file, stored] of diagnosticsByBundle.get(bundleRoot) ?? []) {
       const current = fresh.get(file) ?? [];
-      const keyOf = (diagnostic: vscode.Diagnostic) => JSON.stringify([
-        diagnostic.range.start.line, diagnostic.range.start.character, diagnostic.severity,
-        codeValue(diagnostic.code), diagnostic.message.replace(/^Out of date: /, ""),
-      ]);
+      const keyOf = (diagnostic: vscode.Diagnostic) => {
+        const code = codeValue(diagnostic.code);
+        const message = diagnostic.message.replace(/^Out of date: /, "");
+        // Complete findings label CLI fields; an incomplete check still has the raw
+        // CLI wording. Both describe the same current warning at the same location.
+        const field = code === "cli_diagnostic" || code === "unknown_or_deprecated_field"
+          ? /^(?:unknown or deprecated field|unknown field|deprecated field):\s*(.+)$/i.exec(message)?.[1] : undefined;
+        return JSON.stringify([
+          diagnostic.range.start.line, diagnostic.range.start.character, diagnostic.severity,
+          field ? "unknown_or_deprecated_field" : code, field ?? message,
+        ]);
+      };
       const currentCounts = new Map<string, number>();
       for (const diagnostic of current) {
         const key = keyOf(diagnostic);
