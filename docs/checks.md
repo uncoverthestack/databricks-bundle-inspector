@@ -15,7 +15,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `pipeline_selection_not_found`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
 
 ## Files and paths
 
@@ -402,6 +402,16 @@ Variable values refer to each other in a loop, or a variable refers to itself, s
 - **Example:** `catalog: ${var.env_catalog}` and `env_catalog: ${var.catalog}`. `bundle validate` and deploy fail with `cycle detected in field resolution: variables.catalog.default -> var.env_catalog -> var.catalog -> var.env_catalog` (CLI v1.24.0). The finding names every variable in the loop, appears at each one's value, and says which targets fail: a target's override can make a loop, or break one.
 - **Fix:** give one of the variables in the loop a value that doesn't refer back.
 - **Limits:** reported in the structural preview only; with a target picked, the CLI's own error shows. A `BUNDLE_VAR_<name>` environment variable, `--var` or `variable-overrides.json` can set one of the variables and break the loop, which the inspector doesn't see.
+
+### `resource_key_has_dot`
+
+A resource key has a dot in it. `bundle validate` accepts it, with or without a target, and `bundle deploy` stops before it creates anything: not the resource, nor any other in the bundle.
+
+- **Severity:** error.
+- **Example:** `resources: jobs: nightly.load:`.
+- **Fix:** use letters, digits, `_` or `-` in the key, such as `nightly_load`, and update any `${resources.jobs.nightly.load...}` references.
+- **Checked:** by deploying, with a control key that deploys. Databricks CLI v0.299.2 and v1.17.0 with the Terraform engine stop with "Invalid resource name". The direct engine crashes on v0.299.2, v1.17.0 and v1.28.0, for a job, a pipeline and a schema key.
+- **Limits:** keys written through a YAML merge (`<<`) are found, but the finding goes on `databricks.yml`.
 
 ### `internal_resource_set`
 

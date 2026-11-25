@@ -77,6 +77,7 @@ describe("problem names and Issues groups (#392)", () => {
       "project_environment_version_missing",
       "run_target_not_found",
       "variable_reference_loop",
+      "resource_key_has_dot",
       "internal_resource_set",
       "resource_not_defined",
       "variable_in_auth_field",

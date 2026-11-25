@@ -114,7 +114,7 @@ const has = (value: Record<string, unknown>, key: string) => Object.prototype.ha
  * value, so a missing or empty value still has a line. Keys reached through `<<` merges or
  * aliases aren't followed; those findings fall back to no line.
  */
-function keyLocator(files: SourceFile[]): (path: string[]) => YamlLocation | undefined {
+export function keyLocator(files: SourceFile[]): (path: string[]) => YamlLocation | undefined {
   const parsed = new Map<SourceFile, { doc: ReturnType<typeof parseDocument>; lines: LineCounter }>();
   return (path) => {
     for (const file of files) {
