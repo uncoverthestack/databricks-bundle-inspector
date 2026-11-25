@@ -374,12 +374,12 @@ export function findTargetCheckProblems(
   // Secrets (validate: ValidateSecretValueIsVariable). The CLI's output hides each value as
   // "[redacted]", so the value is read from the YAML as written: in the bundle's own
   // resources and in each target's. A CLI before v1.12.0 has no secrets and drops them.
-  const secrets = record(resources.secrets);
-  if (Object.keys(secrets).length > 0) {
+  const secretKeys = new Set(places(bundle).flatMap((place) => Object.keys(record(record(place.config.resources).secrets))));
+  if (secretKeys.size > 0 && atLeast("v1.12.0")) {
     const variables = record(bundle.variables);
     const targetSets = (variable: string) =>
       Object.values(record(bundle.targets)).some((target) => has(record(record(target).variables), variable));
-    for (const key of Object.keys(secrets)) {
+    for (const key of secretKeys) {
       const written: Array<{ path: string[]; value: unknown }> = [];
       for (const file of files) {
         for (const prefix of [[], ...Object.keys(record(record(file.doc).targets)).map((name) => ["targets", name])]) {
@@ -390,16 +390,18 @@ export function findTargetCheckProblems(
       }
       const secretId = `resources.secrets.${key}`;
       if (written.length === 0) {
+        const place = places(bundle).find((place) => has(record(record(place.config.resources).secrets), key))!;
+        const secretPath = [...place.prefix, "resources", "secrets", key];
         add(
           {
             kind: "secret_value_not_variable",
             severity: "error",
             title: `Secret "${key}" has no value. Validate and deploy may fail.`,
             fixHint: "Set value: to a variable with no default, for example value: ${var.my_secret}, and pass it at deploy with --var or BUNDLE_VAR_my_secret.",
-            yamlPath: secretId,
+            yamlPath: secretPath.join("."),
             resourceId: secretId,
           },
-          ["resources", "secrets", key],
+          secretPath,
         );
         continue;
       }
@@ -422,15 +424,19 @@ export function findTargetCheckProblems(
           continue;
         }
         const reference = references(value)[0]!;
-        const [root, variable] = reference.split(".");
-        if (root !== "var" || !variable) continue;
+        const [root, variable, field] = reference.split(".");
+        // The CLI also resolves its full configuration path (#606). A reference to
+        // variables.pw.default (or .value) must not hide the same plaintext default.
+        if (!variable || !(root === "var" || (root === "variables" && (field === "default" || field === "value")))) continue;
         const definition = record(variables[variable]);
         if (!has(definition, "default") && !targetSets(variable)) continue;
         add(
           {
             kind: "secret_variable_has_default",
             severity: "error",
-            title: `Secret "${key}" uses variable "${variable}", which has a value in the bundle. Validate and deploy may fail.`,
+            title: root === "variables"
+              ? `Secret "${key}" uses variable "${variable}", which has a value written in the bundle as plain text.`
+              : `Secret "${key}" uses variable "${variable}", which has a value in the bundle. Validate and deploy may fail.`,
             fixHint: `A value in the bundle is stored in plain text. Remove the default (and any target's value) of "${variable}", and pass it at deploy with --var or BUNDLE_VAR_${variable}.`,
             yamlPath: path.join("."),
             resourceId: secretId,
