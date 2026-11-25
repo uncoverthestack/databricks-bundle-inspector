@@ -4,7 +4,7 @@
  * Shared by the panel and, later, the CLI (issue 392). Nothing here guesses: a name that may
  * or may not be one of the pipeline's own datasets says "may be".
  */
-import type { PipelineDatasetKind, PipelineSqlResult } from "./pipelineSql.js";
+import type { PipelineDatasetKind, PipelineSqlResult, SqlNamespace } from "./pipelineSql.js";
 
 export type DataFlowNodeKind = PipelineDatasetKind | "flow_target" | "outside" | "files";
 
@@ -51,6 +51,8 @@ export interface PipelineDataFlow {
   /** Source files the data flow does not read yet (Python, notebooks), with why. */
   notRead: { file: string; reason: string }[];
   sqlFiles: number;
+  /** Named flows, including ones with no source read and therefore no edge (#607). */
+  flows?: Array<{ name: string; namespace?: SqlNamespace }>;
   /**
    * Set when some source files were left out: past the scan's file limit, or unreadable.
    * The tables the flow lists are then not all of the pipeline's (#587).
@@ -115,6 +117,7 @@ export function buildPipelineDataFlow(
 ): PipelineDataFlow {
   const nodes = new Map<string, DataFlowNode>();
   const edges: DataFlowEdge[] = [];
+  const flows: NonNullable<PipelineDataFlow["flows"]> = [];
   const edgeKeys = new Set<string>();
   const unread: DataFlowUnread[] = [];
   const known = { ...(defaults.catalog ? { catalog: defaults.catalog } : {}), ...(defaults.schema ? { schema: defaults.schema } : {}) };
@@ -156,6 +159,7 @@ export function buildPipelineDataFlow(
   }
   for (const { file, result } of files) {
     for (const target of result.flowTargets) {
+      if (target.flow) flows.push({ name: target.flow, ...(target.namespace ? { namespace: target.namespace } : {}) });
       const resolved = resolveName(target.name, target.namespace, known);
       if (byKey.has(resolved.key)) continue;
       const line = result.reads.find((read) => key(read.target) === key(target.name))?.line ?? 0;
@@ -196,7 +200,6 @@ export function buildPipelineDataFlow(
           }
         }
       }
-      if (source.id === target.id) continue;
       const edgeKey = `${source.id}->${target.id}:${read.flow ?? ""}`;
       if (edgeKeys.has(edgeKey)) continue;
       edgeKeys.add(edgeKey);
@@ -217,7 +220,7 @@ export function buildPipelineDataFlow(
     }
   }
 
-  return { nodes: [...nodes.values()], edges, unread, notRead, sqlFiles: files.length };
+  return { nodes: [...nodes.values()], edges, unread, notRead, sqlFiles: files.length, ...(flows.length ? { flows } : {}) };
 }
 
 /**
