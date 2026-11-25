@@ -1,0 +1,3 @@
+Fixed
+
+- **`getArgument` reads are checked as Databricks runs them** ([#629](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/629)). A plain `getArgument("region")`, in a Python notebook or a `%python` cell, was not seen as a read: the parameter got a false "may not be used" note, and a missing one got no warning although the run fails with "No input widget named region is defined". It is now read like `dbutils.widgets.getArgument`. And `getArgument("region", "dflt")`, in either spelling, is no longer warned about when `region` isn't passed: it returns its default. Checked with job runs on Databricks CLI v1.28.0.

@@ -530,15 +530,50 @@ export interface WidgetDetection {
    * flag that the method is deprecated.
    */
   note?: string;
+  /**
+   * A `getArgument(name, default)` read: when the widget isn't set it returns the default
+   * instead of failing, so it never needs the task to pass the widget.
+   */
+  withDefault?: true;
 }
 
 /**
- * `dbutils.widgets.get(...)`, `getArgument(...)` and `getAll()` calls in Python code.
- * The name is the `name=` or first positional argument when it is a string literal.
+ * Calls of the notebook's own `getArgument(...)`, written without `dbutils.widgets.`. It
+ * reads a widget like `dbutils.widgets.getArgument` (live, serverless job, 2026-11-25:
+ * `getArgument("region")` returned the task's base parameter, and failed with "No input
+ * widget named region is defined" when it wasn't passed). Not `x.getArgument(...)`, and
+ * not in a file that defines or imports its own `getArgument`.
+ */
+function bareGetArgumentCalls(tokens: PythonToken[]): DbutilsCall[] {
+  const shadowed = tokens.some(
+    (token, i) =>
+      token.kind === "name" &&
+      token.value === "getArgument" &&
+      tokens[i - 1]?.kind === "name" &&
+      ["def", "import", "as", "class"].includes(tokens[i - 1]!.value),
+  ) || tokens.some((token, i) => token.kind === "name" && token.value === "getArgument" && isOp(tokens[i + 1], "=") && !isOp(tokens[i + 2], "="));
+  if (shadowed) return [];
+  const calls: DbutilsCall[] = [];
+  tokens.forEach((token, i) => {
+    if (token.kind !== "name" || token.value !== "getArgument" || isOp(tokens[i - 1], ".") || !isOp(tokens[i + 1], "(")) return;
+    if (inImportList(tokens, i)) return;
+    const call = readArguments(tokens, i + 1);
+    if (!call) return;
+    calls.push({ method: "getArgument", args: call.args, offset: token.start, end: tokens[call.close]!.end, after: call.close + 1, knownReceiver: true });
+  });
+  return calls;
+}
+
+/**
+ * `dbutils.widgets.get(...)`, `getArgument(...)` and `getAll()` calls in Python code, and a
+ * bare `getArgument(...)`. The name is the `name=` or first positional argument when it is
+ * a string literal.
  */
 function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
-  return dbutilsCalls(tokenizePython(view), "widgets", ["get", "getArgument", "getAll"]).map(
-    (call) => {
+  const tokens = tokenizePython(view);
+  return [...dbutilsCalls(tokens, "widgets", ["get", "getArgument", "getAll"]), ...bareGetArgumentCalls(tokens)]
+    .sort((a, b) => a.offset - b.offset)
+    .map((call) => {
       const method = call.method as WidgetMethod;
       const detection: WidgetDetection = {
         line: getStartLine(document, call.offset),
@@ -551,10 +586,14 @@ function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
             : literalValue(argument(call.args, "name", 0)),
         method,
       };
-      if (method === "getArgument") detection.note = WIDGET_DEPRECATED_NOTE;
+      if (method === "getArgument") {
+        detection.note = WIDGET_DEPRECATED_NOTE;
+        // Only a second positional argument, the form checked live: it returned the default
+        // when the widget wasn't set, for both spellings of the call.
+        if (call.args.filter((arg) => arg.keyword === undefined).length >= 2) detection.withDefault = true;
+      }
       return detection;
-    },
-  );
+    });
 }
 
 /**
@@ -890,7 +929,8 @@ export async function detectSqlTextParametersInFile(filePath: string): Promise<S
  * define widgets the inspector does not see.
  */
 export interface WidgetUsage {
-  reads: Array<{ name: string; line: number; language: CodeLanguage }>;
+  /** `withDefault`: `getArgument(name, default)`, which works whether or not the widget is set. */
+  reads: Array<{ name: string; line: number; language: CodeLanguage; withDefault?: true }>;
   /**
    * Widgets created with a default: `text`, `dropdown`, `combobox`, `multiselect` in
    * Python, `CREATE WIDGET` in SQL. Includes widgets created by notebooks run with `%run`.
@@ -962,7 +1002,7 @@ export async function detectWidgetUsageInFile(
     for (const name of names) defaultLanguages[name] = [...(own(defaultLanguages, name) ?? []), language];
   }
   const withLanguage = (language: CodeLanguage) => (d: WidgetDetection) =>
-    d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line, language }] : [];
+    d.name && d.method !== "getAll" ? [{ name: d.name, line: d.line, language, ...(d.withDefault ? { withDefault: true as const } : {}) }] : [];
   const usage: WidgetUsage = {
     reads: [...python.flatMap(withLanguage("python")), ...sql.reads.flatMap(withLanguage("sql"))].sort(byLine),
     defaults: [...pythonDefaults, ...sql.defaults],
@@ -1003,7 +1043,7 @@ export async function detectWidgetUsageInFile(
     const childDefaults = new Set(child.defaults);
     const reported = new Set<string>();
     for (const read of child.reads) {
-      if (hasOwnKey(run.args, read.name) || childDefaults.has(read.name) || reported.has(read.name)) continue;
+      if (read.withDefault || hasOwnKey(run.args, read.name) || childDefaults.has(read.name) || reported.has(read.name)) continue;
       reported.add(read.name);
       usage.unsetRunReads.push({ name: read.name, line: read.line, file: target, target: run.target });
     }
