@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
@@ -91,6 +91,15 @@ A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline 
 - **Severity:** error.
 - **Example:** `python_file: ../src/job.py`, where the first line is `# Databricks notebook source`.
 - **Fix:** remove the header line, or run it from a notebook task or a pipeline `notebook` library.
+
+### `notebook_byte_order_mark`
+
+A notebook task, or a pipeline `notebook` library, points at a `.py` or `.sql` notebook that starts with an invisible byte order mark. Some editors add one when saving. From Databricks CLI v1.24.0 the file is still a notebook (see [`not_a_notebook`](#not_a_notebook)), so `bundle validate` and `bundle deploy` pass, and then the first cell fails when the job or pipeline runs.
+
+- **Severity:** error.
+- **Example:** a job runs `./etl.py`, saved with a byte order mark before `# Databricks notebook source`. The task fails with `SyntaxError: invalid non-printable character U+FEFF`; a SQL notebook fails with `PARSE_SYNTAX_ERROR`. Checked by job runs and pipeline updates on Databricks CLI v1.28.0 on 2026-11-25, two runs each, with a control without the mark.
+- **Fix:** save the file as UTF-8 without BOM.
+- **Limits:** a plain Python file with a byte order mark runs fine, so files run by `spark_python_task` get nothing. R and Scala notebooks, notebooks reached through a pipeline `glob`, `%run` targets and jobs with a `git_source` were not tested and get nothing. With CLIs before v1.24.0 the file is no notebook at all, which `not_a_notebook` reports.
 
 ### `path_is_a_folder`
 

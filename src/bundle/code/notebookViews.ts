@@ -260,6 +260,8 @@ export function notebookViews(
   content: string,
   options: { jupyter: boolean; fileLanguage: CodeLanguage; scala?: boolean },
 ): NotebookViews {
+  // A byte order mark first still makes a notebook for the CLI (#589), so read what follows it.
+  if (content.startsWith("\uFEFF")) return notebookViews(content.slice(1), options);
   if (options.jupyter) return jupyterLines(content);
   if (options.scala) return scalaViews(content);
   if (/^# Databricks notebook source/.test(content)) return sourceNotebookLines(content, "python");
