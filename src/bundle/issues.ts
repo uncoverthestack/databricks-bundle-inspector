@@ -1937,6 +1937,7 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
         flow.sqlFiles > 0 &&
         flow.notRead.length === 0 &&
         flow.unread.length === 0 &&
+        !flow.incomplete &&
         (pipeline.pipelineLibraries ?? []).every((library) => library.checked && library.exists);
       if (!pipeline || !complete) continue;
 

@@ -186,7 +186,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     graph.nodes
       .filter((node) => node.pipelineLibraries?.length)
       .flatMap((pipeline) =>
-        pipelineSourceFiles(pipeline).map(async (filePath) => {
+        pipelineSourceFiles(pipeline).files.map(async (filePath) => {
           const secrets = await detectSecretInNotebook(filePath).catch(() => []);
           for (const detection of secrets) {
             if (!detection.scope) {
@@ -236,8 +236,9 @@ function pipelineConfiguration(pipeline: BundleGraphNode): Record<string, string
 }
 
 async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
-  const sources = pipelineSourceFiles(pipeline);
+  const { files: sources, truncated } = pipelineSourceFiles(pipeline);
   if (sources.length === 0) return undefined;
+  let incomplete = truncated;
   const config = pipelineConfiguration(pipeline);
   const files: DataFlowFile[] = [];
   const notRead: { file: string; reason: string }[] = [];
@@ -247,15 +248,19 @@ async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
       continue;
     }
     const sql = await readFile(file, "utf8").catch(() => undefined);
-    if (sql === undefined) continue;
+    if (sql === undefined) {
+      incomplete = true;
+      continue;
+    }
     files.push({ file, result: readPipelineSql(sql, config) });
   }
   const text = (value: unknown) => (typeof value === "string" ? value : undefined);
-  return buildPipelineDataFlow(files, notRead, {
+  const flow = buildPipelineDataFlow(files, notRead, {
     catalog: text(pipeline.data.catalog),
     // `target` is the older name for the schema.
     schema: text(pipeline.data.schema) ?? text(pipeline.data.target),
   });
+  return incomplete ? { ...flow, incomplete: true as const } : flow;
 }
 
 /**
@@ -274,10 +279,14 @@ const SCANNED_SOURCE_EXTENSIONS = new Set([".py", ".sql", ".ipynb"]);
 /** Upper bound on files read from one pipeline's glob folders, so a huge folder can't stall inspection. */
 const MAX_GLOB_FILES = 200;
 
-/** Local source files of a pipeline: its notebook/file sources and the files its globs cover. */
-function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
+/**
+ * Local source files of a pipeline: its notebook/file sources and the files its globs cover.
+ * `truncated` is set when a glob had more files than the limit, so some were left out.
+ */
+function pipelineSourceFiles(pipeline: BundleGraphNode): { files: string[]; truncated: boolean } {
   const files: string[] = [];
   let globFiles = 0;
+  let truncated = false;
 
   function walk(dir: string, recursive: boolean): void {
     let entries;
@@ -287,11 +296,17 @@ function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
       return;
     }
     for (const entry of entries) {
-      if (globFiles >= MAX_GLOB_FILES || entry.name.startsWith(".")) continue;
+      // Stop at the first file past the limit: knowing one was left out is enough (#587).
+      if (truncated) return;
+      if (entry.name.startsWith(".")) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (recursive) walk(full, true);
       } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase()) && isRegularFile(full)) {
+        if (globFiles >= MAX_GLOB_FILES) {
+          truncated = true;
+          return;
+        }
         files.push(full);
         globFiles += 1;
       }
@@ -303,5 +318,5 @@ function pipelineSourceFiles(pipeline: BundleGraphNode): string[] {
     if (ref.kind === "glob" && /\/\*\*?$/.test(ref.path)) walk(ref.resolvedPath, ref.path.endsWith("**"));
     else if (isRegularFile(ref.resolvedPath)) files.push(ref.resolvedPath);
   }
-  return [...new Set(files)];
+  return { files: [...new Set(files)], truncated };
 }

@@ -83,3 +83,45 @@ describe("full names after USE (issue 539)", () => {
     }
   });
 });
+
+describe("pipelines with more source files than the scan reads (issue 587)", () => {
+  // A temp bundle whose pipeline glob holds `count` SQL files, v0 to v<count - 1>, and a
+  // task selecting `selected`. The scan reads up to 200 files from a pipeline's globs.
+  async function selectionFindings(count: number, selected: string) {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const root = mkdtempSync(path.join(tmpdir(), "selection-cap-"));
+    try {
+      mkdirSync(path.join(root, "sql"));
+      for (let i = 0; i < count; i++) {
+        writeFileSync(path.join(root, "sql", `q${String(i).padStart(3, "0")}.sql`), `CREATE OR REFRESH MATERIALIZED VIEW v${i} AS SELECT 1 AS n;\n`);
+      }
+      const config = {
+        bundle: { name: "cap" },
+        resources: {
+          pipelines: { p: { name: "p", catalog: "main", schema: "sales", serverless: true, libraries: [{ glob: { include: "./sql/**" } }] } },
+          jobs: { j: { name: "j", tasks: [{ task_key: "refresh", pipeline_task: { pipeline_id: "${resources.pipelines.p.id}", refresh_selection: [selected] } }] } },
+        },
+      } as unknown as ParsedBundleConfig;
+      const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, root));
+      const flow = graph.nodes.find((node) => node.id === "resources.pipelines.p")?.pipelineDataFlow;
+      const issues = buildInspectorIssues(graph, config, [], root).filter((issue) => issue.kind === "pipeline_selection_not_found");
+      return { incomplete: flow?.incomplete === true, warned: issues.length > 0 };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test("at the limit every file is read, so a missing name still gets its warning", async () => {
+    expect(await selectionFindings(200, "v199")).toEqual({ incomplete: false, warned: false });
+    expect(await selectionFindings(200, "v_nope")).toEqual({ incomplete: false, warned: true });
+  });
+
+  test("past the limit a real table isn't reported as missing", async () => {
+    expect(await selectionFindings(201, "v200")).toEqual({ incomplete: true, warned: false });
+  });
+
+  test("past the limit no name is judged, since the table may be in a file not read", async () => {
+    expect(await selectionFindings(201, "v_nope")).toEqual({ incomplete: true, warned: false });
+  });
+});
