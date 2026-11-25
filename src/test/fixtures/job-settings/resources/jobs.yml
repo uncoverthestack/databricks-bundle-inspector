@@ -1,0 +1,98 @@
+resources:
+  jobs:
+    two_triggers:
+      name: two_triggers
+      schedule:
+        quartz_cron_expression: "0 0 1 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      trigger:
+        pause_status: PAUSED
+        periodic: { interval: 1, unit: DAYS }
+      tasks:
+        - task_key: a
+          notebook_task: { notebook_path: ../src/nb.py }
+
+    one_trigger:
+      name: one_trigger
+      schedule:
+        quartz_cron_expression: "0 0 1 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      tasks:
+        - task_key: a
+          notebook_task: { notebook_path: ../src/nb.py }
+
+    parameter_names:
+      name: parameter_names
+      parameters:
+        - name: bad name
+          default: x
+        - name: a_b-c.d
+          default: x
+        - name: .a
+          default: x
+      tasks:
+        - task_key: a
+          notebook_task: { notebook_path: ../src/nb.py }
+
+    task_keys:
+      name: task_keys
+      tasks:
+        - task_key: "load "
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: lo-ad_1
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: "-"
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: loop
+          for_each_task:
+            inputs: "[1]"
+            task:
+              task_key: in ner
+              notebook_task: { notebook_path: ../src/nb.py }
+
+    outcomes:
+      name: outcomes
+      tasks:
+        - task_key: check
+          condition_task: { op: EQUAL_TO, left: x, right: x }
+        - task_key: plain
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: on_true
+          depends_on: [{ task_key: check, outcome: "true" }]
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: on_bool
+          depends_on: [{ task_key: check, outcome: true }]
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: capital
+          depends_on: [{ task_key: check, outcome: "True" }]
+          notebook_task: { notebook_path: ../src/nb.py }
+        - task_key: after_plain
+          depends_on: [{ task_key: plain, outcome: "true" }]
+          notebook_task: { notebook_path: ../src/nb.py }
+
+    for_each_inputs:
+      name: for_each_inputs
+      parameters:
+        - name: items
+          default: "[1, 2]"
+      tasks:
+        - task_key: not_json
+          for_each_task: { inputs: "not json", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: an_object
+          for_each_task: { inputs: '{"a": 1}', task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: nested
+          for_each_task: { inputs: "[[1, 2]]", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: has_null
+          for_each_task: { inputs: "[null, 1]", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: mixed
+          for_each_task: { inputs: '["a", {"k": "v"}]', task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: plain_values
+          for_each_task: { inputs: '["a", 1, 2.5, true]', task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: objects
+          for_each_task: { inputs: '[{"a": 1}, {"b": [1, 2]}]', task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: empty
+          for_each_task: { inputs: "[]", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+        - task_key: from_parameter
+          for_each_task: { inputs: "{{job.parameters.items}}", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }

@@ -30,6 +30,7 @@ import {
   findEnvironmentProblems,
   type JobStructureFinding,
 } from "../jobStructure.js";
+import { findJobSettingProblems } from "../jobSettings.js";
 import { resolveExpressionForTarget } from "../targetResolution.js";
 import { findRuntimeSupportProblems, type RuntimeSupportFinding } from "../runtimeSupport.js";
 import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
@@ -1487,6 +1488,7 @@ async function buildBundleGraph(
     jobStructureFindings: [
       ...findDependencyProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, jobStructureOptions),
       ...findDuplicateKeys(sourceFiles, jobStructureOptions),
+      ...findJobSettingProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, jobStructureOptions),
       ...findEnvironmentProblems(toRecord(parsedBundle.resources?.jobs), sourceFiles, {
         ...jobStructureOptions,
         // Relative to the job's YAML folder, as the CLI reads it; a real target's workspace
