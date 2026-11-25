@@ -229,9 +229,9 @@ describe("Copy review summary (#392)", () => {
     expect(lines(text, "Bundle:", "Target:", "Job:")).toEqual([
       "Bundle: @\u200bplatform-team",
       "Target: dev\\_&lt;b&gt;",
-      "Job: nightly \\[click\\](https://example.com) &lt;img src=x&gt;",
+      "Job: nightly \\[click\\](https:\u200b//example.com) &lt;img src=x&gt;",
     ]);
-    expect(text).toContain("- **Error** · @\u200bsomeone: Missing file !\\[x\\](https://example.com/p.png) (a\\_\\[b\\].yml:3)");
+    expect(text).toContain("- **Error** · @\u200bsomeone: Missing file !\\[x\\](https:\u200b//example.com/p.png) (a\\_\\[b\\].yml:3)");
     expect(text).toContain("- `` a`b `` (load\\*): task parameter -> notebook widget");
     expect(text).toContain("- Schedule: \\*\\_x\\_\\*");
   });

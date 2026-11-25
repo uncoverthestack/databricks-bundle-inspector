@@ -200,9 +200,9 @@ describe("jobReviewReport", () => {
       (jobId) => [issue(jobId, "load", "error", "Ask @alice about [this](https://example.com)")],
     );
     expect(markdown).toContain(
-      "| Job | @\u200bdata-team \\[docs\\](https://example.com) !\\[x\\](https://example.com/p.png) &lt;details&gt; (nightly) |",
+      "| Job | @\u200bdata-team \\[docs\\](https:\u200b//example.com) !\\[x\\](https:\u200b//example.com/p.png) &lt;details&gt; (nightly) |",
     );
-    expect(markdown).toContain("Ask @\u200balice about \\[this\\](https://example.com)");
+    expect(markdown).toContain("Ask @\u200balice about \\[this\\](https:\u200b//example.com)");
     expect(markdown).not.toMatch(/@(?!\u200b)[\w-]/);
   });
 
