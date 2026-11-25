@@ -2,7 +2,6 @@ import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import ignore from "ignore";
 import {
   extractBundleGraph,
   type ParsedBundleConfig,
@@ -178,7 +177,7 @@ describe("classifyChange", () => {
         files: new Set(["c:\\projects\\orders_etl\\src\\publish_metrics.py"]),
         folders: [],
         patterns: [],
-        includes: ignore(),
+        includes: () => false,
         isSynced: () => true,
         ignoresCase: true,
       };
@@ -197,11 +196,30 @@ describe("classifyChange", () => {
   test("ignores files in a pipeline folder that sync would skip", () => {
     const syncSpec: BundleWatchSpec = {
       ...spec,
-      includes: ignore(),
+      includes: () => false,
       isSynced: (file) => !file.includes("__pycache__"),
     };
     expect(classifyChange(syncSpec, at("src/dlt/__pycache__/bronze.pyc"))).toBeUndefined();
     expect(classifyChange(syncSpec, at("src/dlt/bronze.py"))).toBe("source");
+  });
+});
+
+describe("classifyChange: include patterns as the CLI reads them", () => {
+  const root = path.resolve("/workspace/includes");
+  const minimal: ParsedBundleConfig = { bundle: { name: "includes" } } as ParsedBundleConfig;
+  const specFor = async (patterns: string[]) => collectWatchSpec(await extractBundleGraph(minimal, root), minimal, root, patterns);
+
+  test("a new file under ./resources/*.yml is bundle config", async () => {
+    const spec = await specFor(["./resources/*.yml"]);
+    expect(classifyChange(spec, path.join(root, "resources", "new_job.yml"))).toBe("config");
+    expect(classifyChange(spec, path.join(root, "other", "new_job.yml"))).toBeUndefined();
+  });
+
+  test("files the looser reading matched still re-check, so the not-included warning can show", async () => {
+    // The CLI loads only resources/<folder>/<file>.yml for this pattern; resources/a.yml is left out.
+    const spec = await specFor(["resources/**/*.yml"]);
+    expect(classifyChange(spec, path.join(root, "resources", "jobs", "a.yml"))).toBe("config");
+    expect(classifyChange(spec, path.join(root, "resources", "a.yml"))).toBe("config");
   });
 });
 

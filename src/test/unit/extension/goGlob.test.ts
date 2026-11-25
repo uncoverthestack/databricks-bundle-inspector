@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { globSync, hasGlobCharacters, matchGoSegment } from "../../../bundle/goGlob.js";
+import { globSync, hasGlobCharacters, includeSelects, matchGoSegment } from "../../../bundle/goGlob.js";
 
 describe("matchGoSegment (Go's filepath.Match for one path segment)", () => {
   test.each([
@@ -100,5 +100,42 @@ describe("globSync on Windows", () => {
     expect(globSync(root, "resources\\*.yml", "win32")).toEqual(["resources/job.yml"]);
     expect(globSync(root, "resources\\*.yml", "darwin")).toEqual([]);
     expect(globSync(root, "resources/*.yml", "win32")).toEqual(["resources/job.yml"]);
+  });
+});
+
+describe("includeSelects: a new file, matched the way globSync walks", () => {
+  test.each([
+    ["./resources/*.yml", "resources/new_job.yml", true],
+    ["resources/*.yml", "resources/new_job.yml", true],
+    ["./resources/./*.yml", "resources/new_job.yml", true],
+    ["resources/*.yml", "resources/jobs/new_job.yml", false],
+    ["*.yml", "resources/new_job.yml", false],
+    // `**` is `*` again: one folder, not any depth (the CLI's include, #134).
+    ["resources/**/*.yml", "resources/jobs/new_job.yml", true],
+    ["resources/**/*.yml", "resources/new_job.yml", false],
+    ["resources/[ab]*.yml", "resources/a1.yml", true],
+    ["resources/[ab]*.yml", "resources/c1.yml", false],
+    ["resources/job?.yml", "resources/job2.yml", true],
+    ["resources/job.yml", "resources/job.yml", true],
+    ["resources/job.yml", "resources/job2.yml", false],
+    ["../shared/*.yml", "shared/a.yml", false],
+  ])("%s selects %s: %s", (entry, file, expected) => {
+    expect(includeSelects(entry, file, { platform: "linux" })).toBe(expected);
+  });
+
+  test("a malformed or empty entry selects nothing", () => {
+    expect(includeSelects("resources/[", "resources/[", { platform: "linux" })).toBe(false);
+    expect(includeSelects("", "databricks.yml", { platform: "linux" })).toBe(false);
+    expect(includeSelects(".", "databricks.yml", { platform: "linux" })).toBe(false);
+  });
+
+  test("a backslash separates folders on Windows only", () => {
+    expect(includeSelects("resources\\*.yml", "resources/a.yml", { platform: "win32" })).toBe(true);
+    expect(includeSelects("resources\\*.yml", "resources/a.yml", { platform: "darwin" })).toBe(false);
+  });
+
+  test("letter case counts unless the file system ignores it", () => {
+    expect(includeSelects("Resources/*.yml", "resources/a.yml", { platform: "linux" })).toBe(false);
+    expect(includeSelects("Resources/*.yml", "resources/a.yml", { platform: "darwin", ignoreCase: true })).toBe(true);
   });
 });
