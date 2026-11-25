@@ -619,12 +619,12 @@ A secret under `resources: secrets:` has its value written in the file, a value 
 
 ### `secret_variable_has_default`
 
-A secret's value is a variable that has a value in the bundle, a `default` or a target's value. That value is in the file as plain text, so the CLI stops with "Variable used for secret value must not have a default value".
+A secret's value is a variable that has a value in the bundle, a `default` or a target's value. That value is in the file as plain text. For `${var.api_key}` the CLI stops with "Variable used for secret value must not have a default value". The full configuration references `${variables.api_key.default}` and `${variables.api_key.value}` can resolve to the same plaintext value without that CLI error (v1.28.0); the inspector reports them too. Secrets defined only under a target are checked as well.
 
 - **Severity:** error.
 - **Example:** `value: ${var.api_key}` with `variables: api_key: { default: my-api-key }`, or a target that sets `api_key`.
 - **Fix:** remove the default and any target's value, and pass the variable at deploy with `--var` or `BUNDLE_VAR_api_key`.
-- **Limits:** Databricks CLI v1.12.0 and later, as for `secret_value_not_variable`.
+- **Limits:** Databricks CLI v1.12.0 and later, as for `secret_value_not_variable`. A value the CLI obtained outside the bundle, without a default or target value in its files, is not reported as plaintext in the repository.
 
 ### `cli_diagnostic`
 
