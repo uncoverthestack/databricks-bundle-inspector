@@ -83,6 +83,14 @@ export function keyOf(raw: unknown, target: string | undefined, options: JobStru
   return resolved !== undefined && !resolved.includes("${") ? resolved : undefined;
 }
 
+/**
+ * The name a task goes by: its key as the CLI reads it, else the `${...}` text the preview
+ * left, which is also the graph's name for the task. Its other settings can still be checked.
+ */
+export function taskIdOf(raw: unknown, target: string | undefined, options: JobStructureOptions): string | undefined {
+  return keyOf(raw, target, options) ?? (typeof raw === "string" ? raw : undefined);
+}
+
 export interface JobList {
   jobKey: string;
   items: unknown[];
@@ -192,16 +200,20 @@ export function dependencyLocation(
   field: "task_key" | "outcome" = "task_key",
 ): YamlLocation | undefined {
   let taskLocation: YamlLocation | undefined;
-  for (const file of files) {
-    for (const tasks of jobLists(file.doc, "tasks")) {
-      if (tasks.jobKey !== jobKey || (tasks.target !== undefined && tasks.target !== options.activeTarget)) continue;
-      const target = tasks.target ?? options.activeTarget;
-      for (const [index, task] of tasks.items.entries()) {
-        if (keyOf(record(task).task_key, target, options) !== taskKey) continue;
-        const dependency = list(record(task).depends_on).findIndex((d) => keyOf(record(d).task_key, target, options) === upstream);
-        const found = dependency >= 0 ? locate.get(file)!([...tasks.path, index, "depends_on", dependency, field]) : undefined;
-        if (found) return found;
-        taskLocation ??= locate.get(file)!([...tasks.path, index, "task_key"]);
+  // The picked target's list first: a dependency it writes again is the one the CLI keeps.
+  for (const fromTarget of [true, false]) {
+    for (const file of files) {
+      for (const tasks of jobLists(file.doc, "tasks")) {
+        if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
+        if (fromTarget && tasks.target !== options.activeTarget) continue;
+        const target = tasks.target ?? options.activeTarget;
+        for (const [index, task] of tasks.items.entries()) {
+          if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
+          const dependency = list(record(task).depends_on).findIndex((d) => keyOf(record(d).task_key, target, options) === upstream);
+          const found = dependency >= 0 ? locate.get(file)!([...tasks.path, index, "depends_on", dependency, field]) : undefined;
+          if (found) return found;
+          taskLocation ??= locate.get(file)!([...tasks.path, index, "task_key"]);
+        }
       }
     }
   }

@@ -147,6 +147,26 @@ resources:
     expect(findings.map((f) => [f.kind, f.taskKey, f.location?.line])).toEqual([["invalid_task_key", "loop", 10]]);
     expect(findings[0]!.title).toContain('Rename task "in ner"');
   });
+
+  test("a task whose key the preview leaves as a variable still has its other settings checked", () => {
+    // The structural preview prints `task_key: ${var.key}` as written; the graph names the task by that text.
+    const findings = check(`
+resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: \${var.key}
+          for_each_task:
+            inputs: 'not json'
+            task:
+              task_key: bad key
+              ${NB}
+`);
+    expect(findings.map((f) => [f.kind, f.taskKey, f.location?.line])).toEqual([
+      ["invalid_task_key", "${var.key}", 10],
+      ["for_each_inputs_not_array", "${var.key}", 8],
+    ]);
+  });
 });
 
 describe("outcome_without_condition and invalid_outcome", () => {
@@ -184,6 +204,33 @@ resources:
     ["unquoted true (the CLI reads it as \"true\")", "true"],
     ["a variable", "${var.outcome}"],
   ])("%s on a condition task deploys", (_case, outcome) => expect(check(job(outcome))).toEqual([]));
+
+  test("an outcome the picked target writes again points at the target's, not the job's valid one", () => {
+    const text = `
+resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: up
+          condition_task: { op: EQUAL_TO, left: x, right: x }
+        - task_key: down
+          depends_on: [{ task_key: up, outcome: "true" }]
+          ${NB}
+targets:
+  prod:
+    resources:
+      jobs:
+        j:
+          tasks:
+            - task_key: down
+              depends_on: [{ task_key: up, outcome: "True" }]
+`;
+    const resolved = {
+      j: { tasks: [{ task_key: "up", condition_task: {} }, { task_key: "down", depends_on: [{ task_key: "up", outcome: "True" }] }] },
+    };
+    const findings = check(text, { activeTarget: "prod" }, resolved);
+    expect(findings.map((f) => [f.kind, f.location?.line])).toEqual([["invalid_outcome", 18]]);
+  });
 
   test("a variable or an unknown upstream task is not judged", () => {
     expect(check(job("${var.outcome}", NB))).toEqual([]);

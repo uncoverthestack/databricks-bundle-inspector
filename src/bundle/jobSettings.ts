@@ -7,6 +7,7 @@ import {
   located,
   locator,
   record,
+  taskIdOf,
   type JobStructureFinding,
   type JobStructureOptions,
   type SourceFile,
@@ -75,7 +76,7 @@ function taskFieldLocation(
         if (fromTarget && tasks.target !== options.activeTarget) continue;
         const target = tasks.target ?? options.activeTarget;
         for (const [index, task] of tasks.items.entries()) {
-          if (keyOf(record(task).task_key, target, options) !== taskKey) continue;
+          if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
           const found = locate.get(file)!([...tasks.path, index, ...field]);
           if (found) return found;
         }
@@ -180,17 +181,20 @@ export function findJobSettingProblems(
     }
 
     const tasks = list(settings.tasks).map(record);
+    // A task whose key the preview leaves as `${...}` goes by that text, so its other
+    // settings are still checked; only its own key is not judged.
     const keyed = new Map<string, Record<string, unknown>>();
     for (const task of tasks) {
-      const taskKey = keyOf(task.task_key, target, options);
+      const taskKey = taskIdOf(task.task_key, target, options);
       if (taskKey !== undefined && !keyed.has(taskKey)) keyed.set(taskKey, task);
     }
 
     for (const [taskKey, task] of keyed) {
+      const ownKey = keyOf(task.task_key, target, options);
       const inner = record(record(task.for_each_task).task);
       const innerKey = keyOf(inner.task_key, target, options);
       for (const [key, field] of [
-        [taskKey, ["task_key"]],
+        ...(ownKey !== undefined ? [[ownKey, ["task_key"]] as const] : []),
         ...(innerKey !== undefined ? [[innerKey, ["for_each_task", "task", "task_key"]] as const] : []),
       ] as const) {
         if (key === "" || TASK_KEY.test(key)) continue;
