@@ -42,5 +42,8 @@ export function markdownCode(text: string): string {
   const flat = text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
   const runs = flat.match(/`+/g) ?? [];
   const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
-  return runs.length ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
+  // CommonMark removes one space from both ends when the content is not all spaces.
+  // Pad such values so their own leading and trailing spaces survive rendering.
+  const needsPadding = runs.length > 0 || (flat.startsWith(" ") && flat.endsWith(" ") && /[^ ]/.test(flat));
+  return needsPadding ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
 }
