@@ -93,7 +93,7 @@ export function bundleCliEnv(
 }
 
 interface NotRunDiagnostic {
-  severity: "warning" | "error";
+  severity: "warning" | "error" | "info";
   message: string;
   path?: string;
   line?: number;

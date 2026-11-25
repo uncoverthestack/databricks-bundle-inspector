@@ -124,6 +124,69 @@ describe("parseBundleDiagnostics", () => {
   });
 });
 
+describe("parseBundleDiagnostics: CLI recommendations", () => {
+  // `databricks bundle validate -t __bundle_inspector_probe__` on CLI v1.28.0, for a
+  // resources/two.job.yml file that defines two jobs. Copied from the real output.
+  const CLI_1_28_OUTPUT = [
+    "Recommendation: define a single job in a file with the .job.yml extension.",
+    "  at resources.jobs.a",
+    "     resources.jobs.b",
+    "  in resources/two.job.yml:4:7",
+    "     resources/two.job.yml:6:7",
+    "",
+    "The following resources are defined or configured in this file:",
+    "  - a (job)",
+    "  - b (job)",
+    "",
+    "",
+    `Error: ${PROBE}: no such target. Available targets: dev`,
+    "",
+    "Name: rec_probe",
+    "",
+    "Found 1 error and 1 recommendation",
+  ].join("\n");
+
+  it("reads a Recommendation as a note, with its first path and location", () => {
+    expect(parseBundleDiagnostics(CLI_1_28_OUTPUT, PROBE)).toEqual([
+      {
+        severity: "info",
+        message: "define a single job in a file with the .job.yml extension.",
+        yamlPath: "resources.jobs.a",
+        path: "resources/two.job.yml",
+        line: 4,
+        column: 7,
+      },
+    ]);
+  });
+
+  it("keeps each diagnostic's own level when errors, warnings and recommendations mix", () => {
+    const stderr = [
+      "Warning: unknown field: bogus",
+      "  in databricks.yml:3:1",
+      "Recommendation: a second piece of advice",
+      "Error: field is required",
+      "  in resources/job.yml:10:5",
+    ].join("\n");
+    expect(parseBundleDiagnostics(stderr, PROBE).map((d) => [d.severity, d.path ?? null])).toEqual([
+      ["warning", "databricks.yml"],
+      ["info", null],
+      ["error", "resources/job.yml"],
+    ]);
+  });
+
+  it("does not read other lines that start with the word as diagnostics", () => {
+    const stderr = ["Recommendations: 2", "Recommendation:missing space", "Found 1 error and 1 recommendation"].join("\n");
+    expect(parseBundleDiagnostics(stderr, PROBE)).toEqual([]);
+  });
+
+  it("leaves output with no recommendation as it was", () => {
+    const stderr = `Warning: unknown field: includ\n  in databricks.yml:4:1\nError: ${PROBE}: no such target. Available targets: dev`;
+    expect(parseBundleDiagnostics(stderr, PROBE)).toEqual([
+      { severity: "warning", message: "unknown field: includ", path: "databricks.yml", line: 4, column: 1 },
+    ]);
+  });
+});
+
 describe("parseAvailableTargets", () => {
   it("extracts targets from the probe target error", () => {
     const stderr = `Error: ${PROBE}: no such target. Available targets: dev, prod`;
