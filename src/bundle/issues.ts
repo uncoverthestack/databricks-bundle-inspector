@@ -55,6 +55,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "environment_version_missing",
   "unknown_environment_key",
   "project_environment_version_missing",
+  "project_environment_conflict",
   "multiple_job_triggers",
   "invalid_job_parameter_name",
   "invalid_task_key",
@@ -1254,9 +1255,10 @@ export function buildInspectorIssues(
         id: `missing-library:${task.id}:${ref.yamlPath}:${ref.identifier}`,
         severity: "error",
         kind: "missing_library",
-        title: "Missing local library",
-        // A glob fails deploy only when no file matches it ("no files match pattern").
-        detail: hasGlobCharacters(ref.identifier) ? `${ref.identifier} (no file matches)` : ref.identifier,
+        title: ref.notAFile ? "Local library path must name a file" : "Missing local library",
+        // A glob needs matches, and every match must be a file the CLI can upload.
+        detail: ref.notAFile ? `${ref.identifier} (contains a path that is not a regular file)` :
+          hasGlobCharacters(ref.identifier) ? `${ref.identifier} (no file matches)` : ref.identifier,
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: ref.yamlPath,

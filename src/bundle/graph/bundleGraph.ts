@@ -1508,7 +1508,7 @@ async function buildBundleGraph(
         missingDependency: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const written = withoutWheelExtras(value);
-          const { resolvedPath, exists } = localLibrary(written, dirOf("jobs", jobKey));
+          const { resolvedPath, exists, notAFile } = localLibrary(written, dirOf("jobs", jobKey));
           if (exists || mayBeBuilt(resolvedPath, outputs)) return undefined;
           const glob = hasGlobCharacters(written);
           // Written from the bundle root, the usual mistake (#518): name the path from the YAML folder.
@@ -1516,7 +1516,7 @@ async function buildBundleGraph(
           const suggestion = fromRoot.exists
             ? relative(dirOf("jobs", jobKey), fromRoot.resolvedPath).split(sep).join("/")
             : undefined;
-          return { glob, ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+          return { glob, ...(notAFile ? { notAFile } : {}), ...(suggestion && suggestion !== written ? { suggestion } : {}) };
         },
         readProjectFile: (jobKey, value) => {
           if (!bundleRoot) return undefined;

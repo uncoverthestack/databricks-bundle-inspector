@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
 
@@ -38,13 +38,20 @@ export function withoutWheelExtras(dependency: string): string {
 
 /**
  * Where a local library path points from `baseDir`, and whether a file is there. A glob
- * (`../dist/*.whl`) exists when at least one file matches it, with Go's rules, as deploy
- * expands it. Letter case is not compared: the CLI uploads the file it finds locally.
+ * (`../dist/*.whl`) exists when it matches at least one path and every match is a regular
+ * file, with Go's rules, as deploy expands and uploads every match. A directory fails upload.
+ * Letter case is not compared: the CLI uploads the file it finds locally.
  */
-export function localLibrary(rawPath: string, baseDir: string): { resolvedPath: string; exists: boolean } {
+export function localLibrary(rawPath: string, baseDir: string): { resolvedPath: string; exists: boolean; notAFile?: true } {
   const resolvedPath = path.resolve(baseDir, rawPath);
-  if (!hasGlobCharacters(rawPath)) return { resolvedPath, exists: existsSync(resolvedPath) };
-  return { resolvedPath, exists: (globSync(baseDir, rawPath)?.length ?? 0) > 0 };
+  const matches = hasGlobCharacters(rawPath)
+    ? (globSync(baseDir, rawPath) ?? []).map((file) => path.resolve(baseDir, file))
+    : existsSync(resolvedPath) ? [resolvedPath] : [];
+  // Deploy uploads every match. A folder among otherwise valid matches still fails (#612).
+  const exists = matches.length > 0 && matches.every((file) => {
+    try { return statSync(file).isFile(); } catch { return false; }
+  });
+  return { resolvedPath, exists, ...(!exists && matches.length > 0 ? { notAFile: true as const } : {}) };
 }
 
 /** Folders that deploy may write library files to before it checks them (see {@link buildOutputs}). */

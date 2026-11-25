@@ -194,10 +194,10 @@ resources:
     expect(withFile(undefined)).toEqual([]);
   });
 
-  test("another version field next to it: only the file isn't read", () => {
+  test("another version field next to it is a conflict, and the file isn't read", () => {
     let read = false;
     const text = job.replace("project_environment: ./pyproject.toml", 'project_environment: ./pyproject.toml\n            environment_version: "5"');
-    expect(check(text, { readProjectFile: () => ((read = true), "[project]\n") })).toEqual([]);
+    expect(check(text, { readProjectFile: () => ((read = true), "[project]\n") }).map((finding) => finding.kind)).toEqual(["project_environment_conflict"]);
     expect(read).toBe(false);
   });
 });
