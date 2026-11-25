@@ -44,6 +44,13 @@ describe("resource keys with a dot", () => {
     expect(check(text, { resources: { pipelines: { "p.q": { name: "p" } } } })).toEqual([expect.objectContaining({ id: "pipelines.p.q", line: 5 })]);
   });
 
+  test("a real target's output points at that target's line when other targets have the key too", () => {
+    const text = "targets:\n  dev:\n    resources:\n      jobs:\n        a.b:\n          name: d\n  prod:\n    resources:\n      jobs:\n        a.b:\n          name: p\n";
+    const output = (target: string) => ({ bundle: { target }, resources: { jobs: { "a.b": { name: "x" } } } });
+    expect(check(text, output("prod"))).toEqual([expect.objectContaining({ id: "jobs.a.b", line: 10 })]);
+    expect(check(text, output("dev"))).toEqual([expect.objectContaining({ id: "jobs.a.b", line: 5 })]);
+  });
+
   test("dots elsewhere are fine: in a name, a task key's value, or a field", () => {
     expect(check("resources:\n  jobs:\n    nightly:\n      name: a.b\n      tags:\n        team.name: x\n")).toEqual([]);
   });

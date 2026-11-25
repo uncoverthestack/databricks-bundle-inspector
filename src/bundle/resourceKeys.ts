@@ -25,7 +25,15 @@ export function findResourceKeyProblems(cliOutput: unknown, files: SourceFile[])
   const locate = keyLocator(files);
   const targets = Object.keys(record(bundle.targets));
   // A real target's output has no targets; the YAML files still say where each one is written.
-  const writtenTargets = [...new Set([...targets, ...files.flatMap((file) => Object.keys(record(record(file.doc).targets)))])];
+  // The target being inspected comes first, so a key in several targets points at its own line.
+  const selected = record(bundle.bundle).target;
+  const writtenTargets = [
+    ...new Set([
+      ...(typeof selected === "string" ? [selected] : []),
+      ...targets,
+      ...files.flatMap((file) => Object.keys(record(record(file.doc).targets))),
+    ]),
+  ];
   const findings: ResourceKeyFinding[] = [];
   // The structural preview keeps a target's own resources under the target; a real
   // target's output has them merged into `resources`.
