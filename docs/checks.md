@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
@@ -167,7 +167,7 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 ## Jobs
 
-`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `job_parameter_in_default`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each. Tasks that share a key are checked as the one task the CLI merges them into: the later task's settings win, and their lists, such as `depends_on`, are joined. A value from a variable that a `BUNDLE_VAR_` environment variable sets is not judged, as that value wins over the one in the files.
+`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except the project environment version checks, which deploy and fail when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `job_parameter_in_default`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each. Tasks that share a key are checked as the one task the CLI merges them into: the later task's settings win, and their lists, such as `depends_on`, are joined. A value from a variable that a `BUNDLE_VAR_` environment variable sets is not judged, as that value wins over the one in the files.
 
 ### `unknown_task_dependency`
 
@@ -225,7 +225,7 @@ A task's `environment_key` names an environment the job doesn't have.
 
 ### `project_environment_version_missing`
 
-A job environment's `project_environment` names a `pyproject.toml` that has neither `environment_version` nor `base_environment`.
+A job environment's `project_environment` names a `pyproject.toml` that has neither a nonempty `environment_version` nor a nonempty `base_environment` in `[tool.databricks.environment]`.
 
 - **Severity:** error.
 - **Example:** a `pyproject.toml` with only `[project]` and its `dependencies`. Validate and deploy pass; the job run fails with `pyproject.toml must specify environment_version or base_environment under [tool.databricks.environment]`.
@@ -236,7 +236,17 @@ A job environment's `project_environment` names a `pyproject.toml` that has neit
   environment_version = "5"
   ```
 
-- **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
+- **Limits:** the local file is parsed as TOML. Headers, dotted keys, inline tables and quoted keys are supported. A value in another table, a comment or a multiline description does not count. An unresolved path, an unreadable file or TOML that cannot be parsed is not judged by this version check.
+- **Upload:** an existing project file excluded by `.gitignore`, `sync.exclude` or the other upload rules gets [`excluded_from_sync`](#excluded_from_sync) at its YAML reference. `sync.include` can restore a gitignored file. As with other upload checks, sync roots outside the bundle are not modelled.
+
+### `project_environment_version_unsupported`
+
+A project environment's `pyproject.toml` sets an `environment_version` below 5 under `[tool.databricks.environment]`.
+
+- **Severity:** error.
+- **Example:** `environment_version = "4"`. Validate and deploy pass, but the run fails: `Project environment requires environment_version 5 or later` (live CLI v1.28.0, #604).
+- **Fix:** set `environment_version = "5"` or later in that table, or use a `base_environment`.
+- **Limits:** concrete integer versions are checked. A nonempty `base_environment` is accepted instead. This does not impose a minimum of 5 on inline job environments that do not use `project_environment`.
 
 ### `project_environment_conflict`
 

@@ -4,6 +4,7 @@
  */
 
 const KIND_LABELS: Record<string, string> = {
+  project_environment_version_unsupported: "Project environment version",
   missing_file: "Missing file",
   notebook_missing_extension: "Notebook path without extension",
   missing_pipeline_source: "Missing pipeline source",
@@ -41,6 +42,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 const GROUP_NAMES: Record<string, string> = {
+  project_environment_version_unsupported: "Unsupported Project Environment Versions",
   missing_file: "Missing Files",
   notebook_missing_extension: "Notebook Paths Without Extension",
   missing_pipeline_source: "Missing Pipeline Sources",
