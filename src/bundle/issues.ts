@@ -63,6 +63,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "for_each_inputs_not_array",
   "for_each_inputs_too_long",
   "pipeline_selection_not_found",
+  "job_only_in_target",
   "runtime_end_of_support",
   "widget_not_set",
   "unused_parameter",

@@ -48,7 +48,8 @@ export function buildIssueItems(
           id: issue.id,
           group: issueGroupName(issue.kind),
           title: issue.detail ?? issue.title,
-          subtitle: issue.taskName ?? issue.title,
+          // The note names its job in the title, so a second line would only repeat it.
+          subtitle: issue.kind === "job_only_in_target" ? undefined : (issue.taskName ?? issue.title),
           taskId: issue.taskId,
           severity: issue.severity,
           kind: "file",
