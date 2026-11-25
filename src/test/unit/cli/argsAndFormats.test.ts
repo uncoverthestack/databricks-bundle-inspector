@@ -181,7 +181,7 @@ describe("formats (#348)", () => {
       ...report([finding({ message: "[click](https://e.test) <img src=x> @team", file: "a`b|c.yml" })]),
       bundles: [{ path: "bundle", name: "@org/x [y](z)", validated: true, findings: [finding({ message: "[click](https://e.test) <img src=x> @team", file: "a`b|c.yml" })] }],
     });
-    expect(md).toContain("\\[click\\](https://e.test) &lt;img src=x&gt; @​team");
+    expect(md).toContain("\\[click\\](https:\u200b//e.test) &lt;img src=x&gt; @​team");
     expect(md).toContain("(@​org/x \\[y\\](z))");
     expect(md).toContain("`` a`b\\|c.yml:12:5 ``");
     expect(md).toContain("[missing\\_file](https://example.test/docs/checks.md#missing_file)");

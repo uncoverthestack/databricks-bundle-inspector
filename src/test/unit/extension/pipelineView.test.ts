@@ -213,7 +213,7 @@ describe("buildPipelineView", () => {
     view.runBy = [{ jobKey: "j", jobName: "@ops", taskKey: "t_*" }];
     const text = pipelineReviewSummary(view, { bundleName: "b_*", targetLabel: "dev", bundleRoot: "/b" }).split("\n");
     expect(text).toContain("Bundle: b\\_\\*");
-    expect(text).toContain("Pipeline: pipe \\[x\\](https://e.com)");
+    expect(text).toContain("Pipeline: pipe \\[x\\](https:\u200b//e.com)");
     expect(text).toContain("- **Warning** · &lt;b&gt;@\u200bteam&lt;/b&gt; (p\\_1.yml:2)");
     expect(text).toContain("- @\u200bops (task t\\_\\*)");
   });
