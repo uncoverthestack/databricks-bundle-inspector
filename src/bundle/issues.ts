@@ -55,6 +55,13 @@ export const INSPECTOR_ISSUE_KINDS = [
   "environment_version_missing",
   "unknown_environment_key",
   "project_environment_version_missing",
+  "multiple_job_triggers",
+  "invalid_job_parameter_name",
+  "invalid_task_key",
+  "outcome_without_condition",
+  "invalid_outcome",
+  "for_each_inputs_not_array",
+  "for_each_inputs_too_long",
   "pipeline_selection_not_found",
   "runtime_end_of_support",
   "widget_not_set",
@@ -1502,7 +1509,7 @@ export function workspacePathClashIssues(
   );
 }
 
-/** Task graph, duplicate key (#135) and environment (#418) mistakes in jobs. */
+/** Task graph, duplicate key (#135), environment (#418) and job setting (#237) mistakes in jobs. */
 /** The checks the CLI skips in the structural preview because no target is picked (#389). See targetChecks.ts. */
 function targetCheckIssues(graph: BundleGraph, bundleRoot: string): InspectorIssue[] {
   const findings = graph.targetCheckFindings ?? [];

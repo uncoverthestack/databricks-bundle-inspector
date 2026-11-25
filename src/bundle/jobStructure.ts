@@ -17,7 +17,14 @@ export interface JobStructureFinding {
     | "environment_version_missing"
     | "unknown_environment_key"
     | "project_environment_version_missing"
-    | "missing_library";
+    | "missing_library"
+    | "multiple_job_triggers"
+    | "invalid_job_parameter_name"
+    | "invalid_task_key"
+    | "outcome_without_condition"
+    | "invalid_outcome"
+    | "for_each_inputs_not_array"
+    | "for_each_inputs_too_long";
   /** The job's resource key, e.g. `nightly` for `resources.jobs.nightly`. */
   jobKey: string;
   /** The task the finding belongs to; none for a job parameter. */
@@ -56,9 +63,9 @@ export interface JobStructureOptions {
   resolve?: (value: string, target: string | undefined) => string | undefined;
 }
 
-const record = (value: unknown): Record<string, unknown> =>
+export const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+export const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 /** Up to ten names in full; a longer loop names its first three, so a 1000-task loop stays short. */
 const quoteList = (names: string[]) => {
   if (names.length > 10) return `${names.slice(0, 3).map((n) => `"${n}"`).join(", ")} and ${names.length - 3} others`;
@@ -68,7 +75,7 @@ const quoteList = (names: string[]) => {
 };
 
 /** A key as the CLI reads it: as written, or with its `${...}` resolved; undefined when unknown. */
-function keyOf(raw: unknown, target: string | undefined, options: JobStructureOptions): string | undefined {
+export function keyOf(raw: unknown, target: string | undefined, options: JobStructureOptions): string | undefined {
   // The CLI reads `task_key: 1` as "1", and merges it with a task written `task_key: "1"`.
   if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
   if (typeof raw !== "string") return undefined;
@@ -77,7 +84,15 @@ function keyOf(raw: unknown, target: string | undefined, options: JobStructureOp
   return resolved !== undefined && !resolved.includes("${") ? resolved : undefined;
 }
 
-interface JobList {
+/**
+ * The name a task goes by: its key as the CLI reads it, else the `${...}` text the preview
+ * left, which is also the graph's name for the task. Its other settings can still be checked.
+ */
+export function taskIdOf(raw: unknown, target: string | undefined, options: JobStructureOptions): string | undefined {
+  return keyOf(raw, target, options) ?? (typeof raw === "string" ? raw : undefined);
+}
+
+export interface JobList {
   jobKey: string;
   items: unknown[];
   /** The YAML path of the list, as segments. */
@@ -87,7 +102,7 @@ interface JobList {
 }
 
 /** Every list that can define a job's tasks, parameters or environments: the job's own and each target's. */
-function* jobLists(doc: unknown, field: "tasks" | "parameters" | "environments"): Generator<JobList> {
+export function* jobLists(doc: unknown, field: "tasks" | "parameters" | "environments"): Generator<JobList> {
   const root = record(doc);
   for (const [jobKey, job] of Object.entries(record(record(root.resources).jobs))) {
     yield { jobKey, items: list(record(job)[field]), path: ["resources", "jobs", jobKey, field] };
@@ -107,10 +122,10 @@ const pathKey = (path: (string | number)[]) =>
  * not in the location map, so the file is read again following them, and the location
  * is where the anchor writes the value.
  */
-export function locator(file: SourceFile): (path: (string | number)[]) => YamlLocation | undefined {
+export function locator(file: SourceFile): (path: (string | number)[], at?: "value" | "key") => YamlLocation | undefined {
   let parsed: { doc: Document; lineCounter: LineCounter; anchors: Map<string, Node[]> } | undefined;
-  return (path) => {
-    const mapped = file.locations?.get(pathKey(path));
+  return (path, at = "value") => {
+    const mapped = at === "value" ? file.locations?.get(pathKey(path)) : undefined;
     if (mapped) return mapped;
     if (file.text === undefined) return undefined;
     if (!parsed) {
@@ -149,7 +164,17 @@ export function locator(file: SourceFile): (path: (string | number)[]) => YamlLo
       return undefined;
     };
     let node: unknown = doc.contents;
-    for (const part of path) {
+    for (const [i, part] of path.entries()) {
+      // A key written in this map, not brought in by a merge: point at the key itself.
+      if (at === "key" && i === path.length - 1 && typeof part === "string") {
+        const here = resolve(node);
+        const pair = isMap(here) ? here.items.filter((p) => isScalar(p.key) && p.key.value === part).at(-1) : undefined;
+        const offset = (pair?.key as Node | undefined)?.range?.[0];
+        if (typeof offset === "number") {
+          const { line, col } = lineCounter.linePos(offset);
+          return { file: file.file, line, column: col };
+        }
+      }
       node = child(node, part);
       if (node === undefined) return undefined;
     }
@@ -164,26 +189,59 @@ export function locator(file: SourceFile): (path: (string | number)[]) => YamlLo
 /**
  * Where a task's dependency on `upstream` is written: in the job's own list or the picked
  * target's, never another target's, and in whichever copy of a repeated task key has it.
+ * `field` is the part of the dependency to point at.
  */
-function dependencyLocation(
+export function dependencyLocation(
   files: SourceFile[],
   locate: Map<SourceFile, (path: (string | number)[]) => YamlLocation | undefined>,
   jobKey: string,
   taskKey: string,
   upstream: string,
   options: JobStructureOptions,
+  field: "task_key" | "outcome" = "task_key",
+  /**
+   * Which entry naming `upstream` to point at, counted from 0 in the order the CLI joins them:
+   * the job's own list, then the picked target's. Without it, the first entry, target's first.
+   */
+  occurrence?: number,
 ): YamlLocation | undefined {
+  if (occurrence !== undefined) {
+    const entries: YamlLocation[] = [];
+    for (const fromTarget of [false, true]) {
+      for (const file of files) {
+        for (const tasks of jobLists(file.doc, "tasks")) {
+          if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
+          if (fromTarget && tasks.target !== options.activeTarget) continue;
+          const target = tasks.target ?? options.activeTarget;
+          for (const [index, task] of tasks.items.entries()) {
+            if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
+            for (const [position, dependency] of list(record(task).depends_on).entries()) {
+              if (keyOf(record(dependency).task_key, target, options) !== upstream) continue;
+              const base = [...tasks.path, index, "depends_on", position];
+              const found = locate.get(file)!([...base, field]) ?? locate.get(file)!([...base, "task_key"]);
+              if (found) entries.push(found);
+            }
+          }
+        }
+      }
+    }
+    if (entries[occurrence]) return entries[occurrence];
+  }
   let taskLocation: YamlLocation | undefined;
-  for (const file of files) {
-    for (const tasks of jobLists(file.doc, "tasks")) {
-      if (tasks.jobKey !== jobKey || (tasks.target !== undefined && tasks.target !== options.activeTarget)) continue;
-      const target = tasks.target ?? options.activeTarget;
-      for (const [index, task] of tasks.items.entries()) {
-        if (keyOf(record(task).task_key, target, options) !== taskKey) continue;
-        const dependency = list(record(task).depends_on).findIndex((d) => keyOf(record(d).task_key, target, options) === upstream);
-        const found = dependency >= 0 ? locate.get(file)!([...tasks.path, index, "depends_on", dependency, "task_key"]) : undefined;
-        if (found) return found;
-        taskLocation ??= locate.get(file)!([...tasks.path, index, "task_key"]);
+  // The picked target's list first: a dependency it writes again is the one the CLI keeps.
+  for (const fromTarget of [true, false]) {
+    for (const file of files) {
+      for (const tasks of jobLists(file.doc, "tasks")) {
+        if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
+        if (fromTarget && tasks.target !== options.activeTarget) continue;
+        const target = tasks.target ?? options.activeTarget;
+        for (const [index, task] of tasks.items.entries()) {
+          if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
+          const dependency = list(record(task).depends_on).findIndex((d) => keyOf(record(d).task_key, target, options) === upstream);
+          const found = dependency >= 0 ? locate.get(file)!([...tasks.path, index, "depends_on", dependency, field]) : undefined;
+          if (found) return found;
+          taskLocation ??= locate.get(file)!([...tasks.path, index, "task_key"]);
+        }
       }
     }
   }
@@ -381,7 +439,7 @@ export function findDuplicateKeys(files: SourceFile[], options: JobStructureOpti
   return findings;
 }
 
-function located(location: YamlLocation | undefined): { location?: YamlLocation } {
+export function located(location: YamlLocation | undefined): { location?: YamlLocation } {
   return location ? { location } : {};
 }
 
