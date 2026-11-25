@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 import * as vscode from "vscode";
+import path from "node:path";
 import * as inspector from "../../../bundle/inspectBundle.js";
 import * as issues from "../../../bundle/issues.js";
 import * as validation from "../../../bundle/validateBundle.js";
@@ -23,8 +24,8 @@ jest.mock("vscode", () => ({
   },
 }));
 
-const root = "/test/failure-bundle";
-const file = `${root}/databricks.yml`;
+const root = path.resolve(path.sep, "test", "failure-bundle");
+const file = path.join(root, "databricks.yml");
 const shown = new Map<string, vscode.Diagnostic[]>();
 const collection = {
   set: (uri: vscode.Uri, diagnostics: vscode.Diagnostic[]) => shown.set(uri.fsPath, diagnostics),
@@ -96,7 +97,7 @@ describe("the newest requested check owns findings", () => {
     await old;
     expect(messages()).toEqual(["new"]);
     expect(completeCheckFindings(root)?.map((i) => i.title)).toEqual(["new"]);
-    expect([...bundleLoadedFiles().get(root)!]).toEqual([`${root}/new.yml`]);
+    expect([...bundleLoadedFiles().get(root)!]).toEqual([path.join(root, "new.yml")]);
   });
   test("a slow earlier CLI cannot get a newer revision when it finally finishes", async () => {
     const slow = deferred<validation.BundleResult>();
