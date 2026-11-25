@@ -125,10 +125,12 @@ export function warehouseSettings(
   fieldLines?: Record<string, number>,
   file?: string,
 ): ComputeSettings {
-  const serverless = config.enable_serverless_compute;
+  const serverless = isSet(config.enable_serverless_compute) ? resolve(String(config.enable_serverless_compute)) : undefined;
   const type =
-    serverless === true || serverless === "true"
+    serverless === "true"
       ? { label: "Type", value: "Serverless" }
+      : serverless?.includes("${")
+        ? row("Type", config.enable_serverless_compute, resolve)
       : row("Type", config.warehouse_type, resolve, words);
   const scaling = [
     isSet(config.min_num_clusters) ? `Min ${resolve(String(config.min_num_clusters))}` : "",
@@ -225,7 +227,7 @@ export function serverlessSettings(jobs: ServerlessJob[], resolve: Resolve = (va
     );
     const environments = new Map(
       (Array.isArray(job.environments) ? job.environments : []).map((environment) => [
-        String(record(environment).environment_key),
+        resolve(String(record(environment).environment_key)),
         record(record(environment).spec),
       ]),
     );
