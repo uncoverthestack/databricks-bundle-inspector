@@ -90,8 +90,11 @@ function buildViews(lines: Line[], runs: NotebookRun[]): NotebookViews {
   };
 }
 
-function sourceNotebookLines(content: string, language: CodeLanguage): NotebookViews {
-  const comment = language === "python" ? "#" : "--";
+function sourceNotebookLines(
+  content: string,
+  language: CodeLanguage,
+  comment: string = language === "python" ? "#" : "--",
+): NotebookViews {
   const separator = new RegExp(`^${comment} COMMAND -{5,}\\s*$`);
   const magicPrefix = new RegExp(`^${comment} MAGIC ?`);
   const magicLine = new RegExp(`^${comment} MAGIC\\s*%(\\w+)`);
@@ -100,6 +103,9 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
   const runs: NotebookRun[] = [];
   let cellLanguage: CellLanguage = language;
   let atCellStart = true;
+  // A cell opened by a magic line has `MAGIC` on every line, even `%python` in a
+  // Python notebook, which Databricks runs as Python (job run, CLI v1.28.0, #588).
+  let magicCell = false;
 
   const header = new RegExp(`^${comment} Databricks notebook source`);
   for (const text of content.split("\n")) {
@@ -111,6 +117,7 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
       lines.push({ text, language: "other", markupLength: 0 });
       cellLanguage = language;
       atCellStart = true;
+      magicCell = false;
       continue;
     }
     const magic = magicLine.exec(text);
@@ -126,15 +133,87 @@ function sourceNotebookLines(content: string, language: CodeLanguage): NotebookV
       atCellStart = false;
       if (magic) {
         cellLanguage = magicLanguage(magic[1]!);
+        magicCell = true;
         // The magic line itself (`%sql`) is not code.
         lines.push({ text, language: "other", markupLength: 0 });
         continue;
       }
     }
-    const prefix = cellLanguage !== language ? magicPrefix.exec(text) : null;
+    const prefix = magicCell ? magicPrefix.exec(text) : null;
     lines.push({ text, language: cellLanguage, markupLength: prefix ? prefix[0].length : 0 });
   }
   return buildViews(lines, runs);
+}
+
+const SCALA_MARKUP = /^\/\/ (?:Databricks notebook source|COMMAND -{5,}|MAGIC)/;
+
+/**
+ * Scala text with its comments (`// ...` and nested block comments) replaced with spaces,
+ * line breaks kept. Strings (`"..."`, `"""..."""`) and character literals are skipped.
+ * Notebook markup lines (`// MAGIC`, `// COMMAND ----------`, the header) are kept.
+ */
+function blankScalaComments(content: string): string {
+  const out = content.split("");
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n" && out[k] !== "\r") out[k] = " ";
+  };
+  let i = 0;
+  while (i < content.length) {
+    const lineStart = i === 0 || content[i - 1] === "\n";
+    if (lineStart && SCALA_MARKUP.test(content.slice(i, i + 60))) {
+      const end = content.indexOf("\n", i);
+      i = end === -1 ? content.length : end + 1;
+      continue;
+    }
+    if (content.startsWith('"""', i)) {
+      const end = content.indexOf('"""', i + 3);
+      i = end === -1 ? content.length : end + 3;
+    } else if (content[i] === '"') {
+      let k = i + 1;
+      while (k < content.length && content[k] !== '"' && content[k] !== "\n") k += content[k] === "\\" ? 2 : 1;
+      i = k + 1;
+    } else if (content[i] === "'") {
+      const char = /^'(?:\\.|[^\\'\n])'/.exec(content.slice(i, i + 8));
+      i += char ? char[0].length : 1;
+    } else if (content.startsWith("//", i)) {
+      const end = content.indexOf("\n", i);
+      const stop = end === -1 ? content.length : end;
+      blank(i, stop);
+      i = stop;
+    } else if (content.startsWith("/*", i)) {
+      // Scala block comments nest.
+      let depth = 0;
+      let k = i;
+      while (k < content.length) {
+        if (content.startsWith("/*", k)) {
+          depth += 1;
+          k += 2;
+        } else if (content.startsWith("*/", k)) {
+          depth -= 1;
+          k += 2;
+          if (depth === 0) break;
+        } else k += 1;
+      }
+      blank(i, k);
+      i = k;
+    } else {
+      i += 1;
+    }
+  }
+  return out.join("");
+}
+
+/**
+ * A Scala file or notebook. Its own code goes in the Python view: `dbutils` calls read the
+ * same in both, and comments are blanked first so they don't count (#588). A notebook's
+ * `%python` and `%sql` cells go in their own views.
+ */
+function scalaViews(content: string): NotebookViews {
+  const code = blankScalaComments(content);
+  const views = /^\/\/ Databricks notebook source/.test(content)
+    ? sourceNotebookLines(code, "python", "//")
+    : buildViews(code.split("\n").map((text): Line => ({ text, language: "python", markupLength: 0 })), []);
+  return { ...views, document: content };
 }
 
 interface JupyterNotebook {
@@ -179,9 +258,10 @@ function jupyterLines(raw: string): NotebookViews {
  */
 export function notebookViews(
   content: string,
-  options: { jupyter: boolean; fileLanguage: CodeLanguage },
+  options: { jupyter: boolean; fileLanguage: CodeLanguage; scala?: boolean },
 ): NotebookViews {
   if (options.jupyter) return jupyterLines(content);
+  if (options.scala) return scalaViews(content);
   if (/^# Databricks notebook source/.test(content)) return sourceNotebookLines(content, "python");
   if (/^-- Databricks notebook source/.test(content)) return sourceNotebookLines(content, "sql");
   const lines = content
