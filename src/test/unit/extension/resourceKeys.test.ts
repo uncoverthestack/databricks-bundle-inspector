@@ -51,6 +51,22 @@ describe("resource keys with a dot", () => {
     expect(check(text, output("dev"))).toEqual([expect.objectContaining({ id: "jobs.a.b", line: 5 })]);
   });
 
+  test("the suggested name is one the bundle doesn't use yet", () => {
+    // Keys are unique across every resource type and script, so "a_b" and "a_b_2" are both taken.
+    const bundle = {
+      resources: { jobs: { "a.b": { name: "x" }, a_b: { name: "y" } }, pipelines: { a_b_2: { name: "p" }, "c.d": { name: "q" } } },
+      scripts: { c_d: { content: "echo" } },
+    };
+    const hints = findResourceKeyProblems(bundle, []).map((finding) => finding.fixHint);
+    expect(hints[0]).toContain('for example "a_b_3"');
+    expect(hints[1]).toContain('for example "c_d_2"');
+  });
+
+  test("two dotted keys that would share a suggestion get different ones", () => {
+    const hints = findResourceKeyProblems({ resources: { jobs: { "x.y_z": {}, "x_y.z": {} } } }, []).map((finding) => finding.fixHint);
+    expect(hints.map((hint) => hint.match(/for example "([^"]+)"/)?.[1])).toEqual(["x_y_z", "x_y_z_2"]);
+  });
+
   test("dots elsewhere are fine: in a name, a task key's value, or a field", () => {
     expect(check("resources:\n  jobs:\n    nightly:\n      name: a.b\n      tags:\n        team.name: x\n")).toEqual([]);
   });

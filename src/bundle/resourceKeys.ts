@@ -41,6 +41,20 @@ export function findResourceKeyProblems(cliOutput: unknown, files: SourceFile[])
   const keys = [bundle.resources, ...targets.map((target) => record(record(bundle.targets)[target]).resources)].flatMap(
     (resources) => Object.entries(record(resources)).flatMap(([group, entries]) => Object.keys(record(entries)).map((key) => [group, key] as const)),
   );
+  // A key must be unique across every resource type and script (the CLI's unique_resource_keys),
+  // so a suggested name skips the keys the bundle has and the names already suggested.
+  const taken = new Set([
+    ...keys.map(([, key]) => key),
+    ...files.flatMap((file) => Object.keys(record(record(file.doc).scripts))),
+    ...Object.keys(record(bundle.scripts)),
+  ]);
+  const suggest = (key: string) => {
+    const base = key.replace(/\./g, "_");
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}_${n}`;
+    taken.add(name);
+    return name;
+  };
   for (const [group, key] of keys) {
     const id = `${group}.${key}`;
     if (!key.includes(".") || seen.has(id)) continue;
@@ -53,7 +67,7 @@ export function findResourceKeyProblems(cliOutput: unknown, files: SourceFile[])
       group,
       key,
       title: `The resource key "${key}" has a dot, which deploy doesn't accept, so deploy may fail.`,
-      fixHint: `Use letters, digits, _ or - in the key, for example "${key.replace(/\./g, "_")}", and update any \${resources.${group}.${key}...} references. Deploy stops before it creates anything, with "Invalid resource name" or a Databricks CLI crash.`,
+      fixHint: `Use letters, digits, _ or - in the key, for example "${suggest(key)}", and update any \${resources.${group}.${key}...} references. Deploy stops before it creates anything, with "Invalid resource name" or a Databricks CLI crash.`,
       ...(location ? { location } : {}),
     });
   }
