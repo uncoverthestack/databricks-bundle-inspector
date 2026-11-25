@@ -1,4 +1,5 @@
 import type { YamlLocation } from "./sourceLocations.js";
+import { closestName } from "./closestName.js";
 import {
   dependencyLocation,
   jobLists,
@@ -86,13 +87,14 @@ function taskFieldLocation(
   return undefined;
 }
 
-/** Where a job parameter's name is written: the picked target's list first, else the job's own. */
+/** Where a job parameter's `field` is written: the picked target's list first, else the job's own. */
 function parameterLocation(
   files: SourceFile[],
   locate: Locate,
   jobKey: string,
   name: string,
   options: JobStructureOptions,
+  field: "name" | "default" = "name",
 ): YamlLocation | undefined {
   for (const fromTarget of [true, false]) {
     for (const file of files) {
@@ -101,7 +103,7 @@ function parameterLocation(
         if (fromTarget && parameters.target !== options.activeTarget) continue;
         const target = parameters.target ?? options.activeTarget;
         const index = parameters.items.findIndex((item) => keyOf(record(item).name, target, options) === name);
-        const found = index >= 0 ? locate.get(file)!([...parameters.path, index, "name"]) : undefined;
+        const found = index >= 0 ? locate.get(file)!([...parameters.path, index, field]) : undefined;
         if (found) return found;
       }
     }
@@ -128,6 +130,45 @@ export function forEachInputsProblem(inputs: string): string | undefined {
   if (objects > 0 && objects < parsed.length) return "mixes objects with plain values";
   return undefined;
 }
+
+/**
+ * `{{job.parameters.x}}` and `{{job.parameters.[x]}}`, spaces inside the braces allowed. The
+ * name is what deploy looks up; a dot in it, even in brackets, is never found.
+ */
+const JOB_PARAMETER_REFERENCE = /\{\{\s*job\.parameters\.(?:\[([^\]]*)\]|([A-Za-z0-9_.-]+))\s*\}\}/g;
+
+/** The job parameter names a text refers to, in order. */
+export function jobParameterReferences(text: string): string[] {
+  return [...text.matchAll(JOB_PARAMETER_REFERENCE)].map((match) => match[1] ?? match[2]!);
+}
+
+/**
+ * The task fields deploy checks for `{{job.parameters.x}}`, as seen live (CLI v1.28.0). A
+ * run_job_task's `job_parameters` and a task's `description` deploy with any name, so they,
+ * and fields not tested, are left out: a missing finding beats a wrong one.
+ */
+function referenceFields(task: Record<string, unknown>): { path: (string | number)[]; text: string }[] {
+  const fields: { path: (string | number)[]; text: string }[] = [];
+  const add = (path: (string | number)[], value: unknown) => {
+    if (typeof value === "string") fields.push({ path, text: value });
+  };
+  const listOf = (path: [string, string]) =>
+    list(record(task[path[0]])[path[1]]).forEach((value, index) => add([...path, index], value));
+  const mapOf = (path: [string, string]) =>
+    Object.entries(record(record(task[path[0]])[path[1]])).forEach(([key, value]) => add([...path, key], value));
+  mapOf(["notebook_task", "base_parameters"]);
+  add(["condition_task", "left"], record(task.condition_task).left);
+  add(["condition_task", "right"], record(task.condition_task).right);
+  listOf(["spark_python_task", "parameters"]);
+  listOf(["python_wheel_task", "parameters"]);
+  mapOf(["python_wheel_task", "named_parameters"]);
+  mapOf(["sql_task", "parameters"]);
+  listOf(["dbt_task", "commands"]);
+  add(["for_each_task", "inputs"], record(task.for_each_task).inputs);
+  return fields;
+}
+
+const quotedList = (names: string[]) => names.map((name) => `"${name}"`).join(", ");
 
 export function findJobSettingProblems(
   jobs: Record<string, unknown>,
@@ -177,6 +218,25 @@ export function findJobSettingProblems(
         title: `Rename job parameter "${name}": names can only use letters, digits, "-", "_" and ".", so deploy may fail.`,
         fixHint: `Deploy fails with "The specified parameter name contains an invalid character, only alphanumeric, -, _ and . characters are permitted." Letters are A to Z only; spaces and accented letters are refused.`,
         ...located(parameterLocation(files, locate, jobKey, name, options)),
+      });
+    }
+
+    const parameterNames = list(settings.parameters).map((parameter) => keyOf(record(parameter).name, target, options));
+    // A name the preview can't resolve could be any name: no reference can be called unknown.
+    const namesKnown = parameterNames.every((name) => name !== undefined);
+    const known = parameterNames.filter((name): name is string => name !== undefined);
+
+    for (const parameter of list(settings.parameters).map(record)) {
+      const name = keyOf(parameter.name, target, options);
+      const used = typeof parameter.default === "string" ? jobParameterReferences(parameter.default) : [];
+      if (name === undefined || used.length === 0) continue;
+      findings.push({
+        kind: "job_parameter_in_default",
+        jobKey,
+        subject: name,
+        title: `Remove {{job.parameters.${used[0]}}} from the default of job parameter "${name}": a default can't use another job parameter, so deploy may fail.`,
+        fixHint: `Deploy fails with "Invalid reference in job parameter '${name}': 'job.parameters.${used[0]}' is not allowed." Other references, such as {{job.id}}, are allowed.`,
+        ...located(parameterLocation(files, locate, jobKey, name, options, "default") ?? parameterLocation(files, locate, jobKey, name, options)),
       });
     }
 
@@ -255,6 +315,49 @@ export function findJobSettingProblems(
             fixHint: `Deploy fails with "The JSON string in the inputs field should be an array of primitives or objects." Use all plain values (text, numbers, true or false) or all objects, with no null and no list inside.`,
             ...located(taskFieldLocation(files, locate, jobKey, taskKey, ["for_each_task", "inputs"], options)),
           });
+        }
+      }
+
+      // A for-each task's inner task is checked too; deploy names the inner task.
+      const checked = [
+        { prefix: [] as string[], fields: referenceFields(task), name: ownKey ?? taskKey },
+        ...(Object.keys(inner).length
+          ? [{ prefix: ["for_each_task", "task"], fields: referenceFields(inner).filter((f) => f.path[0] !== "for_each_task"), name: innerKey ?? taskKey }]
+          : []),
+      ];
+      const reported = new Set<string>();
+      for (const { prefix, fields, name: inTask } of checked) {
+        for (const { path, text } of fields) {
+          for (const name of jobParameterReferences(text)) {
+            const dotted = name.includes(".");
+            if (!dotted && (!namesKnown || known.includes(name))) continue;
+            const kind = dotted ? "job_parameter_reference_with_dot" : "unknown_job_parameter";
+            if (reported.has(`${kind}\u0000${name}\u0000${prefix.length}`)) continue;
+            reported.add(`${kind}\u0000${name}\u0000${prefix.length}`);
+            const location = located(taskFieldLocation(files, locate, jobKey, taskKey, [...prefix, ...path], options));
+            if (dotted) {
+              findings.push({
+                kind,
+                jobKey,
+                taskKey,
+                subject: `${name}${prefix.length ? "#inner" : ""}`,
+                title: `Use a job parameter name without a dot in {{job.parameters.${name}}}: Databricks can't read the dot, so deploy may fail.`,
+                fixHint: `Deploy fails with "Invalid reference: 'job.parameters.${name}'. 'parameters' is unknown.", even when a parameter named "${name}" exists, and in brackets too. Rename the parameter, for example to "${name.replace(/\./g, "_")}".`,
+                ...location,
+              });
+              continue;
+            }
+            const suggestion = closestName(name, known);
+            findings.push({
+              kind,
+              jobKey,
+              taskKey,
+              subject: `${name}${prefix.length ? "#inner" : ""}`,
+              title: `Job parameter "${name}" may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+              fixHint: `Deploy fails with "Reference 'job.parameters.${name}' in task '${inTask}' refers to an undefined job parameter '${name}'". Add "${name}" to job "${jobKey}"'s parameters${known.length ? `, or use one of ${quotedList(known)}` : ""}. Letter case counts.`,
+              ...location,
+            });
+          }
         }
       }
     }

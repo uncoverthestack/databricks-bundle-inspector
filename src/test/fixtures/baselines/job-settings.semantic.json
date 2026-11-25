@@ -329,6 +329,72 @@
       }
     },
     {
+      "key": "parameter_references",
+      "name": "parameter_references",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "check",
+          "type": "If/else",
+          "source": "{{job.parameters.env}} == {{job.parameters.Env}} - Equal to",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "loop",
+          "type": "For each",
+          "source": "{{job.parameters.items}}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "nb",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "run_other",
+          "type": "Run Job",
+          "source": "${resources.jobs.one_trigger.id}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 6,
+        "warningIssueCount": 0
+      }
+    },
+    {
       "key": "task_keys",
       "name": "task_keys",
       "trigger": "Not specified",
@@ -525,6 +591,23 @@
     },
     {
       "severity": "error",
+      "kind": "job_parameter_in_default",
+      "title": "Remove {{job.parameters.env}} from the default of job parameter \"copy\": a default can't use another job parameter, so deploy may fail.",
+      "file": "resources/jobs.yml",
+      "line": 108,
+      "column": 20
+    },
+    {
+      "severity": "error",
+      "kind": "job_parameter_reference_with_dot",
+      "title": "Use a job parameter name without a dot in {{job.parameters.a.b}}: Databricks can't read the dot, so deploy may fail.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 119,
+      "column": 23
+    },
+    {
+      "severity": "error",
       "kind": "multiple_job_triggers",
       "title": "Keep only one of schedule and trigger on job \"two_triggers\": a job can have one, so deploy may fail.",
       "file": "resources/jobs.yml",
@@ -539,6 +622,102 @@
       "file": "resources/jobs.yml",
       "line": 72,
       "column": 52
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_job_parameter",
+      "title": "Job parameter \"Env\" may not exist. Did you mean \"env\"?",
+      "taskKey": "check",
+      "file": "resources/jobs.yml",
+      "line": 111,
+      "column": 82
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_job_parameter",
+      "title": "Job parameter \"items\" may not exist.",
+      "taskKey": "loop",
+      "file": "resources/jobs.yml",
+      "line": 128,
+      "column": 21
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_job_parameter",
+      "title": "Job parameter \"missing\" may not exist.",
+      "taskKey": "loop",
+      "file": "resources/jobs.yml",
+      "line": 131,
+      "column": 83
+    },
+    {
+      "severity": "error",
+      "kind": "unknown_job_parameter",
+      "title": "Job parameter \"evn\" may not exist. Did you mean \"env\"?",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 118,
+      "column": 21
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"p\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "loop",
+      "file": "resources/jobs.yml",
+      "line": 131,
+      "column": 83,
+      "yamlPath": "tasks.loop.for_each_task.task.notebook_task.base_parameters.p"
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"bracket\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 120,
+      "column": 24,
+      "yamlPath": "tasks.nb.notebook_task.base_parameters.bracket"
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"dotted\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 119,
+      "column": 23,
+      "yamlPath": "tasks.nb.notebook_task.base_parameters.dotted"
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"other\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 121,
+      "column": 22,
+      "yamlPath": "tasks.nb.notebook_task.base_parameters.other"
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"spaces\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 117,
+      "column": 23,
+      "yamlPath": "tasks.nb.notebook_task.base_parameters.spaces"
+    },
+    {
+      "severity": "info",
+      "kind": "unused_parameter",
+      "title": "Parameter \"typo\" may not be used: the notebook doesn't read a widget with that name.",
+      "taskKey": "nb",
+      "file": "resources/jobs.yml",
+      "line": 118,
+      "column": 21,
+      "yamlPath": "tasks.nb.notebook_task.base_parameters.typo"
     }
   ],
   "detectedReferences": {

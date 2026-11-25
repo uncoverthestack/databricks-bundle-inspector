@@ -1,0 +1,3 @@
+Added
+
+- **Job parameter references that `bundle deploy` rejects are reported** ([#237](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/237)). Three new errors: `unknown_job_parameter`, a task's `{{job.parameters.<name>}}` naming a parameter its job doesn't have (letter case counts), with a "Did you mean" when one is close; `job_parameter_reference_with_dot`, a reference with a dot after `parameters.`, which fails even when a parameter of that name exists; and `job_parameter_in_default`, a job parameter whose default refers to another job parameter. Checked by deploying a bundle per case, broken and working, on Databricks CLI v1.28.0.

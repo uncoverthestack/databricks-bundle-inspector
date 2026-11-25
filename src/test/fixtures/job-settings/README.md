@@ -16,5 +16,9 @@ Fixture for the job setting checks from #237. `bundle validate` accepts every ca
 | `outcomes`: `on_true`, `on_bool` | `"true"`, and unquoted `true` | deploys | nothing |
 | `for_each_inputs`: `not_json`, `an_object`, `nested`, `has_null`, `mixed` | `not json`, `{"a": 1}`, `[[1, 2]]`, `[null, 1]`, `["a", {"k": "v"}]` | fails: `The JSON string in the inputs field should be an array of primitives or objects.` | `for_each_inputs_not_array` |
 | `for_each_inputs`: `plain_values`, `objects`, `empty`, `from_parameter` | `["a", 1, 2.5, true]`, `[{"a": 1}, {"b": [1, 2]}]`, `[]`, `{{job.parameters.items}}` | deploys | nothing |
+| `parameter_references`: `check`, `nb` `typo`, `loop` and its inner task | `{{job.parameters.Env}}`, `pre-{{job.parameters.evn}}-post`, `{{job.parameters.items}}` and `{{job.parameters.missing}}` where the job has `env` | fails: `Reference 'job.parameters.evn' in task 'nb' refers to an undefined job parameter 'evn'.` | `unknown_job_parameter` |
+| `parameter_references`: `nb` `dotted` | `{{job.parameters.a.b}}`, with a parameter `a.b` | fails: `Invalid reference: 'job.parameters.a.b'. 'parameters' is unknown.` | `job_parameter_reference_with_dot` |
+| `parameter_references`: parameter `copy` | `default: "{{job.parameters.env}}"` | fails: `Invalid reference in job parameter 'copy': 'job.parameters.env' is not allowed.` | `job_parameter_in_default` |
+| `parameter_references`: `{{ job.parameters.env }}`, `{{job.parameters.[env]}}`, `{{job.id}}`, a `description` and a `run_job_task`'s `job_parameters` naming `not_checked` | a defined name, another reference, and two fields deploy doesn't check | deploys | nothing |
 
 `validated-bundle.json` is the CLI's structural preview output, captured with no credentials (`DATABRICKS_CONFIG_FILE=/dev/null`): the findings need no login. The baseline is the same on CLI v0.299.0 to v1.28.0.

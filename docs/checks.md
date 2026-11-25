@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `pipeline_selection_not_found`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
@@ -158,7 +158,7 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 ## Jobs
 
-`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `for_each_inputs_not_array`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each.
+`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `job_parameter_in_default`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each.
 
 ### `unknown_task_dependency`
 
@@ -281,6 +281,33 @@ A `for_each_task`'s `inputs` is not a JSON array deploy accepts.
 - **Example:** `inputs: '{"a": 1}'`. Deploy fails with `The JSON string in the inputs field should be an array of primitives or objects.` Deploy takes an array of plain values (strings, numbers, true or false, mixed freely) or an array of objects. Text that isn't JSON, a JSON object, a list inside the list (`[[1, 2]]`), a `null` item, and plain values mixed with objects (`["a", {"k": "v"}]`) all fail. `[]` deploys.
 - **Fix:** write a JSON array of plain values or of objects.
 - **Limits:** inputs with `{{job.parameters.…}}`, `{{tasks.….values.…}}` or an unresolved variable are filled in later and not judged.
+
+### `unknown_job_parameter`
+
+A task refers to `{{job.parameters.<name>}}`, and its job has no parameter with that name.
+
+- **Severity:** error.
+- **Example:** `base_parameters: {env: "{{job.parameters.evn}}"}` in a job whose parameter is `env`. Deploy fails with `Reference 'job.parameters.evn' in task 'load' refers to an undefined job parameter 'evn'. Please add this parameter to your job before referencing it in your tasks.` Letter case counts: `{{job.parameters.Env}}` fails the same way. A job with no parameters at all fails too.
+- **Fix:** use the name of one of the job's parameters, or add the parameter. The finding suggests a close match.
+- **Checked fields:** `notebook_task.base_parameters`, `condition_task.left` and `right`, `spark_python_task.parameters`, `python_wheel_task.parameters` and `named_parameters`, `sql_task.parameters`, `dbt_task.commands` and `for_each_task.inputs`, also in a for-each task's inner task. Each was deployed with an unknown name on Databricks CLI v1.28.0 on 2026-11-25 and failed. Spaces inside the braces (`{{ job.parameters.x }}`), brackets (`{{job.parameters.[x]}}`) and a reference inside other text count.
+- **Limits:** a `run_job_task`'s `job_parameters` and a task's `description` deploy with any name, so they are not checked; nor are fields not tested. The job is checked as the CLI resolved it, so a parameter a target adds counts. When a parameter name can't be resolved offline, the job's references aren't judged. The older `${job.parameters.<name>}` form is not this check.
+
+### `job_parameter_reference_with_dot`
+
+A `{{job.parameters.…}}` reference has a dot after `parameters.`, such as `{{job.parameters.a.b}}`.
+
+- **Severity:** error.
+- **Example:** a job parameter named `a.b`, used as `{{job.parameters.a.b}}`. Deploy fails with `Invalid reference: 'job.parameters.a.b'. 'parameters' is unknown.`, even though the parameter exists, and also when written `{{job.parameters.[a.b]}}`. `{{job.parameters.env.x}}` fails the same way.
+- **Fix:** rename the parameter without a dot, for example `a_b`, and use that name in the reference.
+- **Limits:** the same fields as `unknown_job_parameter`.
+
+### `job_parameter_in_default`
+
+A job parameter's `default` refers to another job parameter.
+
+- **Severity:** error.
+- **Example:** `parameters: [{name: env, default: dev}, {name: copy, default: "{{job.parameters.env}}"}]`. Deploy fails with `Invalid reference in job parameter 'copy': 'job.parameters.env' is not allowed.`, even though `env` exists.
+- **Fix:** write the value in the default, or pass it in the task instead. Other references, such as `{{job.id}}`, deploy in a default.
 
 ### `pipeline_selection_not_found`
 
