@@ -16,6 +16,7 @@ import { bundleSecretScopes, type BundleGraph, type BundleGraphNode } from "./bu
 import { buildPipelineDataFlow, type DataFlowFile } from "../pipelineDataFlow.js";
 import { readPipelineSql } from "../pipelineSql.js";
 import type { BundleEdge } from "./edges.js";
+import { createSyncExclusion, type SyncExclusion } from "../syncRules.js";
 
 /**
  * Enriches a bundle graph with secret scope and widget nodes found by scanning
@@ -47,12 +48,13 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     }
   }
 
-  const failures = new Map<string, Map<string, Set<string>>>();
-  const failed = (nodeId: string, file: string, check: string) => {
-    const byFile = failures.get(nodeId) ?? new Map<string, Set<string>>();
-    const checks = byFile.get(file) ?? new Set<string>();
-    checks.add(check);
-    byFile.set(file, checks);
+  const failures = new Map<string, Map<string, { checks: Set<string>; directory: boolean }>>();
+  const failed = (nodeId: string, file: string, check: string, directory = false) => {
+    const byFile = failures.get(nodeId) ?? new Map<string, { checks: Set<string>; directory: boolean }>();
+    const entry = byFile.get(file) ?? { checks: new Set<string>(), directory };
+    entry.checks.add(check);
+    entry.directory ||= directory;
+    byFile.set(file, entry);
     failures.set(nodeId, byFile);
   };
 
@@ -190,12 +192,22 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     }),
   );
 
+  // Enumerate each pipeline once. Secrets and lineage must use the same uploaded source set.
+  const exclusionOf = graph.sourceUpload
+    ? createSyncExclusion(graph.sourceUpload.root, graph.sourceUpload.sync) : () => undefined;
+  const pipelineSources = new Map<string, PipelineSources>();
+  for (const pipeline of graph.nodes.filter((node) => node.pipelineLibraries?.length)) {
+    const sources = pipelineSourceFiles(pipeline, exclusionOf, !!graph.sourceUpload?.sync?.include?.length);
+    pipelineSources.set(pipeline.id, sources);
+    for (const failure of sources.failures) failed(pipeline.id, failure.file, "pipeline source discovery", !!failure.directory);
+  }
+
   // Pipeline sources are not file nodes, so scan them here and link secrets to the pipeline.
   await Promise.all(
     graph.nodes
       .filter((node) => node.pipelineLibraries?.length)
       .flatMap((pipeline) =>
-        pipelineSourceFiles(pipeline).files.map(async (filePath) => {
+        pipelineSources.get(pipeline.id)!.files.map(async (filePath) => {
           const secrets = await detectSecretInNotebook(filePath).catch(() => { failed(pipeline.id, filePath, "secrets"); return []; });
           for (const detection of secrets) {
             if (!detection.scope) {
@@ -223,7 +235,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     [...nodeMap.values()]
       .filter((node) => node.pipelineLibraries?.length)
       .map(async (pipeline) => {
-        const flow = await pipelineDataFlowOf(pipeline, (file) => failed(pipeline.id, file, "SQL data flow"));
+        const flow = await pipelineDataFlowOf(pipeline, pipelineSources.get(pipeline.id)!, (file) => failed(pipeline.id, file, "SQL data flow"));
         if (flow) nodeMap.set(pipeline.id, { ...pipeline, pipelineDataFlow: flow });
       }),
   );
@@ -232,7 +244,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     ...graph,
     nodes: [...nodeMap.values()].map((node) => {
       const byFile = failures.get(node.id);
-      return byFile ? { ...node, scanFailures: [...byFile].map(([file, checks]) => ({ file, checks: [...checks] })) } : node;
+      return byFile ? { ...node, scanFailures: [...byFile].map(([file, entry]) => ({ file, checks: [...entry.checks], ...(entry.directory ? { directory: true as const } : {}) })) } : node;
     }),
     edges: [...graph.edges, ...newEdges],
   };
@@ -247,10 +259,10 @@ function pipelineConfiguration(pipeline: BundleGraphNode): Record<string, string
   );
 }
 
-async function pipelineDataFlowOf(pipeline: BundleGraphNode, failed: (file: string) => void) {
-  const { files: sources, truncated } = pipelineSourceFiles(pipeline);
-  if (sources.length === 0) return undefined;
-  let incomplete = truncated;
+async function pipelineDataFlowOf(pipeline: BundleGraphNode, sourceSet: PipelineSources, failed: (file: string) => void) {
+  const { files: sources, truncated, failures } = sourceSet;
+  if (sources.length === 0 && failures.length === 0) return undefined;
+  let incomplete = truncated || failures.length > 0;
   const config = pipelineConfiguration(pipeline);
   const files: DataFlowFile[] = [];
   const notRead: { file: string; reason: string }[] = [];
@@ -292,30 +304,50 @@ const SCANNED_SOURCE_EXTENSIONS = new Set([".py", ".sql", ".ipynb"]);
 /** Upper bound on files read from one pipeline's glob folders, so a huge folder can't stall inspection. */
 const MAX_GLOB_FILES = 200;
 
-/**
- * Local source files of a pipeline: its notebook/file sources and the files its globs cover.
- * `truncated` is set when a glob had more files than the limit, so some were left out.
- */
-function pipelineSourceFiles(pipeline: BundleGraphNode): { files: string[]; truncated: boolean } {
+interface PipelineSources {
+  files: string[];
+  truncated: boolean;
+  failures: Array<{ file: string; directory?: true }>;
+}
+
+/** Uploaded pipeline sources; an unread folder makes the list incomplete, not empty. */
+function pipelineSourceFiles(
+  pipeline: BundleGraphNode,
+  exclusionOf: (file: string, directory?: boolean) => SyncExclusion | undefined,
+  hasSyncIncludes: boolean,
+): PipelineSources {
   const files: string[] = [];
+  const failures: PipelineSources["failures"] = [];
   let globFiles = 0;
   let truncated = false;
 
+  function readableFile(file: string): boolean {
+    if (exclusionOf(file)) return false;
+    try { return statSync(file).isFile(); } catch {
+      failures.push({ file });
+      return false;
+    }
+  }
+
   function walk(dir: string, recursive: boolean): void {
+    const exclusion = exclusionOf(dir, true);
+    // A sync.include may restore a descendant of a gitignored folder. Walk it to
+    // test files individually; sync.exclude, metadata folders and symlinks always win.
+    if (exclusion && (exclusion.rule !== "gitignore" || !hasSyncIncludes)) return;
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
+      failures.push({ file: dir, directory: true });
       return;
     }
     for (const entry of entries) {
-      // Stop at the first file past the limit: knowing one was left out is enough (#587).
       if (truncated) return;
-      if (entry.name.startsWith(".")) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
+        if (entry.name === ".git" || entry.name === ".databricks") continue;
         if (recursive) walk(full, true);
-      } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase()) && isRegularFile(full)) {
+      } else if (SCANNED_SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase()) && readableFile(full)) {
         if (globFiles >= MAX_GLOB_FILES) {
           truncated = true;
           return;
@@ -327,9 +359,17 @@ function pipelineSourceFiles(pipeline: BundleGraphNode): { files: string[]; trun
   }
 
   for (const ref of pipeline.pipelineLibraries ?? []) {
-    if (!ref.checked || !ref.exists || !ref.resolvedPath) continue;
-    if (ref.kind === "glob" && /\/\*\*?$/.test(ref.path)) walk(ref.resolvedPath, ref.path.endsWith("**"));
-    else if (isRegularFile(ref.resolvedPath)) files.push(ref.resolvedPath);
+    if (!ref.checked || !ref.resolvedPath) continue;
+    // Even when the earlier existence check could not list a folder, try discovery
+    // here so permission errors are reported instead of becoming a missing-table hint.
+    if (ref.kind === "glob" && /\/\*\*?$/.test(ref.path)) {
+      if (ref.exists || isDirectory(ref.resolvedPath)) walk(ref.resolvedPath, ref.path.endsWith("**"));
+    } else if (ref.exists && readableFile(ref.resolvedPath)) files.push(ref.resolvedPath);
   }
-  return { files: [...new Set(files)], truncated };
+  return { files: [...new Set(files)], truncated, failures };
+}
+
+/** A missing glob root already has a missing-source finding. Existing folders are scanned. */
+function isDirectory(file: string): boolean {
+  try { return statSync(file).isDirectory(); } catch { return false; }
 }

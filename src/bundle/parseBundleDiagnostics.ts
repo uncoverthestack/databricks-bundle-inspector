@@ -1,5 +1,9 @@
+/**
+ * `info` is the CLI's `Recommendation:` (`diag.Recommendation` in `libs/diag/severity.go`):
+ * advice, not a fault, which the inspector shows as a note.
+ */
 export interface BundleDiagnostic {
-  severity: "warning" | "error";
+  severity: "warning" | "error" | "info";
   message: string;
   path?: string;
   line?: number;
@@ -32,7 +36,8 @@ export function parseAvailableTargets(stderr: string): string[] {
  * Parses the stderr output of `databricks bundle validate` into structured
  * diagnostics, filtering out the expected probe-target error.
  *
- * Each diagnostic is a message line followed by indented detail lines:
+ * Each diagnostic is an `Error:`, `Warning:` or `Recommendation:` line followed by
+ * indented detail lines:
  *   Warning: unknown field: bogus_field
  *     at resources.jobs.my_job
  *     in resources/jobs.yml:5:7
@@ -60,7 +65,7 @@ export function parseBundleDiagnostics(
     const line = lines[i] ?? "";
     const trimmed = line.trim();
 
-    let severity: "warning" | "error" | undefined;
+    let severity: BundleDiagnostic["severity"] | undefined;
     let message: string | undefined;
 
     if (trimmed.startsWith("Warning: ")) {
@@ -69,6 +74,11 @@ export function parseBundleDiagnostics(
     } else if (trimmed.startsWith("Error: ")) {
       severity = "error";
       message = trimmed.slice("Error: ".length);
+    } else if (trimmed.startsWith("Recommendation: ")) {
+      // Printed in the same run as warnings and errors, including the structural preview's
+      // (checked on CLI v1.28.0: a .job.yml file defining two jobs).
+      severity = "info";
+      message = trimmed.slice("Recommendation: ".length);
     } else {
       continue;
     }

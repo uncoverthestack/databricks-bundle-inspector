@@ -70,6 +70,15 @@
   ],
   "issues": [
     {
+      "severity": "info",
+      "kind": "cli_diagnostic",
+      "title": "define a single job in a file with the .job.yml extension.",
+      "file": "resources/top.job.yml",
+      "line": 10,
+      "column": 7,
+      "yamlPath": "resources.jobs.second_job"
+    },
+    {
       "severity": "warning",
       "kind": "include_matches_nothing",
       "title": "No files match the include pattern \"resource/*.yml\", so nothing from it is loaded. Did you mean \"resources/*.yml\"?",

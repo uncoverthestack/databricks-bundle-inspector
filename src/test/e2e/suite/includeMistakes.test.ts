@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
@@ -236,26 +236,27 @@ export function includeMistakesSuite() {
     it("checks a resource file created under a ./ include entry without another save", async function () {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       assert.ok(root, "the include-mistakes fixture should be the open folder");
-      // Inside the open folder, where VS Code reports created files.
-      const dir = mkdtempSync(path.join(root, "dotslash-"));
-      const created = path.join(dir, "resources", "new_job.yml");
+      // Reuse the open fixture's existing folder and watcher. Creating a whole nested
+      // bundle here also races Linux's registration of watches for the new directories.
+      const bundleFile = path.join(root, "databricks.yml");
+      const original = readFileSync(bundleFile);
+      const existing = path.join(root, "resources", "dotslash_existing.yml");
+      const created = path.join(root, "resources", "dotslash_new.yml");
       try {
-        mkdirSync(path.join(dir, "resources"));
         // A file the entry already loads, so the entry is not one that "matches nothing". Its
         // own missing notebook shows when the first check is done, before the new file exists.
-        const existing = path.join(dir, "resources", "existing.yml");
         writeFileSync(
           existing,
           "resources:\n  jobs:\n    existing:\n      name: existing\n      tasks:\n        - task_key: t\n          notebook_task:\n            notebook_path: ../src/gone.py\n",
         );
-        writeFileSync(path.join(dir, "databricks.yml"), "bundle:\n  name: include_dotslash\ninclude:\n  - ./resources/*.yml\n");
-        await vscode.window.showTextDocument(vscode.Uri.file(path.join(dir, "databricks.yml")));
+        writeFileSync(bundleFile, "bundle:\n  name: include_dotslash\ninclude:\n  - ./resources/*.yml\n");
+        await vscode.window.showTextDocument(vscode.Uri.file(bundleFile));
         await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
         const missingIn = (file: string) =>
           vscode.languages.getDiagnostics(vscode.Uri.file(file)).filter((d) => codeValue(d.code) === "missing_file");
         for (let waited = 0; missingIn(existing).length === 0 && waited < 30_000; waited += 500) await sleep(500);
         assert.equal(missingIn(existing).length, 1, "the first check should be done before the new file is created");
-        // Let any check the new bundle file scheduled start and finish first.
+        // Finish checks scheduled by the setup before testing one new file's event.
         await sleep(3_000);
         await idle();
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
@@ -271,7 +272,9 @@ export function includeMistakesSuite() {
         assert.equal(missing().length, 1, "the created file's missing notebook should be reported without a save");
       } finally {
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-        rmSync(dir, { recursive: true, force: true });
+        rmSync(created, { force: true });
+        rmSync(existing, { force: true });
+        writeFileSync(bundleFile, original);
         await idle();
       }
     });

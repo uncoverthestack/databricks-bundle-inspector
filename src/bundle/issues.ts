@@ -1071,11 +1071,13 @@ export function buildInspectorIssues(
           data?.fileReferences.some((ref) => ref.resolvedPath === failure.file))) : [node];
       for (const owner of owners.length ? owners : [node]) {
         issues.push({
-          id: `scan-failed:${owner.id}:${failure.file}`, kind: "file_scan_failed", severity: "warning",
-          title: "Source file could not be fully checked", detail: failure.checks.join(", "),
-          fixHint: "Check that the file can be read, then check the bundle again. Other findings do not cover these failed checks.",
+          id: `scan-failed:${owner.id}:${failure.file}`, kind: "file_scan_failed", severity: failure.directory ? "error" : "warning",
+          title: failure.directory ? "Pipeline source folder could not be read" : "Source file could not be fully checked",
+          detail: failure.directory ? `${failure.file} (${failure.checks.join(", ")})` : failure.checks.join(", "),
+          fixHint: "Check that the source can be read, then check the bundle again. Other findings do not cover these failed checks.",
           ...(owner.nodeType === "task" ? { taskId: owner.id, taskName: owner.displayName } : { resourceId: owner.id }),
-          file: failure.file, line: 1,
+          file: failure.directory ? owner.sourceFile ?? failure.file : failure.file,
+          line: failure.directory ? owner.sourceLine ?? 1 : 1,
         });
       }
     }
@@ -1458,6 +1460,10 @@ export function buildInspectorIssues(
         continue;
       }
       if (!ref.checked || ref.exists) continue;
+      // An unreadable glob root is already reported as a scan failure. Its contents
+      // are unknown, so do not also call the existing folder empty or missing.
+      if (ref.kind === "glob" && pipeline.scanFailures?.some((failure) =>
+        failure.directory && failure.file === ref.resolvedPath)) continue;
       issues.push({
         id: `missing-pipeline-source:${pipeline.id}:${ref.yamlPath}`,
         severity: "error",
