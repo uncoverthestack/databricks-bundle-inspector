@@ -18,8 +18,14 @@ export function closestName(name: string, candidates: string[]): string | undefi
   let best: { candidate: string; distance: number; exact: number } | undefined;
   for (const candidate of candidates) {
     const [n, c] = [normalise(name), normalise(candidate)];
+    // An empty name is contained in every name, so it is like none of them.
+    if (!n || !c) continue;
     // Same name up to case and separators, or one extends the other (schema, schema_name).
-    const distance = n === c ? 0 : n.includes(c) || c.includes(n) ? 1 : editDistance(name, candidate);
+    // Only when the shorter is at least half the longer: `load` is a part of
+    // `load_orders_bronze`, not a likely spelling of it, and `id` of `customer_id`.
+    const [shorter, longer] = n.length <= c.length ? [n, c] : [c, n];
+    const extendsOther = longer.includes(shorter) && shorter.length * 2 >= longer.length;
+    const distance = n === c ? 0 : extendsOther ? 1 : editDistance(name, candidate);
     if (distance > Math.max(2, Math.floor(name.length / 3))) continue;
     // A tie goes to the closer spelling, then the first alphabetically, so the order the
     // candidates come in (a real target sorts tasks) never changes the suggestion.
