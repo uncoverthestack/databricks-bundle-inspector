@@ -1,4 +1,5 @@
 import { isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument, visit } from "yaml";
+import { parse as parseToml } from "smol-toml";
 import type { Document, Node } from "yaml";
 import { closestName } from "./closestName.js";
 import type { YamlLocation, YamlLocationMap } from "./sourceLocations.js";
@@ -17,6 +18,8 @@ export interface JobStructureFinding {
     | "environment_version_missing"
     | "unknown_environment_key"
     | "project_environment_version_missing"
+    | "project_environment_version_unsupported"
+    | "excluded_from_sync"
     | "missing_library"
     | "multiple_job_triggers"
     | "invalid_job_parameter_name"
@@ -455,13 +458,21 @@ const isSet = (value: unknown) =>
 /**
  * Whether a `pyproject.toml` names an environment version for Databricks. The run reads
  * `environment_version` or `base_environment` under `[tool.databricks.environment]`; TOML
- * can write that table several ways (a header, dotted keys, an inline table), so any line
- * outside a comment that names either key counts. A missing finding beats a wrong one.
+ * can write that table several ways (a header, dotted keys, an inline table).
  */
 export function pyprojectNamesEnvironmentVersion(text: string): boolean {
-  return text
-    .split(/\r?\n/)
-    .some((line) => /(^|[\s.{,])(environment_version|base_environment)\s*=/.test(line.replace(/#.*$/, "")));
+  const environment = pyprojectEnvironment(text);
+  return environment !== undefined && (isSet(environment.environment_version) || isSet(environment.base_environment));
+}
+
+/** Undefined means the TOML could not be parsed, not that a version was missing. */
+function pyprojectEnvironment(text: string): Record<string, unknown> | undefined {
+  try {
+    const doc = parseToml(text, { integersAsBigInt: "asNeeded" });
+    return record(record(record(doc.tool).databricks).environment);
+  } catch {
+    return undefined;
+  }
 }
 
 export interface EnvironmentOptions extends JobStructureOptions {
@@ -470,6 +481,8 @@ export interface EnvironmentOptions extends JobStructureOptions {
    * can't be read (a workspace path, a variable, a missing file).
    */
   readProjectFile?: (jobKey: string, value: string) => string | undefined;
+  /** A known local project file is excluded from deploy's upload. */
+  projectFileExcluded?: (jobKey: string, value: string) => boolean;
   /**
    * A local environment dependency that deploy will fail on: missing, or a glob no file
    * matches, read from the job's YAML folder (#482). Undefined when it is there, or when
@@ -651,15 +664,40 @@ export function findEnvironmentProblems(
       // Any other version field wins: deploy refuses project_environment combined with one.
       const versioned = ENVIRONMENT_VERSION_FIELDS.some((field) => field !== "project_environment" && isSet(spec[field]));
       if (typeof project !== "string" || versioned) continue;
+      const projectLocation = () => located(environmentLocation(files, locate, jobKey, key, ["spec", "project_environment"], options));
+      if (options.projectFileExcluded?.(jobKey, project)) {
+        findings.push({
+          kind: "excluded_from_sync", jobKey, subject: key,
+          title: `Environment "${key}": its project file is not uploaded. The job may fail when it runs.`,
+          fixHint: "Make sure deploy uploads the project file: check .gitignore, sync.exclude, sync.include and symbolic links.",
+          ...projectLocation(),
+        });
+      }
       const text = options.readProjectFile?.(jobKey, project);
-      if (text === undefined || pyprojectNamesEnvironmentVersion(text)) continue;
+      if (text === undefined) continue;
+      const environment = pyprojectEnvironment(text);
+      if (environment === undefined) continue;
+      if (isSet(environment.base_environment)) continue;
+      const version = environment.environment_version;
+      if (isSet(version)) {
+        // Only judge concrete integer versions; do not invent a runtime rule for other values.
+        if (/^-?\d+$/.test(String(version)) && Number(version) < 5) {
+          findings.push({
+            kind: "project_environment_version_unsupported", jobKey, subject: key,
+            title: `Environment "${key}": project environment version ${version} is below 5. The job may fail when it runs.`,
+            fixHint: "Project environments require environment_version 5 or later. Set it under [tool.databricks.environment] in pyproject.toml, or use a base_environment.",
+            ...projectLocation(),
+          });
+        }
+        continue;
+      }
       findings.push({
         kind: "project_environment_version_missing",
         jobKey,
         subject: key,
         title: `Environment "${key}": its pyproject.toml has no environment version. The job may fail when it runs.`,
         fixHint: `The run fails with "pyproject.toml must specify environment_version or base_environment under [tool.databricks.environment]". Add environment_version (for example "5") or base_environment under [tool.databricks.environment] in that file.`,
-        ...located(environmentLocation(files, locate, jobKey, key, ["spec", "project_environment"], options)),
+        ...projectLocation(),
       });
     }
 

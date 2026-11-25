@@ -55,6 +55,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "environment_version_missing",
   "unknown_environment_key",
   "project_environment_version_missing",
+  "project_environment_version_unsupported",
   "multiple_job_triggers",
   "invalid_job_parameter_name",
   "invalid_task_key",
@@ -1585,7 +1586,7 @@ function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
       id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
       // Deploy rejects these, or the run fails; duplicates deploy, merged into one.
       severity:
-        finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" ? "warning" : "error",
+        finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" || finding.kind === "excluded_from_sync" ? "warning" : "error",
       kind: finding.kind,
       title: finding.title,
       ...(finding.taskKey
