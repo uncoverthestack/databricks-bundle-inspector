@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
+import ignore from "ignore";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
-import ignore, { type Ignore } from "ignore";
 import type { BundleGraph, ParsedBundleConfig } from "./graph/bundleGraph.js";
-import { hasGlobCharacters, matchGoSegment } from "./goGlob.js";
+import { hasGlobCharacters, includeSelects, matchGoSegment } from "./goGlob.js";
 import { CLI_NOTEBOOK_EXTENSIONS } from "./notebookFiles.js";
 import { unquote } from "./runTargets.js";
 import { createSyncFilter, type SyncFilter } from "./syncRules.js";
@@ -23,8 +23,14 @@ export interface BundleWatchSpec {
    * uploads libraries even when `.gitignore` skips their folder.
    */
   patterns: readonly string[];
-  /** The bundle's `include` patterns, matched against YAML files under the root. */
-  includes: Ignore;
+  /**
+   * Whether a YAML file, given relative to the root with `/`, is one the bundle's `include`
+   * patterns are about, so creating it changes what the checks find. True when the CLI's
+   * Go glob rules select it (goGlob.ts: `./resources/*.yml` selects `resources/new.yml`),
+   * and also when the looser .gitignore reading does (`resources/**` reaching a deeper
+   * file the CLI leaves out), so the "not included" warning still appears for it.
+   */
+  includes: (relativePath: string) => boolean;
   isSynced: SyncFilter;
   /**
    * Whether the file system ignores letter case here. The file watcher can then report
@@ -125,10 +131,16 @@ export function collectWatchSpec(
     files,
     folders,
     patterns,
-    includes: ignore().add([...includePatterns]),
+    includes: includeMatcher(includePatterns, options.ignoresCase ?? false),
     isSynced: createSyncFilter(bundleRoot, config.sync),
     ignoresCase: options.ignoresCase ?? false,
   };
+}
+
+function includeMatcher(patterns: readonly string[], ignoreCase: boolean): (relativePath: string) => boolean {
+  const loose = ignore().add([...patterns]);
+  return (relativePath) =>
+    patterns.some((pattern) => includeSelects(pattern, relativePath, { ignoreCase })) || loose.ignores(relativePath);
 }
 
 interface ComparableSpec {
@@ -202,7 +214,7 @@ export function classifyChange(
 
   if (isYaml && insideRoot) {
     const rel = toPosix(relative(root, changed));
-    if (spec.includes.ignores(rel)) return "config";
+    if (spec.includes(rel)) return "config";
   }
 
   // A notebook referenced without its extension, created as `name.py` or `name.ipynb`.

@@ -231,6 +231,51 @@ export function includeMistakesSuite() {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     });
 
+    // The CLI reads `./resources/*.yml` as `resources/*.yml` (checked on CLI v1.28.0), so a
+    // file created there is bundle config: its problems show without saving anything else.
+    it("checks a resource file created under a ./ include entry without another save", async function () {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      assert.ok(root, "the include-mistakes fixture should be the open folder");
+      // Inside the open folder, where VS Code reports created files.
+      const dir = mkdtempSync(path.join(root, "dotslash-"));
+      const created = path.join(dir, "resources", "new_job.yml");
+      try {
+        mkdirSync(path.join(dir, "resources"));
+        // A file the entry already loads, so the entry is not one that "matches nothing". Its
+        // own missing notebook shows when the first check is done, before the new file exists.
+        const existing = path.join(dir, "resources", "existing.yml");
+        writeFileSync(
+          existing,
+          "resources:\n  jobs:\n    existing:\n      name: existing\n      tasks:\n        - task_key: t\n          notebook_task:\n            notebook_path: ../src/gone.py\n",
+        );
+        writeFileSync(path.join(dir, "databricks.yml"), "bundle:\n  name: include_dotslash\ninclude:\n  - ./resources/*.yml\n");
+        await vscode.window.showTextDocument(vscode.Uri.file(path.join(dir, "databricks.yml")));
+        await vscode.commands.executeCommand("databricksBundleInspector.inspectBundle");
+        const missingIn = (file: string) =>
+          vscode.languages.getDiagnostics(vscode.Uri.file(file)).filter((d) => codeValue(d.code) === "missing_file");
+        for (let waited = 0; missingIn(existing).length === 0 && waited < 30_000; waited += 500) await sleep(500);
+        assert.equal(missingIn(existing).length, 1, "the first check should be done before the new file is created");
+        // Let any check the new bundle file scheduled start and finish first.
+        await sleep(3_000);
+        await idle();
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+        writeFileSync(
+          created,
+          "resources:\n  jobs:\n    new_job:\n      name: new_job\n      tasks:\n        - task_key: t\n          notebook_task:\n            notebook_path: ../src/missing.py\n",
+        );
+        const missing = () =>
+          vscode.languages.getDiagnostics(vscode.Uri.file(created)).filter((d) => codeValue(d.code) === "missing_file");
+        for (let waited = 0; missing().length === 0 && waited < 30_000; waited += 500) await sleep(500);
+        if (PAUSE_MS > 0) await sleep(PAUSE_MS);
+        assert.equal(missing().length, 1, "the created file's missing notebook should be reported without a save");
+      } finally {
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+        rmSync(dir, { recursive: true, force: true });
+        await idle();
+      }
+    });
+
     // Go's filepath.Match, which the CLI uses for include: "On Windows, escaping is
     // disabled. Instead, '\\' is treated as path separator." Elsewhere `\*` is a literal `*`.
     it("reads a backslash in an include entry as the CLI does on this platform", async function () {

@@ -126,6 +126,34 @@ export function matchGoSegment(pattern: string, name: string): boolean | undefin
   return reachable[characters.length]!;
 }
 
+/** An `include` entry's segments, as `globSync` walks them: `./resources/*.yml` is `resources`, `*.yml`. */
+function patternSegments(entry: string, platform: NodeJS.Platform): string[] {
+  // Go's filepath.Match: "On Windows, escaping is disabled. Instead, '\\' is treated as
+  // path separator." So on Windows `resources\*.yml` means `resources/*.yml`.
+  const pattern = platform === "win32" ? entry.replace(/\\/g, "/") : entry;
+  return posix.normalize(pattern).split("/").filter((segment) => segment !== "" && segment !== ".");
+}
+
+/**
+ * Whether an `include` entry selects a file, given as a path relative to the bundle root
+ * with `/` separators, by the same rules as {@link globSync} but without reading the disk.
+ * For a file that was just created, so the inspector knows it is now bundle config.
+ * With `ignoreCase`, letter case is folded on both sides.
+ */
+export function includeSelects(
+  entry: string,
+  relativePath: string,
+  options: { platform?: NodeJS.Platform; ignoreCase?: boolean } = {},
+): boolean {
+  const fold = (value: string) => (options.ignoreCase ? value.toLowerCase() : value);
+  const segments = patternSegments(fold(entry), options.platform ?? process.platform);
+  const parts = fold(relativePath).split("/").filter((part) => part !== "" && part !== ".");
+  if (segments.length === 0 || segments.length !== parts.length) return false;
+  return segments.every((segment, index) =>
+    /[*?[\\]/.test(segment) ? matchGoSegment(segment, parts[index]!) === true : segment === parts[index],
+  );
+}
+
 /**
  * The files and folders under `root` that an `include` entry selects, as paths
  * relative to `root`. Walks one segment at a time like Go's `filepath.Glob`.
@@ -136,10 +164,7 @@ export function globSync(
   entry: string,
   platform: NodeJS.Platform = process.platform,
 ): string[] | undefined {
-  // Go's filepath.Match: "On Windows, escaping is disabled. Instead, '\\' is treated as
-  // path separator." So on Windows `resources\*.yml` means `resources/*.yml`.
-  const pattern = platform === "win32" ? entry.replace(/\\/g, "/") : entry;
-  const segments = posix.normalize(pattern).split("/").filter((segment) => segment !== "" && segment !== ".");
+  const segments = patternSegments(entry, platform);
   let folders = [""];
 
   for (const segment of segments) {
