@@ -386,14 +386,33 @@ export async function updateBundleDiagnostics(
 
   if (checkFailed) {
     for (const [file, stored] of diagnosticsByBundle.get(bundleRoot) ?? []) {
-      const stale = stored.filter(({ diagnostic }) => codeValue(diagnostic.code) !== "inspector_check_failed").map(({ diagnostic, owner }) => {
+      const current = fresh.get(file) ?? [];
+      const keyOf = (diagnostic: vscode.Diagnostic) => JSON.stringify([
+        diagnostic.range.start.line, diagnostic.range.start.character, diagnostic.severity,
+        codeValue(diagnostic.code), diagnostic.message.replace(/^Out of date: /, ""),
+      ]);
+      const currentCounts = new Map<string, number>();
+      for (const diagnostic of current) {
+        const key = keyOf(diagnostic);
+        currentCounts.set(key, (currentCounts.get(key) ?? 0) + 1);
+      }
+      const stale = stored.filter(({ diagnostic }) => {
+        if (codeValue(diagnostic.code) === "inspector_check_failed") return false;
+        const key = keyOf(diagnostic);
+        const replacements = currentCounts.get(key) ?? 0;
+        if (replacements > 0) {
+          currentCounts.set(key, replacements - 1);
+          return false;
+        }
+        return true;
+      }).map(({ diagnostic, owner }) => {
         const old = new vscode.Diagnostic(diagnostic.range, diagnostic.message.startsWith("Out of date: ") ? diagnostic.message : `Out of date: ${diagnostic.message}`, diagnostic.severity);
         if (diagnostic.source !== undefined) old.source = diagnostic.source;
         if (diagnostic.code !== undefined) old.code = diagnostic.code;
         if (owner) owners.set(old, owner);
         return old;
       });
-      fresh.set(file, [...stale, ...(fresh.get(file) ?? [])]);
+      fresh.set(file, [...stale, ...current]);
     }
     // Old quick fixes are unsafe once their source may have changed.
     fixes.clear();
@@ -407,14 +426,13 @@ export async function updateBundleDiagnostics(
   } else if (inspectorIssues) {
     completeFindingsByBundle.set(bundleRoot, inspectorIssues);
   }
-  if (!result.ok && fresh.size === 0) {
+  if (!result.ok && graphOnly.errors === 0 && ![...fresh.values()].some((diagnostics) =>
+    diagnostics.some((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error))) {
     const file = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find(existsSync) ?? path.join(bundleRoot, "databricks.yml");
     const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), result.error.error, vscode.DiagnosticSeverity.Error);
     diagnostic.source = "Databricks Bundle Inspector";
     diagnostic.code = linkedCode("cli_diagnostic");
-    fresh.set(file, [diagnostic]);
-    graphOnly.problems = 0;
-    graphOnly.errors = 0;
+    fresh.set(file, [...(fresh.get(file) ?? []), diagnostic]);
   }
 
   // Files that are clean now lose this bundle's old findings; other bundles' stay.

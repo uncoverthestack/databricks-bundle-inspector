@@ -127,3 +127,49 @@ describe("the newest requested check owns findings", () => {
     expect(bundleLoadedFiles().has(root)).toBe(false);
   });
 });
+
+
+describe("CLI diagnostics during incomplete checks", () => {
+  const withCliWarning = () => {
+    const checked = result("old");
+    checked.issues = [{ code: "BUNDLE_DIAGNOSTICS", message: "warnings", diagnostics: [{ severity: "warning" as const, message: "unknown field: typo", path: "databricks.yml", line: 3 }] }];
+    return checked;
+  };
+  test("a failed CLI check still shows an error when it also produced a file warning", async () => {
+    await updateBundleDiagnostics({ ok: false, error: {
+      bundleDir: root, bundleName: "test", error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED",
+      diagnostics: [{ severity: "warning", message: "unknown field: typo", path: "databricks.yml", line: 2 }],
+    } }, root, collection, new Map());
+    expect(messages()).toEqual(["unknown field: typo", "Failed to validate Databricks bundle."]);
+    expect(bundleProblemCount(root)).toMatchObject({ errors: 1, problems: 2 });
+  });
+  test("an existing CLI error does not get a duplicate generic failure", async () => {
+    await updateBundleDiagnostics({ ok: false, error: {
+      bundleDir: root, bundleName: "test", error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED",
+      diagnostics: [{ severity: "error", message: "invalid configuration", path: "databricks.yml", line: 2 }],
+    } }, root, collection, new Map());
+    expect(messages()).toEqual(["invalid configuration"]);
+    expect(bundleProblemCount(root).errors).toBe(1);
+  });
+  test("repeated checker failures do not accumulate copies of a current CLI warning", async () => {
+    await updateBundleDiagnostics(withCliWarning(), root, collection, new Map());
+    jest.mocked(issues.buildInspectorIssues).mockImplementation(() => { throw new Error("checker failed"); });
+    for (let i = 0; i < 3; i++) {
+      await updateBundleDiagnostics(withCliWarning(), root, collection, new Map());
+      expect(messages().filter((message) => message.includes("unknown field: typo"))).toHaveLength(1);
+      expect(messages()).toContain("Out of date: old");
+      expect(messages().filter((message) => message.includes("could not finish"))).toHaveLength(1);
+    }
+  });
+});
+
+test("distinct tasks keep their old findings when they share one YAML location", async () => {
+  jest.mocked(issues.buildInspectorIssues).mockReturnValueOnce([
+    { ...warning("shared finding"), taskName: "first" },
+    { ...warning("shared finding"), id: "second", taskName: "second" },
+  ]);
+  await updateBundleDiagnostics(result(), root, collection, new Map());
+  jest.mocked(issues.buildInspectorIssues).mockImplementation(() => { throw new Error("checker failed"); });
+  await updateBundleDiagnostics(result(), root, collection, new Map());
+  expect(messages().filter((message) => message === "Out of date: shared finding")).toHaveLength(2);
+});
