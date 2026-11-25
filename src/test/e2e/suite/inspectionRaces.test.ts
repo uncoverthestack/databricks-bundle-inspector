@@ -69,9 +69,21 @@ if [ "$1" = bundle ] && [ "$2" = validate ] && [ "$PWD" = ${shellQuote(path.join
   printf '%s' "$count" > ${shellQuote(file("count"))}
   hold_at=$(cat ${shellQuote(file("hold"))})
   if [ "$count" = "$hold_at" ]; then
+    captured=0
+    if [ -f ${shellQuote(file("capture"))} ]; then
+      ${shellQuote(cli)} "$@" > ${shellQuote(file("stdout"))} 2> ${shellQuote(file("stderr"))}
+      captured_result=$?
+      captured=1
+    fi
     : > ${shellQuote(file("started"))}
     attempts=0
     while [ -f ${shellQuote(file("hold"))} ] && [ "$attempts" -lt 400 ]; do sleep 0.05; attempts=$((attempts + 1)); done
+    if [ "$captured" = 1 ]; then
+      cat ${shellQuote(file("stdout"))}
+      cat ${shellQuote(file("stderr"))} >&2
+      : > ${shellQuote(file("done"))}
+      exit "$captured_result"
+    fi
     ${shellQuote(cli)} "$@"
     result=$?
     : > ${shellQuote(file("done"))}
@@ -140,6 +152,47 @@ exec ${shellQuote(cli)} "$@"
         restore.replace(resource.uri, new vscode.Range(0, 0, resource.lineCount, 0), original);
         await vscode.workspace.applyEdit(restore);
         await resource.save();
+        await idle();
+      }
+    });
+
+    it("a slow watcher check cannot replace newer manual diagnostics for the same bundle", async function () {
+      const resource = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(root, "alpha/resources/jobs.yml")));
+      const original = resource.getText();
+      const messages = () => vscode.languages.getDiagnostics(resource.uri).map(diagnostic => diagnostic.message).join("\n");
+      const replace = async (text: string) => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(resource.uri, new vscode.Range(0, 0, resource.lineCount, 0), text);
+        await vscode.workspace.applyEdit(edit);
+        await resource.save();
+      };
+      let stalePublished = false;
+      let listener: vscode.Disposable | undefined;
+      try {
+        await vscode.window.showTextDocument(alpha);
+        await inspect();
+        await hold(1);
+        await writeFile(file("capture"), "1");
+        await replace(original.replace("notebook_path: ../src/task.py", "notebook_path: ../src/audit_old_missing.py"));
+        await waitFor(() => existsSync(file("started")), "the watcher to capture older CLI output");
+        await replace(original.replace("notebook_path: ../src/task.py", "notebook_path: ../src/audit_new_missing.py"));
+        await vscode.window.showTextDocument(alpha);
+        await inspect();
+        assert.ok(messages().includes("audit_new_missing"), messages());
+        assert.ok(!messages().includes("audit_old_missing"), messages());
+        listener = vscode.languages.onDidChangeDiagnostics(() => {
+          if (messages().includes("audit_old_missing")) stalePublished = true;
+        });
+        await release();
+        await waitFor(() => existsSync(file("done")), "the old watcher CLI to finish");
+        await idle();
+        assert.equal(stalePublished, false, "older output must never replace newer diagnostics, even briefly");
+        assert.ok(messages().includes("audit_new_missing"), messages());
+      } finally {
+        listener?.dispose();
+        await release();
+        await rm(file("capture"), { force: true });
+        await replace(original);
         await idle();
       }
     });

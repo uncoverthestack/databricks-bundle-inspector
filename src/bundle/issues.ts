@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
+import { isAuthDiagnostic } from "./authDiagnostics.js";
 import type { ParsedBundleConfig, TargetConfig } from "./graph/bundleGraph.js";
 import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import { bundleSecretScopes } from "./graph/bundleGraph.js";
@@ -46,6 +47,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "excluded_from_sync",
   "path_not_checked",
   "same_workspace_path",
+  "file_scan_failed",
   "include_matches_nothing",
   "resource_not_included",
   "unknown_task_dependency",
@@ -99,6 +101,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "unknown_or_deprecated_field",
   "unknown_task_type",
   "git_source_not_recommended",
+  "inspector_check_failed",
 ] as const;
 
 export type InspectorIssueKind = (typeof INSPECTOR_ISSUE_KINDS)[number];
@@ -1045,6 +1048,22 @@ export function buildInspectorIssues(
 ): InspectorIssue[] {
   const issues: InspectorIssue[] = [];
   const tasks = graph.nodes.filter((node) => node.nodeType === "task");
+  for (const node of graph.nodes) {
+    for (const failure of node.scanFailures ?? []) {
+      const owners = node.nodeType === "file" ? tasks.filter((task) =>
+        [task.taskData, task.taskData?.nestedTask].some((data) =>
+          data?.fileReferences.some((ref) => ref.resolvedPath === failure.file))) : [node];
+      for (const owner of owners.length ? owners : [node]) {
+        issues.push({
+          id: `scan-failed:${owner.id}:${failure.file}`, kind: "file_scan_failed", severity: "warning",
+          title: "Source file could not be fully checked", detail: failure.checks.join(", "),
+          fixHint: "Check that the file can be read, then check the bundle again. Other findings do not cover these failed checks.",
+          ...(owner.nodeType === "task" ? { taskId: owner.id, taskName: owner.displayName } : { resourceId: owner.id }),
+          file: failure.file, line: 1,
+        });
+      }
+    }
+  }
   // With sync.paths outside the bundle the CLI syncs from a different root, which is not
   // modelled. The default ["."], which the CLI fills in for a real target, is the bundle root.
   // Decided once: every check that uses the sync rules asks this.
@@ -1432,10 +1451,10 @@ export function buildInspectorIssues(
   }
 
   for (const [issueIndex, issue] of validationIssues.entries()) {
-    if (issue.code === "AUTH_NOT_CONFIGURED") continue;
     for (const [diagnosticIndex, diagnostic] of (
       issue.diagnostics ?? []
     ).entries()) {
+      if (issue.code === "AUTH_NOT_CONFIGURED" && isAuthDiagnostic(diagnostic)) continue;
       const normalized = validationDiagnosticIssue(issue, diagnostic);
       const resourceId = resourceIdFromYamlPath(diagnostic.yamlPath);
       issues.push({

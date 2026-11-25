@@ -4,6 +4,8 @@
  */
 
 const KIND_LABELS: Record<string, string> = {
+  file_scan_failed: "Source check failed",
+  inspector_check_failed: "Inspector check failed",
   missing_file: "Missing file",
   notebook_missing_extension: "Notebook path without extension",
   missing_pipeline_source: "Missing pipeline source",
@@ -39,6 +41,8 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 const GROUP_NAMES: Record<string, string> = {
+  file_scan_failed: "Source Checks That Failed",
+  inspector_check_failed: "Inspector Checks That Failed",
   missing_file: "Missing Files",
   notebook_missing_extension: "Notebook Paths Without Extension",
   missing_pipeline_source: "Missing Pipeline Sources",

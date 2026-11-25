@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import type { ParsedBundleConfig } from "./graph/bundleGraph.js";
 import { resolveDatabricksCli } from "../databricksCli/validateDatabricksCli.js";
-import { bundleCliEnv, explainCodeNotRun, privateBundleTempDir } from "../databricksCli/restrictedExecution.js";
+import { bundleCliEnv, explainCodeNotRun, isRestrictedExecutionError, privateBundleTempDir } from "../databricksCli/restrictedExecution.js";
 import type {
   CliProblem,
   CliResolutionFailure,
@@ -16,6 +16,7 @@ import {
   parseBundleDiagnostics,
 } from "./parseBundleDiagnostics.js";
 import { cliAppliedTarget } from "./targetApplied.js";
+import { isAuthDiagnostic } from "./authDiagnostics.js";
 export {
   extractBundleGraph,
   extractResourceNodes,
@@ -466,7 +467,10 @@ export async function validateBundleWithDependencies(
     // back to the structural preview with this error as the reason.
     const inspectsRealTarget = (target ?? BUNDLE_PROBE_TARGET) !== BUNDLE_PROBE_TARGET;
 
-    if (!inspectsRealTarget && isAuthError(stderr) && stdout?.trim()) {
+    const exitCode = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    const signalled = typeof error === "object" && error !== null && "signal" in error && !!error.signal;
+    const ordinaryExit = !signalled && (exitCode === 1 || exitCode === undefined);
+    if (ordinaryExit && !inspectsRealTarget && isAuthError(stderr) && stdout?.trim()) {
       try {
         const parsed = parseBundleConfig(JSON.parse(stdout));
         if (parsed.ok) {
@@ -474,7 +478,7 @@ export async function validateBundleWithDependencies(
             await readDiagnostics(stderr ?? "")
           ).map((diagnostic) => ({
             ...diagnostic,
-            severity: "warning" as const,
+            severity: isAuthDiagnostic(diagnostic) ? "warning" as const : diagnostic.severity,
           }));
           const targetOptions = parseAvailableTargets(stderr ?? "");
           return {
@@ -497,13 +501,18 @@ export async function validateBundleWithDependencies(
       }
     }
 
-    // Try to parse stdout even if command failed — probe target always exits non-zero
-    if (stdout?.trim()) {
+    // Preserve explicit preview coverage limits as warnings. Arbitrary nonzero exits
+    // are not evidence of a completed check, even if stdout contains a bundle.
+    const restrictedPreview = !inspectsRealTarget && isRestrictedExecutionError(stderr);
+    if (ordinaryExit && stdout?.trim() && (expectedProbeTargetFailure || restrictedPreview || inspectsRealTarget)) {
       try {
         const raw: unknown = JSON.parse(stdout);
         const parsed = parseBundleConfig(raw);
         if (parsed.ok && (!inspectsRealTarget || cliAppliedTarget(raw))) {
           const diagnostics = await readDiagnostics(stderr ?? "");
+          if (inspectsRealTarget && !diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+            throw new Error("No diagnostic explains the failed target validation");
+          }
           const targetOptions = parseAvailableTargets(stderr ?? "");
           const issues =
             diagnostics.length > 0
@@ -514,16 +523,7 @@ export async function validateBundleWithDependencies(
                     diagnostics,
                   },
                 ]
-              : expectedProbeTargetFailure
-                ? undefined
-              : [
-                  {
-                    code: "CLI_WARNING",
-                    message:
-                      "Databricks CLI validation completed with warnings.",
-                    details: stderr?.trim() || getErrorMessage(error),
-                  },
-                ];
+              : undefined;
           return {
             ok: true,
             data: parsed.data,

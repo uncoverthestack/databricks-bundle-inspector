@@ -115,6 +115,11 @@ const NOT_RUN = [
   },
 ];
 
+/** A known coverage limit, presented as a warning rather than a completed code check. */
+export function isRestrictedExecutionError(stderr: string | undefined): boolean {
+  return NOT_RUN.some((rule) => rule.cliError.test(stderr ?? ""));
+}
+
 /**
  * Rewrites the CLI's "not allowed when ... is set" errors, which name a variable the user
  * never set, into a warning that says what happened, placed on the line of the bundle

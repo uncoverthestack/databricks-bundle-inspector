@@ -110,6 +110,16 @@ interface StoredDiagnostic {
 // (see publishFiles). Each bundle's counts come from its own findings here.
 const diagnosticsByBundle = new Map<string, Map<string, StoredDiagnostic[]>>();
 
+export interface BundleDiagnosticCheck { isCurrent(): boolean }
+let nextCheck = 0;
+const latestCheck = new Map<string, number>();
+/** Call before validation starts, so CLI completion order cannot decide which result wins. */
+export function beginBundleDiagnosticCheck(bundleRoot: string): BundleDiagnosticCheck {
+  const revision = ++nextCheck;
+  latestCheck.set(bundleRoot, revision);
+  return { isCurrent: () => latestCheck.get(bundleRoot) === revision };
+}
+
 function codeValue(code: vscode.Diagnostic["code"]): string {
   return typeof code === "object" ? String(code.value) : String(code ?? "");
 }
@@ -245,6 +255,7 @@ export function forgetBundleDiagnostics(
 ): void {
   const files = [...(diagnosticsByBundle.get(bundleRoot)?.keys() ?? [])];
   diagnosticsByBundle.delete(bundleRoot);
+  latestCheck.delete(bundleRoot);
   publishFiles(files, collection);
   graphOnlyByBundle.delete(bundleRoot);
   loadedFilesByBundle.delete(bundleRoot);
@@ -298,20 +309,9 @@ export async function updateBundleDiagnostics(
   bundleRoot: string,
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
+  check: BundleDiagnosticCheck = beginBundleDiagnosticCheck(bundleRoot),
 ): Promise<BundleGraph | undefined> {
-  completeFindingsByBundle.delete(bundleRoot);
-  // Update the include map with CLI-resolved paths
-  if (result.ok) {
-    const loaded = new Set<string>();
-    for (const included of result.data.include ?? []) {
-      fileToBundleRoot.set(path.resolve(bundleRoot, included), bundleRoot);
-      loaded.add(path.resolve(bundleRoot, included));
-    }
-    const bundleFile = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find((file) => existsSync(file));
-    if (bundleFile) loaded.add(bundleFile);
-    loadedFilesByBundle.set(bundleRoot, loaded);
-  }
-
+  if (!check.isCurrent()) return undefined;
   // Collect files previously tracked for this bundle so we can clear stale ones
   const prevFiles = new Set([
     ...[...fileToBundleRoot.entries()]
@@ -322,6 +322,8 @@ export async function updateBundleDiagnostics(
 
   const fresh = toVsCodeDiagnostics(cliDiagnosticsOf(result), bundleRoot);
   let graph: BundleGraph | undefined;
+  let inspectorIssues: InspectorIssue[] | undefined;
+  let checkFailed = false;
   const fixes = new Map<string, StoredFix[]>();
   // When validation failed, what the CLI reported without a file is all there is.
   const cliGraphOnly = result.ok ? [] : cliDiagnosticsOf(result).filter((d) => !d.path);
@@ -336,13 +338,12 @@ export async function updateBundleDiagnostics(
       // Read file contents as the inspector panel does, so issues found in code
       // (e.g. a secret scope named by its resource key) also reach the Problems panel.
       graph = await checkedGraphOf(result, bundleRoot);
-      const inspectorIssues = buildInspectorIssues(
+      inspectorIssues = buildInspectorIssues(
         graph,
         result.data,
         result.issues ?? [],
         bundleRoot,
       );
-      completeFindingsByBundle.set(bundleRoot, inspectorIssues);
       const inspectorDiagnostics = inspectorIssuesToVsCodeDiagnostics(
         inspectorIssues,
         bundleRoot,
@@ -362,11 +363,58 @@ export async function updateBundleDiagnostics(
         else graphOnly.notes++;
       }
     } catch (err) {
-      console.warn(
-        `[BundleInspector] issue diagnostics failed for ${bundleRoot}:`,
-        err,
-      );
+      checkFailed = true;
+      graph = undefined;
+      // Error text can hold source contents or variable values; do not persist it in logs.
+      console.warn(`[BundleInspector] issue diagnostics failed for ${bundleRoot}`, { name: err instanceof Error ? err.name : "Error" });
     }
+  }
+
+  if (!check.isCurrent()) return undefined;
+  completeFindingsByBundle.delete(bundleRoot);
+  // Update the include map with CLI-resolved paths
+  if (result.ok) {
+    const loaded = new Set<string>();
+    for (const included of result.data.include ?? []) {
+      fileToBundleRoot.set(path.resolve(bundleRoot, included), bundleRoot);
+      loaded.add(path.resolve(bundleRoot, included));
+    }
+    const bundleFile = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find((file) => existsSync(file));
+    if (bundleFile) loaded.add(bundleFile);
+    loadedFilesByBundle.set(bundleRoot, loaded);
+  }
+
+  if (checkFailed) {
+    for (const [file, stored] of diagnosticsByBundle.get(bundleRoot) ?? []) {
+      const stale = stored.filter(({ diagnostic }) => codeValue(diagnostic.code) !== "inspector_check_failed").map(({ diagnostic, owner }) => {
+        const old = new vscode.Diagnostic(diagnostic.range, diagnostic.message.startsWith("Out of date: ") ? diagnostic.message : `Out of date: ${diagnostic.message}`, diagnostic.severity);
+        if (diagnostic.source !== undefined) old.source = diagnostic.source;
+        if (diagnostic.code !== undefined) old.code = diagnostic.code;
+        if (owner) owners.set(old, owner);
+        return old;
+      });
+      fresh.set(file, [...stale, ...(fresh.get(file) ?? [])]);
+    }
+    // Old quick fixes are unsafe once their source may have changed.
+    fixes.clear();
+    const file = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find(existsSync) ?? path.join(bundleRoot, "databricks.yml");
+    const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), "The inspector could not finish checking this bundle. Earlier findings are out of date. Check the bundle again.", vscode.DiagnosticSeverity.Error);
+    diagnostic.source = "Databricks Bundle Inspector";
+    diagnostic.code = linkedCode("inspector_check_failed");
+    fresh.set(file, [...(fresh.get(file) ?? []), diagnostic]);
+    const previous = graphOnlyByBundle.get(bundleRoot);
+    if (previous) Object.assign(graphOnly, previous);
+  } else if (inspectorIssues) {
+    completeFindingsByBundle.set(bundleRoot, inspectorIssues);
+  }
+  if (!result.ok && fresh.size === 0) {
+    const file = BUNDLE_FILE_NAMES.map((name) => path.join(bundleRoot, name)).find(existsSync) ?? path.join(bundleRoot, "databricks.yml");
+    const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), result.error.error, vscode.DiagnosticSeverity.Error);
+    diagnostic.source = "Databricks Bundle Inspector";
+    diagnostic.code = linkedCode("cli_diagnostic");
+    fresh.set(file, [diagnostic]);
+    graphOnly.problems = 0;
+    graphOnly.errors = 0;
   }
 
   // Files that are clean now lose this bundle's old findings; other bundles' stay.
@@ -394,15 +442,17 @@ export async function runBundleDiagnostics(
   configuredCliPath: string | undefined,
   collection: vscode.DiagnosticCollection,
   fileToBundleRoot: Map<string, string>,
-): Promise<{ result: BundleValidationResult; graph: BundleGraph | undefined }> {
+): Promise<{ result: BundleValidationResult; graph: BundleGraph | undefined; current: boolean }> {
+  const check = beginBundleDiagnosticCheck(bundleRoot);
   const result = await validateBundle(bundleRoot, undefined, configuredCliPath);
   const graph = await updateBundleDiagnostics(
     result,
     bundleRoot,
     collection,
     fileToBundleRoot,
+    check,
   );
-  return { result, graph };
+  return { result, graph, current: check.isCurrent() };
 }
 
 /** The raw `include` patterns of a bundle, read from its `databricks.yml`. */
