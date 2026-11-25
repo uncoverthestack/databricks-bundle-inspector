@@ -214,7 +214,13 @@ function nameParts(token: Token): string[] {
   const parts = token.parts ?? [token.text];
   return parts.length > 1 && parts[0]!.toLowerCase() === "live" && token.upper.startsWith("LIVE.") ? parts.slice(1) : parts;
 }
-const joinParts = (parts: string[]) => parts.map((part) => (/[.`]/.test(part) ? `\`${part.replaceAll("`", "``")}\`` : part)).join(".");
+/**
+ * A part with a dot or backtick of its own keeps backticks, so `` `a.b` `` stays one part.
+ * A dot inside `${my.key}` belongs to the setting's name: the value replaces the whole
+ * placeholder as text, so `${my.catalog}.sales.orders` is `main.sales.orders`.
+ */
+const joinParts = (parts: string[]) =>
+  parts.map((part) => (/[.`]/.test(part.replace(/\$\{[^}]*\}/g, "")) ? `\`${part.replaceAll("`", "``")}\`` : part)).join(".");
 
 const CLAUSE_END = new Set([
   "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "UNION", "INTERSECT", "EXCEPT", "WINDOW", "QUALIFY",

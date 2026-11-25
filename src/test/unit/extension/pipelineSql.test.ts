@@ -133,6 +133,30 @@ describe("pipeline SQL: settings in names", () => {
     expect(edges(`CREATE STREAMING TABLE a AS SELECT * FROM STREAM read_files('\${landing}/orders')`)).toEqual(["files:${landing}/orders -> a"]);
   });
 
+  // Live, serverless pipeline, 2026-11-25: `${my.src}` with `my.src: src_dotted` read the
+  // pipeline's src_dotted (update COMPLETED, twice); `${not.set}` failed "Failed to analyze flow".
+  test("a key with a dot in it fills in like any other: the dot is part of the key's name", () => {
+    const config = { "my.src": "src_dotted", "my.catalog": "main", "my.name": "gold" };
+    // The pipeline's own table is matched by the name it reads.
+    expect(edges(`CREATE MATERIALIZED VIEW src_dotted AS SELECT 1 AS x;\nCREATE MATERIALIZED VIEW mv AS SELECT * FROM \${my.src};`, config))
+      .toEqual(["src_dotted -> mv"]);
+    expect(edges(`CREATE MATERIALIZED VIEW a AS SELECT * FROM \${my.catalog}.sales.orders`, config)).toEqual(["main.sales.orders -> a"]);
+    expect(readPipelineSql(`CREATE MATERIALIZED VIEW \${my.name} AS SELECT * FROM t1`, config).datasets.map((d) => d.name)).toEqual(["gold"]);
+    // In backticks, as written.
+    expect(edges("CREATE MATERIALIZED VIEW a AS SELECT * FROM `${my.src}`", config)).toEqual(["src_dotted -> a"]);
+  });
+
+  test("a dot outside the ${key} still keeps a backticked part whole", () => {
+    expect(edges("CREATE MATERIALIZED VIEW a AS SELECT * FROM main.`odd.${env}`", { env: "dev" })).toEqual(["main.`odd.dev` -> a"]);
+    expect(edges("CREATE MATERIALIZED VIEW a AS SELECT * FROM main.`odd.name`")).toEqual(["main.`odd.name` -> a"]);
+  });
+
+  test("a dotted key the configuration does not give is still unreadable", () => {
+    const result = readPipelineSql(`CREATE MATERIALIZED VIEW m AS SELECT * FROM \${not.set}`, { "my.src": "x" });
+    expect(result.reads).toEqual([]);
+    expect(result.unread.map((u) => u.reason)).toEqual(["a read named by a setting: ${not.set}"]);
+  });
+
   test("a ${key} the configuration does not give makes the name unreadable, not guessed", () => {
     const result = readPipelineSql(`CREATE MATERIALIZED VIEW m AS SELECT * FROM \${source}.orders; CREATE MATERIALIZED VIEW \${name} AS SELECT 1`);
     expect(result.reads).toEqual([]);
