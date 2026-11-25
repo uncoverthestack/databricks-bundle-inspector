@@ -2140,6 +2140,9 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         file?: string;
         line?: number;
         yamlPath?: string;
+        /** Where a read written in the YAML is, in the task's own file. */
+        yamlLine?: number;
+        yamlColumn?: number;
       }> = [];
       const readerRefs = reader.taskData
         ? [reader.taskData, ...(reader.taskData.nestedTask ? [reader.taskData.nestedTask] : [])].flatMap((d) => d.fileReferences)
@@ -2157,9 +2160,24 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           });
         }
       }
-      const settings = JSON.stringify(reader.data ?? {});
-      for (const match of settings.matchAll(TASK_VALUE_REFERENCE)) {
-        reads.push({ taskKey: match[1]!, key: match[2]!, yamlPath: `tasks.${readerKey}` });
+      // Each {{tasks.<task>.values.<key>}} where it is written in the YAML (#17 of the
+      // 2026-11-25 bug hunt). Without file locations, the settings' text as before.
+      const written = reader.taskData?.taskValueReferences;
+      if (written) {
+        for (const ref of written) {
+          reads.push({
+            taskKey: ref.taskKey,
+            key: ref.key,
+            yamlPath: ref.yamlPath,
+            ...(ref.sourceLine ? { yamlLine: ref.sourceLine } : {}),
+            ...(ref.sourceColumn ? { yamlColumn: ref.sourceColumn } : {}),
+          });
+        }
+      } else {
+        const settings = JSON.stringify(reader.data ?? {});
+        for (const match of settings.matchAll(TASK_VALUE_REFERENCE)) {
+          reads.push({ taskKey: match[1]!, key: match[2]!, yamlPath: `tasks.${readerKey}` });
+        }
       }
 
       const reported = new Set<string>();
@@ -2172,7 +2190,9 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         reported.add(id);
         const location = read.file
           ? issueLocation(read.file, read.line)
-          : issueLocation(sourceFileForTask(reader), reader.taskData?.sourceLine || undefined);
+          : read.yamlLine
+            ? issueLocation(sourceFileForTask(reader), read.yamlLine, read.yamlColumn)
+            : issueLocation(sourceFileForTask(reader), reader.taskData?.sourceLine || undefined);
         const base = {
           id,
           severity: "warning" as const,
