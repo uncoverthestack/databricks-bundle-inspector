@@ -56,6 +56,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "unknown_environment_key",
   "project_environment_version_missing",
   "pipeline_selection_not_found",
+  "job_only_in_target",
   "runtime_end_of_support",
   "widget_not_set",
   "unused_parameter",

@@ -1,0 +1,6 @@
+targets:
+  prod:
+    resources:
+      jobs:
+        both:
+          name: both

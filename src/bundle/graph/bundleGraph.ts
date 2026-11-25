@@ -36,6 +36,7 @@ import { BUNDLE_PROBE_TARGET } from "../validateBundle.js";
 import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
 import { findResourceKeyProblems, type ResourceKeyFinding } from "../resourceKeys.js";
+import { findTargetOnlyJobs, type TargetOnlyJob } from "../targetOnlyJobs.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -381,6 +382,8 @@ export interface BundleGraph {
   targetCheckFindings?: TargetCheckFinding[];
   /** Resource keys deploy doesn't accept (#511), for the issue list. */
   resourceKeyFindings?: ResourceKeyFinding[];
+  /** Jobs only a target writes, which the structural preview doesn't check: a note in the panel's Issues list only. */
+  targetOnlyJobs?: TargetOnlyJob[];
   /** Clusters on a Databricks Runtime near or past end of support (#485), for the issue list. */
   runtimeSupportFindings?: RuntimeSupportFinding[];
   /** The CLI version's rule for notebook headers, used again by the issue list's suggestions. */
@@ -1524,6 +1527,7 @@ async function buildBundleGraph(
     // The CLI's own output, before the paths are mapped back to local files.
     targetCheckFindings: findTargetCheckProblems(cliOutput, sourceFiles, options.cliVersion),
     resourceKeyFindings: findResourceKeyProblems(cliOutput, sourceFiles),
+    targetOnlyJobs: findTargetOnlyJobs(cliOutput, sourceFiles),
   };
 }
 

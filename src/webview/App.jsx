@@ -38,6 +38,7 @@ import {
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
+import { targetOnlyJobNotes } from "./lib/targetOnlyJobNotes";
 import { buildBundleOverview } from "../bundle/bundleOverview";
 import { typeWords } from "./lib/overviewView";
 import { resourceSelectionProperties } from "./lib/resourceTelemetry";
@@ -1874,6 +1875,13 @@ export default function App({
     [graph, jobNode, effectiveResolutionBundle, effectiveTargetName, inspectorIssues],
   );
 
+  // A job only a target writes is in no graph here, so its note goes to the Issues list
+  // only: not the report, the Problems panel or the bundle overview.
+  const issueListIssues = useMemo(
+    () => [...inspectorIssues, ...targetOnlyJobNotes(graph?.targetOnlyJobs)],
+    [inspectorIssues, graph],
+  );
+
   const headerPanelItems = useMemo(
     () =>
       graph && jobNode
@@ -1883,7 +1891,7 @@ export default function App({
             effectiveResolutionBundle,
             effectiveTargetName,
             validationIssues,
-            inspectorIssues,
+            issueListIssues,
           )
         : {
             tasks: [],
@@ -1900,7 +1908,7 @@ export default function App({
                   effectiveResolutionBundle,
                   effectiveTargetName,
                   validationIssues,
-                  inspectorIssues,
+                  issueListIssues,
                 )
               : [],
           },
@@ -1910,7 +1918,7 @@ export default function App({
       effectiveResolutionBundle,
       effectiveTargetName,
       validationIssues,
-      inspectorIssues,
+      issueListIssues,
     ],
   );
 
