@@ -4,6 +4,7 @@
  */
 
 import { escapeMarkdown, markdownCode, withoutMentions } from "../bundle/markdownText.js";
+import { withVisibleDirectionControls } from "../bundle/visibleText.js";
 import type { FailOn, Format } from "./args.js";
 import { countFindings, type BundleReport, type CheckReport, type Finding, type Severity } from "./check.js";
 
@@ -70,7 +71,7 @@ const RESET = "\x1b[0m";
 
 /** Control characters from a bundle never reach the terminal, so a name can't move the cursor or recolour. */
 function terminalText(text: string): string {
-  return oneLine(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  return withVisibleDirectionControls(oneLine(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
 }
 
 export function formatText(report: CheckReport, color: boolean): string {
@@ -168,7 +169,7 @@ export function formatGithub(report: CheckReport): string {
         ...(finding.file && finding.column !== undefined ? [`col=${finding.column}`] : []),
         `title=${escapeCommandProperty(`${finding.code} (${bundle.path})`)}`,
       ];
-      const message = withoutMentions(`${finding.message}${finding.file ? "" : ` (${bundleHeading(bundle)})`}`);
+      const message = withoutMentions(withVisibleDirectionControls(`${finding.message}${finding.file ? "" : ` (${bundleHeading(bundle)})`}`));
       lines.push(`::${COMMAND[finding.severity]} ${properties.join(",")}::${escapeCommandData(message)}`);
     }
   }

@@ -1,3 +1,5 @@
+import { withVisibleDirectionControls } from "./visibleText.js";
+
 /**
  * Bundle text (names, messages, values) for the review reports, which people paste into
  * GitHub or GitLab. Shown as the text it is: never a link, an image, HTML or emphasis, and
@@ -24,7 +26,7 @@ export function withoutAutolinks(text: string): string {
 export function escapeMarkdown(text: string): string {
   return withoutAutolinks(
     withoutMentions(
-      text
+      withVisibleDirectionControls(text)
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")

@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { withVisibleDirectionControls } from "./visibleText.js";
 import path from "node:path";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
 import { isAuthDiagnostic } from "./authDiagnostics.js";
@@ -1542,7 +1543,14 @@ export function buildInspectorIssues(
   // With a target the CLI runs these checks itself and reports its own errors (#389).
   if (!targetName) issues.push(...targetCheckIssues(graph, bundleRoot));
 
-  return issues;
+  // Names in findings come from the bundle: a hidden direction character must not make one
+  // read as another wherever the finding is shown. Quick-fix edits keep the real text.
+  return issues.map((issue) => ({
+    ...issue,
+    title: withVisibleDirectionControls(issue.title),
+    ...(issue.detail !== undefined ? { detail: withVisibleDirectionControls(issue.detail) } : {}),
+    ...(issue.fixHint !== undefined ? { fixHint: withVisibleDirectionControls(issue.fixHint) } : {}),
+  }));
 }
 
 /**
