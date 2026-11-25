@@ -335,6 +335,8 @@ export type BundleNodeType =
   | "widget";
 
 export interface BundleGraphNode {
+  /** File checks that failed; a failed scan never means the source was clean. */
+  scanFailures?: Array<{ file: string; checks: string[] }>;
   id: string;
   kind: string;
   nodeType: BundleNodeType;

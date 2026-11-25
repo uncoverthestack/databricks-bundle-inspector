@@ -82,6 +82,7 @@ import {
 } from "./databricksCli/cliCandidates.js";
 import {
   bundleProblemCount,
+  beginBundleDiagnosticCheck,
   folderProblemCount,
   forgetBundleDiagnostics,
   readIncludePatterns,
@@ -608,7 +609,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         return undefined;
       }
       const cliPath = currentConfiguredCliPath();
-      const { result, graph } = await whileChecking(() =>
+      const { result, graph, current } = await whileChecking(() =>
         runBundleDiagnostics(
           bundleRoot,
           cliPath,
@@ -616,6 +617,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
           fileToBundleRoot,
         ),
       );
+      if (!current) return undefined;
       if (!recordCheck(bundleRoot, result, graph, { cliPath, generation })) return undefined;
       if (result.ok && graph) {
         await watchBundle(bundleRoot, result.data, graph);
@@ -992,12 +994,13 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         };
   }
 
-  async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string) {
+  async function inspectBundleAtTarget(bundleDir: string, requestedTarget?: string, trackDiagnostics = false) {
     const outsideVariables = requestedTarget ? outsideReportVariables(bundleDir, requestedTarget) : [];
     const previousTargetOptions = activeBundleDir === bundleDir ? activeTargetOptions : [];
     const previousStructuralBundle = activeBundleDir === bundleDir ? activeStructuralResolutionBundle : undefined;
     const config = getConfiguration();
     const configuredPath = getConfiguredDatabricksCliPath(config);
+    let diagnosticCheck = trackDiagnostics && !requestedTarget ? beginBundleDiagnosticCheck(bundleDir) : undefined;
     let result = await validateBundle(
       bundleDir,
       requestedTarget,
@@ -1015,6 +1018,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     if (!result.ok && requestedTarget) {
       ({ message: fallbackMessage, reason: fallbackReason, code: fallbackCode } = targetFallback(result.error));
       fallbackErrorCode = result.error.errorCode;
+      if (trackDiagnostics) diagnosticCheck = beginBundleDiagnosticCheck(bundleDir);
       result = await validateBundle(bundleDir, undefined, configuredPath);
       inspectedTarget = BUNDLE_PROBE_TARGET;
       inspectedTargetMode = "probe";
@@ -1022,7 +1026,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     }
 
     if (!result.ok) {
-      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackReason, fallbackCode, fallbackErrorCode };
+      return { result, inspectedTarget, inspectedTargetMode, fallbackMessage, fallbackReason, fallbackCode, fallbackErrorCode, diagnosticCheck };
     }
 
     const bundleData = result.data;
@@ -1073,6 +1077,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       fallbackReason,
       fallbackCode,
       fallbackErrorCode,
+      diagnosticCheck,
     };
   }
 
@@ -1463,7 +1468,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const cliPath = currentConfiguredCliPath();
       const generation = generationOf(bundleDir);
       const inspection = await whileChecking(() =>
-        inspectBundleAtTarget(bundleDir, requestedTarget),
+        inspectBundleAtTarget(bundleDir, requestedTarget, true),
       );
       if (!isCurrent()) return;
       activeTargetFallback = fallbackOf(inspection);
@@ -1472,15 +1477,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       // needs no login, so a save never flips them to another target. A real target picked
       // in the graph changes the graph only. A target that fell back to the preview counts.
       const showsPreview = inspection.inspectedTargetMode === "probe";
-      if (showsPreview) {
+      if (showsPreview && inspection.diagnosticCheck?.isCurrent()) {
         const diagnosticsGraph = await updateBundleDiagnostics(
           result,
           bundleDir,
           diagnosticCollection,
           fileToBundleRoot,
+          inspection.diagnosticCheck,
         );
         if (!isCurrent()) return;
-        const recorded = recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true, cliPath, generation });
+        const recorded = inspection.diagnosticCheck.isCurrent() && recordCheck(bundleDir, result, diagnosticsGraph, { inspected: true, cliPath, generation });
         if (recorded && result.ok && diagnosticsGraph) {
           await watchBundle(bundleDir, result.data, diagnosticsGraph);
         }

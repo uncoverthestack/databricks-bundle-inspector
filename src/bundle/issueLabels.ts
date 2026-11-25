@@ -4,6 +4,8 @@
  */
 
 const KIND_LABELS: Record<string, string> = {
+  file_scan_failed: "Source check failed",
+  inspector_check_failed: "Inspector check failed",
   project_environment_version_unsupported: "Project environment version",
   missing_file: "Missing file",
   notebook_missing_extension: "Notebook path without extension",
@@ -42,6 +44,8 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 const GROUP_NAMES: Record<string, string> = {
+  file_scan_failed: "Source Checks That Failed",
+  inspector_check_failed: "Inspector Checks That Failed",
   project_environment_version_unsupported: "Unsupported Project Environment Versions",
   missing_file: "Missing Files",
   notebook_missing_extension: "Notebook Paths Without Extension",

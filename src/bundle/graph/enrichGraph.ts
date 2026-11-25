@@ -25,7 +25,7 @@ import type { BundleEdge } from "./edges.js";
  * is true, runs secret and widget detection, and adds the results as new nodes
  * connected back to the file node via `references` / `uses` edges.
  *
- * Safe to call in parallel — file reads that fail are silently skipped.
+ * Safe to call in parallel. Failed scans are recorded so an unread file cannot look clean.
  */
 export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<BundleGraph> {
   const nodeMap = new Map<string, BundleGraphNode>(graph.nodes.map((n) => [n.id, n]));
@@ -46,6 +46,15 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
       newEdges.push(edge);
     }
   }
+
+  const failures = new Map<string, Map<string, Set<string>>>();
+  const failed = (nodeId: string, file: string, check: string) => {
+    const byFile = failures.get(nodeId) ?? new Map<string, Set<string>>();
+    const checks = byFile.get(file) ?? new Set<string>();
+    checks.add(check);
+    byFile.set(file, checks);
+    failures.set(nodeId, byFile);
+  };
 
   const bundleScopes = bundleSecretScopes(graph.nodes);
 
@@ -85,31 +94,31 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
 
       const referenceType = fileNode.data.referenceType;
       const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, sqlTextParameters, qualifiedNames] = await Promise.all([
-        detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => []),
-        detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => []),
+        detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "secrets"); return []; }),
+        detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "widget definitions"); return []; }),
         // Notebook tasks pass their parameters as widgets, so compare them later.
         fileNode.data.referenceType === "notebook"
-          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => undefined)
+          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => { failed(fileNode.id, resolvedPath, "widget reads"); return undefined; })
           : undefined,
         // Notebooks and Python files set and read task values.
         referenceType === "notebook" || referenceType === "python_script"
-          ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "task values"); return undefined; })
           : undefined,
         // The notebooks a notebook runs with %run or dbutils.notebook.run (#233).
         referenceType === "notebook"
-          ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "notebook calls"); return undefined; })
           : undefined,
         // SQL file tasks fill the file's :name markers from their parameters (#234).
         referenceType === "sql"
-          ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => undefined)
+          ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL parameters"); return undefined; })
           : undefined,
         // ...and its {{name}} text parameters, pasted in as quoted text (#484).
         referenceType === "sql"
-          ? detectSqlTextParametersInFile(resolvedPath).catch(() => undefined)
+          ? detectSqlTextParametersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL text parameters"); return undefined; })
           : undefined,
         // Dotted names in task code, to find schemas a target renames (#235).
         referenceType === "notebook" || referenceType === "python_script" || referenceType === "sql"
-          ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => undefined)
+          ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "schema references"); return undefined; })
           : undefined,
       ]);
       // Secrets whose scope isn't written in the code: kept, so the task never looks like it
@@ -187,7 +196,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
       .filter((node) => node.pipelineLibraries?.length)
       .flatMap((pipeline) =>
         pipelineSourceFiles(pipeline).files.map(async (filePath) => {
-          const secrets = await detectSecretInNotebook(filePath).catch(() => []);
+          const secrets = await detectSecretInNotebook(filePath).catch(() => { failed(pipeline.id, filePath, "secrets"); return []; });
           for (const detection of secrets) {
             if (!detection.scope) {
               // A pipeline has no notebook parameters, so its scope is only known at run time.
@@ -214,14 +223,17 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
     [...nodeMap.values()]
       .filter((node) => node.pipelineLibraries?.length)
       .map(async (pipeline) => {
-        const flow = await pipelineDataFlowOf(pipeline);
+        const flow = await pipelineDataFlowOf(pipeline, (file) => failed(pipeline.id, file, "SQL data flow"));
         if (flow) nodeMap.set(pipeline.id, { ...pipeline, pipelineDataFlow: flow });
       }),
   );
 
   return {
     ...graph,
-    nodes: [...nodeMap.values()],
+    nodes: [...nodeMap.values()].map((node) => {
+      const byFile = failures.get(node.id);
+      return byFile ? { ...node, scanFailures: [...byFile].map(([file, checks]) => ({ file, checks: [...checks] })) } : node;
+    }),
     edges: [...graph.edges, ...newEdges],
   };
 }
@@ -235,7 +247,7 @@ function pipelineConfiguration(pipeline: BundleGraphNode): Record<string, string
   );
 }
 
-async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
+async function pipelineDataFlowOf(pipeline: BundleGraphNode, failed: (file: string) => void) {
   const { files: sources, truncated } = pipelineSourceFiles(pipeline);
   if (sources.length === 0) return undefined;
   let incomplete = truncated;
@@ -249,6 +261,7 @@ async function pipelineDataFlowOf(pipeline: BundleGraphNode) {
     }
     const sql = await readFile(file, "utf8").catch(() => undefined);
     if (sql === undefined) {
+      failed(file);
       incomplete = true;
       continue;
     }

@@ -8,6 +8,7 @@ import { enrichGraphWithFileContent } from "./graph/enrichGraph.js";
 import { buildInspectorIssues, type InspectorIssue } from "./issues.js";
 import { notebookHeaderRuleFor } from "./notebookFiles.js";
 import type { BundleDiagnostic } from "./parseBundleDiagnostics.js";
+import { isAuthDiagnostic } from "./authDiagnostics.js";
 import { extractBundleGraph, type BundleResult } from "./validateBundle.js";
 
 export type ValidatedBundle = Extract<BundleResult, { ok: true }>;
@@ -20,8 +21,8 @@ export function cliDiagnosticsOf(result: BundleResult): BundleDiagnostic[] {
   if (result.ok) {
     return (
       result.issues
-        ?.filter((issue) => issue.code !== "AUTH_NOT_CONFIGURED")
-        .flatMap((issue) => issue.diagnostics ?? []) ?? []
+        ?.flatMap((issue) => (issue.diagnostics ?? []).filter((diagnostic) =>
+          issue.code !== "AUTH_NOT_CONFIGURED" || !isAuthDiagnostic(diagnostic))) ?? []
     );
   }
   return result.error.diagnostics ?? [];

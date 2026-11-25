@@ -10,12 +10,12 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`, `file_scan_failed`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
-- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
+- [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`, `inspector_check_failed`
 
 ## Files and paths
 
@@ -141,6 +141,15 @@ Checked by deploying one bundle per case (Databricks CLI v1.24.0). These fail: t
 - **Example:** `src/load.py` and `src/load.sql`, both starting with the Databricks notebook header.
 - **Fix:** rename or remove one of the files, or leave one out of the deploy with `sync.exclude`.
 - **Limits:** not checked when `sync.paths` is set, as the inspector doesn't follow a different sync root (see [`excluded_from_sync`](#excluded_from_sync)). Folders the inspector never reads, such as `node_modules` and `.venv`, aren't checked.
+
+### `file_scan_failed`
+
+The inspector could not finish one or more checks on a local source file. This reports a gap in the inspection, not a mistake in the code.
+
+- **Severity:** warning.
+- **Example:** a notebook exists but its contents cannot be read because of file permissions. The warning names the checks that failed and belongs to its task. Pipeline source read failures are reported on the pipeline too.
+- **Fix:** make the file readable and check the bundle again. Findings from other checks do not cover the failed checks.
+- **Limits:** the warning records the file and check names. It does not expose the exception's text, source contents or variable values.
 
 ## `include`
 
@@ -677,6 +686,15 @@ A task's `source` doesn't fit its job's `git_source`, so `bundle validate` passe
 
 - **Severity:** error.
 - **Fix:** for `source: GIT`, keep the code in the bundle (omit `source`, or use `WORKSPACE`), or add `git_source` to the job. For `source: WORKSPACE`, use a path from `/Workspace`, or remove `source: WORKSPACE` to read the path from the job's Git repository.
+
+### `inspector_check_failed`
+
+The inspector failed while building the bundle's findings. A failed check does not mean that the bundle is clean.
+
+- **Severity:** error.
+- **Example:** a checker throws after a previous check found problems. The Problems panel keeps those earlier findings with an **Out of date:** prefix and adds one error at the bundle file. Old quick fixes are removed.
+- **Fix:** check the bundle again. A successful retry replaces the old findings. If the error persists, report it with the extension and CLI versions.
+- **Limits:** results are published only for the newest requested check of each bundle. An older CLI or file scan cannot replace newer findings or revive a removed bundle. Failed checks are not recorded as complete findings for copied reviews or progress tracking.
 
 ## Code it reads
 

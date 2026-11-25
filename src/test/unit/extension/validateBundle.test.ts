@@ -332,7 +332,7 @@ describe("validateBundleWithDependencies", () => {
     expect(result.issues?.[0]?.diagnostics?.[0]?.severity).toBe("warning");
   });
 
-  test("treats non-zero exit with valid JSON as a CLI warning", async () => {
+  test("treats an unexplained non-zero exit with valid JSON as a failed check", async () => {
     const error = Object.assign(new Error("warning exit"), {
       stderr: "partial warning",
       stdout: JSON.stringify(createBundle()),
@@ -353,10 +353,10 @@ describe("validateBundleWithDependencies", () => {
       },
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
 
-    expect(result.issues?.[0]?.code).toBe("CLI_WARNING");
+    expect(result.error.errorCode).toBe("VALIDATION_FAILED");
   });
 
   // The CLI stops at its first error and still prints the bundle, with the target only
