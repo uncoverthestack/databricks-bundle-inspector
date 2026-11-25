@@ -521,7 +521,8 @@ function widgetParameterIssues(
     const reported = new Set<string>();
 
     for (const read of usage.reads) {
-      if (passed.has(read.name) || reported.has(read.name)) continue;
+      // getArgument(name, default) returns the default when the widget isn't set.
+      if (read.withDefault || passed.has(read.name) || reported.has(read.name)) continue;
       // A default created in the other language's cells doesn't reach this read when
       // the notebook runs as a job; one from a %run notebook is not language-bound here.
       const ownLanguages = own(usage.defaultLanguages, read.name);

@@ -397,7 +397,8 @@ These read the code tasks run. See [Code it reads](#code-it-reads) for which lan
 A notebook reads a widget that may have no value when it runs as a job: neither the task nor the job passes it, and it has no default. Also reported for a widget created in a cell of the other language (Python and SQL), and for a notebook run with `%run` that reads a widget the `%run` line doesn't pass.
 
 - **Severity:** warning.
-- **Example:** `dbutils.widgets.get("run_date")`, with no `run_date` in `base_parameters` or the job's `parameters`.
+- **Example:** `dbutils.widgets.get("run_date")`, with no `run_date` in `base_parameters` or the job's `parameters`. The run fails with "No input widget named run_date is defined". `getArgument("run_date")` and `dbutils.widgets.getArgument("run_date")` fail the same way.
+- **Not reported:** `getArgument("run_date", "2024-01-01")`, in either spelling, which returns its second argument when the widget isn't set (checked with job runs on Databricks CLI v1.28.0). A default given by keyword is still reported, as only the positional form was checked.
 - **Fix:** pass it in the task's `base_parameters` or the job's `parameters`, or give the widget a default in the notebook. When the name is close to one that is passed, the warning suggests it.
 
 ### `unused_parameter`
