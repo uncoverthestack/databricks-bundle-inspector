@@ -61,6 +61,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "outcome_without_condition",
   "invalid_outcome",
   "for_each_inputs_not_array",
+  "for_each_inputs_too_long",
   "unknown_job_parameter",
   "job_parameter_reference_with_dot",
   "job_parameter_in_default",

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "@jest/globals";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { parse } from "yaml";
 import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
+import { buildIssueItems } from "../../../webview/lib/issueItems.js";
 
 // The job-settings fixture through the inspector, from the Databricks CLI's own output for
 // the structural preview. See the fixture's README for what deploy did with each case
@@ -117,5 +120,56 @@ describe("job-settings fixture", () => {
         title: 'Keep only one of schedule and trigger on job "two_triggers": a job can have one, so deploy may fail.',
       },
     ]);
+  });
+});
+
+describe("a task key from a variable, in the structural preview", () => {
+  // The preview prints `task_key: ${var.key}` as written, and the graph names the task by it.
+  const TEXT = `bundle: { name: b }
+variables:
+  key: { default: "bad key" }
+resources:
+  jobs:
+    j:
+      name: j
+      tasks:
+        - task_key: \${var.key}
+          notebook_task: { notebook_path: ./nb.py }
+`;
+  async function inspect() {
+    const root = mkdtempSync(path.join(os.tmpdir(), "dbi-task-key-"));
+    try {
+      writeFileSync(path.join(root, "databricks.yml"), TEXT);
+      writeFileSync(path.join(root, "nb.py"), "# Databricks notebook source\nprint(1)\n");
+      const bundle = parse(TEXT) as ParsedBundleConfig;
+      const graph = await extractBundleGraph(bundle, root);
+      return { bundle, graph, issues: buildInspectorIssues(graph, bundle, [], root) };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test("an invalid default stays on the task's box and in its job's list", async () => {
+    const { bundle, graph, issues } = await inspect();
+    const invalid = issues.filter((issue) => issue.kind === "invalid_task_key");
+    expect(invalid.map((issue) => issue.title)).toEqual([
+      'Rename task "bad key": task keys can only use letters, digits, "-" and "_", so deploy may fail.',
+    ]);
+    expect(graph.nodes.some((node) => node.id === invalid[0]!.taskId)).toBe(true);
+    const job = graph.nodes.find((node) => node.nodeType === "job")!;
+    const items = buildIssueItems(graph as never, job, bundle, null, [], issues);
+    expect(items.some((item) => item.id === invalid[0]!.id)).toBe(true);
+  });
+
+  test("a BUNDLE_VAR_ environment variable wins over the default, so the default is not judged", async () => {
+    const before = process.env.BUNDLE_VAR_key;
+    process.env.BUNDLE_VAR_key = "valid_key";
+    try {
+      const { issues } = await inspect();
+      expect(issues.filter((issue) => issue.kind === "invalid_task_key")).toEqual([]);
+    } finally {
+      if (before === undefined) delete process.env.BUNDLE_VAR_key;
+      else process.env.BUNDLE_VAR_key = before;
+    }
   });
 });

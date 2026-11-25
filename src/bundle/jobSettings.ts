@@ -28,10 +28,36 @@ const TRIGGER_FIELDS = ["schedule", "trigger", "continuous"] as const;
 const TASK_KEY = /^[A-Za-z0-9_-]+$/;
 const PARAMETER_NAME = /^[A-Za-z0-9_.-]+$/;
 const OUTCOMES = ["true", "false"];
+/** Deploy refuses a longer key: "The provided task key (of 101 characters) exceeds the maximum allowed length of 100 characters." */
+const TASK_KEY_MAX = 100;
+/** Deploy refuses longer inline inputs: "Invalid inputs: cannot exceed 5000 characters". */
+export const FOR_EACH_INPUTS_MAX = 5000;
 
 const unresolved = (value: string) => value.includes("${");
 const quoted = (names: readonly string[]) =>
   names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
+/** Shortened for a title: a 101-character key would fill the row. */
+const shortKey = (key: string) => (key.length > 24 ? `${key.slice(0, 24)}…` : key);
+
+const isMap = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Two values merged as the CLI merges tasks that share a key (libs/dyn/merge): maps key by
+ * key, lists joined end to end, anything else replaced by the later value.
+ */
+function mergeValues(earlier: unknown, later: unknown): unknown {
+  if (earlier === undefined || earlier === null) return later;
+  if (later === undefined || later === null) return earlier;
+  if (Array.isArray(earlier) && Array.isArray(later)) return [...earlier, ...later];
+  if (isMap(earlier) && isMap(later)) {
+    const out: Record<string, unknown> = { ...earlier };
+    for (const [key, value] of Object.entries(later)) out[key] = key in out ? mergeValues(out[key], value) : value;
+    return out;
+  }
+  return later;
+}
 
 /** A scalar as the CLI reads it, or undefined when it isn't one. */
 const scalar = (value: unknown): string | undefined =>
@@ -61,7 +87,10 @@ function jobFieldLocation(
   return undefined;
 }
 
-/** Where a task's field is written: the picked target's copy of the task first, else the job's own. */
+/**
+ * Where a task's field is written: the picked target's copy of the task first, else the job's
+ * own. Of tasks that share a key, the last one setting the field, as its value is the one kept.
+ */
 function taskFieldLocation(
   files: SourceFile[],
   locate: Locate,
@@ -71,6 +100,7 @@ function taskFieldLocation(
   options: JobStructureOptions,
 ): YamlLocation | undefined {
   for (const fromTarget of [true, false]) {
+    let last: YamlLocation | undefined;
     for (const file of files) {
       for (const tasks of jobLists(file.doc, "tasks")) {
         if (tasks.jobKey !== jobKey || (tasks.target !== undefined) !== fromTarget) continue;
@@ -78,11 +108,11 @@ function taskFieldLocation(
         const target = tasks.target ?? options.activeTarget;
         for (const [index, task] of tasks.items.entries()) {
           if (taskIdOf(record(task).task_key, target, options) !== taskKey) continue;
-          const found = locate.get(file)!([...tasks.path, index, ...field]);
-          if (found) return found;
+          last = locate.get(file)!([...tasks.path, index, ...field]) ?? last;
         }
       }
     }
+    if (last) return last;
   }
   return undefined;
 }
@@ -242,14 +272,22 @@ export function findJobSettingProblems(
 
     const tasks = list(settings.tasks).map(record);
     // A task whose key the preview leaves as `${...}` goes by that text, so its other
-    // settings are still checked; only its own key is not judged.
+    // settings are still checked; only its own key is not judged. Tasks sharing a key are
+    // checked as the one task the CLI merges them into, the later settings winning.
     const keyed = new Map<string, Record<string, unknown>>();
+    // The graph names a task by its key as written, `${var.key}` included, so a finding
+    // keeps that name to stay on the task's box and in its job's list.
+    const graphKeys = new Map<string, string>();
     for (const task of tasks) {
       const taskKey = taskIdOf(task.task_key, target, options);
-      if (taskKey !== undefined && !keyed.has(taskKey)) keyed.set(taskKey, task);
+      if (taskKey === undefined) continue;
+      const earlier = keyed.get(taskKey);
+      keyed.set(taskKey, earlier ? (mergeValues(earlier, task) as Record<string, unknown>) : task);
+      if (!earlier) graphKeys.set(taskKey, String(task.task_key));
     }
 
     for (const [taskKey, task] of keyed) {
+      const graphKey = graphKeys.get(taskKey) ?? taskKey;
       const ownKey = keyOf(task.task_key, target, options);
       const inner = record(record(task.for_each_task).task);
       const innerKey = keyOf(inner.task_key, target, options);
@@ -257,33 +295,55 @@ export function findJobSettingProblems(
         ...(ownKey !== undefined ? [[ownKey, ["task_key"]] as const] : []),
         ...(innerKey !== undefined ? [[innerKey, ["for_each_task", "task", "task_key"]] as const] : []),
       ] as const) {
-        if (key === "" || TASK_KEY.test(key)) continue;
+        const wording =
+          key === ""
+            ? {
+                title: `Give the task in job "${jobKey}" a task key: deploy may fail when it is empty.`,
+                fixHint: `Deploy fails with "Missing required field: settings.tasks.task_key."`,
+              }
+            : key.length > TASK_KEY_MAX
+              ? {
+                  title: `Shorten task key "${shortKey(key)}": it has ${key.length} characters and the limit is ${TASK_KEY_MAX}, so deploy may fail.`,
+                  fixHint: `Deploy fails with "The provided task key (of ${key.length} characters) exceeds the maximum allowed length of ${TASK_KEY_MAX} characters."`,
+                }
+              : TASK_KEY.test(key)
+                ? undefined
+                : {
+                    title: `Rename task "${key}": task keys can only use letters, digits, "-" and "_", so deploy may fail.`,
+                    fixHint: `Deploy fails with "Task key '${key}' contains an invalid character. Only alphanumeric, - and _ characters are permitted." Letters are A to Z only; spaces, dots and accented letters are refused.`,
+                  };
+        if (!wording) continue;
         findings.push({
           kind: "invalid_task_key",
           jobKey,
-          taskKey,
+          taskKey: graphKey,
           subject: field.length > 1 ? `${key}#inner` : key,
-          title: `Rename task "${key}": task keys can only use letters, digits, "-" and "_", so deploy may fail.`,
-          fixHint: `Deploy fails with "Task key '${key}' contains an invalid character. Only alphanumeric, - and _ characters are permitted." Letters are A to Z only; spaces, dots and accented letters are refused.`,
+          ...wording,
           ...located(taskFieldLocation(files, locate, jobKey, taskKey, [...field], options)),
         });
       }
 
+      // A task can depend on the same task twice; each entry is its own finding, at its own line.
+      const seen = new Map<string, number>();
       for (const dependency of list(task.depends_on).map(record)) {
         const upstream = keyOf(dependency.task_key, target, options);
+        const occurrence = upstream === undefined ? 0 : (seen.get(upstream) ?? 0);
+        if (upstream !== undefined) seen.set(upstream, occurrence + 1);
         const outcome = scalar(dependency.outcome);
         if (upstream === undefined || outcome === undefined || outcome === "" || unresolved(outcome)) continue;
         const upstreamTask = keyed.get(upstream);
         // A dependency on a task the job doesn't have is unknown_task_dependency's finding.
         if (!upstreamTask) continue;
-        const where = (field: "task_key" | "outcome") => dependencyLocation(files, locate, jobKey, taskKey, upstream, options, field);
+        const subject = occurrence > 0 ? `${upstream}#${occurrence}` : upstream;
+        const where = (field: "task_key" | "outcome") =>
+          dependencyLocation(files, locate, jobKey, taskKey, upstream, options, field, occurrence);
         const location = where("outcome") ?? where("task_key");
         if (upstreamTask.condition_task === undefined || upstreamTask.condition_task === null) {
           findings.push({
             kind: "outcome_without_condition",
             jobKey,
-            taskKey,
-            subject: upstream,
+            taskKey: graphKey,
+            subject,
             title: `Remove outcome "${outcome}" from the dependency on "${upstream}": only an if/else condition task has an outcome, so deploy may fail.`,
             fixHint: `Deploy fails with "The dependency on a non-if/else condition "${upstream}" specifies an outcome "${outcome}". Outcomes can only be specified for if/else condition dependencies."`,
             ...located(location),
@@ -292,8 +352,8 @@ export function findJobSettingProblems(
           findings.push({
             kind: "invalid_outcome",
             jobKey,
-            taskKey,
-            subject: upstream,
+            taskKey: graphKey,
+            subject,
             title: `Change outcome "${outcome}" to "true" or "false": deploy may fail with any other value.`,
             fixHint: `Deploy fails with "The dependency on task "${upstream}" specifies invalid outcome "${outcome}". Valid values are "true" and "false"".`,
             ...located(location),
@@ -305,15 +365,27 @@ export function findJobSettingProblems(
       // `{{job.parameters.x}}` and `{{tasks.x.values.y}}` are filled in when the job runs.
       if (typeof inputs === "string" && !unresolved(inputs) && !inputs.includes("{{")) {
         const problem = forEachInputsProblem(inputs);
+        const where = () => located(taskFieldLocation(files, locate, jobKey, taskKey, ["for_each_task", "inputs"], options));
+        if (!problem && inputs.length > FOR_EACH_INPUTS_MAX) {
+          findings.push({
+            kind: "for_each_inputs_too_long",
+            jobKey,
+            taskKey: graphKey,
+            subject: "inputs",
+            title: `Shorten the inputs of task "${taskKey}": they have ${inputs.length} characters and the limit is ${FOR_EACH_INPUTS_MAX}, so deploy may fail.`,
+            fixHint: `Deploy fails with "Invalid inputs: cannot exceed ${FOR_EACH_INPUTS_MAX} characters".`,
+            ...where(),
+          });
+        }
         if (problem) {
           findings.push({
             kind: "for_each_inputs_not_array",
             jobKey,
-            taskKey,
+            taskKey: graphKey,
             subject: "inputs",
             title: `Make the inputs of task "${taskKey}" a JSON array, like ["a", "b"]: it ${problem}, so deploy may fail.`,
             fixHint: `Deploy fails with "The JSON string in the inputs field should be an array of primitives or objects." Use all plain values (text, numbers, true or false) or all objects, with no null and no list inside.`,
-            ...located(taskFieldLocation(files, locate, jobKey, taskKey, ["for_each_task", "inputs"], options)),
+            ...where(),
           });
         }
       }
@@ -339,7 +411,7 @@ export function findJobSettingProblems(
               findings.push({
                 kind,
                 jobKey,
-                taskKey,
+                taskKey: graphKey,
                 subject: `${name}${prefix.length ? "#inner" : ""}`,
                 title: `Use a job parameter name without a dot in {{job.parameters.${name}}}: Databricks can't read the dot, so deploy may fail.`,
                 fixHint: `Deploy fails with "Invalid reference: 'job.parameters.${name}'. 'parameters' is unknown.", even when a parameter named "${name}" exists, and in brackets too. Rename the parameter, for example to "${name.replace(/\./g, "_")}".`,
@@ -351,7 +423,7 @@ export function findJobSettingProblems(
             findings.push({
               kind,
               jobKey,
-              taskKey,
+              taskKey: graphKey,
               subject: `${name}${prefix.length ? "#inner" : ""}`,
               title: `Job parameter "${name}" may not exist.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
               fixHint: `Deploy fails with "Reference 'job.parameters.${name}' in task '${inTask}' refers to an undefined job parameter '${name}'". Add "${name}" to job "${jobKey}"'s parameters${known.length ? `, or use one of ${quotedList(known)}` : ""}. Letter case counts.`,

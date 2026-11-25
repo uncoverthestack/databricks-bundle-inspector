@@ -21,4 +21,6 @@ Fixture for the job setting checks from #237. `bundle validate` accepts every ca
 | `parameter_references`: parameter `copy` | `default: "{{job.parameters.env}}"` | fails: `Invalid reference in job parameter 'copy': 'job.parameters.env' is not allowed.` | `job_parameter_in_default` |
 | `parameter_references`: `{{ job.parameters.env }}`, `{{job.parameters.[env]}}`, `{{job.id}}`, a `description` and a `run_job_task`'s `job_parameters` naming `not_checked` | a defined name, another reference, and two fields deploy doesn't check | deploys | nothing |
 
+Checked the same way, in unit tests rather than this fixture: an empty `task_key` (fails: `Missing required field: settings.tasks.task_key.`), a 101-character key (fails: `The provided task key (of 101 characters) exceeds the maximum allowed length of 100 characters.`; 100 deploys), inputs of 5,001 characters (fails: `Invalid inputs: cannot exceed 5000 characters`; 5,000 deploys), and two tasks named `loop` (the CLI merges them; deploy fails when the later one's inputs are `not json`, and deploys when the later one's are `[1]`).
+
 `validated-bundle.json` is the CLI's structural preview output, captured with no credentials (`DATABRICKS_CONFIG_FILE=/dev/null`): the findings need no login. The baseline is the same on CLI v0.299.0 to v1.28.0.

@@ -126,10 +126,38 @@ describe("invalid_task_key", () => {
     expect(findings[0]!.fixHint).toContain("Only alphanumeric, - and _ characters are permitted.");
   });
 
-  test.each([["letters, digits, - and _", "lo-ad_1"], ["only a dash", "'-'"], ["a number", "1"], ["a variable", "${var.key}"]])(
+  test.each([
+    ["letters, digits, - and _", "lo-ad_1"],
+    ["only a dash", "'-'"],
+    ["a number", "1"],
+    ["a variable", "${var.key}"],
+    ["100 characters", "k".repeat(100)],
+  ])(
     "%s deploys",
     (_case, key) => expect(check(job(key))).toEqual([]),
   );
+
+  test("an empty key fails deploy", () => {
+    const findings = check(job('""'));
+    expect(summary(findings)).toEqual(['invalid_task_key @5: Give the task in job "j" a task key: deploy may fail when it is empty.']);
+    expect(findings[0]!.fixHint).toContain("Missing required field: settings.tasks.task_key.");
+  });
+
+  test("a key over 100 characters fails deploy", () => {
+    const findings = check(job("k".repeat(101)));
+    expect(summary(findings)).toEqual([
+      `invalid_task_key @5: Shorten task key "${"k".repeat(24)}…": it has 101 characters and the limit is 100, so deploy may fail.`,
+    ]);
+    expect(findings[0]!.fixHint).toContain("exceeds the maximum allowed length of 100 characters.");
+  });
+
+  test("a key from a variable keeps the graph's name for the task", () => {
+    // The graph names the task `${var.key}`, as the structural preview prints it; the check uses the value.
+    const findings = check(job("${var.key}"), { resolve: (value) => (value === "${var.key}" ? "bad key" : undefined) });
+    expect(findings.map((f) => [f.kind, f.taskKey, f.title])).toEqual([
+      ["invalid_task_key", "${var.key}", 'Rename task "bad key": task keys can only use letters, digits, "-" and "_", so deploy may fail.'],
+    ]);
+  });
 
   test("a for-each task's inner task is checked, and belongs to the outer task", () => {
     const findings = check(`
@@ -225,16 +253,110 @@ targets:
             - task_key: down
               depends_on: [{ task_key: up, outcome: "True" }]
 `;
+    // As `bundle validate -t prod` printed it on CLI v1.28.0: the target's entry is added after the job's.
     const resolved = {
-      j: { tasks: [{ task_key: "up", condition_task: {} }, { task_key: "down", depends_on: [{ task_key: "up", outcome: "True" }] }] },
+      j: {
+        tasks: [
+          { task_key: "up", condition_task: {} },
+          { task_key: "down", depends_on: [{ task_key: "up", outcome: "true" }, { task_key: "up", outcome: "True" }] },
+        ],
+      },
     };
     const findings = check(text, { activeTarget: "prod" }, resolved);
     expect(findings.map((f) => [f.kind, f.location?.line])).toEqual([["invalid_outcome", 18]]);
   });
 
+  const twice = (first: string, second: string) => `
+resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: up
+          condition_task: { op: EQUAL_TO, left: x, right: x }
+        - task_key: down
+          depends_on:
+            - { task_key: up, outcome: ${first} }
+            - { task_key: up, outcome: ${second} }
+          ${NB}
+`;
+
+  test("a second dependency on the same task points at its own line", () => {
+    expect(check(twice('"true"', '"True"')).map((f) => [f.kind, f.location?.line])).toEqual([["invalid_outcome", 11]]);
+  });
+
+  test("two wrong outcomes on the same task are two findings, told apart", () => {
+    const findings = check(twice('"TRUE"', '"True"'));
+    expect(findings.map((f) => [f.kind, f.location?.line])).toEqual([
+      ["invalid_outcome", 10],
+      ["invalid_outcome", 11],
+    ]);
+    expect(new Set(findings.map((f) => f.subject)).size).toBe(2);
+  });
+
   test("a variable or an unknown upstream task is not judged", () => {
     expect(check(job("${var.outcome}", NB))).toEqual([]);
     expect(check(job('"true"').replace("task_key: up\n          condition", "task_key: other\n          condition"))).toEqual([]);
+  });
+});
+
+describe("tasks that share a key", () => {
+  // The CLI merges them into one task, the later settings winning (CLI v1.28.0: deploy fails
+  // with the later inputs "not json", and deploys with the later inputs "[1]").
+  const tasks = (first: string, second: string) => `
+resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: loop
+          for_each_task: { inputs: '${first}', task: { task_key: i, ${NB} } }
+        - task_key: loop
+          for_each_task: { inputs: '${second}', task: { task_key: i, ${NB} } }
+`;
+
+  test("the later task's inputs are the ones checked, at its line", () => {
+    expect(check(tasks("[1]", "not json")).map((f) => [f.kind, f.location?.line])).toEqual([["for_each_inputs_not_array", 9]]);
+  });
+
+  test("a later task that fixes the inputs leaves no error", () => {
+    expect(check(tasks("not json", "[1]"))).toEqual([]);
+  });
+
+  test("their dependencies are joined", () => {
+    const findings = check(`
+resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: up
+          condition_task: { op: EQUAL_TO, left: x, right: x }
+        - task_key: down
+          depends_on: [{ task_key: up, outcome: "true" }]
+        - task_key: down
+          depends_on: [{ task_key: up, outcome: "True" }]
+          ${NB}
+`);
+    expect(findings.map((f) => [f.kind, f.location?.line])).toEqual([["invalid_outcome", 11]]);
+  });
+});
+
+describe("for_each_inputs_too_long", () => {
+  const job = (inputs: string) =>
+    `resources:\n  jobs:\n    j:\n      tasks:\n        - task_key: loop\n          for_each_task:\n            inputs: '${inputs}'\n            task: { task_key: i, ${NB} }\n`;
+  // ["xxx…"]: 4 characters around the text.
+  const list = (length: number) => JSON.stringify(["x".repeat(length - 4)]);
+
+  test("over 5000 characters fails deploy", () => {
+    const findings = check(job(list(5001)));
+    expect(summary(findings)).toEqual([
+      'for_each_inputs_too_long @7: Shorten the inputs of task "loop": they have 5001 characters and the limit is 5000, so deploy may fail.',
+    ]);
+    expect(findings[0]!.fixHint).toContain("Invalid inputs: cannot exceed 5000 characters");
+  });
+
+  test("5000 characters deploys", () => expect(check(job(list(5000)))).toEqual([]));
+
+  test("text that is long and not an array is reported once, as not an array", () => {
+    expect(kinds(check(job("x".repeat(5001))))).toEqual(["for_each_inputs_not_array"]);
   });
 });
 
@@ -354,6 +476,13 @@ describe("job parameter references", () => {
     expect(check(job(task, "[{ name: '${var.p}', default: x }]"))).toEqual([]);
     expect(kinds(check(job(task, "[{ name: '${var.p}', default: x }]"), { resolve: () => "other" }))).toEqual(["unknown_job_parameter"]);
     expect(check(job(task, "[{ name: '${var.p}', default: x }]"), { resolve: () => "nope" })).toEqual([]);
+  });
+
+  test("a task whose key is a variable keeps the graph's name for it", () => {
+    // The graph names the task `${var.key}`, as the structural preview prints it.
+    const text = `resources:\n  jobs:\n    j:\n      parameters: [{ name: env, default: dev }]\n      tasks:\n        - task_key: \${var.key}\n          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`;
+    const findings = check(text, { resolve: (value) => (value === "${var.key}" ? "load" : undefined) });
+    expect(findings.map((f) => [f.kind, f.taskKey])).toEqual([["unknown_job_parameter", "${var.key}"]]);
   });
 
   test("a parameter a target adds counts", () => {
