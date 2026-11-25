@@ -13,3 +13,8 @@ Tasks pass values with `dbutils.jobs.taskValues.set(key=..., value=...)` and rea
 | `transitive` | `dynamic_producer.anything` | No issue: that task sets a key held in a variable |
 | `yaml_refs` | `{{tasks.producer.values.row_count}}` | No issue |
 | `yaml_refs` | `{{tasks.producer.values.missing}}` | Warning: `producer` may not set `missing` |
+| `defaults` | `optional_keyword` with `default="fallback"`, and `optional_positional` with a third positional argument | No issue: the read gets the default (job run, CLI v1.28.0, #586) |
+| `defaults` | `none_default` with `default=None` | Warning: `default=None` still raises `ValueError` (job run, #586) |
+| `defaults` | `debug_only` with only `debugValue` | Warning: `debugValue` is only used outside a job (job run, #586) |
+| `defaults` | `read_twice`, once with a default and once without | Warning on the read without one |
+| `defaults` | `variable_default` with `default=fallback` (a variable) | No issue: the value can't be known, so no guess |

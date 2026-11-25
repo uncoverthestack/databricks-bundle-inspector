@@ -2054,7 +2054,14 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
 
     for (const [readerKey, reader] of tasks) {
       if (parentJobHasGitSource(graph, reader)) continue;
-      const reads: Array<{ taskKey: string; key: string | null; file?: string; line?: number; yamlPath?: string }> = [];
+      const reads: Array<{
+        taskKey: string;
+        key: string | null;
+        hasDefault?: boolean;
+        file?: string;
+        line?: number;
+        yamlPath?: string;
+      }> = [];
       const readerRefs = reader.taskData
         ? [reader.taskData, ...(reader.taskData.nestedTask ? [reader.taskData.nestedTask] : [])].flatMap((d) => d.fileReferences)
         : [];
@@ -2062,7 +2069,13 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.data.taskValueUsage as TaskValueUsage | undefined;
         for (const get of usage?.gets ?? []) {
           if (!get.taskKey) continue;
-          reads.push({ taskKey: get.taskKey, key: get.key, line: get.line, ...(ref.resolvedPath ? { file: ref.resolvedPath } : {}) });
+          reads.push({
+            taskKey: get.taskKey,
+            key: get.key,
+            line: get.line,
+            hasDefault: get.hasDefault,
+            ...(ref.resolvedPath ? { file: ref.resolvedPath } : {}),
+          });
         }
       }
       const settings = JSON.stringify(reader.data ?? {});
@@ -2071,6 +2084,9 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
       }
 
       const reported = new Set<string>();
+      // Each key is reported once: check reads without a default first, so a later
+      // read that can fail still gets its warning (#586).
+      reads.sort((a, b) => Number(Boolean(a.hasDefault)) - Number(Boolean(b.hasDefault)));
       for (const read of reads) {
         const id = `task-value:${reader.id}:${read.taskKey}:${read.key ?? ""}`;
         if (reported.has(id) || read.taskKey === readerKey) continue;
@@ -2110,7 +2126,8 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           continue;
         }
         const keys = read.key ? keysSetBy(tasks.get(read.taskKey)!) : undefined;
-        if (keys && read.key && !keys.has(read.key)) {
+        // A read with a default gets that default when the key isn't set, and the run goes on (#586).
+        if (keys && read.key && !read.hasDefault && !keys.has(read.key)) {
           const suggestion = closestName(read.key, [...keys]);
           issues.push({
             ...base,
