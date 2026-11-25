@@ -1,0 +1,65 @@
+{
+  "bundle": {
+    "name": "dbi-tonly"
+  },
+  "include": [
+    "resources/more.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "shared": {
+        "name": "shared",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "./nb.py"
+            },
+            "task_key": "a"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "resources": {
+        "jobs": {
+          "both": {
+            "name": "both"
+          },
+          "shared": {
+            "tasks": [
+              {
+                "notebook_task": {
+                  "notebook_path": "./nb.py"
+                },
+                "task_key": "a"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "prod": {
+      "resources": {
+        "jobs": {
+          "both": {
+            "name": "both"
+          },
+          "nightly": {
+            "name": "nightly",
+            "tasks": [
+              {
+                "notebook_task": {
+                  "notebook_path": "./nb.py"
+                },
+                "task_key": "a"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

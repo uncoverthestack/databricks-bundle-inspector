@@ -150,7 +150,19 @@ function parseBundleConfig(
         .join("; "),
     };
   }
-  return { ok: true, data: result.data as ParsedBundleConfig };
+  // Zod builds each record into a new object and skips a key named `__proto__`, on purpose,
+  // so that key cannot change the new object's prototype. A job with that key vanished (#510).
+  // Keep the CLI's own objects, where JSON.parse stores `__proto__` as an ordinary key;
+  // `bundle` is the only field the schema changes. Zod never checked the skipped entry, so
+  // check it here: a resource group must be an object like any other.
+  const resources = (raw as { resources?: unknown }).resources;
+  if (resources !== null && typeof resources === "object" && Object.hasOwn(resources, "__proto__")) {
+    const group = (resources as Record<string, unknown>)["__proto__"];
+    if (group === null || typeof group !== "object" || Array.isArray(group)) {
+      return { ok: false, error: "resources.__proto__: expected record" };
+    }
+  }
+  return { ok: true, data: { ...(raw as Record<string, unknown>), bundle: result.data.bundle } as ParsedBundleConfig };
 }
 
 function cliNotFoundMessage(failure: CliResolutionFailure): string {

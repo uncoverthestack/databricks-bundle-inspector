@@ -66,6 +66,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "job_parameter_reference_with_dot",
   "job_parameter_in_default",
   "pipeline_selection_not_found",
+  "job_only_in_target",
   "runtime_end_of_support",
   "widget_not_set",
   "unused_parameter",
@@ -81,6 +82,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "empty_bundle_name_in_root_path",
   "unresolved_variable",
   "variable_reference_loop",
+  "resource_key_has_dot",
   "internal_resource_set",
   "resource_not_defined",
   "variable_in_auth_field",
@@ -1457,6 +1459,8 @@ export function buildInspectorIssues(
   issues.push(...includeIssues(parsedBundle, bundleRoot));
   issues.push(...jobStructureIssues(graph));
   issues.push(...runtimeSupportIssues(graph));
+  // Neither the preview nor a real target's validate reports it; deploy does (#511).
+  issues.push(...resourceKeyIssues(graph, bundleRoot));
   // The files deploy uploads are the same with or without a target.
   if (syncRulesApply) {
     issues.push(...workspacePathClashIssues(bundleRoot, bundleFiles().files, (file) => !excludedFromSync(file), graph.notebookRule));
@@ -1527,6 +1531,29 @@ function targetCheckIssues(graph: BundleGraph, bundleRoot: string): InspectorIss
       fixHint: finding.fixHint,
       yamlPath: finding.yamlPath,
       ...(finding.resourceId ? { resourceId: finding.resourceId } : {}),
+      ...issueLocation(file, line, column),
+    };
+  });
+}
+
+/** Resource keys with a dot, which deploy doesn't accept (#511). */
+function resourceKeyIssues(graph: BundleGraph, bundleRoot: string): InspectorIssue[] {
+  const findings = graph.resourceKeyFindings ?? [];
+  // A key reached through a YAML merge has no line: the finding goes on databricks.yml.
+  const bundleFile = findings.some((finding) => !finding.location)
+    ? path.join(bundleRoot, readIncludeEntries(bundleRoot).file ?? "databricks.yml")
+    : undefined;
+  return findings.map((finding) => {
+    const { file = bundleFile, line, column } = finding.location ?? {};
+    const resourceId = `resources.${finding.group}.${finding.key}`;
+    return {
+      id: `resource-key:${resourceId}`,
+      severity: "error",
+      kind: "resource_key_has_dot",
+      title: finding.title,
+      fixHint: finding.fixHint,
+      yamlPath: resourceId,
+      resourceId,
       ...issueLocation(file, line, column),
     };
   });
