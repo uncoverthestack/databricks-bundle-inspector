@@ -182,8 +182,13 @@ export function notebookViews(
   options: { jupyter: boolean; fileLanguage: CodeLanguage },
 ): NotebookViews {
   if (options.jupyter) return jupyterLines(content);
-  if (/^# Databricks notebook source/.test(content)) return sourceNotebookLines(content, "python");
-  if (/^-- Databricks notebook source/.test(content)) return sourceNotebookLines(content, "sql");
+  // A byte order mark first still makes a notebook for the CLI (#589), so the cells are read
+  // the same; the mark becomes a space, keeping offsets.
+  const mark = content.startsWith("\uFEFF");
+  const text = mark ? " " + content.slice(1) : content;
+  const body = mark ? content.slice(1) : content;
+  if (/^# Databricks notebook source/.test(body)) return { ...sourceNotebookLines(text, "python"), document: content };
+  if (/^-- Databricks notebook source/.test(body)) return { ...sourceNotebookLines(text, "sql"), document: content };
   const lines = content
     .split("\n")
     .map((text): Line => ({ text, language: options.fileLanguage, markupLength: 0 }));

@@ -42,6 +42,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "missing_library",
   "not_a_notebook",
   "file_is_a_notebook",
+  "notebook_byte_order_mark",
   "path_is_a_folder",
   "excluded_from_sync",
   "path_not_checked",
@@ -382,6 +383,19 @@ function notebookProblemIssue(
       : /\.ipynb$/i.test(path)
         ? "It is not a valid Jupyter notebook: it needs cells and metadata, at nbformat 4 or later."
         : "Notebooks need a .py, .r, .scala, .sql or .ipynb extension.",
+  };
+}
+
+/**
+ * A notebook that starts with a byte order mark (#589): it deploys, then its first cell
+ * fails to run. The title is the approved wording; a pipeline says "pipeline".
+ */
+function byteOrderMarkIssue(runs: "job" | "pipeline"): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  return {
+    kind: "notebook_byte_order_mark",
+    title: `This notebook starts with an invisible byte-order mark, so the ${runs} may fail when it runs. Save it as UTF-8 without BOM.`,
+    fixHint:
+      "Some editors add this mark when saving. Databricks uploads the file as a notebook, then the first cell fails: Python with \"invalid non-printable character U+FEFF\", SQL with PARSE_SYNTAX_ERROR.",
   };
 }
 
@@ -1161,6 +1175,19 @@ export function buildInspectorIssues(
         continue;
       }
 
+      // A job with a git_source runs the notebook from the repository, not this file.
+      if (ref.startsWithByteOrderMark && !parentJobHasGitSource(graph, task)) {
+        issues.push({
+          id: `notebook-byte-order-mark:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "error",
+          ...byteOrderMarkIssue("job"),
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          ...issueLocation(ref.sourceFile || sourceFileForTask(task), ref.sourceLine || undefined, ref.sourceColumn),
+        });
+      }
+
       // The CLI does not check task paths in a job with a git_source.
       if (ref.notebookProblem && !parentJobHasGitSource(graph, task)) {
         issues.push({
@@ -1321,6 +1348,16 @@ export function buildInspectorIssues(
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
         });
         continue;
+      }
+      if (ref.checked && ref.startsWithByteOrderMark) {
+        issues.push({
+          id: `notebook-byte-order-mark:${pipeline.id}:${ref.yamlPath}`,
+          severity: "error",
+          ...byteOrderMarkIssue("pipeline"),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
       }
       if (ref.checked && ref.notebookProblem) {
         issues.push({
