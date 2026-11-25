@@ -201,11 +201,18 @@ export function pipelineFlowSuite() {
           return { width: innerWidth, page: document.scrollingElement.scrollWidth, canvasScrolls: canvas.scrollWidth > canvas.clientWidth };
         })()`);
         await screenshot("pipeline-flow-narrow");
+        // Cut-off boxes are counted at the edge (issue 550), and the count goes once scrolled to the end.
+        const more = () => evaluate(`Number(document.querySelector("[data-data-flow-more]")?.dataset.dataFlowMore ?? 0)`);
+        shown.more = await more();
+        await evaluate(`(() => { const canvas = document.querySelector("[data-data-flow-canvas]"); canvas.scrollLeft = canvas.scrollWidth; })()`);
+        await waitFor(async () => (await more()) === 0, "no count after scrolling to the end");
       } finally {
         await sizer.set(STANDARD_PANEL);
       }
       assert.ok(shown.page <= shown.width + 1, `no sideways page scroll: ${JSON.stringify(shown)}`);
       assert.equal(shown.canvasScrolls, true, `the data flow scrolls inside itself: ${JSON.stringify(shown)}`);
+      assert.ok(shown.more > 0, `the cut-off boxes are counted: ${JSON.stringify(shown)}`);
+      await waitFor(async () => !(await evaluate(`Boolean(document.querySelector("[data-data-flow-more]"))`)), "no count at the standard width");
     });
 
     it("a save that removes the focused table leaves no box faded and no stale scroll width", async () => {
@@ -245,6 +252,46 @@ export function pipelineFlowSuite() {
         }
         await waitFor(async () => (await read()).nodes.length === 8, "the full data flow again");
       }
+    });
+
+    it("the overview's side panel holds the pipeline's details, and opens its data flow (#436)", async () => {
+      const picker = `document.querySelector('header select:not([aria-label="Target"])')`;
+      const details = (key: string) => `document.querySelector('[data-pipeline-details="${key}"]')`;
+      // Back from the data flow page: the overview, with the pipeline that was open selected.
+      await evaluate(`document.querySelector("[data-back-to-overview]").click()`);
+      await waitFor(async () => await evaluate(`Boolean(${details("orders_etl")})`), "orders_etl selected on the overview");
+      const shown = await evaluate(`({
+        place: ${picker}.value,
+        pipelines: [...${picker}.querySelectorAll('optgroup[label="Pipelines"] option')].map(o => [o.value, o.textContent]),
+        summary: ${details("orders_etl")}.querySelector('[data-pipeline-data-flow-summary]').innerText,
+        opens: Boolean(${details("orders_etl")}.querySelector('[data-pipeline-open-data-flow]')),
+        boxLink: document.querySelector('[data-overview-open="${PIPELINE}"]')?.textContent,
+        pythonBoxLink: Boolean(document.querySelector('[data-overview-open="resources.pipelines.scores_py"]')),
+      })`);
+      assert.equal(shown.place, "overview");
+      // Only the pipeline with SQL sources has a page, listed as its data flow.
+      assert.deepEqual(shown.pipelines, [["pipelines:orders_etl", "orders_etl · data flow"]]);
+      // 5 tables and views; 2 tables and 1 file path from outside.
+      assert.match(shown.summary, /Creates 5 tables and views, reads 3 from outside\./);
+      assert.equal(shown.opens, true);
+      assert.equal(shown.boxLink, "Data flow ›");
+      assert.equal(shown.pythonBoxLink, false, "a Python-only pipeline's box has no link");
+      await screenshot("pipeline-details");
+
+      // A Python-only pipeline says why it has no data flow, and offers none.
+      await evaluate(`document.querySelector('[data-overview-item="resources.pipelines.scores_py"]').click()`);
+      await waitFor(async () => await evaluate(`Boolean(${details("scores_py")})`), "scores_py's details");
+      assert.match(await evaluate(`${details("scores_py")}.querySelector('[data-pipeline-data-flow-summary]').innerText`), /From SQL sources only\. This pipeline's are Python\./);
+      assert.equal(await evaluate(`Boolean(document.querySelector('[data-pipeline-open-data-flow]'))`), false);
+
+      // The details' button opens the data flow page, and Copy review there describes the pipeline.
+      await evaluate(`document.querySelector('[data-overview-item="${PIPELINE}"]').click()`);
+      await waitFor(async () => await evaluate(`Boolean(document.querySelector('[data-pipeline-open-data-flow]'))`), "orders_etl's details again");
+      await evaluate(`document.querySelector('[data-pipeline-open-data-flow]').click()`);
+      await waitFor(async () => await evaluate(`${picker}.value === "pipelines:orders_etl" && Boolean(document.querySelector('[data-data-flow-page="orders_etl"]'))`), "the data flow page");
+      await vscode.env.clipboard.writeText("");
+      await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
+      await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: orders\\_etl"), "the copied pipeline review");
     });
 
     it("a long file name in the could-not-read list never scrolls a narrow panel sideways", async () => {

@@ -25,6 +25,13 @@ describe("resolveSelection", () => {
     expect(resolveSelection([], ["p", "q"], job("gone"), job("gone"))).toBeUndefined();
   });
 
+  test("a Lakebase project's branches page, while the bundle has the project (issue 543)", () => {
+    const project = { group: "postgres_projects" as const, key: "orders_db" };
+    expect(resolveSelection(["job-a"], [], project, undefined, ["orders_db"])).toEqual(project);
+    expect(resolveSelection(["job-a"], [], project, undefined, [])).toBeUndefined();
+    expect(parseSelectionValue(selectionValue(project))).toEqual(project);
+  });
+
   test("going back to the overview beats what the extension asked for", () => {
     expect(resolveSelection(["job-a"], [], { group: "overview" }, job("job-a"))).toBeUndefined();
   });

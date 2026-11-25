@@ -1,8 +1,10 @@
-/** One job's tasks, or one pipeline. */
+/** One job's tasks, one pipeline's data flow, or one Lakebase project's branches (issue 543). */
 export interface GraphSelection {
-  group: "jobs" | "pipelines";
+  group: "jobs" | "pipelines" | "postgres_projects";
   key: string;
 }
+
+const GROUPS: ReadonlyArray<GraphSelection["group"]> = ["jobs", "pipelines", "postgres_projects"];
 
 /** Where the panel is: the bundle overview, or inside one job or pipeline. */
 export type PanelPlace = GraphSelection | { group: "overview" };
@@ -21,11 +23,11 @@ export function resolveSelection(
   pipelineKeys: string[],
   userSelection?: PanelPlace,
   initialSelection?: GraphSelection,
+  projectKeys: string[] = [],
 ): GraphSelection | undefined {
+  const keysOf = { jobs: jobKeys, pipelines: pipelineKeys, postgres_projects: projectKeys };
   const exists = (selection?: PanelPlace): selection is GraphSelection =>
-    selection !== undefined &&
-    selection.group !== "overview" &&
-    (selection.group === "jobs" ? jobKeys : pipelineKeys).includes(selection.key);
+    selection !== undefined && selection.group !== "overview" && keysOf[selection.group].includes(selection.key);
   if (userSelection?.group === "overview") return undefined;
   if (exists(userSelection)) return userSelection;
   if (exists(initialSelection)) return initialSelection;
@@ -40,6 +42,6 @@ export function selectionValue(selection: GraphSelection): string {
 export function parseSelectionValue(value: string): GraphSelection | undefined {
   const at = value.indexOf(":");
   const group = value.slice(0, at);
-  if (at < 0 || (group !== "jobs" && group !== "pipelines")) return undefined;
-  return { group, key: value.slice(at + 1) };
+  if (at < 0 || !GROUPS.includes(group as GraphSelection["group"])) return undefined;
+  return { group: group as GraphSelection["group"], key: value.slice(at + 1) };
 }

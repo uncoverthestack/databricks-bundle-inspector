@@ -1,5 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import PipelineDetails from "./PipelineDetails";
+import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
+import { problemTone, problemWords as wordsForProblems } from "../lib/taskProblems";
 import {
   findMatches,
   foldedGroupIds,
@@ -24,34 +27,44 @@ const COLUMNS = [
   { id: "uses", title: "What they use", empty: "No compute, secrets or data in this bundle." },
 ];
 
-/** A job or pipeline of this bundle has its own graph to open. */
-function opens(item) {
-  return (item.kind === "job" || item.kind === "pipeline") && item.source === "bundle" && Boolean(item.resourceKey);
+/**
+ * A job of this bundle has its own graph to open; a pipeline only its data flow, and only
+ * when it has SQL sources to draw it from (issue 436).
+ */
+function opens(item, pipelines) {
+  if (item.source !== "bundle" || !item.resourceKey) return false;
+  // A Lakebase project opens its branches (issue 543).
+  if (item.kind === "job" || item.kind === "postgres_projects") return true;
+  return item.kind === "pipeline" && Boolean(pipelines?.get(item.id)?.panel.dataFlow?.opens);
 }
+
+/** What the box's link and the details' button open. */
+function openWords(item) {
+  if (item.kind === "postgres_projects") return "branches";
+  return item.kind === "pipeline" ? "data flow" : `${typeWords(item)} graph`;
+}
+
+/** The link on the box: `Open ›`, `Data flow ›`, `Branches ›`. */
+const LINK_WORDS = { pipeline: "Data flow ›", postgres_projects: "Branches ›" };
+const LINK_ROOM = { pipeline: "pr-[5.75rem]", postgres_projects: "pr-[5.5rem]" };
 
 function problemCount(item) {
   return item.problems.errors + item.problems.warnings;
 }
 
 function problemWords(item) {
-  const { errors, warnings } = item.problems;
-  return [
-    errors ? `${errors} error${errors === 1 ? "" : "s"}` : "",
-    warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
+  return wordsForProblems(item.problems);
 }
 
 /** One box: a resource, or something the bundle names from outside. */
-function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register }) {
+function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, pipelines }) {
   const problems = problemCount(item);
   const selected = state === "selected";
   const related = state === "related";
   // A box that isn't linked to the active one fades its frame and dot, never its text, so
   // it stays readable at 4.5:1 (issue 425); the themes suite measures it.
   const dimmed = state === "dimmed";
-  const canOpen = Boolean(onOpen) && opens(item);
+  const canOpen = Boolean(onOpen) && opens(item, pipelines);
   const row = (
     <button
       ref={(element) => register(item.id, element)}
@@ -71,7 +84,7 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
       onKeyDown={
         canOpen
           ? (event) => {
-              // Enter opens the job or pipeline. Space selects it, as on every box.
+              // Enter opens the job, the pipeline's data flow or the project's branches. Space selects it, as on every box.
               if (event.key !== "Enter") return;
               event.preventDefault();
               onOpen(item);
@@ -94,24 +107,15 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
           : UI_COLOR.widget,
       }}
       className={`relative z-10 flex h-10 w-full items-center gap-2.5 rounded-xl border pl-3 text-left transition-colors hover:border-fg-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        canOpen ? "pr-[4.25rem]" : "pr-3"
+        canOpen ? (LINK_ROOM[item.kind] ?? "pr-[4.25rem]") : "pr-3"
       } ${namedOutside(item) ? "border-dashed" : "border-solid"}`}
     >
       <span className={`flex shrink-0 ${dimmed ? "opacity-45" : ""}`}>
-        <TypeDot kind={item.kind} />
+        <TypeDot kind={item.kind} ring={item.source === "default"} />
       </span>
       <span className={`max-w-[65%] shrink-0 truncate text-[13px] font-medium ${dimmed ? "text-muted" : "text-fg"}`}>{item.label}</span>
       <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">{note}</span>
-      {problems > 0 && (
-        <span
-          title={problemWords(item)}
-          className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold text-fg-strong ${
-            item.problems.errors ? "bg-error/15" : "bg-warning/15"
-          }`}
-        >
-          {problems}
-        </span>
-      )}
+      {problems > 0 && <ProblemBadge count={problems} tone={problemTone(item.problems)} title={problemWords(item)} />}
     </button>
   );
   if (!canOpen) return row;
@@ -122,14 +126,26 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register })
       <button
         type="button"
         data-overview-open={item.id}
-        aria-label={`Open ${typeWords(item)} ${item.label}`}
-        title={`Open the ${typeWords(item)}'s graph`}
+        aria-label={
+          item.kind === "pipeline"
+            ? `Open the data flow of pipeline ${item.label}`
+            : item.kind === "postgres_projects"
+              ? `Open the branches of Postgres project ${item.label}`
+              : `Open ${typeWords(item)} ${item.label}`
+        }
+        title={
+          item.kind === "pipeline"
+            ? "Open the pipeline's data flow"
+            : item.kind === "postgres_projects"
+              ? "Open the project's branches"
+              : `Open the ${typeWords(item)}'s graph`
+        }
         onClick={() => onOpen(item)}
         onMouseEnter={() => onHover(item.id)}
         onMouseLeave={() => onHover(null)}
         className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-md px-1.5 py-1 text-[11px] text-link hover:bg-hover hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        Open ›
+        {LINK_WORDS[item.kind] ?? "Open ›"}
       </button>
     </div>
   );
@@ -200,7 +216,8 @@ function ComputeSettingsList({ settings, onOpenFile }) {
 }
 
 /** What the selected box is, where it is defined, and what it is linked to. */
-function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFile, onClose }) {
+function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFile, onClose, pipelines, resolveName }) {
+  const pipeline = item.kind === "pipeline" ? pipelines?.get(item.id) : undefined;
   const links = linksOf(overview, item.id);
   const uses = links.filter((link) => link.from === item.id);
   const usedBy = links.filter((link) => link.to === item.id);
@@ -242,6 +259,11 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
           <div className="truncate text-base font-semibold text-fg" title={item.label}>
             {item.label}
           </div>
+          {pipeline?.panel.name && (
+            <div className="truncate text-[11px] text-muted" title={pipeline.panel.name} data-pipeline-name>
+              {pipeline.panel.name}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -252,21 +274,21 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
           ×
         </button>
       </div>
-      <div className="text-xs leading-5 text-fg-soft">{sourceSentence(item)}</div>
-      {onOpen && opens(item) && (
+      {!pipeline && <div className="text-xs leading-5 text-fg-soft">{sourceSentence(item)}</div>}
+      {onOpen && !pipeline && opens(item, pipelines) && (
         <button
           type="button"
           data-overview-details-open
           onClick={() => onOpen(item)}
           className="self-start rounded-md border border-line bg-widget px-2.5 py-1 text-xs font-medium text-fg hover:border-line-strong hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          Open {typeWords(item)} graph
+          Open {openWords(item)}
         </button>
       )}
       {item.file && (
         <button
           type="button"
-          onClick={() => onOpenFile?.(item.file, item.line)}
+          onClick={() => onOpenFile?.(item.file, item.line, undefined, item.kind)}
           data-overview-open-file
           className="max-w-full self-start break-all text-left text-xs text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
@@ -274,10 +296,20 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
           {item.line ? `:${item.line}` : ""}
         </button>
       )}
-      {problemCount(item) > 0 && (
+      {problemCount(item) > 0 && !pipeline && (
         <div className="text-xs text-fg-soft">{problemWords(item)}. The Problems panel lists them.</div>
       )}
-      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={onOpenFile} />}
+      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => onOpenFile?.(file, line, undefined, item.kind)} />}
+      {pipeline && (
+        <PipelineDetails
+          view={pipeline.view}
+          panel={pipeline.panel}
+          onSelectItem={onSelect}
+          onOpenFile={onOpenFile}
+          onOpenDataFlow={() => onOpen?.(item)}
+          resolveName={resolveName}
+        />
+      )}
       {linkList("Uses", uses, "to")}
       {item.runtimeSecrets?.length > 0 && (
         // Secrets whose scope is set at run time (issue 535): listed, never joined into one box.
@@ -296,7 +328,8 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
           ))}
         </div>
       )}
-      {linkList("Used by", usedBy, "from")}
+      {/* A pipeline says what runs it under Run by. */}
+      {!pipeline && linkList("Used by", usedBy, "from")}
       {item.source === "bundle" && !item.hasChecks && (
         <div className="rounded-lg border border-dashed border-line px-3 py-2 text-xs leading-5 text-muted">
           Not checked yet. The inspector shows this resource but has no checks for its type.
@@ -329,6 +362,9 @@ export default function BundleOverview({
   // The folded groups the user opened, kept by the panel for the same reason.
   openedGroups,
   onOpenGroup,
+  // A pipeline's details and side panel model, by box id (issue 436).
+  pipelines,
+  resolveName,
 }) {
   const [hoverId, setHoverId] = useState(null);
   const setSelectedId = onSelect;
@@ -559,6 +595,7 @@ export default function BundleOverview({
                         onToggle={toggle}
                         onOpen={onOpen}
                         register={register}
+                        pipelines={pipelines}
                       />
                     ))}
                   </div>
@@ -609,6 +646,8 @@ export default function BundleOverview({
           onOpen={onOpen}
           onOpenFile={onOpenFile}
           onClose={() => setSelectedId(null)}
+          pipelines={pipelines}
+          resolveName={resolveName}
         />
       )}
     </div>

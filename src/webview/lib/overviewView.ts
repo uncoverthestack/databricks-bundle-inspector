@@ -89,6 +89,10 @@ export function itemNote(overview: BundleOverview, item: OverviewItem): string {
     default:
       break;
   }
+  if (item.branchWords) {
+    parts.push(item.branchWords);
+    return parts.join(" · ");
+  }
   if (item.kind === "pipeline") {
     const runners = overview.links.filter((link) => link.to === item.id && link.kind === "runs");
     if (runners.length > 0) parts.push(`run by ${runners.map((link) => labelOf(link.from)).join(", ")}`);

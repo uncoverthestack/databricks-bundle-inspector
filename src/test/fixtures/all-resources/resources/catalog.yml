@@ -1,0 +1,50 @@
+resources:
+  catalogs:
+    analytics:
+      name: analytics
+      comment: Catalog made by the bundle
+
+  schemas:
+    sales:
+      name: sales
+      catalog_name: main
+
+  volumes:
+    landing:
+      name: landing
+      catalog_name: main
+      schema_name: ${resources.schemas.sales.name}
+      volume_type: MANAGED
+
+  external_locations:
+    raw_files:
+      name: raw_files
+      url: s3://example-bucket/raw
+      credential_name: example_storage_credential
+      skip_validation: true
+
+  registered_models:
+    churn_model:
+      name: churn_model
+      catalog_name: main
+      schema_name: ${resources.schemas.sales.name}
+
+  secrets:
+    api_token:
+      name: api_token
+      catalog_name: main
+      schema_name: ${resources.schemas.sales.name}
+      value: ${var.secret_value}
+
+  quality_monitors:
+    orders_monitor:
+      table_name: main.sales.orders
+      assets_dir: /Workspace/Shared/orders_monitor
+      output_schema_name: main.sales
+      snapshot: {}
+
+  data_quality_monitors:
+    sales_schema_monitor:
+      object_type: schema
+      object_id: ${resources.schemas.sales.schema_id}
+      anomaly_detection_config: {}

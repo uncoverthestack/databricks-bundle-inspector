@@ -1,0 +1,95 @@
+resources:
+  experiments:
+    churn_experiment:
+      name: /Workspace/Shared/churn_experiment
+
+  models:
+    legacy_model:
+      name: legacy_model
+
+  model_serving_endpoints:
+    churn_endpoint:
+      name: churn_endpoint
+
+  model_services:
+    churn_service:
+      parent: schemas/main.sales
+      model_service_id: churn-service
+
+  mcp_services:
+    tools_service:
+      parent: schemas/main.sales
+      mcp_service_id: tools-service
+
+  model_provider_services:
+    chat_provider:
+      parent: schemas/main.sales
+      model_provider_service_id: chat-provider
+      config:
+        provider_type: EXTERNAL_MODEL_PROVIDER_TYPE_CUSTOM
+        targets:
+          - model: example-model
+            native_api_types:
+              - openai/v1/chat/completions
+        custom:
+          direct:
+            base_url: https://api.example.com/v1
+            api_key:
+              plaintext: not-a-real-key
+
+  features:
+    order_count:
+      full_name: main.sales.order_count
+      source:
+        delta_table_source:
+          full_name: main.sales.orders
+      function:
+        aggregation_function:
+          count_function:
+            input: amount
+          time_window:
+            sliding:
+              window_duration: 604800s
+              slide_duration: 86400s
+      entities:
+        - name: account_id
+      timeseries_column:
+        name: event_ts
+
+  feature_specs:
+    churn_features:
+      name: main.sales.churn_features
+      features:
+        - feature_lookup:
+            table: main.sales.user_features
+            lookup_keys: [user_id]
+            feature_names: [age]
+
+  materialization_sets:
+    order_features:
+      materialized_features:
+        - feature_name: ${resources.features.order_count.full_name}
+          offline_store_config:
+            catalog_name: main
+            schema_name: sales
+            table_name_prefix: offline
+          cron_schedule_trigger:
+            mode: MANUAL
+            cron_expression: "0 0 * * * ?"
+
+  vector_search_endpoints:
+    search:
+      name: search
+      endpoint_type: STANDARD
+
+  vector_search_indexes:
+    docs_index:
+      name: main.sales.docs_index
+      endpoint_name: ${resources.vector_search_endpoints.search.name}
+      primary_key: id
+      index_type: DIRECT_ACCESS
+      direct_access_index_spec:
+        schema_json: '{"id":"integer","vector":"array<float>"}'
+        embedding_vector_columns:
+          - name: vector
+            embedding_dimension: 8

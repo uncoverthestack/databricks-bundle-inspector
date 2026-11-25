@@ -158,7 +158,7 @@ export function graphRefreshSuite() {
       }
     });
 
-    it("opens on the pipeline under the cursor, and the picker switches between it and a job", async function () {
+    it("opens on the overview with the pipeline under the cursor selected, and shows its details there (#436)", async function () {
       assert.ok(process.env.E2E_CDP_PORT, "run with npm run test:e2e:graph-refresh");
       const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
       // As in the next test: the previous test's close must not close the graph this one opens.
@@ -185,7 +185,9 @@ export function graphRefreshSuite() {
           return result.result?.value;
         };
         const select = `document.querySelector(${JSON.stringify(jobSelector)})`;
-        const details = `document.querySelector('[aria-label="Pipeline details"]')`;
+        // A pipeline's details are in the overview's side panel (issue 436).
+        const details = `document.querySelector('[data-pipeline-details="alpha_pipeline"]')`;
+        const selected = `document.querySelector('[data-overview-item="resources.pipelines.alpha_pipeline"][aria-pressed="true"]')`;
         await waitFor(async () => {
           const { targetInfos } = await browser.call("Target.getTargets");
           for (const target of targetInfos.filter((item: any) => item.type === "iframe" && item.url.startsWith("vscode-webview://"))) {
@@ -197,41 +199,38 @@ export function graphRefreshSuite() {
             for (const frame of frames) {
               const { executionContextId } = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-pipeline-test" }, sessionId);
               graph = { sessionId, contextId: executionContextId };
-              if (await evaluate(`${select}?.value`) === "pipelines:alpha_pipeline" && await evaluate(`Boolean(${details})`)) return true;
+              if (await evaluate(`${select}?.value`) === "overview" && await evaluate(`Boolean(${selected}) && Boolean(${details})`)) return true;
             }
             await browser.call("Target.detachFromTarget", { sessionId });
           }
           return false;
-        }, "the pipeline view");
+        }, "the overview with the pipeline selected");
 
         const shown = await evaluate(`({
           groups: [...${select}.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]),
-          name: ${details}.querySelector('.text-lg')?.textContent,
-          sources: [...document.querySelectorAll('[aria-label="Sources"] li')].map(li => li.textContent),
-          defaultSchema: document.querySelector('[aria-label="Default catalog and schema"]')?.textContent,
-          search: Boolean(document.querySelector('header input')),
-          taskGraph: Boolean(document.querySelector('.react-flow')),
+          runBy: ${details}.querySelector('[data-pipeline-run-by]')?.innerText,
+          writesTo: ${details}.querySelector('[data-pipeline-writes-to]')?.textContent,
+          settings: ${details}.querySelector('[data-pipeline-settings]')?.textContent,
+          sources: [...${details}.querySelectorAll('[data-pipeline-source]')].map(li => li.innerText.replace(/\\s+/g, " ")),
+          dataFlow: ${details}.querySelector('[data-pipeline-data-flow-summary]')?.innerText,
+          openDataFlow: Boolean(document.querySelector('[data-pipeline-open-data-flow], [data-overview-open="resources.pipelines.alpha_pipeline"]')),
+          usedBy: [...document.querySelectorAll('[data-overview-details] div')].some(d => d.textContent === 'Used by'),
         })`);
+        // A Python-only pipeline has no data flow page, so the picker lists none.
         assert.deepEqual(shown.groups, [
           // alpha also includes the sales team's resource file.
           ["Jobs", ["jobs:alpha_first", "jobs:alpha_second", "jobs:sales_first", "jobs:sales_second"]],
-          ["Pipelines", ["pipelines:alpha_pipeline"]],
         ]);
-        assert.equal(shown.name, "alpha_pipeline");
+        assert.match(shown.runBy, /alpha_second\s+task refresh\n[\s\S]*alpha_second\s+task refresh_each/);
+        assert.equal(shown.usedBy, false, "Run by says what runs it, once");
+        assert.equal(shown.writesTo, "main.alpha");
+        assert.equal(shown.settings, "Serverless · Triggered");
         assert.equal(shown.sources.length, 2);
-        assert.match(shown.sources[0], /notebook\.\.\/src\/task\.pyjobs\.yml:\d+Found/);
-        assert.match(shown.sources[1], /file\.\.\/src\/task\.pyjobs\.yml:\d+Is a notebook/);
-
-        // Copy review describes this pipeline, not a job, and only its own problems.
-        await vscode.env.clipboard.writeText("");
-        await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
-        await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: alpha\\_pipeline"), "the copied pipeline review");
-        const review = await vscode.env.clipboard.readText();
-        assert.doesNotMatch(review, /Job:|Selected job|file references/);
-        // Its one problem, the notebook listed as a file, and none of the bundle's other issues.
-        assert.match(review, /### Issues\n- \*\*Error\*\* · "\.\.\/src\/task\.py" may be a notebook, not a file\. \(resources\/jobs\.yml:\d+\)\n\n### Run by/);
-        assert.match(review, /### Run by\n- alpha\\_second \(task refresh\)\n- alpha\\_second \(task refresh\\_each\)/);
-        assert.match(review, /- 2 sources in libraries\n- 1 found\n- 1 a notebook listed as a file/);
+        // A found source shows no status; the notebook listed as a file has its problem under it.
+        assert.match(shown.sources[0], /^\.\.\/src\/task\.py jobs\.yml:\d+$/);
+        assert.match(shown.sources[1], /^\.\.\/src\/task\.py jobs\.yml:\d+ "\.\.\/src\/task\.py" may be a notebook, not a file\.$/);
+        assert.match(shown.dataFlow, /From SQL sources only\. This pipeline's are Python\./);
+        assert.equal(shown.openDataFlow, false, "no data flow link for a Python-only pipeline");
 
         // A narrow editor keeps the source paths readable. Resizing the webview itself leaves
         // it 0px wide, so narrow the VS Code window by what it keeps beside the graph.
@@ -248,7 +247,7 @@ export function graphRefreshSuite() {
           await waitFor(async () => Math.abs(await evaluate("window.innerWidth") - 350) <= 2, "a 350px graph");
           const narrow = await evaluate(`({
             width: window.innerWidth,
-            paths: [...document.querySelectorAll('[aria-label="Sources"] li')].map(li => li.children[1].getBoundingClientRect().width),
+            paths: [...document.querySelectorAll('[data-pipeline-source]')].map(li => li.firstElementChild.getBoundingClientRect().width),
             sideways: document.scrollingElement.scrollWidth > window.innerWidth,
           })`);
           assert.equal(narrow.paths.length, 2);
@@ -259,15 +258,12 @@ export function graphRefreshSuite() {
           await browser.call("Target.detachFromTarget", { sessionId: windowSession });
         }
         await waitFor(async () => await evaluate("window.innerWidth") === fullWidth, "the graph's full width again");
-        assert.match(shown.defaultSchema, /main\.alpha/);
-        assert.equal(shown.search, false, "search works on tasks, so it stands aside for a pipeline");
-        assert.equal(shown.taskGraph, false);
 
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_first';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         await waitFor(async () => await evaluate(`Boolean(document.querySelector('.react-flow')) && !${details}`) === true, "the job's task graph");
-        assert.equal(await evaluate(`Boolean(document.querySelector('header input'))`), true, "search is back for a job");
+        assert.equal(await evaluate(`Boolean(document.querySelector('header input'))`), true, "search is there for a job");
 
-        // A pipeline task's Pipeline row leads back to its pipeline.
+        // A pipeline task's Pipeline row leads to the pipeline, selected on the overview.
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         const taskNode = (key: string) => `document.querySelector('.react-flow__node[data-id$=".tasks.${key}"]')`;
         await waitFor(async () => await evaluate(`Boolean(${taskNode("refresh")})`) === true, "the pipeline task");
@@ -275,8 +271,7 @@ export function graphRefreshSuite() {
         const pipelineRow = `[...document.querySelectorAll('[title$="Click to show the pipeline."]')]`;
         await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the task's Pipeline row");
         await evaluate(`${pipelineRow}[0].click()`);
-        await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view again");
-        assert.match(await evaluate(`document.querySelector('[aria-label="Run by"]').textContent`), /alpha_second.*task refresh/);
+        await waitFor(async () => await evaluate(`${select}.value === 'overview' && Boolean(${selected}) && Boolean(${details})`) === true, "the pipeline on the overview");
 
         // A pipeline task inside for_each_task leads to its pipeline too, from a row of its own.
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -284,7 +279,7 @@ export function graphRefreshSuite() {
         await evaluate(`${taskNode("refresh_each")}.click()`);
         await waitFor(async () => await evaluate(`${pipelineRow}.length === 1 && ${pipelineRow}[0].textContent.includes('alpha_pipeline')`) === true, "the loop's Pipeline row");
         await evaluate(`${pipelineRow}[0].click()`);
-        await waitFor(async () => await evaluate(`${select}.value === 'pipelines:alpha_pipeline' && Boolean(${details})`) === true, "the pipeline view from the loop");
+        await waitFor(async () => await evaluate(`${select}.value === 'overview' && Boolean(${selected}) && Boolean(${details})`) === true, "the pipeline on the overview from the loop");
 
         // A job's Copy review is a menu; Full report adds the task graph, built by the extension.
         await evaluate(`(()=>{const s=${select};s.value='jobs:alpha_second';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -347,7 +342,8 @@ export function graphRefreshSuite() {
           back: Boolean(document.querySelector("[data-back-to-overview]")),
           search: document.querySelector("header input")?.placeholder ?? null,
           taskGraph: Boolean(document.querySelector(".react-flow")),
-          pipelineDetails: Boolean(document.querySelector('[aria-label="Pipeline details"]')),
+          pipelineDetails: Boolean(document.querySelector('[data-pipeline-details="alpha_pipeline"]')),
+          rings: [...document.querySelectorAll('[data-overview-item] [data-type-mark="ring"]')].map((ring) => ring.closest("[data-overview-item]").textContent),
         })`);
         await waitFor(async () => {
           const { targetInfos } = await browser.call("Target.getTargets");
@@ -381,6 +377,9 @@ export function graphRefreshSuite() {
           { pressed: opened.pressed, back: opened.back, search: opened.search, taskGraph: opened.taskGraph },
           { pressed: [], back: false, search: "Find a resource", taskGraph: false },
         );
+        // Serverless or inherited compute shows a hollow ring, not a dot or a cluster icon (issue 556).
+        assert.equal(opened.rings.length, 1);
+        assert.ok(opened.rings[0].includes("Serverless or inherited"), opened.rings[0]);
 
         // A picture of the overview on a bundle with jobs, for a look by eye. Not compared.
         const { targetInfos: pages } = await browser.call("Target.getTargets");
@@ -461,12 +460,14 @@ export function graphRefreshSuite() {
         const back = await read();
         assert.deepEqual({ pressed: back.pressed, taskGraph: back.taskGraph, back: back.back }, { pressed: [JOB], taskGraph: false, back: false });
 
-        // The picker goes to a pipeline and back to the overview too.
-        await evaluate(`(()=>{const s=${select};s.value='pipelines:alpha_pipeline';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-        await waitFor(async () => (await read()).pipelineDetails, "the pipeline view");
-        await evaluate(`(()=>{const s=${select};s.value='overview';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-        await waitFor(async () => { const now = await read(); return now.place === "overview" && now.boxes.length > 0; }, "the overview from the picker");
-        assert.deepEqual((await read()).pressed, [JOB], "the selection is kept");
+        // A pipeline opens nothing: its details are in the side panel (issue 436), and this
+        // Python-only one has no data flow page, so its box has no link.
+        assert.equal(await evaluate(`Boolean(document.querySelector('[data-overview-open="${PIPELINE}"]'))`), false);
+        await evaluate(`document.querySelector('[data-overview-item="${PIPELINE}"]').click()`);
+        await waitFor(async () => (await read()).pipelineDetails, "the pipeline's details");
+        assert.equal((await read()).place, "overview");
+        await evaluate(`document.querySelector('[data-overview-item="${JOB}"]').click()`);
+        await waitFor(async () => { const now = await read(); return now.pressed.length === 1 && now.pressed[0] === JOB && !now.pipelineDetails; }, "the job selected again");
 
         // A short panel makes the overview scroll. Coming back from a job keeps the place.
         const scroller = `document.querySelector("[data-overview-scroller]")`;

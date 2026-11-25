@@ -7,12 +7,16 @@ import {
   MiniMap,
   MarkerType,
   useReactFlow,
+  useStore,
 } from "@xyflow/react";
 import { Info, LocateFixed } from "lucide-react";
+import { openingViewport } from "./lib/graphFit";
 import AppHeader from "./components/AppHeader";
 import BundleOverview from "./components/BundleOverview";
 import HeaderChipPanel from "./components/HeaderChipPanel";
-import PipelineView from "./components/PipelineView";
+import PipelineDataFlow from "./components/PipelineDataFlow";
+import LakebaseBranches from "./components/LakebaseBranches";
+import { buildLakebaseProjects } from "../bundle/lakebaseBranches";
 import SeverityIcon from "./components/SeverityIcon";
 import TaskNode from "./components/TaskNode";
 import UsesRow from "./components/UsesRow";
@@ -22,12 +26,21 @@ import TypeDot from "./components/TypeDot";
 import { runtimeSecretLabel, taskRuntimeSecrets } from "../bundle/runtimeSecrets";
 import { OVERVIEW_VALUE, parseSelectionValue, resolveSelection, selectionValue } from "./lib/jobSelection";
 import { buildDisplayNodes, buildDisplayVariants } from "./lib/displayNodes";
-import { buildPipelineView, pipelineIssueCounts, pipelineKeysOf, pipelineReviewSummary, taskPipelineKey } from "./lib/pipelineView";
+import { buildDisplayEdges } from "./lib/displayEdges";
+import {
+  buildPipelineView,
+  hasDataFlowPage,
+  pipelineKeysOf,
+  pipelinePanel,
+  pipelineReviewSummary,
+  taskPipelineKey,
+} from "./lib/pipelineView";
 import { orderBySeverity, severityMeta } from "./lib/issueSeverity";
 import { hasTextSelection } from "./lib/textSelection";
 import { signsInAsLine } from "./lib/signsInAs";
 import { buildBundleOverview } from "../bundle/bundleOverview";
 import { typeWords } from "./lib/overviewView";
+import { resourceSelectionProperties } from "./lib/resourceTelemetry";
 import { buildJobUses } from "../bundle/jobUses";
 import { buildBundleReviewSummary } from "../bundle/bundleReviewSummary";
 import { buildParameterFlowsForJob, buildParameterFlowsForTask, buildParameterLinkageMaps, getPrimaryFileNode, parameterLinkageForName } from "../bundle/parameterFlows";
@@ -36,6 +49,7 @@ import { basename, buildTaskAdjacency, collectReachable, formatSourceLocation, g
 import { buildIssueItems } from "./lib/issueItems";
 import { buildSearchItems, buildStatPanelItems, displayResolvedValue, variableResolutionLabel } from "./lib/headerItems";
 import { NODE_H, NODE_W, buildDagFlow, compactTaskName, dependencyOutcomeLabel, dependencyOutcomeTone } from "./lib/dagFlow";
+import { missingJobsReason } from "./lib/missingJobsReason";
 import { problemTone } from "./lib/taskProblems";
 import { UI_COLOR, colorModeForThemeKind, currentThemeKind } from "./lib/vscodeTheme";
 import "@xyflow/react/dist/style.css";
@@ -391,7 +405,8 @@ function RefItem({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {kind === "secret_scope" && !missing && !status ? (
+        {/* A type's icon (issue 546); a missing or flagged row keeps a dot in its problem colour. */}
+        {!missing && !status ? (
           <TypeDot kind={kind} />
         ) : (
           <span
@@ -1506,6 +1521,37 @@ function FocusViewportSync({ focusRequest, flowNodes }) {
   return null;
 }
 
+/**
+ * Fits a job to the panel when it opens (issue 552), and again when the panel's size changes,
+ * such as the task details closing. Never while a task is selected (selecting one centres it)
+ * or once the user has dragged or zoomed: their view stays theirs until another job opens.
+ */
+// Every box has its size. Read from React Flow's own node store: useNodesInitialized only
+// updates when the app applies React Flow's size changes, which this graph doesn't.
+const allBoxesMeasured = (state) =>
+  state.nodeLookup.size > 0 && [...state.nodeLookup.values()].every((node) => node.measured?.width > 0 && node.measured?.height > 0);
+
+function FitJobOnOpen({ jobKey, hasSelection, userMovedRef }) {
+  const { getNodes, getNodesBounds, setViewport } = useReactFlow();
+  const measured = useStore(allBoxesMeasured);
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const fittedJob = useRef(null);
+
+  useEffect(() => {
+    if (!measured || !width || !height) return;
+    const opening = fittedJob.current !== jobKey;
+    if (!opening && (hasSelection || userMovedRef.current)) return;
+    const nodes = getNodes();
+    if (nodes.length === 0) return;
+    fittedJob.current = jobKey;
+    if (opening) userMovedRef.current = false;
+    void setViewport(openingViewport(getNodesBounds(nodes), width, height), { duration: opening ? 0 : 200 });
+  }, [measured, width, height, jobKey, hasSelection, userMovedRef, getNodes, getNodesBounds, setViewport]);
+
+  return null;
+}
+
 function subscribeToThemeKind(onChange) {
   const observer = new MutationObserver(onChange);
   observer.observe(document.body, { attributes: true, attributeFilter: ["data-vscode-theme-kind"] });
@@ -1650,6 +1696,8 @@ export default function App({
   const [userSelection, setUserSelection] = useState(undefined);
   const [searchValue, setSearchValue] = useState("");
   const [focusRequest, setFocusRequest] = useState(null);
+  // Set when the user drags or zooms the job graph, so it is never refitted under them (issue 552).
+  const graphMovedByUser = useRef(false);
   const [activeHeaderPanel, setActiveHeaderPanel] = useState(() =>
     focusIssuesNonce ? "issues" : null,
   );
@@ -1684,13 +1732,56 @@ export default function App({
   const jobKeys = useMemo(() => Object.keys(jobsByKey), [jobsByKey]);
   const pipelineKeys = useMemo(() => pipelineKeysOf(parsedBundle), [parsedBundle]);
 
+  const effectiveTargetName =
+    inspectedTargetMode === "target"
+      ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
+      : null;
+  const effectiveResolutionBundle = resolutionBundle ?? parsedBundle;
+  const resolveName = useCallback(
+    (value) => displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName),
+    [effectiveResolutionBundle, effectiveTargetName],
+  );
+  // Every pipeline's details for the overview's side panel, by box id (issue 436).
+  const pipelineModels = useMemo(() => {
+    const models = new Map();
+    if (!graph) return models;
+    for (const key of pipelineKeys) {
+      const view = buildPipelineView(graph, parsedBundle, key, inspectorIssues);
+      if (view) models.set(view.id, { view, panel: pipelinePanel(view, resolveName) });
+    }
+    return models;
+  }, [graph, parsedBundle, pipelineKeys, inspectorIssues, resolveName]);
+  // Only a pipeline with SQL sources has a page of its own: its data flow.
+  const dataFlowKeys = useMemo(
+    () => pipelineKeys.filter((key) => hasDataFlowPage(pipelineModels.get(`resources.pipelines.${key}`)?.view)),
+    [pipelineKeys, pipelineModels],
+  );
+  // Every Lakebase project's branches (issue 543), by key: each project opens a page of its own.
+  const lakebaseProjects = useMemo(() => {
+    const projects = new Map();
+    if (!graph) return projects;
+    for (const project of buildLakebaseProjects(graph.nodes, graph.edges, resolveName)) projects.set(project.key, project);
+    return projects;
+  }, [graph, resolveName]);
+  const projectKeys = useMemo(() => [...lakebaseProjects.keys()], [lakebaseProjects]);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
+
   const selection = useMemo(
-    () => resolveSelection(jobKeys, pipelineKeys, userSelection, initialResource),
-    [jobKeys, pipelineKeys, userSelection, initialResource],
+    () =>
+      resolveSelection(
+        jobKeys,
+        dataFlowKeys,
+        userSelection,
+        // A cursor in a pipeline selects its box on the overview instead (issue 436).
+        initialResource?.group === "jobs" ? initialResource : undefined,
+        projectKeys,
+      ),
+    [jobKeys, dataFlowKeys, userSelection, initialResource, projectKeys],
   );
   // Empty while a pipeline is shown, so everything about tasks stands aside.
   const selectedJobKey = selection?.group === "jobs" ? selection.key : "";
   const selectedPipelineKey = selection?.group === "pipelines" ? selection.key : undefined;
+  const lakebaseProject = selection?.group === "postgres_projects" ? lakebaseProjects.get(selection.key) : undefined;
 
   const targetOptions = useMemo(
     () =>
@@ -1713,11 +1804,6 @@ export default function App({
             ? `Inspected target: ${inspectedTarget}.`
             : "No explicit Databricks target was reported by the bundle output."
         } The Problems panel and status bar show the structural preview.`;
-  const effectiveTargetName =
-    inspectedTargetMode === "target"
-      ? inspectedTarget || parsedBundle?.bundle?.target || requestedTarget
-      : null;
-  const effectiveResolutionBundle = resolutionBundle ?? parsedBundle;
   const jobOptions = useMemo(
     () =>
       jobKeys.map((key) => {
@@ -1739,39 +1825,26 @@ export default function App({
     [jobKeys, jobsByKey, effectiveResolutionBundle, effectiveTargetName],
   );
   const pickerGroups = useMemo(() => {
-    const pipelinesByKey = parsedBundle?.resources?.pipelines ?? {};
-    const pipelineOptions = pipelineKeys.map((key) => {
-      const name = pipelinesByKey[key]?.name;
-      const displayName =
-        typeof name === "string" && name.trim() && name !== key
-          ? displayResolvedValue(name, effectiveResolutionBundle, effectiveTargetName)
-          : "";
-      return {
-        value: selectionValue({ group: "pipelines", key }),
-        key,
-        label: displayName && displayName !== key ? `${key} (${displayName})` : key,
-      };
-    });
+    // A pipeline's details are on the overview; the picker lists the data flow pages.
+    const pipelineOptions = dataFlowKeys.map((key) => ({
+      value: selectionValue({ group: "pipelines", key }),
+      key,
+      label: `${key} · data flow`,
+    }));
+    const projectOptions = projectKeys.map((key) => ({
+      value: selectionValue({ group: "postgres_projects", key }),
+      key,
+      label: `${key} · branches`,
+    }));
     return [
       ...(jobOptions.length > 0 ? [{ label: "Jobs", options: jobOptions }] : []),
       ...(pipelineOptions.length > 0 ? [{ label: "Pipelines", options: pipelineOptions }] : []),
+      ...(projectOptions.length > 0 ? [{ label: "Lakebase", options: projectOptions }] : []),
     ];
-  }, [jobOptions, pipelineKeys, parsedBundle, effectiveResolutionBundle, effectiveTargetName]);
+  }, [jobOptions, dataFlowKeys, projectKeys]);
 
-  const pipelineView = useMemo(
-    () =>
-      graph && selectedPipelineKey !== undefined
-        ? buildPipelineView(graph, parsedBundle, selectedPipelineKey, inspectorIssues)
-        : undefined,
-    [graph, parsedBundle, selectedPipelineKey, inspectorIssues],
-  );
-  const otherPipelines = useMemo(() => {
-    if (!pipelineView) return [];
-    const counts = pipelineIssueCounts(pipelineKeys, inspectorIssues);
-    return pipelineKeys
-      .filter((key) => key !== pipelineView.key)
-      .map((key) => ({ key, issueCount: counts.get(key) ?? 0 }));
-  }, [pipelineView, pipelineKeys, inspectorIssues]);
+  const pipelineView =
+    selectedPipelineKey !== undefined ? pipelineModels.get(`resources.pipelines.${selectedPipelineKey}`)?.view : undefined;
 
   const { flowNodes, flowEdges, jobNode } = useMemo(
     () =>
@@ -1926,32 +1999,10 @@ export default function App({
     [flowNodes, displayVariants, focusedTaskIds, selectedNodeId, graphMode, issueTaskIds],
   );
 
+  // Grey at rest; the selected task's lines and lit lines in the focus colour (issue 554).
   const displayFlowEdges = useMemo(
-    () =>
-      flowEdges.map((edge) => {
-        // Tasks sharing a warehouse aren't linked by that, so a Uses chip fades every arrow.
-        const highlighted =
-          !usesTaskIds && focusedTaskIds?.has(edge.source) && focusedTaskIds?.has(edge.target);
-        const dimmed = focusedTaskIds && !highlighted;
-        return {
-          ...edge,
-          animated: highlighted,
-          style: {
-            ...edge.style,
-            opacity: dimmed ? 0.18 : 1,
-            stroke: highlighted ? UI_COLOR.accent : edge.style?.stroke,
-            strokeDasharray: highlighted
-              ? undefined
-              : edge.style?.strokeDasharray,
-            strokeWidth: highlighted ? 2.8 : edge.style?.strokeWidth,
-          },
-          markerEnd: {
-            ...edge.markerEnd,
-            color: highlighted ? UI_COLOR.accent : edge.markerEnd?.color,
-          },
-        };
-      }),
-    [flowEdges, focusedTaskIds, usesTaskIds],
+    () => buildDisplayEdges(flowEdges, { selectedNodeId, focusedTaskIds, usesTaskIds }),
+    [flowEdges, selectedNodeId, focusedTaskIds, usesTaskIds],
   );
 
   const nonJobResourceTypes = useMemo(() => {
@@ -1962,6 +2013,18 @@ export default function App({
       .forEach((n) => seen.add(n.resourceGroup));
     return [...seen];
   }, [graph, jobKeys]);
+  // Jobs the preview can't show: defined in Python, or set only inside a target (issue 549).
+  // A real target's output may not list the targets, so they come from the resolution bundle.
+  const missingJobsLine = useMemo(
+    () =>
+      jobKeys.length > 0
+        ? undefined
+        : missingJobsReason(
+            { python: parsedBundle?.python, targets: effectiveResolutionBundle?.targets },
+            effectiveTargetName ?? undefined,
+          ),
+    [jobKeys, parsedBundle, effectiveResolutionBundle, effectiveTargetName],
+  );
 
   // Every bundle opens on its overview: each resource it has, and what uses what.
   const bundleOverview = useMemo(() => {
@@ -1973,7 +2036,9 @@ export default function App({
   }, [graph, inspectorIssues, effectiveResolutionBundle, effectiveTargetName]);
   // The box kept selected on the overview. It stays while a job or pipeline is open, so
   // going back shows the overview as it was left.
-  const [overviewSelectedId, setOverviewSelectedId] = useState(null);
+  const [overviewSelectedId, setOverviewSelectedId] = useState(() =>
+    initialResource?.group === "pipelines" ? `resources.pipelines.${initialResource.key}` : null,
+  );
   const overviewScroll = useRef(null);
   const [overviewOpenedGroups, setOverviewOpenedGroups] = useState(() => new Set());
   const atOverview = !selection && bundleOverview !== null;
@@ -1988,6 +2053,7 @@ export default function App({
               label: item.label,
               subtitle: typeWords(item),
               kind: item.kind,
+              source: item.source,
               issueCount: item.problems.errors + item.problems.warnings,
               problemTone: problemTone(item.problems),
             })),
@@ -2039,20 +2105,36 @@ export default function App({
     onTelemetry?.("search_result_selected");
     setSearchValue(item.label);
     if (item.overviewId) {
-      setOverviewSelectedId(item.overviewId);
+      handleOverviewSelect(item.overviewId);
       return;
     }
     selectTaskNode(item.taskId);
   }
 
+  function handleOverviewSelect(id) {
+    const item = bundleOverview?.groups.flatMap((group) => group.items).find((entry) => entry.id === id);
+    const properties = resourceSelectionProperties(item, overviewSelectedId);
+    if (properties) onTelemetry?.("resource_selected", properties);
+    setOverviewSelectedId(id);
+  }
+
   function handleSelectionChange(next) {
     if (!next) return;
-    onTelemetry?.(next.group === "pipelines" ? "pipeline_selected" : "job_selected");
+    // The branches page has no event of its own yet, so it sends none.
+    if (next.group !== "postgres_projects") onTelemetry?.(next.group === "pipelines" ? "pipeline_selected" : "job_selected");
     setUserSelection(next);
+    setSelectedBranchId(null);
     setSelectedNodeId(null);
     setSearchValue("");
     setActiveHeaderPanel(null);
     setGraphMode("all");
+  }
+
+  /** A pipeline's details live on the overview: show it there, selected (issue 436). */
+  function showPipelineOnOverview(key) {
+    onTelemetry?.("pipeline_selected");
+    handleOverviewSelect(`resources.pipelines.${key}`);
+    showOverview();
   }
 
   function showOverview() {
@@ -2064,9 +2146,15 @@ export default function App({
     setGraphMode("all");
   }
 
-  /** Opens a job or pipeline from its box on the overview. */
+  /** Opens a job, a pipeline's data flow or a Lakebase project's branches from its box on the overview. */
   function openFromOverview(item) {
+    if (item.resourceKey && item.kind === "postgres_projects" && lakebaseProjects.has(item.resourceKey)) {
+      if (!overviewSelectedId) setOverviewSelectedId(item.id);
+      handleSelectionChange({ group: "postgres_projects", key: item.resourceKey });
+      return;
+    }
     if (!item.resourceKey || (item.kind !== "job" && item.kind !== "pipeline")) return;
+    if (item.kind === "pipeline" && !dataFlowKeys.includes(item.resourceKey)) return;
     if (item.kind === "job") {
       // A selected warehouse, cluster or secret scope the job uses stays lit in its Uses row.
       const kept = overviewSelectedId
@@ -2077,7 +2165,7 @@ export default function App({
       if (usesIt) setUsesPin({ job: item.resourceKey, id: kept.usesId ?? kept.id });
     }
     // With nothing selected, the opened box is the one selected on the way back.
-    if (!overviewSelectedId) setOverviewSelectedId(item.id);
+    if (!overviewSelectedId) handleOverviewSelect(item.id);
     handleSelectionChange({ group: item.kind === "job" ? "jobs" : "pipelines", key: item.resourceKey });
   }
 
@@ -2147,7 +2235,7 @@ export default function App({
         }
         overviewValue={bundleOverview ? OVERVIEW_VALUE : undefined}
         onBack={selection && bundleOverview ? showOverview : undefined}
-        showTaskTools={!pipelineView}
+        showTaskTools={!pipelineView && !lakebaseProject}
         searchPlaceholder={atOverview ? "Find a resource" : undefined}
         searchValue={searchValue}
         searchItems={atOverview ? overviewSearchItems : searchItems}
@@ -2158,7 +2246,7 @@ export default function App({
         issueCount={selectedJobIssueCount}
         nothingToFilterNote={nothingToFilterNote}
         onCopyReviewSummary={
-          onCopyReviewSummary ? handleCopyReviewSummary : undefined
+          onCopyReviewSummary && !lakebaseProject ? handleCopyReviewSummary : undefined
         }
         // The full report is for a job; a pipeline has the summary only, for now.
         onCopyReviewReport={
@@ -2212,7 +2300,7 @@ export default function App({
         </div>
       )}
 
-      {!pipelineView && !atOverview && (
+      {!pipelineView && !lakebaseProject && !atOverview && (
         <UsesRow
           items={jobUses}
           activeId={usesHoverId ?? usesPinnedId}
@@ -2236,23 +2324,28 @@ export default function App({
       {/* Canvas + Detail */}
       <div className="flex flex-1 overflow-hidden">
         <div className="relative flex-1 overflow-hidden">
-          {pipelineView ? (
-            <PipelineView
-              view={pipelineView}
-              otherPipelines={otherPipelines}
-              background={rfStyle}
-              onSelect={handleSelectionChange}
-              onOpenFile={onOpenFile}
-              resolveName={(value) =>
-                displayResolvedValue(value, effectiveResolutionBundle, effectiveTargetName)
-              }
-            />
+          {lakebaseProject ? (
+            // The branches page (issue 543): the project's facts are on the overview too.
+            <div className="h-full" style={rfStyle}>
+              <LakebaseBranches
+                project={lakebaseProject}
+                selectedBranchId={selectedBranchId}
+                onSelectBranch={setSelectedBranchId}
+                onOpenFile={onOpenFile}
+                resolveName={resolveName}
+              />
+            </div>
+          ) : pipelineView ? (
+            // The data flow page (issue 436): the pipeline's details are on the overview.
+            <div className="h-full overflow-auto p-6" style={rfStyle} data-data-flow-page={pipelineView.key}>
+              <PipelineDataFlow flow={pipelineView.dataFlow} onOpenFile={onOpenFile} resolveName={resolveName} />
+            </div>
           ) : atOverview ? (
             <BundleOverview
               overview={bundleOverview}
               background={rfStyle}
               selectedId={overviewSelectedId}
-              onSelect={setOverviewSelectedId}
+              onSelect={handleOverviewSelect}
               onOpen={openFromOverview}
               onOpenFile={onOpenFile}
               find={searchValue}
@@ -2261,6 +2354,8 @@ export default function App({
               scrollMemoryRef={overviewScroll}
               openedGroups={overviewOpenedGroups}
               onOpenGroup={(id) => setOverviewOpenedGroups((current) => new Set(current).add(id))}
+              pipelines={pipelineModels}
+              resolveName={resolveName}
             />
           ) : flowNodes.length === 0 ? (
             <div
@@ -2274,11 +2369,16 @@ export default function App({
                     ? "No jobs or pipelines found in this bundle."
                     : "No tasks found for the selected job."}
               </span>
-              {jobKeys.length === 0 && (
+              {jobKeys.length === 0 && (nonJobResourceTypes.length > 0 || !missingJobsLine) && (
                 <span className="text-xs text-muted">
                   {nonJobResourceTypes.length > 0
                     ? `Contains: ${nonJobResourceTypes.join(", ")}.`
                     : "The graph shows jobs and pipelines; this bundle defines neither."}
+                </span>
+              )}
+              {missingJobsLine && (
+                <span className="text-xs text-fg-soft" data-missing-jobs-reason>
+                  {missingJobsLine}
                 </span>
               )}
             </div>
@@ -2295,9 +2395,22 @@ export default function App({
               nodesConnectable={false}
               edgesReconnectable={false}
               defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+              // A move with an event is the user's (drag, wheel, pinch); ours have none.
+              onMoveStart={(event) => {
+                if (event) graphMovedByUser.current = true;
+              }}
+              // Dragging the minimap moves the view with no event either.
+              onPointerDownCapture={(event) => {
+                if (event.target.closest?.(".react-flow__minimap")) graphMovedByUser.current = true;
+              }}
               proOptions={{ hideAttribution: true }}
               style={rfStyle}
             >
+              <FitJobOnOpen
+                jobKey={jobNode?.id ?? null}
+                hasSelection={Boolean(selectedNodeId)}
+                userMovedRef={graphMovedByUser}
+              />
               <FocusViewportSync
                 focusRequest={focusRequest}
                 flowNodes={flowNodes}
@@ -2307,6 +2420,8 @@ export default function App({
                 position="bottom-left"
                 showFitView={false}
                 showInteractive={false}
+                onZoomIn={() => (graphMovedByUser.current = true)}
+                onZoomOut={() => (graphMovedByUser.current = true)}
               >
                 <RecenterJobControl />
               </Controls>
@@ -2344,7 +2459,7 @@ export default function App({
           )}
         </div>
 
-        {selectedNodeId && !pipelineView && (
+        {selectedNodeId && !pipelineView && !lakebaseProject && (
           <DetailPanel
             nodeId={selectedNodeId}
             graph={graph}
@@ -2353,7 +2468,7 @@ export default function App({
             inspectorIssues={inspectorIssues}
             onSelectTask={selectTaskNode}
             pipelineKeys={pipelineKeys}
-            onSelectPipeline={(key) => handleSelectionChange({ group: "pipelines", key })}
+            onSelectPipeline={bundleOverview ? showPipelineOnOverview : undefined}
             onClose={clearSelectedTask}
             onOpenFile={onOpenFile}
           />

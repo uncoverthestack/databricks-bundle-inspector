@@ -22,6 +22,8 @@ export interface DataFlowNode {
   definedAgain?: { file: string; line: number };
   /** An outside name whose last part matches one of this pipeline's datasets. */
   maybeSameAs?: string;
+  /** Created after a `USE`, so its catalog or schema may not be the pipeline's (issue 539). */
+  afterUse?: true;
 }
 
 export interface DataFlowEdge {
@@ -140,6 +142,7 @@ export function buildPipelineDataFlow(
         file,
         line: dataset.line,
         ...(dataset.pipelineOnly ? { pipelineOnly: true as const } : {}),
+        ...(dataset.namespace ? { afterUse: true as const } : {}),
       };
       nodes.set(node.id, node);
       byKey.set(resolved.key, node);

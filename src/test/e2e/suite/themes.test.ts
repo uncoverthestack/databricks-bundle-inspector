@@ -15,6 +15,9 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
   assert.fail(`Timed out waiting for ${label}`);
 }
 
+/** True when no finite animation or transition is running in the page. */
+const NO_FADES = `document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity)`;
+
 /** VS Code's built-in themes, by the name `workbench.colorTheme` takes. */
 const THEMES = [
   { name: "Default Dark Modern", kind: "vscode-dark", mode: "dark" },
@@ -238,11 +241,15 @@ export function themesSuite() {
           const avoid = [...document.querySelectorAll(".react-flow__node, .react-flow__controls, .react-flow__minimap, .react-flow__edge")]
             .map(el => el.getBoundingClientRect());
           const clear = (x, y) => avoid.every(r => x < r.left - 48 || x > r.right + 48 || y < r.top - 48 || y > r.bottom + 48);
-          // A bare spot of the header itself, not one of its controls.
+          // A bare spot of the header itself, not one of its controls. The header's two layout
+          // groups have no background of their own, so their bare spots show the header's paint;
+          // the place group covers most of the header's width (issue 553).
+          const bare = (el) => el === headerElement || (el && el.parentElement === headerElement
+            && (el.hasAttribute("data-header-place") || el.hasAttribute("data-header-tools")));
           let headerSpot = null;
           const headerY = Math.max(header.top + 3, EDGE);
           for (let x = header.right - EDGE; x >= header.left + EDGE && !headerSpot; x -= 1) {
-            if (inside(x, headerY) && document.elementFromPoint(x, headerY) === headerElement) headerSpot = { x, y: headerY };
+            if (inside(x, headerY) && bare(document.elementFromPoint(x, headerY))) headerSpot = { x, y: headerY };
           }
           if (!headerSpot) return null;
           for (let y = pane.top + 9; y < pane.bottom; y += 16) {
@@ -280,10 +287,19 @@ export function themesSuite() {
     };
 
     /**
+     * Task boxes and chips fade between colours (`transition-all`, `transition-colors`). A
+     * slow CI machine can hold a fade at its start, so two reads in a row agree on the old
+     * theme's colours: High Contrast once measured Light+'s #616161 text on its own black (#569).
+     * Wait for every fade to finish before reading colours.
+     */
+    const fadesDone = async () => waitFor(async () => (await evaluate(NO_FADES)) === true, "the colour fades to finish");
+
+    /**
      * Measures once the new theme has fully landed (#313). The theme kind changes before
      * every colour variable does, so a fixed wait once measured Light Modern's text against
      * Dark Modern's background. Waits until React Flow's mode, the page surface and the
-     * editor background all agree with the theme, and two reads in a row are the same.
+     * editor background all agree with the theme, no colour fade is still running, and
+     * two reads in a row are the same.
      * On a timeout it returns the last read, so the assertions say what was wrong.
      */
     const measureSettled = async (mode: string) => {
@@ -296,7 +312,8 @@ export function themesSuite() {
         const landed =
           measured.flowMode === mode &&
           measured.surface === measured.editorBackground &&
-          isLight(measured.editorBackground) === (mode === "light");
+          isLight(measured.editorBackground) === (mode === "light") &&
+          (await evaluate(NO_FADES)) === true;
         if (landed && read === last) return measured;
         last = read;
         await sleep(100);
@@ -309,8 +326,10 @@ export function themesSuite() {
      * needs that room for its two columns and the line between them; the CI machines'
      * windows are too small for it otherwise.
      */
-    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => {
-      const width = 1200;
+    const atOverviewWidth = async <T,>(measure: () => Promise<T>): Promise<T> => atPanelWidth(1200, measure);
+
+    /** Runs `measure` with the panel `width` px wide, then puts the window back. */
+    const atPanelWidth = async <T,>(width: number, measure: () => Promise<T>): Promise<T> => {
       const { targetInfos } = await browser.call("Target.getTargets");
       const page = targetInfos.find((item: any) => item.type === "page" && item.url.includes("workbench"));
       const { sessionId: pageSession } = await browser.call("Target.attachToTarget", { targetId: page.targetId, flatten: true });
@@ -352,6 +371,7 @@ export function themesSuite() {
         await screenshot(theme.name);
         await clickTask("missing_step");
         await sleep(300);
+        await fadesDone();
         const selected = await evaluate(MEASURE);
         await screenshot(`${theme.name} selected`);
         await clickTask("missing_step");
@@ -367,6 +387,7 @@ export function themesSuite() {
           await waitFor(async () => (await evaluate(`document.querySelector("[data-overview-details]") === null`)) === true, "the plain overview");
           // The boxes fade from one colour to the next. Measure once that has finished.
           await sleep(300);
+          await fadesDone();
           const overview = await evaluate(MEASURE);
           const sideBySide = await evaluate(`(() => {
             const [left, right] = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect().left);
@@ -377,6 +398,7 @@ export function themesSuite() {
           await waitFor(async () => (await evaluate(`Boolean(document.querySelector("[data-overview-details]"))`)) === true, "the job's details");
           // The boxes fade from one colour to the next. Measure once that has finished.
           await sleep(300);
+          await fadesDone();
           const overviewSelected = await evaluate(MEASURE);
           await screenshot(`${theme.name} overview selected`);
           return { overview, overviewSelected, sideBySide };
@@ -403,7 +425,8 @@ export function themesSuite() {
           const boxes = [...document.querySelectorAll(".react-flow__node")].map((node) => ({
             name: node.querySelector("[title]")?.getAttribute("title") ?? node.textContent,
             tone: node.querySelector("[data-problem-tone]")?.dataset.problemTone,
-            count: Number(node.querySelector('[title$=" issue"], [title$=" issues"]')?.textContent ?? 0),
+            count: Number(node.querySelector("[data-problem-count]")?.dataset.problemCount ?? 0),
+            badge: node.querySelector("[data-problem-badge]")?.dataset.problemBadge ?? null,
           }));
           const issues = document.querySelector('[data-graph-mode="issues"]');
           return { boxes, issuesCount: Number(issues?.querySelector("span")?.textContent ?? 0) };
@@ -411,6 +434,9 @@ export function themesSuite() {
         const toneOf = Object.fromEntries(problems.boxes.map((box: any) => [box.name, box.tone]));
         assert.equal(toneOf.missing_step, "error", `the task with a missing file is red: ${JSON.stringify(problems.boxes)}`);
         assert.ok(problems.boxes.some((box: any) => box.tone === "warning"), `a task with only a warning is amber: ${JSON.stringify(problems.boxes)}`);
+        // The badge shows the worst problem's icon, not a plain number (issue 555).
+        assert.equal(Object.fromEntries(problems.boxes.map((box: any) => [box.name, box.badge])).missing_step, "error");
+        assert.ok(problems.boxes.filter((box: any) => box.tone === "warning").every((box: any) => box.badge === "warning"), `warning boxes show the warning badge: ${JSON.stringify(problems.boxes)}`);
         assert.equal(problems.boxes.reduce((sum: number, box: any) => sum + box.count, 0), problems.issuesCount, `the boxes add up to Issues: ${JSON.stringify(problems)}`);
 
         assert.ok(overview.overviewBoxes.length >= 2, "the overview shows its boxes");
@@ -425,6 +451,35 @@ export function themesSuite() {
         assert.deepEqual(faintLines, [], "overview lines against the canvas");
       });
     }
+
+    // Issue 554: lines are grey at rest; only the selected task's own lines use the focus colour.
+    it("graph lines are grey at rest, and a selected task's lines turn blue", async () => {
+      await setTheme("Default Dark Modern");
+      await waitFor(async () => (await evaluate(`document.body.dataset.vscodeThemeKind`)) === "vscode-dark", "dark theme");
+      const lines = `(() => {
+        const colour = (value) => { const probe = document.createElement("div"); probe.style.color = value; document.body.append(probe); const read = getComputedStyle(probe).color; probe.remove(); return read; };
+        const reserved = { focus: colour("var(--ui-accent)"), ok: colour("var(--ui-ok)"), link: colour("var(--ui-link)") };
+        const edges = [...document.querySelectorAll(".react-flow__edge")].map((edge) => {
+          const stroke = getComputedStyle(edge.querySelector(".react-flow__edge-path")).stroke;
+          return { name: edge.getAttribute("aria-label") ?? edge.dataset.id, colour: Object.keys(reserved).find((key) => reserved[key] === stroke) ?? "grey" };
+        });
+        return edges;
+      })()`;
+      const rest = await evaluate(lines);
+      assert.ok(rest.length >= 4, `the job draws its lines: ${JSON.stringify(rest)}`);
+      assert.deepEqual(rest.filter((edge: any) => edge.colour !== "grey"), [], "no line is blue or green at rest");
+      await clickTask("is_weekday");
+      await sleep(300);
+      const picked = await evaluate(lines);
+      try {
+        // is_weekday's line in from load, and its True and False lines out.
+        assert.equal(picked.filter((edge: any) => edge.colour === "focus").length, 3, JSON.stringify(picked));
+        assert.deepEqual(picked.filter((edge: any) => !["focus", "grey"].includes(edge.colour)), []);
+      } finally {
+        await clickTask("is_weekday");
+        await sleep(200);
+      }
+    });
 
     it("a theme colour VS Code leaves out falls back to the default, never to nothing", async () => {
       await setTheme("Default Dark Modern");
@@ -488,6 +543,46 @@ export function themesSuite() {
       report.reopenedLight = { flowMode: first.flowMode, kind: first.kind };
       assert.equal(first.kind, "vscode-light");
       assert.equal(first.flowMode, "light");
+    });
+
+    // Issue 552: a job opens fitted to the panel, so no task starts out of view, and the view
+    // is the user's once they zoom. The 9-task job is wider than the panel at full size.
+    it("a job opens with every task in view, and stays where the user zoomed it", async () => {
+      const viewport = `document.querySelector(".react-flow__viewport").style.transform`;
+      const allInView = `(() => {
+        const pane = document.querySelector(".react-flow").getBoundingClientRect();
+        return [...document.querySelectorAll(".react-flow__node")].every((node) => {
+          const box = node.getBoundingClientRect();
+          return box.left >= pane.left - 1 && box.right <= pane.right + 1 && box.top >= pane.top - 1 && box.bottom <= pane.bottom + 1;
+        });
+      })()`;
+      // The job's width at full size, from the boxes' places in the graph (not on screen).
+      const natural = await evaluate(`(() => {
+        const boxes = [...document.querySelectorAll(".react-flow__node")].map((node) => ({ x: Number(/translate\\(([-\\d.]+)px/.exec(node.style.transform)[1]), w: node.offsetWidth }));
+        return Math.max(...boxes.map((box) => box.x + box.w)) - Math.min(...boxes.map((box) => box.x));
+      })()`);
+      // Narrower than the job, so at full size from the left edge (as before) a task is cut,
+      // and wide enough that the fit stays above the smallest readable zoom.
+      const width = Math.round(natural * 0.9);
+      let zoomed = "";
+      await atPanelWidth(width, async () => {
+        const outside = `(() => {
+          const pane = document.querySelector(".react-flow").getBoundingClientRect();
+          return { pane: [Math.round(pane.left), Math.round(pane.right), Math.round(pane.top), Math.round(pane.bottom)], view: document.querySelector(".react-flow__viewport").style.transform,
+            out: [...document.querySelectorAll(".react-flow__node")].map((node) => { const b = node.getBoundingClientRect(); return [node.textContent.slice(0, 12), Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.bottom)]; }) };
+        })()`;
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && (await evaluate(allInView)) !== true) await sleep(100);
+        assert.equal(await evaluate(allInView), true, `every task of the job in view: ${JSON.stringify({ natural, width, ...(await evaluate(outside)) })}`);
+        // Zoom in with the wheel, as a user would, then check the view is left alone.
+        await evaluate(`document.querySelector(".react-flow__pane").dispatchEvent(new WheelEvent("wheel", { deltaY: -400, ctrlKey: true, clientX: 300, clientY: 300, bubbles: true, cancelable: true }))`);
+        await sleep(400);
+        zoomed = await evaluate(viewport);
+        assert.equal(await evaluate(allInView), false, "the wheel zoomed in, or this proves nothing");
+      });
+      // The panel shrinks back to its own width: a fit would move the view, a user's zoom stays.
+      await sleep(600);
+      assert.equal(await evaluate(viewport), zoomed);
     });
   });
 }

@@ -31,6 +31,9 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
   const [pointedId, setActiveId] = useState(null);
   const [paths, setPaths] = useState([]);
   const [lineWidth, setLineWidth] = useState(0);
+  // Boxes cut off at the right edge. A narrow panel scrolls the flow sideways, and macOS
+  // hides the scrollbar until you scroll, so a fade and a count say there is more (issue 550).
+  const [hiddenRight, setHiddenRight] = useState(0);
   const canvasRef = useRef(null);
   const rowRef = useRef(null);
   const boxes = useRef(new Map());
@@ -60,6 +63,15 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
     else boxes.current.delete(id);
   }, []);
 
+  const countHidden = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const edge = canvas.getBoundingClientRect().left + canvas.clientLeft + canvas.clientWidth;
+    let count = 0;
+    for (const box of boxes.current.values()) if (box.getBoundingClientRect().right > edge + 1) count += 1;
+    setHiddenRight(count);
+  }, []);
+
   const measure = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !flow) return;
@@ -84,7 +96,8 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
     // The boxes' own width plus the canvas padding: the canvas's scroll width would include
     // the line layer itself, and never shrink after a refresh with fewer boxes.
     setLineWidth(rowRef.current ? rowRef.current.offsetWidth + 32 : 0);
-  }, [flow]);
+    countHidden();
+  }, [flow, countHidden]);
 
   useLayoutEffect(() => {
     measure();
@@ -114,88 +127,108 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
             : "No tables or views found in this pipeline's SQL."}
         </p>
       ) : (
-        <div
-          ref={canvasRef}
-          data-data-flow-canvas
-          className="relative overflow-x-auto rounded-xl border border-line p-4"
-          onMouseLeave={() => setActiveId(null)}
-        >
-          <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-full" style={{ width: lineWidth || "100%" }}>
-            {paths.map((path) => {
-              const lit = linked && linked.has(path.from) && linked.has(path.to) && (path.from === activeId || path.to === activeId);
-              return (
-                <path
-                  key={path.key}
-                  d={path.d}
-                  fill="none"
-                  data-data-flow-link={path.key}
-                  stroke={lit ? UI_COLOR.accent : UI_COLOR.boxLine}
-                  strokeWidth={lit ? 1.75 : 1.25}
-                  opacity={linked && !lit ? 0.3 : 1}
-                />
-              );
-            })}
-          </svg>
-          <div ref={rowRef} className="relative flex w-max items-start gap-12">
-            {columns.map((column, index) => (
-              // A column grows to fit its names, up to a limit, before cutting them short.
-              <div key={index} className="flex w-max min-w-56 max-w-[22rem] shrink-0 flex-col gap-3">
-                {column.map((node) => {
-                  const outside = node.kind === "outside" || node.kind === "files";
-                  const faded = linked && !linked.has(node.id);
-                  return (
-                    <div
-                      key={node.id}
-                      ref={(element) => register(node.id, element)}
-                      data-data-flow-node={node.id}
-                      data-data-flow-kind={node.kind}
-                      tabIndex={0}
-                      onMouseEnter={() => setActiveId(node.id)}
-                      onFocus={() => setActiveId(node.id)}
-                      onBlur={() => setActiveId(null)}
-                      title={[name(node.name), KIND_WORDS[node.kind], node.maybeSameAs ? `May be the same as ${node.maybeSameAs}.` : ""].filter(Boolean).join("\n")}
-                      className={`flex min-h-12 flex-col justify-center gap-0.5 rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-accent ${outside ? "border-dashed" : "border-solid"}`}
-                      style={{
-                        borderColor: activeId === node.id ? UI_COLOR.accent : UI_COLOR.boxLine,
-                        backgroundColor: UI_COLOR.widget,
-                        opacity: faded ? 0.45 : 1,
-                      }}
-                    >
-                      {/* No type code: Databricks says "materialized view" and "streaming table",
-                          never MV or ST, so the kind is written out on the line below. */}
-                      <span className="min-w-0 truncate text-[13px] font-medium text-fg">{name(node.name)}</span>
-                      {/* The kind has its own line, so a long file link can never squeeze it out. */}
-                      <span className="truncate text-[11px] text-muted" data-data-flow-kind-words>
-                        {node.maybeSameAs ? `may be the same as ${node.maybeSameAs}` : KIND_WORDS[node.kind]}
-                        {node.pipelineOnly ? " · this pipeline only" : ""}
-                      </span>
-                      {!outside && node.line > 0 && (
-                        <button
-                          type="button"
-                          data-data-flow-open={node.id}
-                          onClick={() => onOpenFile?.(node.file, node.line)}
-                          title={`Open ${node.file} on line ${node.line}`}
-                          className="max-w-full self-start truncate text-left text-[11px] text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                          {fileLinkText(node)}
-                        </button>
-                      )}
-                      {unreadInto.get(node.id) > 0 && (
-                        <span className="text-[11px] text-muted" data-data-flow-unread-into>
-                          {unreadInto.get(node.id)} {unreadInto.get(node.id) === 1 ? "read" : "reads"} could not be read
+        <div className="relative">
+          <div
+            ref={canvasRef}
+            data-data-flow-canvas
+            className="relative overflow-x-auto rounded-xl border border-line p-4"
+            onMouseLeave={() => setActiveId(null)}
+            onScroll={countHidden}
+          >
+            <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-full" style={{ width: lineWidth || "100%" }}>
+              {paths.map((path) => {
+                const lit = linked && linked.has(path.from) && linked.has(path.to) && (path.from === activeId || path.to === activeId);
+                return (
+                  <path
+                    key={path.key}
+                    d={path.d}
+                    fill="none"
+                    data-data-flow-link={path.key}
+                    stroke={lit ? UI_COLOR.accent : UI_COLOR.boxLine}
+                    strokeWidth={lit ? 1.75 : 1.25}
+                    opacity={linked && !lit ? 0.3 : 1}
+                  />
+                );
+              })}
+            </svg>
+            <div ref={rowRef} className="relative flex w-max items-start gap-12">
+              {columns.map((column, index) => (
+                // A column grows to fit its names, up to a limit, before cutting them short.
+                <div key={index} className="flex w-max min-w-56 max-w-[22rem] shrink-0 flex-col gap-3">
+                  {column.map((node) => {
+                    const outside = node.kind === "outside" || node.kind === "files";
+                    const faded = linked && !linked.has(node.id);
+                    return (
+                      <div
+                        key={node.id}
+                        ref={(element) => register(node.id, element)}
+                        data-data-flow-node={node.id}
+                        data-data-flow-kind={node.kind}
+                        tabIndex={0}
+                        onMouseEnter={() => setActiveId(node.id)}
+                        onFocus={() => setActiveId(node.id)}
+                        onBlur={() => setActiveId(null)}
+                        title={[name(node.name), KIND_WORDS[node.kind], node.maybeSameAs ? `May be the same as ${node.maybeSameAs}.` : ""].filter(Boolean).join("\n")}
+                        className={`flex min-h-12 flex-col justify-center gap-0.5 rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-accent ${outside ? "border-dashed" : "border-solid"}`}
+                        style={{
+                          borderColor: activeId === node.id ? UI_COLOR.accent : UI_COLOR.boxLine,
+                          backgroundColor: UI_COLOR.widget,
+                          opacity: faded ? 0.45 : 1,
+                        }}
+                      >
+                        {/* No type code: Databricks says "materialized view" and "streaming table",
+                            never MV or ST, so the kind is written out on the line below. */}
+                        <span className="min-w-0 truncate text-[13px] font-medium text-fg">{name(node.name)}</span>
+                        {/* The kind has its own line, so a long file link can never squeeze it out. */}
+                        <span className="truncate text-[11px] text-muted" data-data-flow-kind-words>
+                          {node.maybeSameAs ? `may be the same as ${node.maybeSameAs}` : KIND_WORDS[node.kind]}
+                          {node.pipelineOnly ? " · this pipeline only" : ""}
                         </span>
-                      )}
-                      {node.definedAgain && (
-                        <span className="text-[11px] text-muted">
-                          also created in {baseName(node.definedAgain.file)}:{node.definedAgain.line}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        {!outside && node.line > 0 && (
+                          <button
+                            type="button"
+                            data-data-flow-open={node.id}
+                            onClick={() => onOpenFile?.(node.file, node.line)}
+                            title={`Open ${node.file} on line ${node.line}`}
+                            className="max-w-full self-start truncate text-left text-[11px] text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            {fileLinkText(node)}
+                          </button>
+                        )}
+                        {unreadInto.get(node.id) > 0 && (
+                          <span className="text-[11px] text-muted" data-data-flow-unread-into>
+                            {unreadInto.get(node.id)} {unreadInto.get(node.id) === 1 ? "read" : "reads"} could not be read
+                          </span>
+                        )}
+                        {node.definedAgain && (
+                          <span className="text-[11px] text-muted">
+                            also created in {baseName(node.definedAgain.file)}:{node.definedAgain.line}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
+          {hiddenRight > 0 && (
+            <>
+              <div
+                aria-hidden="true"
+                data-data-flow-fade
+                className="pointer-events-none absolute bottom-px right-px top-px w-16 rounded-r-xl"
+                style={{ backgroundImage: `linear-gradient(to right, transparent, ${UI_COLOR.surface})` }}
+              />
+              <span
+                aria-hidden="true"
+                data-data-flow-more={hiddenRight}
+                className="pointer-events-none absolute bottom-0 right-4 translate-y-1/2 rounded-full border border-line bg-widget px-2 text-[11px] text-fg-soft"
+              >
+                {hiddenRight} more →
+              </span>
+            </>
+          )}
         </div>
       )}
       {flow.unread.length > 0 && (

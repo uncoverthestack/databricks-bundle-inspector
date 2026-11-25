@@ -1,0 +1,9 @@
+resources:
+  apps:
+    orders_app:
+      name: orders-app
+      source_code_path: ../src/app
+
+  secret_scopes:
+    app_scope:
+      name: app_scope

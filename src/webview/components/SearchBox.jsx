@@ -1,5 +1,7 @@
 import { Search } from "lucide-react";
-import { kindMeta } from "../lib/kindMeta";
+import { useState } from "react";
+import ProblemBadge from "./ProblemBadge";
+import TypeDot from "./TypeDot";
 
 export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {
   const normalized = value.trim().toLowerCase();
@@ -10,9 +12,20 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
         )
         .slice(0, 8)
     : [];
+  // Below lg the search is the first thing in the header to give up its room: just its icon
+  // until clicked or holding text, so the name and the target keep theirs (issues 551, 553).
+  const [focused, setFocused] = useState(false);
+  const open = focused || value !== "";
 
   return (
-    <div className="relative min-w-12 max-w-96 flex-1 md:min-w-24">
+    <div
+      data-search-open={open}
+      className={
+        open
+          ? "relative w-40 lg:w-64"
+          : "relative w-8 lg:w-64"
+      }
+    >
       <Search
         size={14}
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
@@ -26,14 +39,18 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
             onChange("");
           }
         }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         aria-label={placeholder}
+        title={placeholder}
         placeholder={placeholder}
-        className="h-7 w-full rounded-md border border-line bg-input pl-8 pr-2 text-xs text-fg outline-none placeholder:text-transparent focus:border-accent md:placeholder:text-muted"
+        className={`h-7 w-full rounded-md border border-line bg-input pl-8 pr-2 text-xs text-fg outline-none focus:border-accent ${
+          open ? "placeholder:text-muted" : "cursor-pointer placeholder:text-transparent lg:cursor-text lg:placeholder:text-muted"
+        }`}
       />
       {matches.length > 0 && (
         <div className="absolute left-0 right-0 top-8 z-20 max-h-[calc(100vh-4rem)] overflow-auto overscroll-contain rounded-md border border-line-strong bg-widget shadow-popover">
           {matches.map((item) => {
-            const meta = kindMeta(item.kind);
             return (
               <button
                 key={item.id}
@@ -41,10 +58,8 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                 onClick={() => onSelect(item)}
                 className="flex w-full items-center gap-2 border-b border-line-soft px-2.5 py-2 text-left last:border-0 hover:bg-hover"
               >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: meta.color }}
-                />
+                {/* An overview box's result shows the box's icon; a task's keeps the task box's dot (issue 546). */}
+                <TypeDot kind={item.kind} dot={!item.overviewId} ring={Boolean(item.overviewId) && item.source === "default"} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-fg">
                     {item.label}
@@ -53,16 +68,8 @@ export default function SearchBox({ value, items, onChange, onSelect, placeholde
                     {item.subtitle}
                   </span>
                 </span>
-                {item.issueCount > 0 && (
-                  // The same colours as the task's box: red for an error, amber for warnings only.
-                  <span
-                    className={`shrink-0 rounded px-1.5 text-[10px] font-semibold text-fg-strong ${
-                      item.problemTone === "warning" ? "bg-warning/15" : item.problemTone === "error" ? "bg-error/15" : "bg-hover"
-                    }`}
-                  >
-                    {item.issueCount}
-                  </span>
-                )}
+                {/* The same badge as the box: icon and colour of its worst problem (issue 555). */}
+                {item.issueCount > 0 && <ProblemBadge count={item.issueCount} tone={item.problemTone} shape="rounded" />}
               </button>
             );
           })}
