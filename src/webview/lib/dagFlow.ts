@@ -3,7 +3,8 @@
  * row nearest the tasks it depends on, with the lines between them. Moved from App.jsx with
  * no change (#392).
  */
-import { MarkerType } from "@xyflow/react";
+// A type only: React Flow 13 ships as ES modules alone, which the unit tests (Jest) can't load.
+import type { MarkerType } from "@xyflow/react";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { isDrawnDependency, taskLevels } from "./taskLevels.js";
 import { taskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
@@ -196,7 +197,7 @@ export function buildDagFlow(
           }
         : {}),
       style: { stroke: outcomeTone.stroke, strokeWidth: 2, ...(outcomeTone.dash ? { strokeDasharray: outcomeTone.dash } : {}) },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: outcomeTone.stroke },
+      markerEnd: { type: "arrowclosed" as MarkerType.ArrowClosed, width: 14, height: 14, color: outcomeTone.stroke },
     });
   });
 

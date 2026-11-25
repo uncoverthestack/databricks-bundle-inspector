@@ -153,6 +153,36 @@ function hasMarkerNotExact(filePath: string): boolean {
   }
 }
 
+/** Notebook extensions run with a byte order mark and seen to fail (#589). R and Scala weren't tested. */
+const BYTE_ORDER_MARK_EXTENSIONS = new Set([".py", ".sql"]);
+
+/**
+ * Whether a notebook starts with a UTF-8 byte order mark, which deploys and then fails
+ * when it runs (#589). Job runs and pipeline updates on CLI v1.28.0, two runs each: the CLI
+ * uploads it as a notebook, then a Python notebook fails with `SyntaxError: invalid
+ * non-printable character U+FEFF` and a SQL one with `PARSE_SYNTAX_ERROR`. A plain
+ * Python file with one runs fine, so only notebooks count. With the CLIs before v1.24.0
+ * (rule `"exact"`) the file is no notebook at all, which `not_a_notebook` reports.
+ */
+export function notebookStartsWithByteOrderMark(filePath: string, rule: NotebookHeaderRule = "contains"): boolean {
+  if (rule !== "contains" || !BYTE_ORDER_MARK_EXTENSIONS.has(extname(filePath).toLowerCase())) return false;
+  try {
+    // Regular files only: opening a named pipe waits for data that never comes (#508).
+    if (!statSync(filePath).isFile()) return false;
+    const fd = openSync(filePath, "r");
+    let first: Buffer;
+    try {
+      first = Buffer.alloc(3);
+      if (readSync(fd, first, 0, 3, 0) < 3) return false;
+    } finally {
+      closeSync(fd);
+    }
+    return first[0] === 0xef && first[1] === 0xbb && first[2] === 0xbf && isNotebookFile(filePath, rule) === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Checks a resolved local path against the CLI's notebook rules.
  *

@@ -51,6 +51,7 @@ import {
   classifyChange,
   collectWatchSpec,
   filesOutsideRoot,
+  foldersOutsideRoot,
   type BundleChange,
   type BundleWatchSpec,
 } from "./bundle/watchedFiles.js";
@@ -684,8 +685,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       { ignoresCase },
     );
     const outside = filesOutsideRoot(spec).sort();
+    // Folders outside the root (a pipeline glob `../external/**`) get a watcher for all
+    // files below them (#590).
+    const outsideFolders = foldersOutsideRoot(spec).sort();
+    const outsideKey = [...outside, ...outsideFolders.map((folder) => `${folder}${path.sep}**`)].join("\n");
     const existing = bundleWatches.get(bundleRoot);
-    if (existing && existing.outsideFiles === outside.join("\n")) {
+    if (existing && existing.outsideFiles === outsideKey) {
       existing.spec = spec;
       return;
     }
@@ -695,13 +700,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       rootWatcher:
         existing?.rootWatcher ??
         createWatcher(bundleRoot, new vscode.RelativePattern(bundleRoot, "**/*")),
-      outsideWatchers: outside.map((file) =>
-        createWatcher(
-          bundleRoot,
-          new vscode.RelativePattern(path.dirname(file), path.basename(file)),
+      outsideWatchers: [
+        ...outside.map((file) =>
+          createWatcher(
+            bundleRoot,
+            new vscode.RelativePattern(path.dirname(file), path.basename(file)),
+          ),
         ),
-      ),
-      outsideFiles: outside.join("\n"),
+        ...outsideFolders.map((folder) => createWatcher(bundleRoot, new vscode.RelativePattern(folder, "**/*"))),
+      ],
+      outsideFiles: outsideKey,
     });
   }
 
