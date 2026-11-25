@@ -1,0 +1,16 @@
+# One of every resource type that CLI v1.28.0 accepts (45 types), for the overview and
+# for crash tests. See README.md for what was checked against the CLI.
+bundle:
+  name: all_resources
+
+include:
+  - resources/*.yml
+
+variables:
+  secret_value:
+    description: Passed at deploy time with --var, never a default
+
+targets:
+  dev:
+    mode: development
+    default: true

@@ -1,0 +1,35 @@
+resources:
+  sql_warehouses:
+    reporting:
+      name: reporting
+      cluster_size: 2X-Small
+      max_num_clusters: 1
+      auto_stop_mins: 10
+
+  dashboards:
+    sales_dashboard:
+      display_name: Sales dashboard
+      file_path: ../src/sales.lvdash.json
+      warehouse_id: ${resources.sql_warehouses.reporting.id}
+
+  alerts:
+    low_sales:
+      display_name: Low sales
+      query_text: select 2 as value
+      warehouse_id: ${resources.sql_warehouses.reporting.id}
+      evaluation:
+        comparison_operator: LESS_THAN
+        source:
+          name: value
+        threshold:
+          value:
+            double_value: 1
+      schedule:
+        quartz_cron_schedule: "0 0 8 * * ?"
+        timezone_id: UTC
+
+  genie_spaces:
+    sales_genie:
+      title: Sales questions
+      warehouse_id: ${resources.sql_warehouses.reporting.id}
+      file_path: ../src/sales.geniespace.json

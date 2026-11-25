@@ -1,0 +1,82 @@
+resources:
+  database_instances:
+    legacy_db:
+      name: legacy-db
+      capacity: CU_1
+
+  database_catalogs:
+    legacy_catalog:
+      name: legacy_catalog
+      database_instance_name: ${resources.database_instances.legacy_db.name}
+      database_name: legacy
+      create_database_if_not_exists: true
+
+  synced_database_tables:
+    legacy_orders:
+      name: ${resources.database_catalogs.legacy_catalog.name}.legacy.orders
+      database_instance_name: ${resources.database_instances.legacy_db.name}
+      logical_database_name: legacy
+      spec:
+        source_table_full_name: main.sales.orders
+        scheduling_policy: SNAPSHOT
+        primary_key_columns: [order_id]
+
+  postgres_projects:
+    orders_db:
+      project_id: orders-db
+      display_name: Orders database
+      pg_version: 17
+
+  postgres_branches:
+    dev:
+      parent: ${resources.postgres_projects.orders_db.id}
+      branch_id: dev
+      no_expiry: true
+
+  postgres_endpoints:
+    dev_reader:
+      parent: ${resources.postgres_branches.dev.id}
+      endpoint_id: dev-reader
+      endpoint_type: ENDPOINT_TYPE_READ_ONLY
+
+  postgres_roles:
+    app_owner:
+      parent: ${resources.postgres_branches.dev.id}
+      role_id: app-owner
+      postgres_role: app_owner
+
+  postgres_databases:
+    app_db:
+      parent: ${resources.postgres_branches.dev.id}
+      database_id: app-db
+      postgres_database: app_db
+      role: ${resources.postgres_roles.app_owner.id}
+
+  postgres_catalogs:
+    orders_catalog:
+      catalog_id: orders_catalog
+      branch: ${resources.postgres_projects.orders_db.id}/branches/production
+      postgres_database: appdb
+      create_database_if_missing: true
+
+  postgres_synced_tables:
+    orders_synced:
+      synced_table_id: ${resources.postgres_catalogs.orders_catalog.catalog_id}.public.orders
+      source_table_full_name: main.sales.orders
+      primary_key_columns: [order_id]
+      scheduling_policy: SNAPSHOT
+      postgres_database: appdb
+      branch: ${resources.postgres_projects.orders_db.id}/branches/production
+
+  postgres_snapshot_schedules:
+    daily:
+      branch: ${resources.postgres_projects.orders_db.id}/branches/production
+      schedule:
+        - daily_schedule:
+            hour: 3
+          retention: 604800s
+
+  postgres_data_apis:
+    app_api:
+      parent: ${resources.postgres_databases.app_db.name}
+      db_schemas: [public]

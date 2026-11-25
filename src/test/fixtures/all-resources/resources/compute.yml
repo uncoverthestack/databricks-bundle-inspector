@@ -1,0 +1,49 @@
+resources:
+  jobs:
+    nightly_job:
+      name: nightly_job
+      tasks:
+        - task_key: main
+          notebook_task:
+            notebook_path: ../src/notebook.py
+          existing_cluster_id: ${resources.clusters.shared_cluster.id}
+
+  job_runs:
+    nightly_run:
+      job_id: ${resources.jobs.nightly_job.id}
+
+  pipelines:
+    orders_pipeline:
+      name: orders_pipeline
+      catalog: main
+      schema: ${resources.schemas.sales.name}
+      serverless: true
+      libraries:
+        - glob:
+            include: ../src/pipeline/**
+
+  clusters:
+    shared_cluster:
+      cluster_name: shared_cluster
+      spark_version: 15.4.x-scala2.12
+      node_type_id: i3.xlarge
+      num_workers: 1
+      autotermination_minutes: 30
+      policy_id: ${resources.cluster_policies.small_clusters.id}
+      instance_pool_id: ${resources.instance_pools.small_pool.id}
+
+  cluster_policies:
+    small_clusters:
+      name: small_clusters
+      definition:
+        autotermination_minutes:
+          type: range
+          maxValue: 120
+
+  instance_pools:
+    small_pool:
+      instance_pool_name: small_pool
+      node_type_id: i3.xlarge
+      min_idle_instances: 0
+      max_capacity: 5
+      idle_instance_autotermination_minutes: 60
