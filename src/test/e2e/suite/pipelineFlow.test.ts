@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as vscode from "vscode";
 import { connectBrowser, panelSizer, STANDARD_PANEL, type Browser, type PanelSize, type PanelSizer } from "./browser.js";
@@ -292,6 +293,23 @@ export function pipelineFlowSuite() {
       await vscode.env.clipboard.writeText("");
       await evaluate(`[...document.querySelectorAll('header button')].find(b => b.textContent.includes('Copy review')).click()`);
       await waitFor(async () => (await vscode.env.clipboard.readText()).includes("Pipeline: orders\\_etl"), "the copied pipeline review");
+    });
+
+    it("a self-read has a visible loop above its box (#607)", async () => {
+      await openPipeline();
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const file = path.join(root, "src/transformations/self-read.sql");
+      try {
+        await writeFile(file, "CREATE MATERIALIZED VIEW self_read AS SELECT * FROM self_read;\n");
+        const link = '[data-data-flow-link="dataset:self_read->dataset:self_read:"]';
+        await waitFor(async () => await evaluate(`Boolean(document.querySelector('${link}'))`), "the self-read line after saving");
+        const height = await evaluate(`document.querySelector('${link}').getBBox().height`);
+        assert.ok(height > 10, `a self-read bends outside its box instead of hiding behind it: ${height}`);
+        await screenshot("pipeline-self-read");
+      } finally {
+        await unlink(file);
+        await waitFor(async () => (await read()).nodes.length === 8, "the original data flow after removing the self-read");
+      }
     });
 
     it("a long file name in the could-not-read list never scrolls a narrow panel sideways", async () => {

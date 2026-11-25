@@ -50,6 +50,8 @@ export interface PipelineRead {
 
 export interface PipelineFlowTarget {
   name: string;
+  /** A named CREATE FLOW, even when its query reads no source table (#607). */
+  flow?: string;
   namespace?: SqlNamespace;
 }
 
@@ -268,7 +270,7 @@ function readsIn(tokens: Token[], from: number, unread: PipelineUnread[]): Found
   // Common table expressions: `name [(col, …)] AS (query)` after WITH or a comma. A CTE's
   // name hides a table only after its own definition, and only inside the query its WITH
   // belongs to: `FROM orders … (WITH orders AS (…) …)` still reads the real orders first.
-  const ctes: { name: string; defined: number; scopeEnd: number }[] = [];
+  const ctes: { name: string; defined: number; scopeEnd: number; scopeOpen: number; recursive: boolean }[] = [];
   for (let k = from; k < tokens.length; k++) {
     const t = tokens[k]!;
     if (t.kind !== "word" || CLAUSE_END.has(t.upper)) continue;
@@ -280,10 +282,15 @@ function readsIn(tokens: Token[], from: number, unread: PipelineUnread[]): Found
     // A comma only counts when it continues a WITH list at this level.
     if (isPunct(before, ",") && !ctes.some((cte) => cte.scopeEnd > k)) continue;
     const scopeOpen = opener[k]!;
+    const recursive = before?.upper === "RECURSIVE" ||
+      (isPunct(before, ",") && ctes.some((cte) => cte.recursive && cte.scopeOpen === scopeOpen && cte.scopeEnd > k));
     ctes.push({
       name: t.text.toLowerCase(),
-      defined: closeOf(tokens, j + 1),
+      // A recursive CTE is visible inside its own body; an ordinary CTE is not.
+      defined: recursive ? j + 1 : closeOf(tokens, j + 1),
       scopeEnd: scopeOpen < 0 ? tokens.length : closeOf(tokens, scopeOpen),
+      scopeOpen,
+      recursive,
     });
   }
   const isCte = (name: string, at: number) =>
@@ -291,6 +298,7 @@ function readsIn(tokens: Token[], from: number, unread: PipelineUnread[]): Found
 
   const reads: FoundRead[] = [];
   const take = (k: number): number => {
+    if (tokens[k]?.upper === "LATERAL") k++;
     let t = tokens[k];
     if (!t) return k;
     let streaming = false;
@@ -423,7 +431,7 @@ export function readPipelineSql(sql: string, config: Record<string, string> = {}
       result.reads.push({ source, target, line: read.line, streaming: read.streaming, ...(flow ? { flow } : {}), ...withNamespace() });
     }
   };
-  const addFlowTarget = (name: string) => result.flowTargets.push({ name, ...withNamespace() });
+  const addFlowTarget = (name: string, flow?: string) => result.flowTargets.push({ name, ...(flow ? { flow } : {}), ...withNamespace() });
 
   for (const tokens of tokenize(sql)) {
     const w = (k: number) => tokens[k]?.upper ?? "";
@@ -450,7 +458,7 @@ export function readPipelineSql(sql: string, config: Record<string, string> = {}
     let k = 1;
     if (w(k) === "OR" && (w(k + 1) === "REFRESH" || w(k + 1) === "REPLACE")) k += 2;
     if (w(k) === "FLOW") {
-      const flowName = tokens[k + 1]?.text ?? "";
+      const flowName = nameOrUnread(tokens[k + 1], "flow");
       let j = k + 2;
       while (j < tokens.length && w(j) !== "AS") j++;
       j++;
@@ -470,7 +478,7 @@ export function readPipelineSql(sql: string, config: Record<string, string> = {}
         result.unread.push({ line: tokens[0]!.line, reason: "a flow the inspector does not understand", text: tokens.slice(0, 6).map((t) => t.text).join(" ") });
         continue;
       }
-      if (target) { addFlowTarget(target); addReads(tokens, j + 1, target, flowName); }
+      if (target) { addFlowTarget(target, flowName); addReads(tokens, j + 1, target, flowName); }
       continue;
     }
     let pipelineOnly = false;

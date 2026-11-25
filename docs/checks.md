@@ -10,7 +10,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 **Codes never change.** Once a code has shipped, it is not renamed or removed, so you can rely on it in notes, searches or scripts.
 
-- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
+- [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
@@ -91,6 +91,15 @@ A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline 
 - **Severity:** error.
 - **Example:** `python_file: ../src/job.py`, where the first line is `# Databricks notebook source`.
 - **Fix:** remove the header line, or run it from a notebook task or a pipeline `notebook` library.
+
+### `notebook_byte_order_mark`
+
+A notebook task, or a pipeline `notebook` library, points at a `.py` or `.sql` notebook that starts with an invisible byte order mark. Some editors add one when saving. From Databricks CLI v1.24.0 the file is still a notebook (see [`not_a_notebook`](#not_a_notebook)), so `bundle validate` and `bundle deploy` pass, and then the first cell fails when the job or pipeline runs.
+
+- **Severity:** error.
+- **Example:** a job runs `./etl.py`, saved with a byte order mark before `# Databricks notebook source`. The task fails with `SyntaxError: invalid non-printable character U+FEFF`; a SQL notebook fails with `PARSE_SYNTAX_ERROR`. Checked by job runs and pipeline updates on Databricks CLI v1.28.0 on 2026-11-25, two runs each, with a control without the mark.
+- **Fix:** save the file as UTF-8 without BOM.
+- **Limits:** a plain Python file with a byte order mark runs fine, so files run by `spark_python_task` get nothing. R and Scala notebooks, notebooks reached through a pipeline `glob`, `%run` targets and jobs with a `git_source` were not tested and get nothing. With CLIs before v1.24.0 the file is no notebook at all, which `not_a_notebook` reports.
 
 ### `path_is_a_folder`
 
@@ -335,7 +344,7 @@ A pipeline task refreshes a table or flow its pipeline doesn't create.
 
 - **Severity:** warning.
 - **Example:** `refresh_selection: [orders_silvr]` in a task that runs a pipeline whose SQL creates `orders_silver`. `bundle validate` and `bundle deploy` accept it; the run fails with `INVALID_REFRESH_SELECTION.TABLE_NOT_FOUND` (or `FLOW_NOT_FOUND` for `refresh_flow_selection`). Letter case counts: `ORDERS_SILVER` fails the same way. Only the pipeline's own tables count: a table in the same schema made by another pipeline, or one this pipeline no longer defines but which is still in the catalog, fails too. Checked live with CLI v1.27.0 on 2026-11-24, two runs each. By default a production pipeline retries a failed update 5 times, about 11 minutes in that test, before the task fails; `pipelines.numUpdateRetryAttempts` in the pipeline's `configuration` changes that.
-- **Fix:** use the name of a table, view or flow the pipeline creates, as written in its SQL. A full name, `catalog.schema.table`, works when its catalog and schema are the pipeline's. The finding suggests a close match.
+- **Fix:** use the name of a table or view the pipeline creates. For `refresh_flow_selection`, use the full `catalog.schema.flow` name, including for a table's own flow. A short flow name fails the run; a full name works (controlled workspace tests, CLI v1.28.0, 2026-11-25, issue #607). Named flows with no source table, such as `CREATE FLOW seed AS INSERT ONCE INTO t BY NAME SELECT 1 AS id`, count too. The finding suggests a close match when the namespace is known. Table selections (`refresh_selection` and `full_refresh_selection`) can use short names.
 - **Checked fields:** `refresh_selection`, `full_refresh_selection` and `refresh_flow_selection`, also in a `for_each_task`'s inner task. Not `reset_checkpoint_selection` yet.
 - **Limits:** checked only when the pipeline's data flow lists every name: every source is a local SQL file the inspector read, with no name it could not read. A pipeline with Python sources, a source it doesn't check, a selection written as a variable, or a full name when the pipeline's catalog or schema is a variable, is not judged.
 

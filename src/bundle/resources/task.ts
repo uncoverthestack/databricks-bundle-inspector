@@ -1,5 +1,10 @@
 import { existsSync, readdirSync } from "node:fs";
-import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
+import {
+  checkNotebookPath,
+  notebookStartsWithByteOrderMark,
+  type NotebookHeaderRule,
+  type NotebookPathProblem,
+} from "../notebookFiles.js";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
 import { hasGlobCharacters } from "../goGlob.js";
@@ -165,6 +170,8 @@ export interface FileReference {
   isInGitignore: boolean;
   /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
   notebookProblem?: NotebookPathProblem;
+  /** A notebook that starts with a byte order mark: it deploys, then fails at run (#589). */
+  startsWithByteOrderMark?: true;
   referenceType:
     | "notebook"
     | "sql"
@@ -565,6 +572,9 @@ function getFileReferences(
       ...(stray ? { strayGitSource: true as const } : {}),
       isInGitignore: false,
       ...(notebookProblem ? { notebookProblem } : {}),
+      ...(expects === "notebook" && resolvedPath && !notebookProblem && notebookStartsWithByteOrderMark(resolvedPath, notebookRule)
+        ? { startsWithByteOrderMark: true as const }
+        : {}),
       referenceType,
       sourceFile,
       sourceLine: sourceLocation?.line ?? 0,

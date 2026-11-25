@@ -42,6 +42,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "missing_library",
   "not_a_notebook",
   "file_is_a_notebook",
+  "notebook_byte_order_mark",
   "path_is_a_folder",
   "excluded_from_sync",
   "path_not_checked",
@@ -383,6 +384,19 @@ function notebookProblemIssue(
       : /\.ipynb$/i.test(path)
         ? "It is not a valid Jupyter notebook: it needs cells and metadata, at nbformat 4 or later."
         : "Notebooks need a .py, .r, .scala, .sql or .ipynb extension.",
+  };
+}
+
+/**
+ * A notebook that starts with a byte order mark (#589): it deploys, then its first cell
+ * fails to run. The title is the approved wording; a pipeline says "pipeline".
+ */
+function byteOrderMarkIssue(runs: "job" | "pipeline"): Pick<InspectorIssue, "kind" | "title" | "fixHint"> {
+  return {
+    kind: "notebook_byte_order_mark",
+    title: `This notebook starts with an invisible byte-order mark, so the ${runs} may fail when it runs. Save it as UTF-8 without BOM.`,
+    fixHint:
+      "Some editors add this mark when saving. Databricks uploads the file as a notebook, then the first cell fails: Python with \"invalid non-printable character U+FEFF\", SQL with PARSE_SYNTAX_ERROR.",
   };
 }
 
@@ -1162,6 +1176,19 @@ export function buildInspectorIssues(
         continue;
       }
 
+      // A job with a git_source runs the notebook from the repository, not this file.
+      if (ref.startsWithByteOrderMark && !parentJobHasGitSource(graph, task)) {
+        issues.push({
+          id: `notebook-byte-order-mark:${task.id}:${ref.yamlPath}:${ref.path}`,
+          severity: "error",
+          ...byteOrderMarkIssue("job"),
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          ...issueLocation(ref.sourceFile || sourceFileForTask(task), ref.sourceLine || undefined, ref.sourceColumn),
+        });
+      }
+
       // The CLI does not check task paths in a job with a git_source.
       if (ref.notebookProblem && !parentJobHasGitSource(graph, task)) {
         issues.push({
@@ -1323,6 +1350,16 @@ export function buildInspectorIssues(
           ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
         });
         continue;
+      }
+      if (ref.checked && ref.startsWithByteOrderMark) {
+        issues.push({
+          id: `notebook-byte-order-mark:${pipeline.id}:${ref.yamlPath}`,
+          severity: "error",
+          ...byteOrderMarkIssue("pipeline"),
+          resourceId: pipeline.id,
+          yamlPath: `${pipeline.id}.${ref.yamlPath}`,
+          ...issueLocation(ref.sourceFile, ref.sourceLine || undefined, ref.sourceColumn),
+        });
       }
       if (ref.checked && ref.notebookProblem) {
         issues.push({
@@ -1945,7 +1982,8 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
 
       const datasets = flow.nodes.filter((node) => node.kind !== "outside" && node.kind !== "files").map((node) => node.name);
       // A table's own flow has its name; CREATE FLOW and AUTO CDC name theirs.
-      const flows = [...new Set([...datasets, ...flow.edges.flatMap((edge) => (edge.flow ? [edge.flow] : []))])];
+      const flows = [...new Set([...datasets, ...(flow.flows?.map((item) => item.name) ??
+        flow.edges.flatMap((edge) => (edge.flow ? [edge.flow] : [])))])];
       const catalog = text(pipeline.data.catalog);
       const schema = text(pipeline.data.schema ?? pipeline.data.target);
       const full = (name: string): string[] | undefined => {
@@ -1957,30 +1995,38 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
 
       for (const selection of selections) {
         if (selection.name.includes("${") || selection.name.includes("{{")) continue;
-        const candidates = selection.field === "refresh_flow_selection" ? flows : datasets;
+        const isFlow = selection.field === "refresh_flow_selection";
+        const candidates = isFlow ? flows : datasets;
         const parts = splitName(selection.name);
+        // Unlike table selections, a flow selection must name catalog.schema.flow,
+        // even for a table's implicit flow (live, CLI v1.28.0, #607).
+        const shortFlow = isFlow && parts.length !== 3;
         // Compared as written, or as Unity Catalog stores it (lower case); a qualified name
         // needs the pipeline's catalog and schema to compare.
         const forms = (name: string) => {
-          if (parts.length === 1) return [splitName(name).at(-1)!];
+          if (!isFlow && parts.length === 1) return [splitName(name).at(-1)!];
           const whole = full(name);
           return whole ? [whole.join(".")] : [];
         };
         // After a USE, a table may live in another schema than the pipeline's, which the
         // data flow doesn't keep: a full name can't be compared then.
-        const afterUse = flow.nodes.some((node) => node.afterUse);
-        const wanted = parts.length === 1 ? selection.name : afterUse ? undefined : full(selection.name)?.join(".");
-        if (wanted === undefined) continue;
-        const known = candidates.flatMap(forms);
-        if (known.some((name) => name === wanted || name.toLowerCase() === wanted)) continue;
-        if (known.length === 0) continue;
-        const suggestion = closestName(wanted, known.map((name) => name.toLowerCase()));
-        const what = selection.field === "refresh_flow_selection" ? "flow" : "table";
+        const afterUse = flow.nodes.some((node) => node.afterUse) || flow.flows?.some((item) => item.namespace);
+        const wanted = !isFlow && parts.length === 1 ? selection.name : afterUse ? undefined : full(selection.name)?.join(".");
+        if (wanted === undefined && !shortFlow) continue;
+        const known = isFlow && afterUse ? [] : candidates.flatMap(forms);
+        if (!shortFlow && known.some((name) => name === wanted || name.toLowerCase() === wanted)) continue;
+        if (known.length === 0 && !shortFlow) continue;
+        const suggestion = wanted === undefined ? undefined :
+          (shortFlow ? known.find((name) => name === wanted || name.toLowerCase() === wanted) : undefined) ??
+          closestName(wanted, known.map((name) => name.toLowerCase()));
+        const what = isFlow ? "flow" : "table";
         issues.push({
           id: `pipeline-selection:${task.id}:${selection.yamlPath}`,
           severity: "warning",
           kind: "pipeline_selection_not_found",
-          title: suggestion
+          title: shortFlow && !suggestion
+            ? `Use the full catalog.schema.flow name instead of "${selection.name}" in refresh_flow_selection: the run may fail.`
+            : suggestion
             ? `Rename "${selection.name}" in ${selection.field}: pipeline "${key}" may not have this ${what}, so the run may fail. Did you mean "${suggestion}"?`
             : `Remove "${selection.name}" from ${selection.field}: pipeline "${key}" may not have this ${what}, so the run may fail.`,
           taskId: task.id,
@@ -1988,7 +2034,7 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
           yamlPath: selection.yamlPath,
           fixHint:
             what === "flow"
-              ? `Use the name of a flow pipeline "${key}" defines, written as in its SQL.`
+              ? `Use the full catalog.schema.flow name of a flow pipeline "${key}" defines, including for a table's own flow.`
               : `Use the name of a table or view pipeline "${key}" creates, written as in its SQL.`,
           ...issueLocation(task.taskData.sourceFile || undefined, selection.sourceLine || undefined, selection.sourceColumn),
         });
