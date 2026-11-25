@@ -51,6 +51,11 @@ export interface PipelineDataFlow {
   /** Source files the data flow does not read yet (Python, notebooks), with why. */
   notRead: { file: string; reason: string }[];
   sqlFiles: number;
+  /**
+   * Set when some source files were left out: past the scan's file limit, or unreadable.
+   * The tables the flow lists are then not all of the pipeline's (#587).
+   */
+  incomplete?: true;
 }
 
 export interface DataFlowFile {
