@@ -15,6 +15,9 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
   assert.fail(`Timed out waiting for ${label}`);
 }
 
+/** True when no finite animation or transition is running in the page. */
+const NO_FADES = `document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity)`;
+
 /** VS Code's built-in themes, by the name `workbench.colorTheme` takes. */
 const THEMES = [
   { name: "Default Dark Modern", kind: "vscode-dark", mode: "dark" },
@@ -284,10 +287,19 @@ export function themesSuite() {
     };
 
     /**
+     * Task boxes and chips fade between colours (`transition-all`, `transition-colors`). A
+     * slow CI machine can hold a fade at its start, so two reads in a row agree on the old
+     * theme's colours: High Contrast once measured Light+'s #616161 text on its own black (#569).
+     * Wait for every fade to finish before reading colours.
+     */
+    const fadesDone = async () => waitFor(async () => (await evaluate(NO_FADES)) === true, "the colour fades to finish");
+
+    /**
      * Measures once the new theme has fully landed (#313). The theme kind changes before
      * every colour variable does, so a fixed wait once measured Light Modern's text against
      * Dark Modern's background. Waits until React Flow's mode, the page surface and the
-     * editor background all agree with the theme, and two reads in a row are the same.
+     * editor background all agree with the theme, no colour fade is still running, and
+     * two reads in a row are the same.
      * On a timeout it returns the last read, so the assertions say what was wrong.
      */
     const measureSettled = async (mode: string) => {
@@ -300,7 +312,8 @@ export function themesSuite() {
         const landed =
           measured.flowMode === mode &&
           measured.surface === measured.editorBackground &&
-          isLight(measured.editorBackground) === (mode === "light");
+          isLight(measured.editorBackground) === (mode === "light") &&
+          (await evaluate(NO_FADES)) === true;
         if (landed && read === last) return measured;
         last = read;
         await sleep(100);
@@ -358,6 +371,7 @@ export function themesSuite() {
         await screenshot(theme.name);
         await clickTask("missing_step");
         await sleep(300);
+        await fadesDone();
         const selected = await evaluate(MEASURE);
         await screenshot(`${theme.name} selected`);
         await clickTask("missing_step");
@@ -373,6 +387,7 @@ export function themesSuite() {
           await waitFor(async () => (await evaluate(`document.querySelector("[data-overview-details]") === null`)) === true, "the plain overview");
           // The boxes fade from one colour to the next. Measure once that has finished.
           await sleep(300);
+          await fadesDone();
           const overview = await evaluate(MEASURE);
           const sideBySide = await evaluate(`(() => {
             const [left, right] = [...document.querySelectorAll("[data-overview-canvas] > section")].map((column) => column.getBoundingClientRect().left);
@@ -383,6 +398,7 @@ export function themesSuite() {
           await waitFor(async () => (await evaluate(`Boolean(document.querySelector("[data-overview-details]"))`)) === true, "the job's details");
           // The boxes fade from one colour to the next. Measure once that has finished.
           await sleep(300);
+          await fadesDone();
           const overviewSelected = await evaluate(MEASURE);
           await screenshot(`${theme.name} overview selected`);
           return { overview, overviewSelected, sideBySide };
