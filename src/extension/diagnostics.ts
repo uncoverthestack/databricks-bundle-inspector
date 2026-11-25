@@ -39,7 +39,9 @@ function toVsCodeDiagnostics(
     const severity =
       d.severity === "error"
         ? vscode.DiagnosticSeverity.Error
-        : vscode.DiagnosticSeverity.Warning;
+        : d.severity === "warning"
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Information;
     const diagnostic = new vscode.Diagnostic(range, d.message, severity);
     diagnostic.source = `Databricks Bundle (${bundleLabel})`;
     diagnostic.code = linkedCode("cli_diagnostic");
