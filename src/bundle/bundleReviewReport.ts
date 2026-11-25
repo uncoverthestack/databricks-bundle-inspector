@@ -62,8 +62,19 @@ export function bundleReviewReport(
   for (const field of ["userName", "short_name", "domain_friendly_name", "displayName"]) {
     if (typeof user[field] === "string" && user[field]) hidden.push(user[field] as string);
   }
+  // A value of 3 characters or fewer is left out only where it stands alone, not inside a
+  // longer run of letters and digits: hiding every "r" or "1" made the whole report
+  // unreadable, line numbers included. Longer values are left out wherever they appear.
+  const SHORT = 3;
   const privatePattern = hidden.some(Boolean)
-    ? new RegExp([...new Set(hidden)].filter(Boolean).sort((a, b) => b.length - a.length).map(escapeRegex).join("|"), "g")
+    ? new RegExp(
+        [...new Set(hidden)]
+          .filter(Boolean)
+          .sort((a, b) => b.length - a.length)
+          .map((value) => (value.length <= SHORT ? `(?<![A-Za-z0-9])${escapeRegex(value)}(?![A-Za-z0-9])` : escapeRegex(value)))
+          .join("|"),
+        "g",
+      )
     : undefined;
   // Redact values before formatting, so even a one-character override cannot corrupt
   // Markdown tables, Mermaid identifiers or the report's character-budget accounting.
@@ -85,7 +96,9 @@ export function bundleReviewReport(
   const important = issues.filter(issue => issue.severity === "error" || issue.severity === "warning");
   const errors = important.filter(issue => issue.severity === "error");
   const warnings = important.filter(issue => issue.severity === "warning");
-  const where = (file?: string, line?: number) => inline(reportLocation(file, line, context.bundleRoot));
+  // The line number is the inspector's, never a bundle value, so it is never left out.
+  const where = (file?: string, line?: number) =>
+    `${inline(reportLocation(file, undefined, context.bundleRoot))}${file && line && line > 0 ? `:${line}` : ""}`;
   const label = (id: string) => {
     const node = nodes.get(id);
     return node?.resourceKey ?? boxes.get(id)?.label ?? node?.taskKey ?? node?.displayName ?? id;
