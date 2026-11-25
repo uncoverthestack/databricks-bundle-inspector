@@ -17,6 +17,7 @@ export interface JobStructureFinding {
     | "environment_version_missing"
     | "unknown_environment_key"
     | "project_environment_version_missing"
+    | "project_environment_conflict"
     | "missing_library"
     | "multiple_job_triggers"
     | "invalid_job_parameter_name"
@@ -476,7 +477,7 @@ export interface EnvironmentOptions extends JobStructureOptions {
    * deploy may build it first. `suggestion` is the path from the YAML folder to a file the
    * value names from the bundle root, the usual mistake (#518).
    */
-  missingDependency?: (jobKey: string, value: string) => { glob: boolean; suggestion?: string } | undefined;
+  missingDependency?: (jobKey: string, value: string) => { glob: boolean; suggestion?: string; notAFile?: true } | undefined;
   /** Whether an environment dependency is a local file to the CLI (see localLibraries.ts). */
   isLocalDependency?: (value: string) => boolean;
 }
@@ -609,6 +610,17 @@ export function findEnvironmentProblems(
 
     for (const { key, spec } of environments) {
       if (key === undefined) continue;
+      const conflicts = ["environment_version", "client", "base_environment", "image_uri", "dependencies", "java_dependencies"]
+        .filter((field) => isSet(spec[field]) || (Array.isArray(spec[field]) && spec[field].length > 0));
+      if (isSet(spec.project_environment) && conflicts.length > 0) {
+        findings.push({
+          kind: "project_environment_conflict", jobKey, subject: key,
+          title: `Environment "${key}" combines project_environment with ${conflicts.join(", ")}, so deploy may fail.`,
+          fixHint: "Keep project_environment as the only environment source in spec, and put its version and dependencies in pyproject.toml. Or remove project_environment and use the other fields.",
+          ...located(environmentLocation(files, locate, jobKey, key, ["spec", "project_environment"], options)),
+        });
+        continue;
+      }
       if (!ENVIRONMENT_VERSION_FIELDS.some((field) => isSet(spec[field]))) {
         // A CLI that doesn't know a field drops it from its output (project_environment
         // before v1.20.0) and warns "unknown field". The YAML does set a version then, so
@@ -637,10 +649,14 @@ export function findEnvironmentProblems(
           kind: "missing_library",
           jobKey,
           subject: `${key}:${dependency}`,
-          title: missing.glob
+          title: missing.notAFile
+            ? `Environment "${key}": ${dependency} contains a path that is not a regular file, so deploy may fail.`
+            : missing.glob
             ? `Environment "${key}": no file matches ${dependency}, so deploy may fail.${didYouMean}`
             : `Environment "${key}": ${dependency} doesn't exist, so deploy may fail.${didYouMean}`,
-          fixHint: missing.glob
+          fixHint: missing.notAFile
+            ? "Use a path or glob that matches only library files. Deploy cannot upload a directory as a library."
+            : missing.glob
             ? `Deploy fails with "no files match pattern". Paths are read from the YAML file's folder. Build the file, or correct the path.`
             : `Deploy fails with "file doesn't exist". Paths are read from the YAML file's folder. Build the file, or correct the path.`,
           ...located(environmentDependencyLocation(files, locate, jobKey, key, dependency, options)),
