@@ -1,5 +1,10 @@
 import { existsSync, readdirSync } from "node:fs";
-import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
+import {
+  checkNotebookPath,
+  notebookStartsWithByteOrderMark,
+  type NotebookHeaderRule,
+  type NotebookPathProblem,
+} from "../notebookFiles.js";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRemotePath as isRemotePathRule } from "../fileStatus.js";
 import { hasGlobCharacters } from "../goGlob.js";
@@ -165,6 +170,8 @@ export interface FileReference {
   isInGitignore: boolean;
   /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
   notebookProblem?: NotebookPathProblem;
+  /** A notebook that starts with a byte order mark: it deploys, then fails at run (#589). */
+  startsWithByteOrderMark?: true;
   referenceType:
     | "notebook"
     | "sql"
@@ -185,6 +192,8 @@ export interface LibraryReference {
   isLocal: boolean;
   resolvedPath: string | undefined;
   exists: boolean | undefined;
+  /** An existing path or glob match is not a regular file (#612). */
+  notAFile?: true;
   sourceLine: number;
   sourceColumn?: number;
   yamlPath: string;
@@ -563,6 +572,9 @@ function getFileReferences(
       ...(stray ? { strayGitSource: true as const } : {}),
       isInGitignore: false,
       ...(notebookProblem ? { notebookProblem } : {}),
+      ...(expects === "notebook" && resolvedPath && !notebookProblem && notebookStartsWithByteOrderMark(resolvedPath, notebookRule)
+        ? { startsWithByteOrderMark: true as const }
+        : {}),
       referenceType,
       sourceFile,
       sourceLine: sourceLocation?.line ?? 0,
@@ -635,16 +647,16 @@ function getFileReferences(
 
 /**
  * A task library's local file. Deploy expands a `whl` or `jar` glob (`../dist/*.whl`) and
- * fails only when no file matches it (CLI v1.27.0, expand_glob_references.go), so a glob
- * exists when one file matches (#525). An `egg` glob is not expanded by the CLI.
+ * requires at least one match (CLI v1.27.0, expand_glob_references.go). Every match must
+ * be a regular file: directories fail upload (#612). An `egg` glob is not expanded.
  */
 function libraryPath(
   rawPath: string,
   primaryDir: string,
   fallbackDir?: string,
-): { resolvedPath: string | undefined; exists: boolean } {
+): { resolvedPath: string | undefined; exists: boolean; notAFile?: true } {
   const plain = resolveLocalPath(rawPath, primaryDir, fallbackDir);
-  if (plain.resolvedPath === undefined || !hasGlobCharacters(rawPath)) return plain;
+  if (plain.resolvedPath === undefined || (!hasGlobCharacters(rawPath) && !plain.exists)) return plain;
   return localLibrary(rawPath, primaryDir);
 }
 
@@ -694,7 +706,7 @@ function getLibraryReferences(
         yamlPath,
       });
     } else if (typeof lib.whl === "string") {
-      const { resolvedPath, exists } = libraryPath(lib.whl, primaryDir, fallbackDir);
+      const { resolvedPath, exists, notAFile } = libraryPath(lib.whl, primaryDir, fallbackDir);
       const isLocal = resolvedPath !== undefined;
       refs.push({
         libraryType: "whl",
@@ -702,11 +714,12 @@ function getLibraryReferences(
         isLocal,
         resolvedPath,
         exists: isLocal ? exists : undefined,
+        ...(notAFile ? { notAFile } : {}),
         ...sourceFields,
         yamlPath,
       });
     } else if (typeof lib.jar === "string") {
-      const { resolvedPath, exists } = libraryPath(lib.jar, primaryDir, fallbackDir);
+      const { resolvedPath, exists, notAFile } = libraryPath(lib.jar, primaryDir, fallbackDir);
       const isLocal = resolvedPath !== undefined;
       refs.push({
         libraryType: "jar",
@@ -714,6 +727,7 @@ function getLibraryReferences(
         isLocal,
         resolvedPath,
         exists: isLocal ? exists : undefined,
+        ...(notAFile ? { notAFile } : {}),
         ...sourceFields,
         yamlPath,
       });

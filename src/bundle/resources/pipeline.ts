@@ -1,6 +1,11 @@
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
+import {
+  checkNotebookPath,
+  notebookStartsWithByteOrderMark,
+  type NotebookHeaderRule,
+  type NotebookPathProblem,
+} from "../notebookFiles.js";
 import {
   containsTemplate,
   isRemotePath,
@@ -24,6 +29,8 @@ export interface PipelineLibraryReference {
   checked: boolean;
   /** Set when the path breaks the CLI's notebook rules (see notebookFiles.ts). */
   notebookProblem?: NotebookPathProblem;
+  /** A notebook library that starts with a byte order mark: it deploys, then the update fails (#589). */
+  startsWithByteOrderMark?: true;
   sourceFile: string;
   sourceLine: number;
   sourceColumn?: number;
@@ -135,6 +142,9 @@ export function getPipelineLibraryReferences(
         path: rawPath,
         ...result,
         ...(notebookProblem ? { notebookProblem } : {}),
+        ...(kind === "notebook" && result.resolvedPath && !notebookProblem && notebookStartsWithByteOrderMark(result.resolvedPath, notebookRule)
+          ? { startsWithByteOrderMark: true as const }
+          : {}),
         sourceFile,
         sourceLine: location?.line ?? 0,
         ...(location ? { sourceColumn: location.column } : {}),

@@ -38,6 +38,7 @@ import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
 import { findResourceKeyProblems, type ResourceKeyFinding } from "../resourceKeys.js";
 import { findTargetOnlyJobs, type TargetOnlyJob } from "../targetOnlyJobs.js";
+import { createSyncExclusion, syncsFromBundleRoot } from "../syncRules.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -393,6 +394,12 @@ export interface BundleGraph {
   notebookRule?: NotebookHeaderRule;
   /** Where deploy may build library files before checking them (#482, #525). */
   buildOutputs?: BuildOutputs;
+  /**
+   * Local files the environment checks read: `project_environment` files and local
+   * `dependencies`, as absolute paths that may hold Go glob characters. Watched, so
+   * editing or building one re-checks the bundle (#590).
+   */
+  environmentPaths?: string[];
 }
 
 export interface ExtractBundleGraphOptions {
@@ -1486,10 +1493,15 @@ async function buildBundleGraph(
     return bundleRoot!;
   };
   const outputs = bundleRoot ? buildOutputs(parsedBundle, bundleRoot, artifactDir) : undefined;
+  const projectExclusion = bundleRoot && syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
+    ? createSyncExclusion(bundleRoot, parsedBundle.sync) : () => undefined;
+  // Filled in while the environment checks below read their files.
+  const environmentPaths: string[] = [];
   return {
     nodes: [...nodeMap.values()],
     edges,
     notebookRule,
+    environmentPaths,
     ...(outputs ? { buildOutputs: outputs } : {}),
     variableSources: findVariableSources(
       loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
@@ -1510,7 +1522,8 @@ async function buildBundleGraph(
         missingDependency: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const written = withoutWheelExtras(value);
-          const { resolvedPath, exists } = localLibrary(written, dirOf("jobs", jobKey));
+          const { resolvedPath, exists, notAFile } = localLibrary(written, dirOf("jobs", jobKey));
+          environmentPaths.push(resolvedPath);
           if (exists || mayBeBuilt(resolvedPath, outputs)) return undefined;
           const glob = hasGlobCharacters(written);
           // Written from the bundle root, the usual mistake (#518): name the path from the YAML folder.
@@ -1518,11 +1531,17 @@ async function buildBundleGraph(
           const suggestion = fromRoot.exists
             ? relative(dirOf("jobs", jobKey), fromRoot.resolvedPath).split(sep).join("/")
             : undefined;
-          return { glob, ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+          return { glob, ...(notAFile ? { notAFile } : {}), ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+        },
+        projectFileExcluded: (jobKey, value) => {
+          if (!bundleRoot) return false;
+          const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);
+          return !!(exists && resolvedPath && projectExclusion(resolvedPath));
         },
         readProjectFile: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);
+          if (resolvedPath) environmentPaths.push(resolvedPath);
           if (!resolvedPath || !exists) return undefined;
           try {
             const stats = statSync(resolvedPath);
