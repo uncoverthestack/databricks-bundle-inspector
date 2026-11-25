@@ -1,0 +1,40 @@
+# Resource keys with a dot pass validate, and deploy fails on every CLI (issue 511).
+# See README.md for what was checked against the CLI.
+bundle:
+  name: resource_key_dot
+
+resources:
+  jobs:
+    a:
+      name: job_a
+      tasks:
+        - task_key: b
+          notebook_task:
+            notebook_path: ./src/nb.py
+    # Its graph ID would be the same as task b in job a.
+    a.tasks.b:
+      name: dotted_job
+      tasks:
+        - task_key: x
+          notebook_task:
+            notebook_path: ./src/nb.py
+  schemas:
+    plain_schema:
+      name: plain_schema
+      catalog_name: main
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    resources:
+      pipelines:
+        p.q:
+          name: dotted_pipeline
+          catalog: main
+          schema: default
+          serverless: true
+          libraries:
+            - glob:
+                include: ./src/**
