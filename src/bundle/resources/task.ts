@@ -24,6 +24,8 @@ export interface TaskNodeData {
   resourceReferences: ResourceReference[];
   jobParameterReferences: JobParameterReference[];
   taskParameterReferences: TaskParameterReference[];
+  /** `{{tasks.<task>.values.<key>}}` written in the task's settings, each where it is written. */
+  taskValueReferences?: TaskValueReference[];
   /** A pipeline task's selected tables and flows (issue 539), when it sets any. */
   pipelineSelections?: PipelineSelection[];
 
@@ -32,6 +34,27 @@ export interface TaskNodeData {
   // TODO: Our Databricks Bundle Inspector Comment
   dbiComment: string | undefined;
   nestedTask: TaskNodeData | undefined;
+}
+
+/** A `{{tasks.<task>.values.<key>}}` in a task's settings, and where it is written. */
+export interface TaskValueReference {
+  taskKey: string;
+  key: string;
+  yamlPath: string;
+  sourceLine?: number;
+  sourceColumn?: number;
+}
+
+const TASK_VALUE_PATTERN = /\{\{\s*tasks\.([\w-]+)\.values\.([\w-]+)\s*\}\}/g;
+
+function extractTaskValueRefs(value: string, yamlPath: string, resolveSourceLocation?: SourceLocationResolver): TaskValueReference[] {
+  const location = resolveSourceLocation?.(yamlPath);
+  return [...value.matchAll(TASK_VALUE_PATTERN)].map((match) => ({
+    taskKey: match[1]!,
+    key: match[2]!,
+    yamlPath,
+    ...(location ? { sourceLine: location.line, sourceColumn: location.column } : {}),
+  }));
 }
 
 /** One name in a `pipeline_task`'s refresh selection, with where it is written. */
@@ -447,13 +470,15 @@ function scanForRefs(
   prefix: string,
   sourceFile: string,
   resolveSourceLocation?: SourceLocationResolver,
-): { varRefs: VariableReference[]; resourceRefs: ResourceReference[] } {
+): { varRefs: VariableReference[]; resourceRefs: ResourceReference[]; taskValueRefs: TaskValueReference[] } {
   const varRefs: VariableReference[] = [];
   const resourceRefs: ResourceReference[] = [];
+  const taskValueRefs: TaskValueReference[] = [];
 
   for (const [key, value] of Object.entries(obj)) {
     const path = prefix ? `${prefix}.${key}` : key;
     if (typeof value === "string") {
+      taskValueRefs.push(...extractTaskValueRefs(value, path, resolveSourceLocation));
       varRefs.push(
         ...extractVarRefs(value, path, sourceFile, resolveSourceLocation),
       );
@@ -463,6 +488,7 @@ function scanForRefs(
     } else if (Array.isArray(value)) {
       value.forEach((item, i) => {
         if (typeof item === "string") {
+          taskValueRefs.push(...extractTaskValueRefs(item, `${path}[${i}]`, resolveSourceLocation));
           varRefs.push(
             ...extractVarRefs(
               item,
@@ -488,6 +514,7 @@ function scanForRefs(
           );
           varRefs.push(...nested.varRefs);
           resourceRefs.push(...nested.resourceRefs);
+          taskValueRefs.push(...nested.taskValueRefs);
         }
       });
     } else if (typeof value === "object" && value !== null) {
@@ -499,10 +526,11 @@ function scanForRefs(
       );
       varRefs.push(...nested.varRefs);
       resourceRefs.push(...nested.resourceRefs);
+          taskValueRefs.push(...nested.taskValueRefs);
     }
   }
 
-  return { varRefs, resourceRefs };
+  return { varRefs, resourceRefs, taskValueRefs };
 }
 
 function getTaskType(task: Record<string, unknown>): TaskType {
@@ -962,7 +990,7 @@ export function buildTaskNodeData(
     bundleRoot,
     resolveSourceLocation,
   );
-  const { varRefs: variableReferences, resourceRefs: resourceReferences } =
+  const { varRefs: variableReferences, resourceRefs: resourceReferences, taskValueRefs: taskValueReferences } =
     scanForRefs(rawTask, `tasks.${taskKey}`, sourceFile, resolveSourceLocation);
   const taskParameterReferences = getTaskParameterReferences(
     rawTask,
@@ -1022,6 +1050,7 @@ export function buildTaskNodeData(
     sourceColumn: taskSourceLocation?.column ?? 0,
     fileReferences,
     variableReferences,
+    taskValueReferences,
     libraryReferences,
     resourceReferences,
     jobParameterReferences,
