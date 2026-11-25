@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `pipeline_selection_not_found`, `job_only_in_target`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`
@@ -158,7 +158,7 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 ## Jobs
 
-`bundle validate` accepts these. The Databricks Jobs service rejects the dependency and environment mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written.
+`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `for_each_inputs_too_long`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each. Tasks that share a key are checked as the one task the CLI merges them into: the later task's settings win, and their lists, such as `depends_on`, are joined. A value from a variable that a `BUNDLE_VAR_` environment variable sets is not judged, as that value wins over the one in the files.
 
 ### `unknown_task_dependency`
 
@@ -228,6 +228,69 @@ A job environment's `project_environment` names a `pyproject.toml` that has neit
   ```
 
 - **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
+
+### `multiple_job_triggers`
+
+A job sets more than one of `schedule`, `trigger` and `continuous`.
+
+- **Severity:** error.
+- **Example:** a job with a `schedule` and a `trigger.periodic`. Deploy fails with `Invalid trigger settings. One of 'schedule', 'trigger' or 'continuous' can be set.` An empty `schedule: {}` counts as set; `schedule:` with no value does not, and deploys.
+- **Fix:** keep only one of them.
+- **Limits:** checks the job as the CLI resolved it, so a trigger a target adds counts, and the finding points at it. A trigger from a variable the preview can't resolve is not counted.
+
+### `invalid_job_parameter_name`
+
+A job parameter's `name` has a character other than a letter, a digit, `-`, `_` or `.`.
+
+- **Severity:** error.
+- **Example:** `name: bad name`. Deploy fails with `The specified parameter name contains an invalid character, only alphanumeric, -, _ and . characters are permitted.` Letters are A to Z only: `café` fails too. A name starting with a dot, such as `.a`, deploys.
+- **Fix:** rename the parameter, and the `{{job.parameters.…}}` references to it.
+- **Limits:** a name from a variable is checked once it resolves.
+
+### `invalid_task_key`
+
+A `task_key` is empty, is longer than 100 characters, or has a character other than a letter, a digit, `-` or `_`.
+
+- **Severity:** error.
+- **Example:** `task_key: "load "`, with a trailing space. Deploy fails with `Task key 'load ' contains an invalid character. Only alphanumeric, - and _ characters are permitted.` Dots and accented letters (`café`) fail too; keys that differ only in letter case (`load`, `Load`) are two tasks and deploy. `task_key: ""` fails with `Missing required field: settings.tasks.task_key.` A 101-character key fails with `The provided task key (of 101 characters) exceeds the maximum allowed length of 100 characters.`; 100 characters deploys.
+- **Fix:** rename the task, and the `depends_on` entries that name it.
+- **Limits:** a for-each task's inner task is checked too. A key from a variable is checked once it resolves.
+
+### `outcome_without_condition`
+
+A `depends_on` entry sets `outcome` on a task that is not an if/else condition task.
+
+- **Severity:** error.
+- **Example:** `depends_on: [{task_key: load, outcome: "true"}]` where `load` is a notebook task. Deploy fails with `The dependency on a non-if/else condition "load" specifies an outcome "true". Outcomes can only be specified for if/else condition dependencies.`
+- **Fix:** remove the `outcome`, or depend on a `condition_task`.
+- **Limits:** a dependency on a task the job doesn't have is `unknown_task_dependency` instead. An outcome from an unresolved variable is not judged.
+
+### `invalid_outcome`
+
+A dependency on an if/else condition task sets an `outcome` other than `"true"` or `"false"`.
+
+- **Severity:** error.
+- **Example:** `outcome: "True"`. Deploy fails with `The dependency on task "check" specifies invalid outcome "True". Valid values are "true" and "false"`. Unquoted `outcome: true` deploys: the CLI reads it as `"true"`.
+- **Fix:** use `"true"` or `"false"`, in lower case.
+- **Limits:** a task that depends on the same task twice has each entry checked, at its own line.
+
+### `for_each_inputs_not_array`
+
+A `for_each_task`'s `inputs` is not a JSON array deploy accepts.
+
+- **Severity:** error.
+- **Example:** `inputs: '{"a": 1}'`. Deploy fails with `The JSON string in the inputs field should be an array of primitives or objects.` Deploy takes an array of plain values (strings, numbers, true or false, mixed freely) or an array of objects. Text that isn't JSON, a JSON object, a list inside the list (`[[1, 2]]`), a `null` item, and plain values mixed with objects (`["a", {"k": "v"}]`) all fail. `[]` deploys.
+- **Fix:** write a JSON array of plain values or of objects.
+- **Limits:** inputs with `{{job.parameters.…}}`, `{{tasks.….values.…}}` or an unresolved variable are filled in later and not judged.
+
+### `for_each_inputs_too_long`
+
+A `for_each_task`'s `inputs` is written in the bundle and is longer than 5,000 characters.
+
+- **Severity:** error.
+- **Example:** a JSON array of 5,001 characters. Deploy fails with `Invalid inputs: cannot exceed 5000 characters`. 5,000 characters deploys.
+- **Fix:** make the list shorter.
+- **Limits:** inputs that are not a JSON array are `for_each_inputs_not_array` instead. Inputs with `{{job.parameters.…}}`, `{{tasks.….values.…}}` or an unresolved variable are filled in later and not judged.
 
 ### `pipeline_selection_not_found`
 

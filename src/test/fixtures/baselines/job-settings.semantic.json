@@ -1,0 +1,548 @@
+{
+  "bundle": "job-settings",
+  "jobs": [
+    {
+      "key": "for_each_inputs",
+      "name": "for_each_inputs",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "an_object",
+          "type": "For each",
+          "source": "{\"a\": 1}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "empty",
+          "type": "For each",
+          "source": "[]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "from_parameter",
+          "type": "For each",
+          "source": "{{job.parameters.items}}",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "has_null",
+          "type": "For each",
+          "source": "[null, 1]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "mixed",
+          "type": "For each",
+          "source": "[\"a\", {\"k\": \"v\"}]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "nested",
+          "type": "For each",
+          "source": "[[1, 2]]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "not_json",
+          "type": "For each",
+          "source": "not json",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "objects",
+          "type": "For each",
+          "source": "[{\"a\": 1}, {\"b\": [1, 2]}]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "plain_values",
+          "type": "For each",
+          "source": "[\"a\", 1, 2.5, true]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 5,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "one_trigger",
+      "name": "one_trigger",
+      "trigger": "Schedule: 0 0 1 * * ? (UTC) - PAUSED",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "a",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": true,
+        "decision": "allow",
+        "blockingIssueCount": 0,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "outcomes",
+      "name": "outcomes",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "after_plain",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [
+            "plain"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "capital",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [
+            "check"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "check",
+          "type": "If/else",
+          "source": "x == x - Equal to",
+          "dependsOn": [],
+          "dependents": [
+            "capital",
+            "on_bool",
+            "on_true"
+          ],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "on_bool",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [
+            "check"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "on_true",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [
+            "check"
+          ],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "plain",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [
+            "after_plain"
+          ],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [
+        [
+          "check",
+          "capital"
+        ],
+        [
+          "check",
+          "on_bool"
+        ],
+        [
+          "check",
+          "on_true"
+        ],
+        [
+          "plain",
+          "after_plain"
+        ]
+      ],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 2,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "parameter_names",
+      "name": "parameter_names",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "a",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "task_keys",
+      "name": "task_keys",
+      "trigger": "Not specified",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "-",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "lo-ad_1",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "load ",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        },
+        {
+          "key": "loop",
+          "type": "For each",
+          "source": "[1]",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [],
+          "files": [],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 2,
+        "warningIssueCount": 0
+      }
+    },
+    {
+      "key": "two_triggers",
+      "name": "two_triggers",
+      "trigger": "Schedule: 0 0 1 * * ? (UTC) - PAUSED",
+      "runAs": "Not specified",
+      "tasks": [
+        {
+          "key": "a",
+          "type": "Notebook",
+          "source": "../src/nb.py",
+          "dependsOn": [],
+          "dependents": [],
+          "compute": [
+            "Serverless / inherited compute"
+          ],
+          "files": [
+            {
+              "path": "../src/nb.py",
+              "status": "found"
+            }
+          ],
+          "variables": [],
+          "libraries": []
+        }
+      ],
+      "edges": [],
+      "documentation": {
+        "canGenerate": false,
+        "decision": "block",
+        "blockingIssueCount": 1,
+        "warningIssueCount": 0
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "for_each_inputs_not_array",
+      "title": "Make the inputs of task \"an_object\" a JSON array, like [\"a\", \"b\"]: it is not a JSON array, so deploy may fail.",
+      "taskKey": "an_object",
+      "file": "resources/jobs.yml",
+      "line": 84,
+      "column": 36
+    },
+    {
+      "severity": "error",
+      "kind": "for_each_inputs_not_array",
+      "title": "Make the inputs of task \"has_null\" a JSON array, like [\"a\", \"b\"]: it has null in the list, so deploy may fail.",
+      "taskKey": "has_null",
+      "file": "resources/jobs.yml",
+      "line": 88,
+      "column": 36
+    },
+    {
+      "severity": "error",
+      "kind": "for_each_inputs_not_array",
+      "title": "Make the inputs of task \"mixed\" a JSON array, like [\"a\", \"b\"]: it mixes objects with plain values, so deploy may fail.",
+      "taskKey": "mixed",
+      "file": "resources/jobs.yml",
+      "line": 90,
+      "column": 36
+    },
+    {
+      "severity": "error",
+      "kind": "for_each_inputs_not_array",
+      "title": "Make the inputs of task \"nested\" a JSON array, like [\"a\", \"b\"]: it has a list inside the list, so deploy may fail.",
+      "taskKey": "nested",
+      "file": "resources/jobs.yml",
+      "line": 86,
+      "column": 36
+    },
+    {
+      "severity": "error",
+      "kind": "for_each_inputs_not_array",
+      "title": "Make the inputs of task \"not_json\" a JSON array, like [\"a\", \"b\"]: it is not valid JSON, so deploy may fail.",
+      "taskKey": "not_json",
+      "file": "resources/jobs.yml",
+      "line": 82,
+      "column": 36
+    },
+    {
+      "severity": "error",
+      "kind": "invalid_job_parameter_name",
+      "title": "Rename job parameter \"bad name\": names can only use letters, digits, \"-\", \"_\" and \".\", so deploy may fail.",
+      "file": "resources/jobs.yml",
+      "line": 29,
+      "column": 17
+    },
+    {
+      "severity": "error",
+      "kind": "invalid_outcome",
+      "title": "Change outcome \"True\" to \"true\" or \"false\": deploy may fail with any other value.",
+      "taskKey": "capital",
+      "file": "resources/jobs.yml",
+      "line": 69,
+      "column": 52
+    },
+    {
+      "severity": "error",
+      "kind": "invalid_task_key",
+      "title": "Rename task \"load \": task keys can only use letters, digits, \"-\" and \"_\", so deploy may fail.",
+      "taskKey": "load ",
+      "file": "resources/jobs.yml",
+      "line": 42,
+      "column": 21
+    },
+    {
+      "severity": "error",
+      "kind": "invalid_task_key",
+      "title": "Rename task \"in ner\": task keys can only use letters, digits, \"-\" and \"_\", so deploy may fail.",
+      "taskKey": "loop",
+      "file": "resources/jobs.yml",
+      "line": 52,
+      "column": 25
+    },
+    {
+      "severity": "error",
+      "kind": "multiple_job_triggers",
+      "title": "Keep only one of schedule and trigger on job \"two_triggers\": a job can have one, so deploy may fail.",
+      "file": "resources/jobs.yml",
+      "line": 9,
+      "column": 7
+    },
+    {
+      "severity": "error",
+      "kind": "outcome_without_condition",
+      "title": "Remove outcome \"true\" from the dependency on \"plain\": only an if/else condition task has an outcome, so deploy may fail.",
+      "taskKey": "after_plain",
+      "file": "resources/jobs.yml",
+      "line": 72,
+      "column": 52
+    }
+  ],
+  "detectedReferences": {
+    "secretScopes": [],
+    "widgets": []
+  }
+}

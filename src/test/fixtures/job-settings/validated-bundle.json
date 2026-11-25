@@ -1,0 +1,303 @@
+{
+  "bundle": {
+    "name": "job-settings"
+  },
+  "include": [
+    "resources/jobs.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "for_each_inputs": {
+        "name": "for_each_inputs",
+        "parameters": [
+          {
+            "default": "[1, 2]",
+            "name": "items"
+          }
+        ],
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "not json",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "not_json"
+          },
+          {
+            "for_each_task": {
+              "inputs": "{\"a\": 1}",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "an_object"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[[1, 2]]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "nested"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[null, 1]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "has_null"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[\"a\", {\"k\": \"v\"}]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "mixed"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[\"a\", 1, 2.5, true]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "plain_values"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[{\"a\": 1}, {\"b\": [1, 2]}]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "objects"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "empty"
+          },
+          {
+            "for_each_task": {
+              "inputs": "{{job.parameters.items}}",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "i"
+              }
+            },
+            "task_key": "from_parameter"
+          }
+        ]
+      },
+      "one_trigger": {
+        "name": "one_trigger",
+        "schedule": {
+          "pause_status": "PAUSED",
+          "quartz_cron_expression": "0 0 1 * * ?",
+          "timezone_id": "UTC"
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "a"
+          }
+        ]
+      },
+      "outcomes": {
+        "name": "outcomes",
+        "tasks": [
+          {
+            "condition_task": {
+              "left": "x",
+              "op": "EQUAL_TO",
+              "right": "x"
+            },
+            "task_key": "check"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "plain"
+          },
+          {
+            "depends_on": [
+              {
+                "outcome": "true",
+                "task_key": "check"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "on_true"
+          },
+          {
+            "depends_on": [
+              {
+                "outcome": "true",
+                "task_key": "check"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "on_bool"
+          },
+          {
+            "depends_on": [
+              {
+                "outcome": "True",
+                "task_key": "check"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "capital"
+          },
+          {
+            "depends_on": [
+              {
+                "outcome": "true",
+                "task_key": "plain"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "after_plain"
+          }
+        ]
+      },
+      "parameter_names": {
+        "name": "parameter_names",
+        "parameters": [
+          {
+            "default": "x",
+            "name": "bad name"
+          },
+          {
+            "default": "x",
+            "name": "a_b-c.d"
+          },
+          {
+            "default": "x",
+            "name": ".a"
+          }
+        ],
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "a"
+          }
+        ]
+      },
+      "task_keys": {
+        "name": "task_keys",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "load "
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "lo-ad_1"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "-"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[1]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/nb.py"
+                },
+                "task_key": "in ner"
+              }
+            },
+            "task_key": "loop"
+          }
+        ]
+      },
+      "two_triggers": {
+        "name": "two_triggers",
+        "schedule": {
+          "pause_status": "PAUSED",
+          "quartz_cron_expression": "0 0 1 * * ?",
+          "timezone_id": "UTC"
+        },
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/nb.py"
+            },
+            "task_key": "a"
+          }
+        ],
+        "trigger": {
+          "pause_status": "PAUSED",
+          "periodic": {
+            "interval": 1,
+            "unit": "DAYS"
+          }
+        }
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "mode": "development"
+    }
+  }
+}
