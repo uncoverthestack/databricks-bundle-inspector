@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import ignore, { type Ignore } from "ignore";
 import type { BundleGraph, ParsedBundleConfig } from "./graph/bundleGraph.js";
+import { hasGlobCharacters, matchGoSegment } from "./goGlob.js";
 import { CLI_NOTEBOOK_EXTENSIONS } from "./notebookFiles.js";
 import { unquote } from "./runTargets.js";
 import { createSyncFilter, type SyncFilter } from "./syncRules.js";
@@ -16,6 +17,12 @@ export interface BundleWatchSpec {
   files: ReadonlySet<string>;
   /** Folders whose contents are checked (pipeline globs, directory references). */
   folders: readonly string[];
+  /**
+   * Absolute Go glob patterns the checks match files with: library and environment
+   * dependency globs such as `dist/*.whl` (#590). Not subject to the sync rules: deploy
+   * uploads libraries even when `.gitignore` skips their folder.
+   */
+  patterns: readonly string[];
   /** The bundle's `include` patterns, matched against YAML files under the root. */
   includes: Ignore;
   isSynced: SyncFilter;
@@ -63,6 +70,12 @@ export function collectWatchSpec(
     join(bundleRoot, "databricks.yaml"),
   ]);
   const folders: string[] = [];
+  const patterns: string[] = [];
+  // A path with glob characters is matched as a pattern; any other is watched as a file.
+  const addPath = (path: string) => (hasGlobCharacters(path) ? patterns.push(path) : files.add(path));
+
+  // project_environment files and local environment dependencies (#590).
+  for (const path of graph.environmentPaths ?? []) addPath(path);
 
   for (const included of config.include ?? []) {
     files.add(isAbsolute(included) ? included : join(bundleRoot, included));
@@ -85,7 +98,7 @@ export function collectWatchSpec(
         }
       }
       for (const ref of data.libraryReferences) {
-        if (ref.isLocal && ref.resolvedPath) files.add(ref.resolvedPath);
+        if (ref.isLocal && ref.resolvedPath) addPath(ref.resolvedPath);
       }
     }
     // Notebooks a task's notebook runs with %run or dbutils.notebook.run: their widgets and
@@ -111,6 +124,7 @@ export function collectWatchSpec(
     bundleRoot,
     files,
     folders,
+    patterns,
     includes: ignore().add([...includePatterns]),
     isSynced: createSyncFilter(bundleRoot, config.sync),
     ignoresCase: options.ignoresCase ?? false,
@@ -121,6 +135,27 @@ interface ComparableSpec {
   root: string;
   files: ReadonlySet<string>;
   folders: readonly string[];
+  patterns: readonly string[];
+}
+
+/**
+ * Whether `path` matches an absolute Go glob `pattern`, one path segment at a time as
+ * `filepath.Glob` does: `*` never crosses a separator, and there is no `**`.
+ */
+export function matchesGlobPattern(pattern: string, path: string): boolean {
+  const patternParts = pattern.split(sep);
+  const pathParts = path.split(sep);
+  if (patternParts.length !== pathParts.length) return false;
+  return patternParts.every((part, index) =>
+    hasGlobCharacters(part) ? matchGoSegment(part, pathParts[index]!) === true : part === pathParts[index],
+  );
+}
+
+/** The part of a glob pattern before its first segment with glob characters: the folder to watch. */
+export function patternFolder(pattern: string): string {
+  const parts = pattern.split(sep);
+  const first = parts.findIndex((part) => hasGlobCharacters(part));
+  return first <= 0 ? dirname(pattern) : parts.slice(0, first).join(sep) || sep;
 }
 
 const comparableSpecs = new WeakMap<BundleWatchSpec, ComparableSpec>();
@@ -134,6 +169,7 @@ function comparable(spec: BundleWatchSpec): ComparableSpec {
       root: key(spec.bundleRoot),
       files: new Set([...spec.files].map(key)),
       folders: spec.folders.map(key),
+      patterns: spec.patterns.map(key),
     };
     comparableSpecs.set(spec, cached);
   }
@@ -148,7 +184,7 @@ export function classifyChange(
   spec: BundleWatchSpec,
   changedPath: string,
 ): BundleChange | undefined {
-  const { root, files, folders } = comparable(spec);
+  const { root, files, folders, patterns } = comparable(spec);
   const changed = spec.ignoresCase ? changedPath.toLowerCase() : changedPath;
   const isYaml = /\.ya?ml$/i.test(changedPath);
   const insideRoot = isInside(changed, root);
@@ -161,6 +197,9 @@ export function classifyChange(
 
   if (files.has(changed)) return isYaml ? "config" : "source";
 
+  // A file a library or dependency glob matches, such as a wheel built into `dist/` (#590).
+  if (patterns.some((pattern) => matchesGlobPattern(pattern, changed))) return "source";
+
   if (isYaml && insideRoot) {
     const rel = toPosix(relative(root, changed));
     if (spec.includes.ignores(rel)) return "config";
@@ -169,9 +208,12 @@ export function classifyChange(
   // A notebook referenced without its extension, created as `name.py` or `name.ipynb`.
   if (files.has(withoutExtension(changed))) return "source";
 
-  // A `.gitignore` edit changes which files are deployed.
-  if (basename(changedPath) === ".gitignore" && insideRoot && spec.isSynced(forSyncRules)) {
-    return "source";
+  // A `.gitignore` edit changes which files are deployed. Its rules apply even when it
+  // skips itself (`.gitignore` listed in it), so what counts is that its folder is read:
+  // the root always is, and a folder the rules skip is not (#590).
+  if (basename(changedPath) === ".gitignore" && insideRoot) {
+    const folder = dirname(forSyncRules);
+    if (folder === spec.bundleRoot || spec.isSynced(folder, true)) return "source";
   }
 
   if (
@@ -219,4 +261,16 @@ function sharesWorkspacePath(changedPath: string): boolean {
 /** Files outside the bundle root that the bundle points at, which need their own watchers. */
 export function filesOutsideRoot(spec: BundleWatchSpec): string[] {
   return [...spec.files].filter((file) => !isInside(file, spec.bundleRoot));
+}
+
+/**
+ * Folders outside the bundle root whose contents are checked: pipeline globs such as
+ * `../external/**`, and the folders of glob patterns. Each needs a watcher for all files
+ * below it (#590).
+ */
+export function foldersOutsideRoot(spec: BundleWatchSpec): string[] {
+  const outside = [...spec.folders, ...spec.patterns.map(patternFolder)].filter(
+    (folder) => folder !== spec.bundleRoot && !isInside(folder, spec.bundleRoot),
+  );
+  return [...new Set(outside)];
 }
