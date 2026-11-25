@@ -6,8 +6,9 @@ import {
   Controls,
   MiniMap,
   MarkerType,
+  useNodesStore,
   useReactFlow,
-  useStore,
+  useViewportStore,
 } from "@xyflow/react";
 import { Info, LocateFixed } from "lucide-react";
 import { openingViewport } from "./lib/graphFit";
@@ -1492,7 +1493,9 @@ function RecenterJobControl() {
   const { fitView } = useReactFlow();
 
   function recenterJob() {
-    void fitView({ padding: 0.24, duration: 350 });
+    // React Flow 13 reads a bare number as pixels. 9.7% on each side is the space the
+    // old `padding: 0.24` left: 0.24 / (2 × 1.24) of the panel.
+    void fitView({ padding: "9.7%", duration: 350 });
   }
 
   return (
@@ -1534,9 +1537,9 @@ const allBoxesMeasured = (state) =>
 
 function FitJobOnOpen({ jobKey, hasSelection, userMovedRef }) {
   const { getNodes, getNodesBounds, setViewport } = useReactFlow();
-  const measured = useStore(allBoxesMeasured);
-  const width = useStore((state) => state.width);
-  const height = useStore((state) => state.height);
+  const measured = useNodesStore(allBoxesMeasured);
+  const width = useViewportStore((state) => state.width);
+  const height = useViewportStore((state) => state.height);
   const fittedJob = useRef(null);
 
   useEffect(() => {
@@ -2395,7 +2398,10 @@ export default function App({
               nodes={displayFlowNodes}
               edges={displayFlowEdges}
               nodeTypes={nodeTypes}
-              colorMode={colorMode}
+              // VS Code's theme, not the operating system's: React Flow 13 follows the system unless forced.
+              forceColorMode={colorMode}
+              // React Flow 13 draws a selected line above the boxes by default; keep lines under them.
+              elevateEdgesOnSelect={false}
               className="bundle-flow"
               onNodeClick={handleNodeClick}
               onPaneClick={clearSelectedTask}

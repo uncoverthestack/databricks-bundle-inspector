@@ -12,7 +12,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`, `file_scan_failed`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`, `inspector_check_failed`
@@ -66,7 +66,7 @@ A task installs a local wheel or JAR that isn't there, or a job environment list
 
 - **Severity:** error.
 - **Example:** `libraries: [{ whl: ../dist/app-0.1-py3-none-any.whl }]` with no such file, or `dependencies: [./dist/app-0.1-py3-none-any.whl]` in `resources/job.yml`, which is read as `resources/dist/...`: `Did you mean "../dist/app-0.1-py3-none-any.whl"?`
-- **Globs:** deploy expands a `whl` or `jar` glob such as `../dist/*.whl`, in a task's libraries and in environment dependencies, and fails only when no file matches it ("no files match pattern"). The finding says "no file matches". An `egg` glob isn't expanded by the CLI.
+- **Globs:** deploy expands a `whl` or `jar` glob such as `../dist/*.whl`, in a task's libraries and in environment dependencies, and requires at least one match ("no files match pattern"). The finding says "no file matches" when there are none. Every match must be a regular file: a directory, even beside a valid file, fails upload and is reported as "not a regular file". An `egg` glob isn't expanded by the CLI.
 - **Built at deploy:** deploy builds artifacts before it checks these files, so no finding is shown for a file deploy may build: in an artifact's `files` folder, in `<path>/dist` for a `whl` artifact, in `dist` when there are no `artifacts` and a `setup.py` in the bundle root, or anywhere when an `experimental.scripts` build hook (`preinit`, `prebuild`, `postbuild`) or an artifact with a `build` and no `files` is set.
 - **Fix:** build the library, or correct the path. Paths are relative to the YAML file they are written in.
 - **Not checked:** `-r` and `-e` paths (a missing requirements file already fails `bundle validate`), cluster libraries and pipeline environment dependencies.
@@ -176,7 +176,7 @@ A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 ## Jobs
 
-`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except `project_environment_version_missing`, which deploys and fails when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `job_parameter_in_default`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each. Tasks that share a key are checked as the one task the CLI merges them into: the later task's settings win, and their lists, such as `depends_on`, are joined. A value from a variable that a `BUNDLE_VAR_` environment variable sets is not judged, as that value wins over the one in the files.
+`bundle validate` accepts these. The Databricks Jobs service rejects the dependency, environment and job setting mistakes at `bundle deploy`, except the project environment version checks, which deploy and fail when the job runs. The duplicates deploy, but as a different job from the one written. The job setting checks (`multiple_job_triggers` to `job_parameter_in_default`) were each deployed broken and working with Databricks CLI v1.28.0 on 2026-11-25, two runs each. Tasks that share a key are checked as the one task the CLI merges them into: the later task's settings win, and their lists, such as `depends_on`, are joined. A value from a variable that a `BUNDLE_VAR_` environment variable sets is not judged, as that value wins over the one in the files.
 
 ### `unknown_task_dependency`
 
@@ -234,7 +234,7 @@ A task's `environment_key` names an environment the job doesn't have.
 
 ### `project_environment_version_missing`
 
-A job environment's `project_environment` names a `pyproject.toml` that has neither `environment_version` nor `base_environment`.
+A job environment's `project_environment` names a `pyproject.toml` that has neither a nonempty `environment_version` nor a nonempty `base_environment` in `[tool.databricks.environment]`.
 
 - **Severity:** error.
 - **Example:** a `pyproject.toml` with only `[project]` and its `dependencies`. Validate and deploy pass; the job run fails with `pyproject.toml must specify environment_version or base_environment under [tool.databricks.environment]`.
@@ -245,7 +245,26 @@ A job environment's `project_environment` names a `pyproject.toml` that has neit
   environment_version = "5"
   ```
 
-- **Limits:** the local file is read. Any line outside a comment that sets `environment_version` or `base_environment` counts, whichever way the TOML writes the table, so a key set in another table is not reported. A path from an unresolved variable, or a file that isn't there, is not checked.
+- **Limits:** the local file is parsed as TOML. Headers, dotted keys, inline tables and quoted keys are supported. A value in another table, a comment or a multiline description does not count. An unresolved path, an unreadable file or TOML that cannot be parsed is not judged by this version check.
+- **Upload:** an existing project file excluded by `.gitignore`, `sync.exclude` or the other upload rules gets [`excluded_from_sync`](#excluded_from_sync) at its YAML reference. `sync.include` can restore a gitignored file. As with other upload checks, sync roots outside the bundle are not modelled.
+
+### `project_environment_version_unsupported`
+
+A project environment's `pyproject.toml` sets an `environment_version` below 5 under `[tool.databricks.environment]`.
+
+- **Severity:** error.
+- **Example:** `environment_version = "4"`. Validate and deploy pass, but the run fails: `Project environment requires environment_version 5 or later` (live CLI v1.28.0, #604).
+- **Fix:** set `environment_version = "5"` or later in that table, or use a `base_environment`.
+- **Limits:** concrete integer versions are checked. A nonempty `base_environment` is accepted instead. This does not impose a minimum of 5 on inline job environments that do not use `project_environment`.
+
+### `project_environment_conflict`
+
+A job environment combines `project_environment` with other environment settings that deploy rejects.
+
+- **Severity:** error.
+- **Example:** `spec: { project_environment: ./pyproject.toml, environment_version: "5" }`. Validate accepts the combination; deploy rejects it. The same applies to `client`, `base_environment`, `image_uri`, nonempty `dependencies` or nonempty `java_dependencies` beside `project_environment`.
+- **Fix:** keep `project_environment` as the only environment source in `spec`, with its version and dependencies in `pyproject.toml`. Or remove `project_environment` and configure the environment directly.
+- **Limits:** empty dependency lists and empty scalar settings do not count. The finding points at `project_environment`; the file's contents are not checked for a version until the conflict is removed.
 
 ### `multiple_job_triggers`
 
@@ -298,8 +317,9 @@ A `for_each_task`'s `inputs` is not a JSON array deploy accepts.
 
 - **Severity:** error.
 - **Example:** `inputs: '{"a": 1}'`. Deploy fails with `The JSON string in the inputs field should be an array of primitives or objects.` Deploy takes an array of plain values (strings, numbers, true or false, mixed freely) or an array of objects. Text that isn't JSON, a JSON object, a list inside the list (`[[1, 2]]`), a `null` item, and plain values mixed with objects (`["a", {"k": "v"}]`) all fail. `[]` deploys.
-- **Fix:** write a JSON array of plain values or of objects.
-- **Limits:** inputs with `{{job.parameters.…}}`, `{{tasks.….values.…}}` or an unresolved variable are filled in later and not judged.
+- **References inside a list:** `["{{job.parameters.items}}"]` fails deploy too, with or without a `null` item. Use one reference as the whole value, such as `inputs: "{{job.parameters.items}}"` or `inputs: "{{tasks.producer.values.items}}"`. References inside objects in the list fail too.
+- **Fix:** write a JSON array of literal plain values or objects, or use a reference as the whole value.
+- **Limits:** a whole-value dynamic reference or an unresolved bundle variable is filled in later and not judged.
 
 ### `for_each_inputs_too_long`
 
@@ -308,7 +328,7 @@ A `for_each_task`'s `inputs` is written in the bundle and is longer than 5,000 c
 - **Severity:** error.
 - **Example:** a JSON array of 5,001 characters. Deploy fails with `Invalid inputs: cannot exceed 5000 characters`. 5,000 characters deploys.
 - **Fix:** make the list shorter.
-- **Limits:** inputs that are not a JSON array are `for_each_inputs_not_array` instead. Inputs with `{{job.parameters.…}}`, `{{tasks.….values.…}}` or an unresolved variable are filled in later and not judged.
+- **Limits:** inputs that are not a JSON array are `for_each_inputs_not_array` instead. A whole-value dynamic reference or an unresolved bundle variable is filled in later and not judged.
 
 ### `unknown_job_parameter`
 
@@ -628,12 +648,12 @@ A secret under `resources: secrets:` has its value written in the file, a value 
 
 ### `secret_variable_has_default`
 
-A secret's value is a variable that has a value in the bundle, a `default` or a target's value. That value is in the file as plain text, so the CLI stops with "Variable used for secret value must not have a default value".
+A secret's value is a variable that has a value in the bundle, a `default` or a target's value. That value is in the file as plain text. For `${var.api_key}` the CLI stops with "Variable used for secret value must not have a default value". The full configuration references `${variables.api_key.default}` and `${variables.api_key.value}` can resolve to the same plaintext value without that CLI error (v1.28.0); the inspector reports them too. Secrets defined only under a target are checked as well.
 
 - **Severity:** error.
 - **Example:** `value: ${var.api_key}` with `variables: api_key: { default: my-api-key }`, or a target that sets `api_key`.
 - **Fix:** remove the default and any target's value, and pass the variable at deploy with `--var` or `BUNDLE_VAR_api_key`.
-- **Limits:** Databricks CLI v1.12.0 and later, as for `secret_value_not_variable`.
+- **Limits:** Databricks CLI v1.12.0 and later, as for `secret_value_not_variable`. A value the CLI obtained outside the bundle, without a default or target value in its files, is not reported as plaintext in the repository.
 
 ### `cli_diagnostic`
 

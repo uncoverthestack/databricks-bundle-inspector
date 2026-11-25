@@ -34,6 +34,8 @@ const TASK_KEY_MAX = 100;
 export const FOR_EACH_INPUTS_MAX = 5000;
 
 const unresolved = (value: string) => value.includes("${");
+const WHOLE_DYNAMIC_REFERENCE = /^\s*\{\{[^{}]+\}\}\s*$/;
+const EMBEDDED_REFERENCE_PROBLEM = "contains a dynamic reference inside the JSON list";
 const quoted = (names: readonly string[]) =>
   names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
@@ -147,6 +149,8 @@ function parameterLocation(
  * or of objects, not both; a `null` item or a list inside the list is refused. `[]` deploys.
  */
 export function forEachInputsProblem(inputs: string): string | undefined {
+  if (WHOLE_DYNAMIC_REFERENCE.test(inputs)) return undefined;
+  if (/\{\{[^{}]+\}\}/.test(inputs)) return EMBEDDED_REFERENCE_PROBLEM;
   let parsed: unknown;
   try {
     parsed = JSON.parse(inputs);
@@ -363,7 +367,7 @@ export function findJobSettingProblems(
 
       const inputs = record(task.for_each_task).inputs;
       // `{{job.parameters.x}}` and `{{tasks.x.values.y}}` are filled in when the job runs.
-      if (typeof inputs === "string" && !unresolved(inputs) && !inputs.includes("{{")) {
+      if (typeof inputs === "string" && !unresolved(inputs) && !WHOLE_DYNAMIC_REFERENCE.test(inputs)) {
         const problem = forEachInputsProblem(inputs);
         const where = () => located(taskFieldLocation(files, locate, jobKey, taskKey, ["for_each_task", "inputs"], options));
         if (!problem && inputs.length > FOR_EACH_INPUTS_MAX) {
@@ -383,8 +387,12 @@ export function findJobSettingProblems(
             jobKey,
             taskKey: graphKey,
             subject: "inputs",
-            title: `Make the inputs of task "${taskKey}" a JSON array, like ["a", "b"]: it ${problem}, so deploy may fail.`,
-            fixHint: `Deploy fails with "The JSON string in the inputs field should be an array of primitives or objects." Use all plain values (text, numbers, true or false) or all objects, with no null and no list inside.`,
+            title: problem === EMBEDDED_REFERENCE_PROBLEM
+              ? `Use one reference for the inputs of task "${taskKey}", instead of a reference inside a JSON list: deploy may fail.`
+              : `Make the inputs of task "${taskKey}" a JSON array, like ["a", "b"]: it ${problem}, so deploy may fail.`,
+            fixHint: problem === EMBEDDED_REFERENCE_PROBLEM
+              ? 'Use inputs: "{{job.parameters.items}}" or inputs: "{{tasks.producer.values.items}}" as the whole value, or a JSON array of literal values without dynamic references inside.'
+              : `Deploy fails with "The JSON string in the inputs field should be an array of primitives or objects." Use all plain values (text, numbers, true or false) or all objects, with no null and no list inside.`,
             ...where(),
           });
         }

@@ -38,7 +38,7 @@ import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
 import { findResourceKeyProblems, type ResourceKeyFinding } from "../resourceKeys.js";
 import { findTargetOnlyJobs, type TargetOnlyJob } from "../targetOnlyJobs.js";
-import { syncsFromBundleRoot } from "../syncRules.js";
+import { createSyncExclusion, syncsFromBundleRoot } from "../syncRules.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -1495,6 +1495,8 @@ async function buildBundleGraph(
     return bundleRoot!;
   };
   const outputs = bundleRoot ? buildOutputs(parsedBundle, bundleRoot, artifactDir) : undefined;
+  const projectExclusion = bundleRoot && syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
+    ? createSyncExclusion(bundleRoot, parsedBundle.sync) : () => undefined;
   // Filled in while the environment checks below read their files.
   const environmentPaths: string[] = [];
   return {
@@ -1524,7 +1526,7 @@ async function buildBundleGraph(
         missingDependency: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const written = withoutWheelExtras(value);
-          const { resolvedPath, exists } = localLibrary(written, dirOf("jobs", jobKey));
+          const { resolvedPath, exists, notAFile } = localLibrary(written, dirOf("jobs", jobKey));
           environmentPaths.push(resolvedPath);
           if (exists || mayBeBuilt(resolvedPath, outputs)) return undefined;
           const glob = hasGlobCharacters(written);
@@ -1533,7 +1535,12 @@ async function buildBundleGraph(
           const suggestion = fromRoot.exists
             ? relative(dirOf("jobs", jobKey), fromRoot.resolvedPath).split(sep).join("/")
             : undefined;
-          return { glob, ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+          return { glob, ...(notAFile ? { notAFile } : {}), ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+        },
+        projectFileExcluded: (jobKey, value) => {
+          if (!bundleRoot) return false;
+          const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);
+          return !!(exists && resolvedPath && projectExclusion(resolvedPath));
         },
         readProjectFile: (jobKey, value) => {
           if (!bundleRoot) return undefined;
