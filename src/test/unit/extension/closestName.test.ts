@@ -27,6 +27,10 @@ describe("closestName", () => {
     });
   });
 
+  it("gives no hint for a very short abbreviation, the price of no wrong hints", () => {
+    expect(closestName("env", ["environment"])).toBeUndefined();
+  });
+
   it("takes a name that is exactly half of the other, and not one shorter", () => {
     expect(closestName("abcd", ["abcdwxyz"])).toBe("abcdwxyz");
     expect(closestName("abc", ["abcdwxyz"])).toBeUndefined();
