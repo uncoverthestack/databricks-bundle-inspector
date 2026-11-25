@@ -600,6 +600,34 @@ describe("validateBundleWithDependencies: a bundle with no name", () => {
   });
 });
 
+// CLI v1.28.0 validate accepts these keys and prints each one (#510).
+describe("validateBundleWithDependencies: keys that are also JavaScript object names", () => {
+  test.each(["__proto__", "constructor", "toString"])("a job, variable and target with the key %s are kept", async (key) => {
+    const stdout = JSON.stringify(
+      JSON.parse(
+        `{"bundle":{"name":"b"},"variables":{"${key}":{"default":"v"}},"targets":{"${key}":{}},"resources":{"jobs":{"${key}":{"name":"odd"},"normal":{"name":"normal"}}}}`,
+      ),
+    );
+    const result = await validateBundleWithDependencies("/workspace/demo", undefined, {
+      execFileAsync: async () => {
+        throw Object.assign(new Error("probe target failed"), {
+          stderr: `Error: ${BUNDLE_PROBE_TARGET}: no such target. Available targets: ${key}`,
+          stdout,
+        });
+      },
+      resolveDatabricksCli: async () => ({ ok: true, candidate: "databricks", versionOutput: undefined }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const jobs = result.data.resources?.jobs as Record<string, unknown>;
+    expect(Object.keys(jobs)).toEqual([key, "normal"]);
+    expect(Object.prototype.hasOwnProperty.call(jobs, key)).toBe(true);
+    expect((jobs[key] as { name: string }).name).toBe("odd");
+    expect(Object.keys(result.data.variables ?? {})).toEqual([key]);
+    expect(Object.keys(result.data.targets ?? {})).toEqual([key]);
+  });
+});
+
 describe("validateBundleWithDependencies: large output and time limits", () => {
   const cli = async () => ({ ok: true as const, candidate: "databricks", versionOutput: undefined });
 

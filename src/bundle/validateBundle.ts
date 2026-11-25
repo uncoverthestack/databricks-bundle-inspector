@@ -150,7 +150,10 @@ function parseBundleConfig(
         .join("; "),
     };
   }
-  return { ok: true, data: result.data as ParsedBundleConfig };
+  // The schema only checks the shape. Zod builds each record into a new object, and a key
+  // named `__proto__` sets that object's prototype instead of a key, so a job with that key
+  // vanished (#510). Keep the CLI's own objects; `bundle` is the only field the schema changes.
+  return { ok: true, data: { ...(raw as Record<string, unknown>), bundle: result.data.bundle } as ParsedBundleConfig };
 }
 
 function cliNotFoundMessage(failure: CliResolutionFailure): string {
