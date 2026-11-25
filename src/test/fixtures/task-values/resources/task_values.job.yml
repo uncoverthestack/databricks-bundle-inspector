@@ -41,6 +41,11 @@ resources:
             base_parameters:
               count: "{{tasks.producer.values.row_count}}"
               missing: "{{tasks.producer.values.missing}}"
+        - task_key: defaults
+          depends_on:
+            - task_key: producer
+          notebook_task:
+            notebook_path: ../src/defaults.py
       environments:
         - environment_key: default
           spec:

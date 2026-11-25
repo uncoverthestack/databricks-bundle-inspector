@@ -49,6 +49,9 @@ describe("task values", () => {
         .sort(),
     ).toEqual([
       'consumer: Task "producer" may not set value "rowcount". Did you mean "row_count"? @ src/consumer.py:3',
+      'defaults: Task "producer" may not set value "debug_only". @ src/defaults.py:5',
+      'defaults: Task "producer" may not set value "none_default". @ src/defaults.py:4',
+      'defaults: Task "producer" may not set value "read_twice". @ src/defaults.py:7',
       'not_upstream: Add "producer" to this task\'s depends_on: reading its value "run_id" doesn\'t make this task wait, so the value may not be set yet. @ src/not_upstream.py:2',
       'wrong_task: Task value "row_count" is read from task "prodcer", which may not exist. Did you mean "producer"? @ src/wrong_task.py:2',
       'yaml_refs: Task "producer" may not set value "missing". @ resources/task_values.job.yml:36',

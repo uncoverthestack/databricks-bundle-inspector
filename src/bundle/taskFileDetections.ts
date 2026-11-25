@@ -1021,6 +1021,12 @@ function taskValueCalls(
   return calls;
 }
 
+/** Whether a `default` argument is given and is not the literal `None`. */
+function givesDefault(arg: PythonArgument | undefined): boolean {
+  if (!arg || arg.tokens.length === 0) return false;
+  return !(arg.tokens.length === 1 && arg.tokens[0]!.kind === "name" && arg.tokens[0]!.value === "None");
+}
+
 export async function detectTaskValuesInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
@@ -1037,7 +1043,9 @@ export async function detectTaskValuesInFile(
       usage.gets.push({
         taskKey: literalValue(argument(call.args, "taskKey", 0)),
         key: literalValue(argument(call.args, "key", 1)),
-        hasDefault: call.args.some((arg) => arg.keyword === "default") || call.args.filter((arg) => !arg.keyword).length > 2,
+        // A missing key raises ValueError unless a default is given, and `default=None`
+        // still raises (tested on job runs, #586). `debugValue` only applies outside a job.
+        hasDefault: givesDefault(argument(call.args, "default", 2)),
         line,
       });
     }
