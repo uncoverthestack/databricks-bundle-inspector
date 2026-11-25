@@ -96,3 +96,36 @@ resources:
           for_each_task: { inputs: "[]", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
         - task_key: from_parameter
           for_each_task: { inputs: "{{job.parameters.items}}", task: { task_key: i, notebook_task: { notebook_path: ../src/nb.py } } }
+
+    parameter_references:
+      name: parameter_references
+      parameters:
+        - name: env
+          default: dev
+        - name: a.b
+          default: x
+        - name: copy
+          default: "{{job.parameters.env}}"
+      tasks:
+        - task_key: check
+          condition_task: { op: EQUAL_TO, left: "{{job.parameters.env}}", right: "{{job.parameters.Env}}" }
+        - task_key: nb
+          description: "{{job.parameters.not_checked}}"
+          notebook_task:
+            notebook_path: ../src/nb.py
+            base_parameters:
+              spaces: "{{ job.parameters.env }}"
+              typo: "pre-{{job.parameters.evn}}-post"
+              dotted: "{{job.parameters.a.b}}"
+              bracket: "{{job.parameters.[env]}}"
+              other: "{{job.id}}"
+        - task_key: run_other
+          run_job_task:
+            job_id: ${resources.jobs.one_trigger.id}
+            job_parameters: { x: "{{job.parameters.not_checked}}" }
+        - task_key: loop
+          for_each_task:
+            inputs: "{{job.parameters.items}}"
+            task:
+              task_key: inner
+              notebook_task: { notebook_path: ../src/nb.py, base_parameters: { p: "{{job.parameters.missing}}" } }

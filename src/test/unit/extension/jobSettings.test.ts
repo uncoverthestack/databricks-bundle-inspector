@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import { parse } from "yaml";
-import { findJobSettingProblems, forEachInputsProblem } from "../../../bundle/jobSettings.js";
+import { findJobSettingProblems, forEachInputsProblem, jobParameterReferences } from "../../../bundle/jobSettings.js";
 import { parseYamlLocations } from "../../../bundle/sourceLocations.js";
 import type { JobStructureOptions } from "../../../bundle/jobStructure.js";
 
@@ -395,6 +395,127 @@ describe("for_each_inputs_not_array", () => {
   });
 
   test.each(["{{job.parameters.items}}", "{{tasks.up.values.items}}", "${var.items}"])("%s is filled in later, not judged", (inputs) =>
-    expect(check(job(inputs))).toEqual([]),
+    expect(kinds(check(job(inputs))).filter((kind) => kind === "for_each_inputs_not_array")).toEqual([]),
   );
+});
+
+describe("job parameter references", () => {
+  test.each([
+    ["{{job.parameters.env}}", ["env"]],
+    ["{{ job.parameters.env }}", ["env"]],
+    ["{{job.parameters.[env]}}", ["env"]],
+    ["{{job.parameters.a-b}}", ["a-b"]],
+    ["{{job.parameters.a.b}}", ["a.b"]],
+    ["{{job.parameters.[a.b]}}", ["a.b"]],
+    ["pre-{{job.parameters.a}}-{{job.parameters.b}}-post", ["a", "b"]],
+    ["{{job.id}} {{tasks.up.values.x}}", []],
+    ["${job.parameters.env}", []],
+  ])("%s refers to %j", (text, names) => expect(jobParameterReferences(text)).toEqual(names));
+
+  const job = (task: string, parameters = "[{ name: env, default: dev }]") =>
+    `resources:\n  jobs:\n    j:\n      parameters: ${parameters}\n      tasks:\n        - task_key: a\n${task}`;
+  const REF = '"{{job.parameters.nope}}"';
+
+  test.each([
+    ["notebook base_parameters", `          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`],
+    ["condition left", `          condition_task: { op: EQUAL_TO, left: ${REF}, right: x }\n`],
+    ["condition right", `          condition_task: { op: EQUAL_TO, left: x, right: ${REF} }\n`],
+    ["Python script parameters", `          spark_python_task: { python_file: ./main.py, parameters: [${REF}] }\n`],
+    ["wheel parameters", `          python_wheel_task: { package_name: p, entry_point: e, parameters: [${REF}] }\n`],
+    ["wheel named_parameters", `          python_wheel_task: { package_name: p, entry_point: e, named_parameters: { p: ${REF} } }\n`],
+    ["SQL parameters", `          sql_task: { warehouse_id: w, file: { path: ./q.sql }, parameters: { p: ${REF} } }\n`],
+    ["dbt commands", `          dbt_task: { commands: ["dbt run --vars {{job.parameters.nope}}"] }\n`],
+    ["for-each inputs", `          for_each_task: { inputs: ${REF}, task: { task_key: i, ${NB} } }\n`],
+    ["the for-each inner task", `          for_each_task: { inputs: "[1]", task: { task_key: i, notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } } } }\n`],
+  ])("an unknown name in %s fails deploy", (_case, task) => {
+    const findings = check(job(task));
+    expect(summary(findings)).toEqual(['unknown_job_parameter @7: Job parameter "nope" may not exist.']);
+    expect(findings[0]!.fixHint).toContain("refers to an undefined job parameter 'nope'");
+    expect(findings[0]!.taskKey).toBe("a");
+  });
+
+  test("the fix hint names the inner task, as deploy does", () => {
+    const findings = check(job(`          for_each_task: { inputs: "[1]", task: { task_key: inner, notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } } } }\n`));
+    expect(findings[0]!.fixHint).toContain("in task 'inner'");
+  });
+
+  test.each([
+    ["a run_job_task's job_parameters (deploys)", `          run_job_task: { job_id: 1, job_parameters: { x: ${REF} } }\n`],
+    ["a description (deploys)", `          description: ${REF}\n          ${NB}\n`],
+    ["a field not tested live", `          spark_jar_task: { main_class_name: M, parameters: [${REF}] }\n`],
+  ])("%s is not reported", (_case, task) => expect(check(job(task))).toEqual([]));
+
+  test.each([
+    ["a defined name", "{{job.parameters.env}}"],
+    ["spaces inside the braces", "{{ job.parameters.env }}"],
+    ["brackets", "{{job.parameters.[env]}}"],
+    ["another kind of reference", "{{job.id}}"],
+  ])("%s deploys", (_case, ref) =>
+    expect(check(job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: "${ref}" } }\n`))).toEqual([]),
+  );
+
+  test("letter case counts, and a close name is suggested", () => {
+    expect(summary(check(job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: "{{job.parameters.Env}}" } }\n`)))).toEqual([
+      'unknown_job_parameter @7: Job parameter "Env" may not exist. Did you mean "env"?',
+    ]);
+  });
+
+  test("a job with no parameters fails too", () => {
+    expect(kinds(check(job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`, "[]")))).toEqual([
+      "unknown_job_parameter",
+    ]);
+  });
+
+  test("a name used twice in a task is reported once", () => {
+    const task = `          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF}, q: ${REF} } }\n`;
+    expect(kinds(check(job(task)))).toEqual(["unknown_job_parameter"]);
+  });
+
+  test("a parameter name the preview can't resolve stops the check", () => {
+    const task = `          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`;
+    expect(check(job(task, "[{ name: '${var.p}', default: x }]"))).toEqual([]);
+    expect(kinds(check(job(task, "[{ name: '${var.p}', default: x }]"), { resolve: () => "other" }))).toEqual(["unknown_job_parameter"]);
+    expect(check(job(task, "[{ name: '${var.p}', default: x }]"), { resolve: () => "nope" })).toEqual([]);
+  });
+
+  test("a task whose key is a variable keeps the graph's name for it", () => {
+    // The graph names the task `${var.key}`, as the structural preview prints it.
+    const text = `resources:\n  jobs:\n    j:\n      parameters: [{ name: env, default: dev }]\n      tasks:\n        - task_key: \${var.key}\n          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`;
+    const findings = check(text, { resolve: (value) => (value === "${var.key}" ? "load" : undefined) });
+    expect(findings.map((f) => [f.kind, f.taskKey])).toEqual([["unknown_job_parameter", "${var.key}"]]);
+  });
+
+  test("a parameter a target adds counts", () => {
+    const text = job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: ${REF} } }\n`);
+    const resolved = { j: { parameters: [{ name: "env" }, { name: "nope" }], tasks: [{ task_key: "a", notebook_task: { base_parameters: { p: "{{job.parameters.nope}}" } } }] } };
+    expect(check(text, { activeTarget: "prod" }, resolved)).toEqual([]);
+  });
+
+  describe("job_parameter_reference_with_dot", () => {
+    test.each([
+      ["a defined dotted name", "{{job.parameters.a.b}}"],
+      ["a dotted name in brackets", "{{job.parameters.[a.b]}}"],
+      ["a key under a parameter", "{{job.parameters.env.x}}"],
+    ])("%s fails deploy", (_case, ref) => {
+      const findings = check(
+        job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: "${ref}" } }\n`, "[{ name: env, default: x }, { name: a.b, default: x }]"),
+      );
+      expect(kinds(findings)).toEqual(["job_parameter_reference_with_dot"]);
+      expect(findings[0]!.fixHint).toContain("'parameters' is unknown");
+    });
+  });
+
+  describe("job_parameter_in_default", () => {
+    test("a default that uses another job parameter fails deploy, even a defined one", () => {
+      const findings = check(job(`          ${NB}\n`, '\n        - { name: env, default: dev }\n        - { name: copy, default: "{{job.parameters.env}}" }'));
+      expect(summary(findings)).toEqual([
+        'job_parameter_in_default @6: Remove {{job.parameters.env}} from the default of job parameter "copy": a default can\'t use another job parameter, so deploy may fail.',
+      ]);
+      expect(findings[0]!.fixHint).toContain("is not allowed");
+    });
+
+    test("another reference in a default deploys", () => {
+      expect(check(job(`          ${NB}\n`, '[{ name: id, default: "{{job.id}}" }]'))).toEqual([]);
+    });
+  });
 });
