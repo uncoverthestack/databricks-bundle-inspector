@@ -1,0 +1,3 @@
+Added
+
+- **A notebook that starts with an invisible byte-order mark is reported** ([#589](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/589)). New error `notebook_byte_order_mark`, on a notebook task or a pipeline notebook library whose `.py` or `.sql` notebook starts with one. Such a file passes `bundle validate` and `bundle deploy`, then fails when the job or pipeline runs. A plain Python file with the mark runs fine and gets nothing. The notebook's cells are now also read past the mark, so its other checks still work. Checked by job runs and pipeline updates on Databricks CLI v1.28.0.

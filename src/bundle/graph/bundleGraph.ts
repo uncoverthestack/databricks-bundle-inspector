@@ -396,6 +396,12 @@ export interface BundleGraph {
   buildOutputs?: BuildOutputs;
   /** Upload rules for local source scans. Absent when external sync roots are not modelled. */
   sourceUpload?: { root: string; sync?: Sync };
+  /**
+   * Local files the environment checks read: `project_environment` files and local
+   * `dependencies`, as absolute paths that may hold Go glob characters. Watched, so
+   * editing or building one re-checks the bundle (#590).
+   */
+  environmentPaths?: string[];
 }
 
 export interface ExtractBundleGraphOptions {
@@ -1489,10 +1495,13 @@ async function buildBundleGraph(
     return bundleRoot!;
   };
   const outputs = bundleRoot ? buildOutputs(parsedBundle, bundleRoot, artifactDir) : undefined;
+  // Filled in while the environment checks below read their files.
+  const environmentPaths: string[] = [];
   return {
     nodes: [...nodeMap.values()],
     edges,
     notebookRule,
+    environmentPaths,
     ...(outputs ? { buildOutputs: outputs } : {}),
     ...(bundleRoot && syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
       ? { sourceUpload: { root: bundleRoot, ...(parsedBundle.sync ? { sync: parsedBundle.sync } : {}) } } : {}),
@@ -1516,6 +1525,7 @@ async function buildBundleGraph(
           if (!bundleRoot) return undefined;
           const written = withoutWheelExtras(value);
           const { resolvedPath, exists } = localLibrary(written, dirOf("jobs", jobKey));
+          environmentPaths.push(resolvedPath);
           if (exists || mayBeBuilt(resolvedPath, outputs)) return undefined;
           const glob = hasGlobCharacters(written);
           // Written from the bundle root, the usual mistake (#518): name the path from the YAML folder.
@@ -1528,6 +1538,7 @@ async function buildBundleGraph(
         readProjectFile: (jobKey, value) => {
           if (!bundleRoot) return undefined;
           const { resolvedPath, exists } = resolveLocalPath(value, dirOf("jobs", jobKey), bundleRoot);
+          if (resolvedPath) environmentPaths.push(resolvedPath);
           if (!resolvedPath || !exists) return undefined;
           try {
             const stats = statSync(resolvedPath);

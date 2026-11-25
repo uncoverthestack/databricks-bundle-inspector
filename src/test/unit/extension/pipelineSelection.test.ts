@@ -43,7 +43,7 @@ describe("pipeline task selections (issue 539)", () => {
       'c3_case: Rename "T_SILVER" in refresh_selection: pipeline "p" may not have this table, so the run may fail. Did you mean "t_silver"? @ selection.yml:66',
       'c4_mixed: Remove "t_nope" from refresh_selection: pipeline "p" may not have this table, so the run may fail. @ selection.yml:73',
       'c5_full_unknown: Remove "t_nope" from full_refresh_selection: pipeline "p" may not have this table, so the run may fail. @ selection.yml:80',
-      'c6_flow_unknown: Remove "t_nope" from refresh_flow_selection: pipeline "p" may not have this flow, so the run may fail. @ selection.yml:87',
+      'c6_flow_unknown: Use the full catalog.schema.flow name instead of "t_nope" in refresh_flow_selection: the run may fail. @ selection.yml:87',
       'c8_plain_full: Rename "main.other.t_silver" in refresh_selection: pipeline "plain" may not have this table, so the run may fail. Did you mean "main.sales.t_silver"? @ selection.yml:98',
     ]);
   });
@@ -53,9 +53,9 @@ describe("pipeline task selections (issue 539)", () => {
     expect(found.some((line) => line.startsWith("c2_unknown"))).toBe(false);
   });
 
-  test("a selection naming a flow by its table's name is the table's own flow, so no warning", async () => {
+  test("a table's own flow also needs its full name (#607)", async () => {
     const found = await findings(swap('refresh_flow_selection: ["t_nope"]', 'refresh_flow_selection: ["t_silver"]'));
-    expect(found.some((line) => line.startsWith("c6_flow_unknown"))).toBe(false);
+    expect(found.some((line) => line.startsWith("c6_flow_unknown"))).toBe(true);
   });
 });
 

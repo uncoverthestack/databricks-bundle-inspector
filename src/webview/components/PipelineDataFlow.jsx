@@ -86,8 +86,12 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
       const x2 = to.left - origin.left + canvas.scrollLeft;
       const y2 = to.top + to.height / 2 - origin.top;
       const middle = (x1 + x2) / 2;
+      const above = from.top - origin.top - 6;
       // Left to right; a read from a later column bends back around.
-      const d = x2 > x1 + 8
+      // A self-read must bend above its box; a flat curve would be hidden behind it.
+      const d = edge.from === edge.to
+        ? `M${x1} ${y1} C${x1 + 24} ${y1} ${x1 + 24} ${above} ${middle} ${above} S${x2 - 24} ${y2} ${x2} ${y2}`
+        : x2 > x1 + 8
         ? `M${x1} ${y1} C${middle} ${y1} ${middle} ${y2} ${x2} ${y2}`
         : `M${x1} ${y1} C${x1 + 40} ${y1} ${x2 - 40} ${y2} ${x2} ${y2}`;
       next.push({ key: `${edge.from}->${edge.to}:${edge.flow ?? ""}`, d, from: edge.from, to: edge.to, streaming: edge.streaming });

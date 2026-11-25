@@ -22,7 +22,7 @@ import type { Sync } from "./graph/bundleGraph.js";
  * Files outside the bundle root are reported as synced; they are only uploaded
  * through `sync.paths`, which is not modelled here.
  */
-export type SyncFilter = (absolutePath: string) => boolean;
+export type SyncFilter = (absolutePath: string, folder?: boolean) => boolean;
 
 // The CLI never uploads these, whatever the bundle config says.
 const ALWAYS_SKIPPED = [".git/", ".databricks/"];
@@ -73,7 +73,7 @@ export function syncsFromBundleRoot(bundleRoot: string, sync?: Sync): boolean {
 
 export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
   const exclusionOf = createSyncExclusion(bundleRoot, sync);
-  return (absolutePath) => exclusionOf(absolutePath) === undefined;
+  return (absolutePath, folder) => exclusionOf(absolutePath, folder) === undefined;
 }
 
 /**
@@ -83,7 +83,7 @@ export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
 export function createSyncExclusion(
   bundleRoot: string,
   sync?: Sync,
-): (absolutePath: string, directory?: boolean) => SyncExclusion | undefined {
+): (absolutePath: string, folder?: boolean) => SyncExclusion | undefined {
   const gitRoot = findGitRoot(bundleRoot);
   const topDir = gitRoot && isInside(bundleRoot, gitRoot) ? gitRoot : bundleRoot;
   const gitignoreByDir = new Map<string, Ignore | undefined>();
@@ -102,9 +102,10 @@ export function createSyncExclusion(
 
   // Unlike git, a deeper `.gitignore` cannot re-include (`!name`) a file that a
   // parent `.gitignore` skipped: the CLI skips a file if any level matches it.
-  function gitignoreMatching(path: string, directory: boolean): string | undefined {
+  function gitignoreMatching(path: string, folder: boolean): string | undefined {
+    const slash = folder ? "/" : "";
     for (let dir = dirname(path); ; dir = dirname(dir)) {
-      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)) + (directory ? "/" : ""))) {
+      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)) + slash)) {
         return join(dir, ".gitignore");
       }
       if (dir === topDir || dirname(dir) === dir) return undefined;
@@ -136,15 +137,16 @@ export function createSyncExclusion(
     return undefined;
   }
 
-  return (absolutePath, directory = false) => {
+  // `folder`: the path is a folder, so rules written for folders (`build/`) match it too (#590).
+  return (absolutePath, folder = false) => {
     if (!isInside(absolutePath, bundleRoot)) return undefined;
     const link = linkOnTheWay(absolutePath);
     if (link) return { rule: "symlink", link, folder: link !== absolutePath };
-    const rel = toPosix(relative(bundleRoot, absolutePath)) + (directory ? "/" : "");
+    const rel = toPosix(relative(bundleRoot, absolutePath)) + (folder ? "/" : "");
     if (alwaysSkipped.ignores(rel)) return { rule: "always" };
     if (excluded.ignores(rel)) return { rule: "sync_exclude" };
     if (included.ignores(rel)) return undefined;
-    const gitignoreFile = gitignoreMatching(absolutePath, directory);
+    const gitignoreFile = gitignoreMatching(absolutePath, folder);
     return gitignoreFile ? { rule: "gitignore", gitignoreFile } : undefined;
   };
 }

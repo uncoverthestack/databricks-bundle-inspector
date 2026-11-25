@@ -12,6 +12,8 @@ import {
   classifyChange,
   collectWatchSpec,
   filesOutsideRoot,
+  foldersOutsideRoot,
+  matchesGlobPattern,
   type BundleWatchSpec,
 } from "../../../bundle/watchedFiles.js";
 
@@ -175,6 +177,7 @@ describe("classifyChange", () => {
         bundleRoot: "c:\\projects\\orders_etl",
         files: new Set(["c:\\projects\\orders_etl\\src\\publish_metrics.py"]),
         folders: [],
+        patterns: [],
         includes: ignore(),
         isSynced: () => true,
         ignoresCase: true,
@@ -263,5 +266,106 @@ describe("notebooks a task's notebook runs, and files that share a workspace pat
   test("an unreferenced file with nothing sharing its path does not", () => {
     expect(classifyChange(spec, path.join(root, "alone.py"))).toBeUndefined();
     expect(classifyChange(spec, path.join(root, "notes.md"))).toBeUndefined();
+  });
+});
+
+describe("files the checks read that weren't watched (issue 590)", () => {
+  const roots: string[] = [];
+  afterAll(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })));
+
+  /** A temp folder with these files, the bundle in `bundleDir` under it, and its watch spec. */
+  async function specFor(files: Record<string, string>, resources: Record<string, unknown>, bundleDir = ".") {
+    const top = mkdtempSync(path.join(os.tmpdir(), "watch-590-"));
+    roots.push(top);
+    // Its own git folder, so the sync rules don't read the folders above.
+    mkdirSync(path.join(top, ".git"));
+    for (const [name, text] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(top, name)), { recursive: true });
+      writeFileSync(path.join(top, name), text);
+    }
+    const root = path.join(top, bundleDir);
+    mkdirSync(root, { recursive: true });
+    const bundleConfig = { bundle: { name: "w" }, resources } as unknown as ParsedBundleConfig;
+    const graph = await enrichGraphWithFileContent(await extractBundleGraph(bundleConfig, root));
+    return { top, root, spec: collectWatchSpec(graph, bundleConfig, root, []) };
+  }
+  const pythonTask = (extra: Record<string, unknown> = {}) => ({
+    task_key: "t",
+    spark_python_task: { python_file: "./main.py" },
+    ...extra,
+  });
+
+  test("creating a wheel a library glob matches re-checks; a file it doesn't match doesn't", async () => {
+    const { root, spec } = await specFor(
+      { "main.py": "print(1)\n", ".gitignore": "dist/\n" },
+      { jobs: { j: { name: "j", tasks: [pythonTask({ libraries: [{ whl: "./dist/*.whl" }] })] } } },
+    );
+    // Even though .gitignore skips dist/: deploy uploads libraries anyway.
+    expect(classifyChange(spec, path.join(root, "dist", "new.whl"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "dist", "notes.txt"))).toBeUndefined();
+    // `*` doesn't cross a folder, as in the CLI's Go glob.
+    expect(classifyChange(spec, path.join(root, "dist", "sub", "new.whl"))).toBeUndefined();
+  });
+
+  test("editing a project_environment file, or building an environment dependency, re-checks", async () => {
+    const { root, spec } = await specFor(
+      { "main.py": "print(1)\n", "pyproject.toml": "[project]\nname = \"demo\"\n" },
+      {
+        jobs: {
+          j: {
+            name: "j",
+            tasks: [pythonTask({ environment_key: "e" }), { ...pythonTask({ environment_key: "d" }), task_key: "u" }],
+            environments: [
+              { environment_key: "e", spec: { project_environment: "./pyproject.toml" } },
+              { environment_key: "d", spec: { environment_version: "4", dependencies: ["./libs/*.whl"] } },
+            ],
+          },
+        },
+      },
+    );
+    expect(classifyChange(spec, path.join(root, "pyproject.toml"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "libs", "a.whl"))).toBe("source");
+  });
+
+  test("editing a .gitignore that lists itself re-checks; one in a skipped folder doesn't", async () => {
+    const { root, spec } = await specFor(
+      {
+        "nb.py": "# Databricks notebook source\nprint(1)\n",
+        ".gitignore": ".gitignore\nbuild/\n",
+        "sub/.gitignore": ".gitignore\n",
+        "build/.gitignore": "*\n",
+      },
+      { jobs: { j: { name: "j", tasks: [{ task_key: "t", notebook_task: { notebook_path: "./nb.py" } }] } } },
+    );
+    expect(classifyChange(spec, path.join(root, ".gitignore"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "sub", ".gitignore"))).toBe("source");
+    expect(classifyChange(spec, path.join(root, "build", ".gitignore"))).toBeUndefined();
+  });
+
+  test("a pipeline glob folder outside the bundle gets a watcher, and its files re-check", async () => {
+    const { top, spec } = await specFor(
+      { "external/source.sql": "SELECT 1;\n" },
+      { pipelines: { p: { name: "p", libraries: [{ glob: { include: "../external/**" } }] } } },
+      "bundle",
+    );
+    const external = path.join(top, "external");
+    expect(foldersOutsideRoot(spec)).toEqual([external]);
+    expect(classifyChange(spec, path.join(external, "new.sql"))).toBe("source");
+  });
+
+  test("a glob folder inside the bundle needs no watcher of its own (control)", async () => {
+    const { spec } = await specFor(
+      { "main.py": "print(1)\n" },
+      { jobs: { j: { name: "j", tasks: [pythonTask({ libraries: [{ whl: "./dist/*.whl" }] })] } } },
+    );
+    expect(foldersOutsideRoot(spec)).toEqual([]);
+  });
+
+  test("glob patterns match one folder level at a time", () => {
+    const pattern = path.join(path.sep, "b", "dist", "*.whl");
+    expect(matchesGlobPattern(pattern, path.join(path.sep, "b", "dist", "x.whl"))).toBe(true);
+    expect(matchesGlobPattern(pattern, path.join(path.sep, "b", "dist", "x.txt"))).toBe(false);
+    expect(matchesGlobPattern(pattern, path.join(path.sep, "b", "dist", "s", "x.whl"))).toBe(false);
+    expect(matchesGlobPattern(path.join(path.sep, "b", "*", "x.whl"), path.join(path.sep, "b", "dist", "x.whl"))).toBe(true);
   });
 });
