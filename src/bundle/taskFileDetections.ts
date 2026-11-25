@@ -92,6 +92,11 @@ interface DbutilsNames {
   factories: Set<string>;
   /** Variable name to the dbutils module it holds (`widgets`, `secrets`, ...). */
   modules: Map<string, string>;
+  /**
+   * For each such variable, the offsets where it is assigned: `true` from the module,
+   * `false` from anything else. Read with {@link moduleAt}.
+   */
+  moduleAssignments: Map<string, Array<{ offset: number; isModule: boolean }>>;
   /** Offsets of `dbutils.<module>` that only feed such an assignment. */
   assignedModuleOffsets: Set<number>;
 }
@@ -131,8 +136,10 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
     clientClasses: new Set(["WorkspaceClient"]),
     factories: new Set(DBUTILS_FACTORIES),
     modules: new Map(),
+    moduleAssignments: new Map(),
     assignedModuleOffsets: new Set(),
   };
+  const moduleOffsets = new Set<number>();
   const factories = names.factories;
   const clientClasses = names.clientClasses;
   // Imports under another name: `import ... dbutils as dbu`, `DBUtils as DBU`, `WorkspaceClient as WC`.
@@ -172,11 +179,37 @@ function dbutilsNames(tokens: PythonToken[]): DbutilsNames {
         if (module?.kind === "name" && !isOp(end, ".") && !isOp(end, "(")) {
           names.modules.set(target.value, module.value);
           names.assignedModuleOffsets.add(value.start);
+          moduleOffsets.add(target.start);
         }
       }
     }
   }
+  // Every assignment to a module variable, in order, so `w = Fake()` after
+  // `w = dbutils.widgets` ends it (#588).
+  for (let i = 0; i < tokens.length; i++) {
+    const target = tokens[i]!;
+    const previous = tokens[i - 1];
+    if (target.kind !== "name" || !names.modules.has(target.value)) continue;
+    if (!isOp(tokens[i + 1], "=") || isOp(tokens[i + 2], "=")) continue;
+    if (previous && previous.kind === "op" && "(,.=".includes(previous.value)) continue;
+    const list = names.moduleAssignments.get(target.value) ?? [];
+    list.push({ offset: target.start, isModule: moduleOffsets.has(target.start) });
+    names.moduleAssignments.set(target.value, list);
+  }
   return names;
+}
+
+/**
+ * The dbutils module a variable holds at `offset`: the module if the last assignment
+ * before it was from the module, nothing if it was from something else. Used before any
+ * assignment (in a function defined above, say), the variable counts as the module.
+ */
+function moduleAt(names: DbutilsNames, name: string, offset: number): string | undefined {
+  const module = names.modules.get(name);
+  if (!module) return undefined;
+  const before = (names.moduleAssignments.get(name) ?? []).filter((assignment) => assignment.offset < offset);
+  const last = before.at(-1);
+  return !last || last.isModule ? module : undefined;
 }
 
 /**
@@ -248,7 +281,7 @@ function dbutilsCalls(
       methodIndex = i + 3;
       knownReceiver = isDbutilsReceiver(tokens, i - 1, names);
       offset = receiver.start;
-    } else if (token.kind === "name" && names.modules.get(token.value) === module && !isOp(tokens[i - 1], ".")) {
+    } else if (token.kind === "name" && moduleAt(names, token.value, token.start) === module && !isOp(tokens[i - 1], ".")) {
       // `<module variable>.<method>(`
       if (!isOp(tokens[i + 1], ".")) continue;
       methodIndex = i + 2;
@@ -276,6 +309,7 @@ function viewsFor(
   return notebookViews(content, {
     jupyter: fileTypeHint === "notebook" || ext === ".ipynb",
     fileLanguage: fileTypeHint === "sql" || ext === ".sql" ? "sql" : "python",
+    scala: ext === ".scala" && fileTypeHint !== "notebook",
   });
 }
 
@@ -577,7 +611,7 @@ function passesWidgetsObject(view: string): boolean {
     }
     // A variable holding dbutils.widgets, passed on: `helper(w)`.
     return (
-      names.modules.get(token.value) === "widgets" &&
+      moduleAt(names, token.value, token.start) === "widgets" &&
       !isOp(tokens[i - 1], ".") &&
       !isOp(tokens[i + 1], ".") &&
       !isOp(tokens[i + 1], "=")

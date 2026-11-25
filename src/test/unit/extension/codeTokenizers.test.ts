@@ -321,3 +321,41 @@ describe("SQL getArgument", () => {
   });
 });
 
+
+// Issue 588: code read the way Databricks runs it.
+describe("notebook reads match how the code runs (issue 588)", () => {
+  const widgetNames = async (name: string, lines: string[]) =>
+    (await detectWidgetsInFile(await file(name, lines.join("\n")))).map((read) => read.name);
+  const PY = "# Databricks notebook source";
+  const CELL = "# COMMAND ----------";
+  const SCALA = "// Databricks notebook source";
+
+  test.each([
+    ["line comment", [SCALA, '// dbutils.widgets.get("comment_only")', "val x = 1"], []],
+    ["nested block comment", [SCALA, '/* outer /* inner */ dbutils.widgets.get("in_block") */', "val x = 1"], []],
+    ["code with a trailing comment (control)", [SCALA, 'val v = dbutils.widgets.get("real") // note'], ["real"]],
+    ["// inside a string", [SCALA, 'val u = "http://host"; val v = dbutils.widgets.get("after_url")'], ["after_url"]],
+    ["a %python cell in a Scala notebook", [SCALA, "// COMMAND ----------", "// MAGIC %python", '// MAGIC dbutils.widgets.get("py_cell")'], ["py_cell"]],
+    ["a plain Scala file", ['// dbutils.widgets.get("c")', 'dbutils.widgets.get("d")'], ["d"]],
+  ])("Scala: %s", async (_case, lines, expected) => {
+    expect(await widgetNames(`scala-${expected.join("-") || "none"}-${lines.length}.scala`, lines)).toEqual(expected);
+  });
+
+  test.each([
+    ["reassigned before the read", ["w = dbutils.widgets", "w = Fake()", 'w.get("local_only")'], []],
+    ["read before reassigning", ["w = dbutils.widgets", 'w.get("before")', "w = Fake()", 'w.get("after")'], ["before"]],
+    ["assigned back to the module", ["w = Fake()", "w = dbutils.widgets", 'w.get("back")'], ["back"]],
+    ["read in a function defined above the assignment", ["def f():", '    return w.get("in_function")', "w = dbutils.widgets"], ["in_function"]],
+  ])("alias: %s", async (_case, lines, expected) => {
+    expect(await widgetNames(`alias-${lines.length}-${expected.join("-") || "none"}.py`, lines)).toEqual(expected);
+  });
+
+  test.each([
+    // A job run (CLI v1.28.0, two runs) failed with the marker raised in such a cell.
+    ["a %python cell in a Python notebook", [PY, CELL, "# MAGIC %python", '# MAGIC dbutils.widgets.get("needed")'], ["needed"]],
+    ["a %md cell (control)", [PY, CELL, "# MAGIC %md", '# MAGIC dbutils.widgets.get("in_markdown")'], []],
+    ["a MAGIC comment in a plain Python cell", [PY, CELL, "x = 1", '# MAGIC dbutils.widgets.get("comment")'], []],
+  ])("magic: %s", async (_case, lines, expected) => {
+    expect(await widgetNames(`magic-${expected.join("-") || "none"}-${lines.length}.py`, lines)).toEqual(expected);
+  });
+});
