@@ -38,6 +38,7 @@ import type { NotebookHeaderRule } from "../notebookFiles.js";
 import { findTargetCheckProblems, type TargetCheckFinding } from "../targetChecks.js";
 import { findResourceKeyProblems, type ResourceKeyFinding } from "../resourceKeys.js";
 import { findTargetOnlyJobs, type TargetOnlyJob } from "../targetOnlyJobs.js";
+import { syncsFromBundleRoot } from "../syncRules.js";
 import { localizeBundleRootPaths, localizeWorkspacePaths, type SourceDocument } from "../workspacePaths.js";
 import {
   findClusterSecretReferences,
@@ -335,7 +336,7 @@ export type BundleNodeType =
 
 export interface BundleGraphNode {
   /** File checks that failed; a failed scan never means the source was clean. */
-  scanFailures?: Array<{ file: string; checks: string[] }>;
+  scanFailures?: Array<{ file: string; checks: string[]; directory?: true }>;
   id: string;
   kind: string;
   nodeType: BundleNodeType;
@@ -393,6 +394,8 @@ export interface BundleGraph {
   notebookRule?: NotebookHeaderRule;
   /** Where deploy may build library files before checking them (#482, #525). */
   buildOutputs?: BuildOutputs;
+  /** Upload rules for local source scans. Absent when external sync roots are not modelled. */
+  sourceUpload?: { root: string; sync?: Sync };
 }
 
 export interface ExtractBundleGraphOptions {
@@ -1491,6 +1494,8 @@ async function buildBundleGraph(
     edges,
     notebookRule,
     ...(outputs ? { buildOutputs: outputs } : {}),
+    ...(bundleRoot && syncsFromBundleRoot(bundleRoot, parsedBundle.sync)
+      ? { sourceUpload: { root: bundleRoot, ...(parsedBundle.sync ? { sync: parsedBundle.sync } : {}) } } : {}),
     variableSources: findVariableSources(
       loadOrder(bundleRoot, cliOutput.include).flatMap((file) => {
         const text = sourceIndex.sourceTexts.get(file);

@@ -120,9 +120,16 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
   return (
     <section className="flex flex-col gap-2" aria-label="Data flow" data-pipeline-data-flow>
       <h3 className="m-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-soft">Data flow · from SQL</h3>
+      {flow.incomplete && (
+        <p className="m-0 rounded-xl border border-dashed border-line px-3 py-2 text-xs text-fg-soft" role="status" data-data-flow-incomplete>
+          Some sources could not be checked. This data flow is incomplete.
+        </p>
+      )}
       {flow.nodes.length === 0 ? (
         <p className="m-0 text-xs text-fg-soft">
-          {flow.sqlFiles === 0
+          {flow.incomplete
+            ? "The inspector could not build a complete data flow from the available sources."
+            : flow.sqlFiles === 0
             ? "The data flow reads SQL sources, and this pipeline has none."
             : "No tables or views found in this pipeline's SQL."}
         </p>

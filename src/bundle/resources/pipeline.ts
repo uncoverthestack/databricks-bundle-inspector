@@ -1,5 +1,5 @@
 import { readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import { checkNotebookPath, type NotebookHeaderRule, type NotebookPathProblem } from "../notebookFiles.js";
 import {
   containsTemplate,
@@ -44,11 +44,13 @@ function hasFile(dir: string, recursive: boolean): boolean {
     return false;
   }
   for (const entry of entries) {
-    // Hidden files (.gitkeep, .DS_Store) are not pipeline sources.
-    if (entry.name.startsWith(".")) continue;
-    if (entry.isFile()) return true;
-    if (recursive && entry.isDirectory() && hasFile(resolve(dir, entry.name), true)) {
-      return true;
+    if (entry.isDirectory()) {
+      if (entry.name === ".git" || entry.name === ".databricks") continue;
+      if (recursive && hasFile(resolve(dir, entry.name), true)) return true;
+    } else if (entry.isFile()) {
+      // Dot-prefixed SQL is deployed and executed too (live CLI v1.28.0).
+      // Metadata such as .gitkeep still does not count as a source by itself.
+      if (!entry.name.startsWith(".") || [".sql", ".py", ".ipynb"].includes(extname(entry.name).toLowerCase())) return true;
     }
   }
   return false;

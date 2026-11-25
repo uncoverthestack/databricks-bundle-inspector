@@ -83,7 +83,7 @@ export function createSyncFilter(bundleRoot: string, sync?: Sync): SyncFilter {
 export function createSyncExclusion(
   bundleRoot: string,
   sync?: Sync,
-): (absolutePath: string) => SyncExclusion | undefined {
+): (absolutePath: string, directory?: boolean) => SyncExclusion | undefined {
   const gitRoot = findGitRoot(bundleRoot);
   const topDir = gitRoot && isInside(bundleRoot, gitRoot) ? gitRoot : bundleRoot;
   const gitignoreByDir = new Map<string, Ignore | undefined>();
@@ -102,9 +102,9 @@ export function createSyncExclusion(
 
   // Unlike git, a deeper `.gitignore` cannot re-include (`!name`) a file that a
   // parent `.gitignore` skipped: the CLI skips a file if any level matches it.
-  function gitignoreMatching(path: string): string | undefined {
+  function gitignoreMatching(path: string, directory: boolean): string | undefined {
     for (let dir = dirname(path); ; dir = dirname(dir)) {
-      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)))) {
+      if (gitignoreIn(dir)?.ignores(toPosix(relative(dir, path)) + (directory ? "/" : ""))) {
         return join(dir, ".gitignore");
       }
       if (dir === topDir || dirname(dir) === dir) return undefined;
@@ -136,15 +136,15 @@ export function createSyncExclusion(
     return undefined;
   }
 
-  return (absolutePath) => {
+  return (absolutePath, directory = false) => {
     if (!isInside(absolutePath, bundleRoot)) return undefined;
     const link = linkOnTheWay(absolutePath);
     if (link) return { rule: "symlink", link, folder: link !== absolutePath };
-    const rel = toPosix(relative(bundleRoot, absolutePath));
+    const rel = toPosix(relative(bundleRoot, absolutePath)) + (directory ? "/" : "");
     if (alwaysSkipped.ignores(rel)) return { rule: "always" };
     if (excluded.ignores(rel)) return { rule: "sync_exclude" };
     if (included.ignores(rel)) return undefined;
-    const gitignoreFile = gitignoreMatching(absolutePath);
+    const gitignoreFile = gitignoreMatching(absolutePath, directory);
     return gitignoreFile ? { rule: "gitignore", gitignoreFile } : undefined;
   };
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
 import { connectBrowser, panelSizer, STANDARD_PANEL, type Browser, type PanelSize, type PanelSizer } from "./browser.js";
@@ -310,5 +310,63 @@ export function pipelineFlowSuite() {
       }
       assert.ok(shown.page <= shown.width + 1 && shown.list <= shown.room + 1, `no sideways scroll: ${JSON.stringify(shown)}`);
     });
+    it("hidden SQL follows the upload rules in the rendered data flow", async () => {
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const source = path.join(root, "src/transformations/.source-coverage.sql");
+      const bundle = path.join(root, "databricks.yml");
+      const gitignore = path.join(root, ".gitignore");
+      const originalBundle = readFileSync(bundle, "utf8");
+      const originalIgnore = existsSync(gitignore) ? readFileSync(gitignore, "utf8") : undefined;
+      const present = async () => (await read()).nodes.some(node => node.id === "dataset:source_coverage_probe");
+      try {
+        writeFileSync(source, "CREATE MATERIALIZED VIEW source_coverage_probe AS SELECT 1 AS id;\n");
+        await openPipeline();
+        await waitFor(present, "the uploaded hidden SQL definition");
+        await screenshot("pipeline-hidden-source");
+
+        writeFileSync(bundle, originalBundle + "\nsync:\n  exclude: [src/transformations/.source-coverage.sql]\n");
+        await openPipeline();
+        await waitFor(async () => !(await present()), "the excluded hidden definition to disappear");
+
+        writeFileSync(bundle, originalBundle);
+        writeFileSync(gitignore, (originalIgnore ?? "") + "\nsrc/transformations/.source-coverage.sql\n");
+        await openPipeline();
+        await waitFor(async () => !(await present()), "the gitignored definition to stay out");
+
+        if (originalIgnore === undefined) rmSync(gitignore); else writeFileSync(gitignore, originalIgnore);
+        await openPipeline();
+        await waitFor(present, "the restored hidden source");
+      } finally {
+        writeFileSync(bundle, originalBundle);
+        if (originalIgnore === undefined) rmSync(gitignore, { force: true }); else writeFileSync(gitignore, originalIgnore);
+        rmSync(source, { force: true });
+        await openPipeline();
+      }
+    });
+
+    it("an unreadable source folder shows an incomplete-flow notice and a YAML error", async function () {
+      if (process.platform === "win32" || process.getuid?.() === 0) this.skip();
+      const root = vscode.workspace.workspaceFolders![0]!.uri.fsPath;
+      const denied = path.join(root, "src/transformations/source-coverage-denied");
+      const yaml = vscode.Uri.file(path.join(root, "resources/orders.pipeline.yml"));
+      try {
+        mkdirSync(denied);
+        writeFileSync(path.join(denied, "probe.sql"), "CREATE MATERIALIZED VIEW source_coverage_denied AS SELECT 1 AS id;\n");
+        chmodSync(denied, 0);
+        await openPipeline();
+        await waitFor(async () => Boolean(await evaluate('document.querySelector("[data-data-flow-incomplete]")')), "the incomplete-data-flow notice");
+        assert.match(await evaluate('document.querySelector("[data-data-flow-incomplete]").textContent'), /incomplete/);
+        await waitFor(async () => vscode.languages.getDiagnostics(yaml).some(diagnostic =>
+          (typeof diagnostic.code === "object" ? diagnostic.code.value : diagnostic.code) === "file_scan_failed" &&
+          diagnostic.severity === vscode.DiagnosticSeverity.Error), "the source scan error at the pipeline YAML");
+        await screenshot("pipeline-unreadable-source-folder");
+      } finally {
+        if (existsSync(denied)) chmodSync(denied, 0o755);
+        rmSync(denied, { recursive: true, force: true });
+        await openPipeline();
+      }
+      await waitFor(async () => !(await evaluate('document.querySelector("[data-data-flow-incomplete]")')), "the notice to clear after a successful retry");
+    });
+
   });
 }

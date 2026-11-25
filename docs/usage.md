@@ -52,6 +52,8 @@ Select a pipeline on the [bundle overview](#bundle-overview) to see its details 
 
 The **data flow** page is read from the pipeline's `.sql` sources, without running them. Open it from **Data flow ›** on the pipeline's box, from its details, or from the dropdown. Each table, view and flow they create is a box, with a link to the line that creates it; each table it reads is a line into it. Tables and files from outside the pipeline are dashed, on the left of what they feed. A `${key}` in a name is filled from the pipeline's `configuration` when the bundle gives it. A name the inspector cannot read, such as one set by a setting the bundle does not give, is listed under **could not be read** with its file and line, and never guessed. Python sources are not read yet; a line says how many. Point at a box to light what it reads and what reads it. The syntax follows the Databricks [pipeline SQL reference](https://docs.databricks.com/gcp/en/ldp/developer/sql-ref).
 
+Source scans follow the bundle's upload rules: dot-prefixed SQL files and folders are read when they are uploaded, and files excluded by `.gitignore` or `sync.exclude` do not supply tables, reads or secrets. `sync.include` can restore a gitignored source; `sync.exclude` still wins. Upload filtering is not applied when `sync.paths` moves the sync root outside the bundle, which is not modelled. If a source folder cannot be read, an error names it and the data flow says it is incomplete. Missing-table checks wait until the source set can be read.
+
 A job's graph doesn't show a pipeline's tables; its pipeline task's **Pipeline** row selects the pipeline on the overview.
 
 #### Lakebase projects
