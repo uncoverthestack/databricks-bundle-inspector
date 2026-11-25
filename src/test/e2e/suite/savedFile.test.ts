@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { codeValue } from "../../../bundle/issueDocs.js";
@@ -152,6 +153,28 @@ export function savedFileSuite() {
         await rm(python, { force: true });
         await rm(sql, { force: true });
       }
+    });
+
+    it("a file created in a pipeline glob folder outside the bundle clears its finding (#590)", async function () {
+      // An empty folder outside the bundle, which a new pipeline's glob points at.
+      const outside = await mkdtemp(path.join(os.tmpdir(), "dbi-outside-"));
+      const sources = path.join(outside, "sources");
+      await mkdir(sources);
+      const resources = path.join(root, "resources");
+      const glob = path.relative(resources, sources).split(path.sep).join("/");
+      const yaml = path.join(resources, "outside_pipeline.yml");
+      // Another drive on Windows: no relative path, so nothing to check.
+      if (path.isAbsolute(glob)) this.skip();
+      try {
+        await writeFile(yaml, `resources:\n  pipelines:\n    outside:\n      name: outside\n      libraries:\n        - glob:\n            include: ${glob}/**\n`);
+        await expectCode("missing_pipeline_source", true, "adding a pipeline whose outside glob folder is empty");
+        await writeFile(path.join(sources, "new.sql"), "CREATE OR REFRESH MATERIALIZED VIEW t AS SELECT 1;\n");
+        await expectCode("missing_pipeline_source", false, "creating a file in that outside folder");
+      } finally {
+        await rm(yaml, { force: true });
+        await rm(outside, { recursive: true, force: true });
+      }
+      await expectCode("missing_pipeline_source", false, "removing the pipeline");
     });
   });
 }
