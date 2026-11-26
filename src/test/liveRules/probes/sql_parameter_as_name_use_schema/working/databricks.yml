@@ -1,0 +1,23 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+variables:
+  warehouse_id:
+    lookup:
+      warehouse: Serverless Starter Warehouse
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ./q.sql
+            parameters:
+              cat: system
+              schema: information_schema

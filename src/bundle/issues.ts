@@ -78,6 +78,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "unused_parameter",
   "sql_parameter_not_set",
   "sql_parameter_quoted",
+  "sql_parameter_as_name",
   "schema_renamed_in_target",
   "task_value_unknown_task",
   "task_value_not_upstream",
@@ -656,6 +657,21 @@ function sqlParameterIssues(
     const reportedText = new Set<string>();
     for (const use of textParameters) {
       const where = { ...issueLocation(ref.resolvedPath, use.line, use.column), endColumn: use.endColumn };
+      // Where SQL needs a name, the quoted value breaks the query whether or not it's passed
+      // (#707, checked with job runs on Databricks CLI v1.28.0).
+      if (use.asName) {
+        issues.push({
+          id: `sql-parameter-as-name:${task.id}:${ref.resolvedPath}:${use.line}:${use.column}`,
+          severity: "warning",
+          kind: "sql_parameter_as_name",
+          title: `Wrap "{{${use.name}}}" in IDENTIFIER(): it is used as a name, and Databricks puts the value in quotes, so the run may fail.`,
+          taskId: task.id,
+          taskName: task.displayName,
+          yamlPath: ref.yamlPath,
+          fixHint: `Write the name with IDENTIFIER(), which takes a quoted name: FROM IDENTIFIER({{${use.name}}} || '.schema.table'), or USE IDENTIFIER({{${use.name}}}) for a schema. USE CATALOG {{${use.name}}} works as written.`,
+          ...where,
+        });
+      }
       if (passed.has(use.name)) {
         if (!use.wholeString) continue;
         // The quotes are the problem, so they are highlighted too.

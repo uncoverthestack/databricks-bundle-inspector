@@ -993,6 +993,33 @@ export interface SqlTextParameter {
   inString: boolean;
   /** The whole string is `'{{name}}'`: a passed value, already quoted, makes `''value''`. */
   wholeString: boolean;
+  /**
+   * Used where SQL needs a name, not a value (#707): inside backticks, joined to a name with a
+   * dot, or right after `FROM`, `JOIN`, `USE`, `USE SCHEMA` or `USE DATABASE`. The pasted-in
+   * value is quoted (`'system'`), so the run fails whether or not it is passed. Not set for
+   * `USE CATALOG {{name}}` or `IDENTIFIER({{name}})`, which take a quoted name and run.
+   */
+  asName?: true;
+}
+
+/** Words after which a `(` opens a subquery or a list, not a function call's arguments. */
+const NOT_A_FUNCTION = new Set(["AS", "IN", "FROM", "JOIN", "EXISTS", "ON", "AND", "OR", "NOT", "WHERE", "SELECT", "UNION", "ALL", "WITH", "VALUES", "USING", "LATERAL"]);
+
+/** Whether the `{{name}}` whose `{` is `tokens[at]` and last `}` is `tokens[at + 4]` stands where SQL needs a name. */
+function usedAsName(tokens: readonly SqlToken[], at: number, functionDepth: number): boolean {
+  const before = tokens[at - 1];
+  const after = tokens[at + 5];
+  // Joined to a name by a dot, with nothing between: {{cat}}.sales.orders, system.{{schema}}.t
+  if (after?.kind === "op" && after.value === "." && after.start === tokens[at + 4]!.end) return true;
+  if (before?.kind === "op" && before.value === "." && before.end === tokens[at]!.start) return true;
+  if (before?.kind !== "word") return false;
+  const word = before.value.toUpperCase();
+  const wordBefore = tokens[at - 2]?.kind === "word" ? tokens[at - 2]!.value.toUpperCase() : "";
+  if (word === "USE") return true;
+  if ((word === "SCHEMA" || word === "DATABASE") && wordBefore === "USE") return true;
+  // FROM also comes before values: EXTRACT(YEAR FROM x), a IS DISTINCT FROM x.
+  if (word === "JOIN") return true;
+  return word === "FROM" && wordBefore !== "DISTINCT" && functionDepth === 0;
 }
 
 const TEXT_PARAMETER_NAME = /^[A-Za-z_]\w*$/;
@@ -1011,8 +1038,30 @@ export async function detectSqlTextParametersInFile(filePath: string): Promise<S
   const at = (offset: number) => ({ line: getStartLine(document, offset), column: offset - document.lastIndexOf("\n", offset - 1) });
   const found: SqlTextParameter[] = [];
   const tokens = tokenizeSql(views.sql);
+  // For each open bracket, whether it holds a function call's arguments.
+  const brackets: boolean[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
+    if (token.kind === "op" && token.value === "(") {
+      const before = tokens[i - 1];
+      brackets.push(before?.kind === "word" && !NOT_A_FUNCTION.has(before.value.toUpperCase()));
+      continue;
+    }
+    if (token.kind === "op" && token.value === ")") {
+      brackets.pop();
+      continue;
+    }
+    if (token.kind === "op" && token.value === ";") brackets.length = 0;
+    // `{{cat}}` inside backticks is a name: passed, it becomes `'system'`; not passed, it
+    // stays as written. The run fails either way (#707).
+    if (token.kind === "quoted_identifier") {
+      const body = token.bodyStart ?? token.start;
+      for (const match of token.value.matchAll(TEXT_PARAMETER_IN_STRING)) {
+        const { line, column } = at(body + match.index!);
+        found.push({ name: match[1]!, line, column, endColumn: column + match[0].length, inString: false, wholeString: false, asName: true });
+      }
+      continue;
+    }
     if (token.kind === "string") {
       const body = token.bodyStart ?? token.start;
       // A plain quoted string (not r'...' or $$...$$) that holds only the parameter.
@@ -1033,7 +1082,8 @@ export async function detectSqlTextParametersInFile(filePath: string): Promise<S
       parts.every((part, k) => k === 0 || part.start === parts[k - 1]!.end)
     ) {
       const { line, column } = at(token.start);
-      found.push({ name: parts[2]!.value, line, column, endColumn: column + (parts[4]!.end - token.start), inString: false, wholeString: false });
+      const asName = usedAsName(tokens, i, brackets.filter(Boolean).length);
+      found.push({ name: parts[2]!.value, line, column, endColumn: column + (parts[4]!.end - token.start), inString: false, wholeString: false, ...(asName ? { asName } : {}) });
       i += 4;
     }
   }

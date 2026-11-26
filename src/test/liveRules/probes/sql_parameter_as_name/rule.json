@@ -1,0 +1,18 @@
+{
+  "check": "sql_parameter_as_name",
+  "issue": 707,
+  "note": "docs/checks.md#sql_parameter_as_name: a {{name}} parameter written as part of a table name fails the run with PARSE_SYNTAX_ERROR; IDENTIFIER() runs (Databricks CLI v1.28.0, 2026-11-26, needs a warehouse named \"Serverless Starter Warehouse\").",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "'system'"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

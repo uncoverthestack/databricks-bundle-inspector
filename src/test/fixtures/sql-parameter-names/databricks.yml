@@ -1,0 +1,10 @@
+bundle:
+  name: sql-parameter-names
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
