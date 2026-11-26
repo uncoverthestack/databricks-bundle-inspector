@@ -65,7 +65,10 @@ export function usedByWords(overview: BundleOverview, itemId: string): string {
 export function itemNote(overview: BundleOverview, item: OverviewItem): string {
   // Every note starts with the type in words: there is no type code beside the name (issue 400).
   if (item.kind === "job" && item.source === "bundle") {
-    return [typeWords(item), typeof item.taskCount === "number" ? count(item.taskCount, "task") : ""].filter(Boolean).join(" · ");
+    // The job's schedule or trigger in a few words (issue 733): the details have the rest.
+    return [typeWords(item), typeof item.taskCount === "number" ? count(item.taskCount, "task") : "", item.trigger?.short ?? ""]
+      .filter(Boolean)
+      .join(" · ");
   }
   const labelOf = (id: string) => allItems(overview).find((entry) => entry.id === id)?.label ?? id;
   // Serverless or inherited compute isn't a cluster: Databricks calls it serverless compute.

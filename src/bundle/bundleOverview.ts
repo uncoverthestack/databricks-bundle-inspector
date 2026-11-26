@@ -3,6 +3,7 @@
  * links between them. Built from the graph the extension sends, so it shows only what the
  * bundle says. Left column: what runs or shows something. Right column: what those use.
  */
+import type { JobTriggerWords } from "./jobTrigger.js";
 import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
 import { clusterSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 import { buildLakebaseProjects } from "./lakebaseBranches.js";
@@ -147,6 +148,8 @@ export interface OverviewItem {
   hasChecks: boolean;
   /** Jobs only. */
   taskCount?: number;
+  /** Jobs only: its schedule or trigger in words (issue 733). */
+  trigger?: JobTriggerWords;
   file?: string;
   line?: number;
   problems: ProblemCounts;
@@ -194,6 +197,7 @@ interface GraphNode {
   resourceGroup?: string;
   resourceKey?: string;
   taskCount?: number;
+  triggerWords?: JobTriggerWords;
   sourceFile?: string;
   sourceLine?: number;
   fieldLines?: Record<string, number>;
@@ -319,6 +323,7 @@ export function buildBundleOverview(
         resourceKey: node.resourceKey,
         hasChecks: CHECKED_RESOURCE_GROUPS.includes(node.resourceGroup),
         ...(node.nodeType === "job" && typeof node.taskCount === "number" ? { taskCount: node.taskCount } : {}),
+        ...(node.nodeType === "job" && node.triggerWords ? { trigger: node.triggerWords } : {}),
         ...(node.sourceFile ? { file: node.sourceFile } : {}),
         ...(node.sourceLine ? { line: node.sourceLine } : {}),
       },

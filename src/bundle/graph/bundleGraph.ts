@@ -1,3 +1,4 @@
+import { jobTriggerWords, type JobTriggerWords } from "../jobTrigger.js";
 import { readFileSync, statSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
@@ -202,6 +203,10 @@ export interface Job {
     pause_status?: string;
     [key: string]: unknown;
   };
+  continuous?: {
+    pause_status?: string;
+    [key: string]: unknown;
+  };
   run_as?: {
     service_principal_name?: string;
     user_name?: string;
@@ -359,6 +364,8 @@ export interface BundleGraphNode {
   status?: string;
   trigger?: string;
   triggerTooltip?: string;
+  /** A job's schedule or trigger in words, for the overview (issue 733). */
+  triggerWords?: JobTriggerWords;
   runAs?: string;
   taskCount?: number;
   parameters?: GraphParameter[];
@@ -632,6 +639,9 @@ function formatTrigger(job: Job): string {
       ? ` - ${job.schedule.pause_status}`
       : "";
     return `Schedule: ${job.schedule.quartz_cron_expression}${tz}${pauseStatus}`;
+  }
+  if (job.continuous && typeof job.continuous === "object") {
+    return job.continuous.pause_status ? `Continuous - ${job.continuous.pause_status}` : "Continuous";
   }
   const trigger = job.trigger;
   if (!trigger) return "Not specified";
@@ -1334,6 +1344,7 @@ async function buildBundleGraph(
     const jobId = resourceNode.id;
     const jobSourceFile = resourceSourceMap.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
     const jobDefinedAtLine = resourceKeyLines.get(`${resourceNode.resourceGroup}.${resourceNode.resourceKey}`);
+    const triggerWords = jobTriggerWords(job);
 
     addNode({
       id: jobId,
@@ -1341,6 +1352,7 @@ async function buildBundleGraph(
       nodeType: "job",
       displayName: resourceNode.displayName,
       trigger: formatTrigger(job),
+      ...(triggerWords ? { triggerWords } : {}),
       ...(job.schedule?.quartz_cron_expression
         ? {
             triggerTooltip: [
