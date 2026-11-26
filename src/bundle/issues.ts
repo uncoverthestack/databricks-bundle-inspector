@@ -1068,8 +1068,11 @@ function validationDiagnosticIssue(
  */
 const REPLACED_ENUM_SETTINGS: { path: RegExp; outcome: string }[] = [
   { path: /^resources\.jobs\.[^.]+\.schedule\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the schedule may run" },
+  { path: /^resources\.jobs\.[^.]+\.trigger\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the trigger may start runs" },
+  // Live, both continuous jobs started a run as soon as they were deployed.
+  { path: /^resources\.jobs\.[^.]+\.continuous\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the job may start and keep running" },
   { path: /^resources\.jobs\.[^.]+\.performance_target$/, outcome: "Databricks may leave it unset, so runs may use standard performance" },
-  { path: /^resources\.jobs\.[^.]+\.tasks\[\d+\]\.run_if$/, outcome: "Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails" },
+  { path: /^resources\.jobs\.[^.]+\.tasks\[\d+\](?:\.for_each_task\.task)?\.run_if$/, outcome: "Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails" },
 ];
 
 /** The CLI's `invalid value "X" for enum field. Valid values are [A B]` (bundle/config/validate/enum.go). */
