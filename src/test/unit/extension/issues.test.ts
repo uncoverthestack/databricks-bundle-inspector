@@ -551,6 +551,12 @@ describe("buildInspectorIssues", () => {
         "\"standard\" isn't a value Databricks accepts here. Databricks may leave it unset, so runs may use standard performance.", "Use one of: PERFORMANCE_OPTIMIZED, STANDARD. Letter case counts."],
       ["all_done", "[ALL_DONE ALL_FAILED ALL_SUCCESS]", "resources.jobs.nightly.tasks[3].run_if",
         "\"all_done\" isn't a value Databricks accepts here. Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails.", "Use one of: ALL_DONE, ALL_FAILED, ALL_SUCCESS. Letter case counts."],
+      ["ALL_DONE_X", "[ALL_DONE ALL_SUCCESS]", "resources.jobs.nightly.tasks[1].for_each_task.task.run_if",
+        "\"ALL_DONE_X\" isn't a value Databricks accepts here. Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails.", "Use one of: ALL_DONE, ALL_SUCCESS. Letter case counts."],
+      ["paused", "[PAUSED UNPAUSED]", "resources.jobs.nightly.trigger.pause_status",
+        "\"paused\" isn't a value Databricks accepts here. Databricks may use UNPAUSED, so the trigger may start runs.", "Use one of: PAUSED, UNPAUSED. Letter case counts."],
+      ["PAUSE", "[PAUSED UNPAUSED]", "resources.jobs.nightly.continuous.pause_status",
+        "\"PAUSE\" isn't a value Databricks accepts here. Databricks may use UNPAUSED, so the job may start and keep running.", "Use one of: PAUSED, UNPAUSED. Letter case counts."],
     ])("says what Databricks may use for %s at %s", (value, allowed, yamlPath, title, fixHint) => {
       expect(enumIssue(`invalid value "${value}" for enum field. Valid values are ${allowed}`, yamlPath)).toMatchObject({
         kind: "cli_diagnostic", severity: "warning", title, fixHint, yamlPath,
@@ -562,7 +568,7 @@ describe("buildInspectorIssues", () => {
       ["resources.jobs.nightly.tasks[0].condition_task.op"],
       // Same setting name elsewhere: untested.
       ["resources.pipelines.p.schedule.pause_status"],
-      ["resources.jobs.nightly.tasks[0].for_each_task.task.run_if"],
+      ["resources.jobs.nightly.tasks[0].for_each_task.task.condition_task.op"],
     ])("keeps the CLI's text at %s", (yamlPath) => {
       const message = 'invalid value "X" for enum field. Valid values are [A B]';
       expect(enumIssue(message, yamlPath)).toMatchObject({ title: message, fixHint: "Review the Databricks CLI validation diagnostic." });
