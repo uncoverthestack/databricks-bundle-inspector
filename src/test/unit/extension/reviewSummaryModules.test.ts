@@ -161,6 +161,44 @@ describe("parameter flows (#392)", () => {
     expect(buildParameterLinkageMaps(node).taskParams.get("p")?.sourceLine).toBe(8);
   });
 
+  test("a renamed job parameter keeps its own name in the flow (#592)", () => {
+    const node: FlowGraphNode = { id: "t", nodeType: "task", displayName: "t", taskData: {
+      fileReferences: [{ referenceType: "notebook" }],
+      taskParameterReferences: [{ name: "input", jobParameterName: "source", isOverriddenByJob: true }],
+      jobParameterReferences: [{ name: "source", sourceLine: 4 }],
+    } };
+    const small: FlowGraph = { nodes: [node, { id: "f", nodeType: "file", displayName: "f" }, { id: "w", nodeType: "widget", displayName: "input" }], edges: [
+      { source: "t", target: "f", kind: "references" }, { source: "f", target: "w", kind: "uses" },
+    ] };
+    const [flow] = buildParameterFlowsForTask(small, new Map(small.nodes.map((n) => [n.id, n])), node);
+    expect(flow!.segments.map(({ label, name }) => [label, name])).toEqual([["JOB", "source"], ["TASK", "input"], ["NOTEBOOK", "input"]]);
+  });
+
+  test("a renamed parameter flows from YAML through the notebook graph (#592)", async () => {
+    const yaml = `bundle: {name: renamed}
+resources:
+  jobs:
+    sample:
+      parameters: [{name: source, default: red}]
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ./renamed.py
+            base_parameters: {input: "{{job.parameters.source}}"}
+`;
+    writeFileSync(path.join(dir, "renamed.py"), "# Databricks notebook source\ndbutils.widgets.get('input')\n");
+    const built = await enrichGraphWithFileContent(await extractBundleGraph(parse(yaml) as ParsedBundleConfig, dir));
+    const jobNode = built.nodes.find((node) => node.nodeType === "job")!;
+    const [flow] = buildParameterFlowsForJob(built as FlowGraph, jobNode as FlowGraphNode);
+    expect(flow!.segments.map(({ label, name }) => [label, name])).toEqual([["JOB", "source"], ["TASK", "input"], ["NOTEBOOK", "input"]]);
+  });
+
+  test("a same-name job parameter still wins over a task reference to another parameter (#537)", () => {
+    const taskParams = new Map([["input", { name: "input", jobParameterName: "source", isOverriddenByJob: true, ignoredByJob: true }]]);
+    const jobParams = new Map([["input", { name: "input", sourceLine: 3 }], ["source", { name: "source", sourceLine: 5 }]]);
+    expect(parameterLinkageForName("input", taskParams, jobParams)).toMatchObject({ ignoredByJob: true, jobParameterName: "input", jobSourceLine: 3 });
+  });
+
   test("a segment's words in the summary", () => {
     expect(["JOB", "TASK", "NOTEBOOK", "SQL", "FILE"].map((label) => parameterFlowMarkdownLabel({ label: label as "JOB" }))).toEqual([
       "job parameter",

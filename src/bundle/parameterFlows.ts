@@ -56,6 +56,7 @@ export interface FlowGraph {
 /** Where a parameter's value is set: on the task, on the job, or on the job over the task's value. */
 export interface ParameterLinkage {
   kind: "task" | "job_override" | "job";
+  jobParameterName?: string | undefined;
   /** A job parameter with the same name wins, so the task's own value is never used (issue 537). */
   ignoredByJob?: boolean | undefined;
   taskValue?: string | undefined;
@@ -103,9 +104,10 @@ export function parameterLinkageForName(
   const taskParam = taskParams.get(name);
   if (taskParam) {
     // The job parameter the value comes from: the same name, or the one the value names.
-    const jobParam = jobParams.get(taskParam.jobParameterName ?? name);
+    const jobParam = jobParams.get(taskParam.ignoredByJob ? name : taskParam.jobParameterName ?? name);
     return {
       kind: taskParam.isOverriddenByJob ? "job_override" : "task",
+      jobParameterName: jobParam?.name,
       ...(taskParam.ignoredByJob ? { ignoredByJob: true } : {}),
       taskValue: taskParam.value,
       jobParameterDefault: taskParam.jobParameterDefault,
@@ -188,7 +190,7 @@ export function buildParameterFlowsForTask(
       // The task's own value is never used: the job parameter goes straight to the file.
       segments.push(makeParameterFlowSegment("JOB", name, sourceFile, linkage.jobSourceLine, linkage.jobSourceColumn));
     } else if (linkage.kind === "job_override") {
-      segments.push(makeParameterFlowSegment("JOB", name, sourceFile, linkage.jobSourceLine, linkage.jobSourceColumn));
+      segments.push(makeParameterFlowSegment("JOB", linkage.jobParameterName ?? name, sourceFile, linkage.jobSourceLine, linkage.jobSourceColumn));
       segments.push(makeParameterFlowSegment("TASK", name, sourceFile, linkage.sourceLine, linkage.sourceColumn));
     } else if (linkage.kind === "job") {
       segments.push(makeParameterFlowSegment("JOB", name, sourceFile, linkage.sourceLine, linkage.sourceColumn));
