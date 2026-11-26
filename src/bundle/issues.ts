@@ -14,7 +14,7 @@ import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, syncsFromBundleRoot, type SyncExclusion } from "./syncRules.js";
 import { globSync, hasGlobCharacters } from "./goGlob.js";
-import { mayBeBuilt } from "./localLibraries.js";
+import { mayBeBuilt, wheelBuildHint } from "./localLibraries.js";
 import { findUnloadedResourceFiles, readIncludeEntries } from "./includeFiles.js";
 import { writtenValueAt } from "./quickFix.js";
 import { filesUnder, movedFileSuggestion, type ExpectedFile, type FileList } from "./pathSuggestions.js";
@@ -1351,7 +1351,7 @@ export function buildInspectorIssues(
         taskName: task.displayName,
         yamlPath: ref.yamlPath,
         fixHint:
-          "Create the local library artifact or update the library path.",
+          `Create the local library artifact or update the library path.${wheelBuildHint(ref.identifier, graph.buildOutputs)}`,
         ...issueLocation(
           sourceFileForTask(task),
           ref.sourceLine || undefined,

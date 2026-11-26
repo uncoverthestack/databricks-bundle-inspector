@@ -60,6 +60,11 @@ export interface BuildOutputs {
   folders: string[];
   /** A build whose output can't be told (a build script, an artifact without `files`): any library may be built. */
   anywhere: boolean;
+  /**
+   * The bundle root has a `pyproject.toml` but no `setup.py`, no `artifacts` and no build hook,
+   * so deploy builds no wheel: the CLI only detects a `setup.py` (artifacts/prepare.go).
+   */
+  pyprojectNotBuilt?: true;
 }
 
 /**
@@ -94,6 +99,7 @@ export function buildOutputs(
   const artifacts = record(config.artifacts);
   if (!artifacts) {
     if (existsSync(path.join(bundleRoot, "setup.py"))) folders.push(path.join(bundleRoot, "dist"));
+    else if (!anywhere && existsSync(path.join(bundleRoot, "pyproject.toml"))) return { folders, anywhere, pyprojectNotBuilt: true };
     return { folders, anywhere };
   }
   for (const [name, value] of Object.entries(artifacts)) {
@@ -136,4 +142,15 @@ export function mayBeBuilt(resolvedPath: string, outputs: BuildOutputs | undefin
   const key = (folder: string) => (ignoreCase ? path.resolve(folder).toLowerCase() : path.resolve(folder));
   const folder = key(path.dirname(resolvedPath));
   return outputs.folders.some((built) => key(built) === folder);
+}
+
+/**
+ * Why a missing wheel isn't built at deploy, when the bundle looks like it expects one: a
+ * `pyproject.toml` project with no `artifacts`. Seen in public bundles whose CI builds the wheel
+ * before deploy; on a fresh checkout deploy fails. Empty for anything else.
+ */
+export function wheelBuildHint(written: string, outputs: BuildOutputs | undefined): string {
+  if (!outputs?.pyprojectNotBuilt || !/\.whl$/i.test(withoutWheelExtras(written))) return "";
+  // An artifact of type whl with no `build` runs "setup.py bdist_wheel" (artifacts/prepare.go), so it needs one here.
+  return " Deploy builds a wheel only from an artifacts entry, or from a setup.py when there are no artifacts, and this bundle has a pyproject.toml and neither. Build the wheel before deploy (for example with uv build --wheel), or add an artifacts entry of type whl with build: uv build --wheel.";
 }

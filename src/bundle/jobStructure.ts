@@ -490,7 +490,7 @@ export interface EnvironmentOptions extends JobStructureOptions {
    * deploy may build it first. `suggestion` is the path from the YAML folder to a file the
    * value names from the bundle root, the usual mistake (#518).
    */
-  missingDependency?: (jobKey: string, value: string) => { glob: boolean; suggestion?: string; notAFile?: true } | undefined;
+  missingDependency?: (jobKey: string, value: string) => { glob: boolean; suggestion?: string; notAFile?: true; hint?: string } | undefined;
   /** Whether an environment dependency is a local file to the CLI (see localLibraries.ts). */
   isLocalDependency?: (value: string) => boolean;
 }
@@ -670,8 +670,8 @@ export function findEnvironmentProblems(
           fixHint: missing.notAFile
             ? "Use a path or glob that matches only library files. Deploy cannot upload a directory as a library."
             : missing.glob
-            ? `Deploy fails with "no files match pattern". Paths are read from the YAML file's folder. Build the file, or correct the path.`
-            : `Deploy fails with "file doesn't exist". Paths are read from the YAML file's folder. Build the file, or correct the path.`,
+            ? `Deploy fails with "no files match pattern". Paths are read from the YAML file's folder. Build the file, or correct the path.${missing.hint ?? ""}`
+            : `Deploy fails with "file doesn't exist". Paths are read from the YAML file's folder. Build the file, or correct the path.${missing.hint ?? ""}`,
           ...located(environmentDependencyLocation(files, locate, jobKey, key, dependency, options)),
         });
       }
@@ -719,6 +719,10 @@ export function findEnvironmentProblems(
 
     // A key the preview can't resolve could be any key: no task's key can be called unknown.
     if (environments.some(({ key }) => key === undefined)) continue;
+    // Nor can it when the whole list is a variable, `environments: ${var.envs}`: the structural
+    // preview keeps a complex variable as text, so the job's environments aren't known here.
+    const written = record(job).environments;
+    if (written !== undefined && written !== null && !Array.isArray(written)) continue;
     const known = environments.map(({ key }) => key as string);
     const reported = new Set<string>();
     const check = (task: Task & { environment_key?: unknown }, taskKey: string, inner: boolean) => {

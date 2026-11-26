@@ -118,6 +118,22 @@ resources:
       tasks:
 ${tasks}`;
 
+  // Seen in a public bundle: the preview keeps a complex variable as text, so the job's
+  // environments are "${var.serverless_environments}", not a list. Its tasks can't be judged.
+  test("a job whose environments are a variable isn't judged; a misspelled key in a list still is", () => {
+    const fromVariable = `
+resources:
+  jobs:
+    j:
+      environments: \${var.serverless_environments}
+      tasks:
+        - task_key: script
+          environment_key: default
+`;
+    expect(check(fromVariable).filter((f) => f.kind === "unknown_environment_key")).toEqual([]);
+    expect(check(job("        - task_key: script\n          environment_key: defualt\n")).map((f) => f.kind)).toContain("unknown_environment_key");
+  });
+
   test("a typo gets a suggestion, on the task's environment_key line", () => {
     const findings = check(job("        - task_key: script\n          environment_key: defualt\n"));
     expect(summary(findings)).toEqual(['unknown_environment_key @10: Environment "defualt" may not exist. Did you mean "default"?']);

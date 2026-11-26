@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
-import { buildOutputs, isLocalDependency, localLibrary, mayBeBuilt, withoutWheelExtras } from "../../../bundle/localLibraries.js";
+import { buildOutputs, isLocalDependency, localLibrary, mayBeBuilt, wheelBuildHint, withoutWheelExtras } from "../../../bundle/localLibraries.js";
 
 // Rules from the CLI's bundle/libraries (v1.27.0) and live deploys on 2026-11-24 (#482, #525).
 
@@ -183,5 +183,36 @@ describe("task library globs through the graph (#525)", () => {
       "t: ./pkg/dist/*.whl (no file matches)",
       "loop: ./pkg/dist/*.whl (no file matches)",
     ]);
+  });
+});
+
+describe("a pyproject.toml project with no artifacts (public bundles, 2026-11-26)", () => {
+  let root: string;
+  beforeAll(() => {
+    root = mkdtempSync(path.join(tmpdir(), "dbi-pyproject-"));
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const project = (files: Record<string, string>) => {
+    const dir = mkdtempSync(path.join(root, "p-"));
+    for (const [name, text] of Object.entries(files)) writeFileSync(path.join(dir, name), text);
+    return dir;
+  };
+
+  test("a missing wheel says why deploy doesn't build it", () => {
+    const outputs = buildOutputs({}, project({ "pyproject.toml": "[project]\nname='x'\n" }), () => root);
+    expect(outputs.pyprojectNotBuilt).toBe(true);
+    expect(wheelBuildHint("../dist/*.whl", outputs)).toContain("with build: uv build --wheel");
+    expect(wheelBuildHint("../dist/app-0.1-py3-none-any.whl[extra]", outputs)).not.toBe("");
+  });
+
+  test("controls: a setup.py, an artifacts entry, a build hook, or a file that isn't a wheel get no hint", () => {
+    expect(buildOutputs({}, project({ "pyproject.toml": "", "setup.py": "" }), () => root).pyprojectNotBuilt).toBeUndefined();
+    expect(buildOutputs({ artifacts: { a: { type: "whl" } } }, project({ "pyproject.toml": "" }), () => root).pyprojectNotBuilt).toBeUndefined();
+    expect(
+      buildOutputs({ experimental: { scripts: { prebuild: "uv build" } } }, project({ "pyproject.toml": "" }), () => root).pyprojectNotBuilt,
+    ).toBeUndefined();
+    expect(buildOutputs({}, project({}), () => root).pyprojectNotBuilt).toBeUndefined();
+    const outputs = buildOutputs({}, project({ "pyproject.toml": "" }), () => root);
+    expect(wheelBuildHint("../lib/app.jar", outputs)).toBe("");
   });
 });

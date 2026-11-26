@@ -70,6 +70,7 @@ A task installs a local wheel or JAR that isn't there, or a job environment list
 - **Example:** `libraries: [{ whl: ../dist/app-0.1-py3-none-any.whl }]` with no such file, or `dependencies: [./dist/app-0.1-py3-none-any.whl]` in `resources/job.yml`, which is read as `resources/dist/...`: `Did you mean "../dist/app-0.1-py3-none-any.whl"?`
 - **Globs:** deploy expands a `whl` or `jar` glob such as `../dist/*.whl`, in a task's libraries and in environment dependencies, and requires at least one match ("no files match pattern"). The finding says "no file matches" when there are none. Every match must be a regular file: a directory, even beside a valid file, fails upload and is reported as "not a regular file". An `egg` glob isn't expanded by the CLI.
 - **Built at deploy:** deploy builds artifacts before it checks these files, so no finding is shown for a file deploy may build: in an artifact's `files` folder, in `<path>/dist` for a `whl` artifact, in `dist` when there are no `artifacts` and a `setup.py` in the bundle root, or anywhere when an `experimental.scripts` build hook (`preinit`, `prebuild`, `postbuild`) or an artifact with a `build` and no `files` is set.
+- **A `pyproject.toml` project:** with no `artifacts` and no `setup.py`, deploy builds no wheel, so a missing `.whl` is reported, and the fix says why: build it before deploy (for example `uv build --wheel`), or add an `artifacts` entry with `build: uv build --wheel`. An artifact of type `whl` without `build` runs `setup.py bdist_wheel` (checked in the Databricks CLI's source, v1.28.0).
 - **Fix:** build the library, or correct the path. Paths are relative to the YAML file they are written in.
 - **Not checked:** `-r` and `-e` paths (a missing requirements file already fails `bundle validate`), cluster libraries and pipeline environment dependencies.
 
@@ -236,7 +237,7 @@ A task's `environment_key` names an environment the job doesn't have.
 - **Severity:** error.
 - **Example:** `environment_key: defualt` in a job whose environment is `default`. Deploy fails with `Job environment 'defualt' used by task script is not defined in field 'environments'`.
 - **Fix:** use the `environment_key` of one of the job's environments. The finding suggests a close match.
-- **Limits:** a for-each task's inner task is checked too. When an environment key can't be resolved offline, the job's tasks aren't judged.
+- **Limits:** a for-each task's inner task is checked too. When an environment key can't be resolved offline, or the job's whole `environments` list is a variable (`environments: ${var.envs}`), the job's tasks aren't judged in the structural preview. Pick a target to check them.
 
 ### `project_environment_version_missing`
 

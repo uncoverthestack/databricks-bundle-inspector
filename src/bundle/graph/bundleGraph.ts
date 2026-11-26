@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { hasGlobCharacters } from "../goGlob.js";
-import { buildOutputs, isLocalDependency, localLibrary, mayBeBuilt, withoutWheelExtras, type BuildOutputs } from "../localLibraries.js";
+import { buildOutputs, isLocalDependency, localLibrary, mayBeBuilt, wheelBuildHint, withoutWheelExtras, type BuildOutputs } from "../localLibraries.js";
 import { parse as parseYaml } from "yaml";
 import {
   buildTaskNodeData,
@@ -1535,7 +1535,13 @@ async function buildBundleGraph(
           const suggestion = fromRoot.exists
             ? relative(dirOf("jobs", jobKey), fromRoot.resolvedPath).split(sep).join("/")
             : undefined;
-          return { glob, ...(notAFile ? { notAFile } : {}), ...(suggestion && suggestion !== written ? { suggestion } : {}) };
+          const hint = wheelBuildHint(written, outputs);
+          return {
+            glob,
+            ...(notAFile ? { notAFile } : {}),
+            ...(suggestion && suggestion !== written ? { suggestion } : {}),
+            ...(hint ? { hint } : {}),
+          };
         },
         projectFileExcluded: (jobKey, value) => {
           if (!bundleRoot) return false;
