@@ -732,7 +732,9 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
 
 **Scala and R files are read for `dbutils` calls only**, written as they are in Python (`dbutils.widgets.get("x")`), and `%run` lines. Other code in them isn't read. `%scala` and `%r` cells inside a Python or SQL notebook are skipped. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
 
-**Not checked.** Copied reviews and the command-line tool list what the checks couldn't look at, so "No issues" never hides code that wasn't read:
+**Modules a notebook or file imports aren't read.** With `from utils import get_password` in a notebook, a secret, widget or task value used only inside `utils.py` isn't checked, and isn't listed under **Not checked** below. Such a module gets `dbutils` by importing it (`from databricks.sdk.runtime import dbutils`) or from the notebook as an argument: used without either, the run fails with `NameError: name 'dbutils' is not defined` (checked with job runs on Databricks CLI v1.28.0).
+
+**Not checked.** Copied reviews and the command-line tool list these, so "No issues" doesn't hide them:
 
 - code outside the bundle (the workspace, a volume, DBFS or cloud storage) or in the job's Git repository;
 - the code inside a Python wheel, a JAR, a `spark_submit` task or a dbt project;
