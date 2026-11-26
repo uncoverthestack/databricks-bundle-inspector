@@ -109,13 +109,9 @@ export function collectWatchSpec(
     }
     // Notebooks a task's notebook runs with %run or dbutils.notebook.run: their widgets and
     // whether they exist change what the checks find.
-    const usage = node.data?.widgetUsage as { runFiles?: unknown } | undefined;
-    for (const file of Array.isArray(usage?.runFiles) ? usage.runFiles : []) {
-      if (typeof file === "string") files.add(file);
-    }
-    const runTargets = node.data?.runTargets;
-    for (const run of Array.isArray(runTargets) ? (runTargets as Array<{ target?: unknown; file?: unknown }>) : []) {
-      if (typeof run.target !== "string" || typeof run.file !== "string") continue;
+    for (const file of node.codeFacts?.widgetUsage?.runFiles ?? []) files.add(file);
+    for (const run of node.codeFacts?.runTargets ?? []) {
+      if (run.target === null) continue;
       const written = unquote(run.target);
       if (written.startsWith("./") || written.startsWith("../")) files.add(join(dirname(run.file), written));
     }
