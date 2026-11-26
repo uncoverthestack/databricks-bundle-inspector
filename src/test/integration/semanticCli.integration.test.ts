@@ -1,6 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { canonicalJsonSha256 } from "../../../scripts/canonical-json.cjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -22,26 +22,6 @@ const DEFAULT_TARGET = "__bundle_inspector_probe__";
 
 function env(name: string, fallback: string): string {
   return process.env[name]?.trim() || fallback;
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function canonicalJsonSha256(value: unknown): string {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 function safePathPart(value: string): string {

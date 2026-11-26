@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { canonicalJsonSha256 } from "./canonical-json.cjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_TARGET = "__bundle_inspector_probe__";
@@ -97,25 +97,6 @@ async function validateBundle(cli, fixtureRoot, target) {
     }
     throw error;
   }
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function canonicalJsonSha256(value) {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 async function main() {

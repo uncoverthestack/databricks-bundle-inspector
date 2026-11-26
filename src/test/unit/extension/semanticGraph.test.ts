@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { createHash } from "node:crypto";
+import { canonicalJsonSha256 } from "../../../../scripts/canonical-json.cjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
@@ -34,26 +34,6 @@ interface ValidatedBundleFixtureMeta {
   bundleTarget: string;
   validatedBundleCanonicalSha256: string;
   notes: string[];
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function canonicalJsonSha256(value: unknown): string {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 async function readFixtureBundle(
