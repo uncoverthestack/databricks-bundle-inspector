@@ -15,6 +15,17 @@ async function waitFor(check: () => boolean | Promise<boolean>, label: string): 
   assert.fail(`Timed out waiting for ${label}`);
 }
 
+/**
+ * No check running or waiting to start. A save starts a check; reading findings or fixes
+ * before it ends can see the previous check's state (#666).
+ */
+async function idle(): Promise<void> {
+  await waitFor(async () => {
+    const status = await vscode.commands.executeCommand<{ checksPending: boolean }>("databricksBundleInspector.test.statusBar");
+    return status?.checksPending === false;
+  }, "all pending checks to finish");
+}
+
 /** Runs against a throwaway copy of the issue-codes fixture in the real extension host. */
 export function issueCodesSuite() {
   describe("linked issue codes survive repeated checks and quick fixes", function () {
@@ -87,6 +98,8 @@ export function issueCodesSuite() {
         await vscode.workspace.applyEdit(eolEdit);
         await document.save();
         for (let round = 0; round < ROUNDS; round++) {
+          // The line-ending save, then each round's restoring save, start a check.
+          await idle();
           await waitFor(() => Boolean(finding(uri, kind)), `${kind} round ${round + 1}`);
           const diagnostic = finding(uri, kind)!;
           const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(

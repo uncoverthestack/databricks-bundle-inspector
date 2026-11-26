@@ -10,7 +10,7 @@ To see what failed: `gh run view <run id> --log-failed | grep -A4 "failing"`.
 | Suite | Test | Where | Message | Status |
 | --- | --- | --- | --- | --- |
 | graph colours follow the VS Code theme | `<theme>: switched with the graph open` | macOS | `text below WCAG AA`, one theme's text on the previous theme's box colour | Fixed (#665), 26 Nov 2026. Remove this row if it has not failed by 10 Dec. |
-| linked issue codes survive repeated checks and quick fixes | applies and clears the include quick fix over five rounds with CRLF | macOS, Linux | `round 1: linked diagnostic should still offer include_matches_nothing` | Open, #666. Seen 6, 25 (twice) and 26 Nov. |
+| linked issue codes survive repeated checks and quick fixes | applies and clears the include quick fix over five rounds with CRLF | macOS, Linux | `round 1: linked diagnostic should still offer include_matches_nothing` | Fixed (#666), 26 Nov 2026: round 1 read the fix while the check its save started was still running; it now waits for no check pending. Seen 6, 25 (twice) and 26 Nov (twice). Remove this row if it has not failed by 10 Dec. |
 | include mistakes | reads a backslash in an include entry as the CLI does on this platform | Windows | `ENOTEMPTY, Directory not empty` | Fixed by #662 (26 Nov). Remove this row if it has not failed by 10 Dec. |
 
 ## Red runs where no test failed
