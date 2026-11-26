@@ -339,7 +339,7 @@ export function includeMistakesSuite() {
         assert.ok(actions.some((action) => action.title === 'Change to "resources\\*.yml"'), "the light bulb offers the fix");
       } finally {
         await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-        rmSync(dir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       }
     });
   });
