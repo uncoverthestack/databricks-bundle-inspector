@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 /** File name in the folder, and where it comes from. */
 export const TREE_SITTER_FILES = {
   "tree-sitter.cjs": "web-tree-sitter",
-  "tree-sitter.wasm": "web-tree-sitter/tree-sitter.wasm",
+  "tree-sitter.wasm": "web-tree-sitter/web-tree-sitter.wasm",
   "tree-sitter-python.wasm": "tree-sitter-python/tree-sitter-python.wasm",
 };
 
