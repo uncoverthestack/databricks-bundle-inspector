@@ -1,8 +1,12 @@
 /**
  * Python syntax trees from tree-sitter (#649): the `web-tree-sitter` runtime with the
- * WebAssembly grammar the official `tree-sitter-python` package ships (0.25.0, built for
- * tree-sitter 0.25, the runtime's version). Both run as WebAssembly, so code is read the
- * same way on every OS, in the extension and in the command-line tool. It only reads text: nothing in the file is run.
+ * WebAssembly grammar the official `tree-sitter-python` package ships. Both run as
+ * WebAssembly, so code is read the same way on every OS, in the extension and in the
+ * command-line tool. It only reads text: nothing in the file is run.
+ *
+ * A new runtime version can rename its files (0.27 did, #684); the files are named here and
+ * in scripts/tree-sitter-files.mjs. Grammar 0.25.0 on runtime 0.27.2 was checked to give the
+ * same findings as on 0.25.10, on the test bundles and 200 public ones (#701).
  *
  * Neither package is bundled. Their three files are copied next to each bundle
  * (`dist/tree-sitter/` for the extension, `cli/dist/tree-sitter/` for the CLI) and loaded
@@ -19,7 +23,7 @@ export type SyntaxNode = TreeSitter.Node;
 /** The files each bundle ships in its `tree-sitter` folder, and the package each comes from. */
 export const TREE_SITTER_FILES = {
   "tree-sitter.cjs": "web-tree-sitter",
-  "tree-sitter.wasm": "web-tree-sitter/tree-sitter.wasm",
+  "tree-sitter.wasm": "web-tree-sitter/web-tree-sitter.wasm",
   "tree-sitter-python.wasm": "tree-sitter-python/tree-sitter-python.wasm",
 } as const;
 
