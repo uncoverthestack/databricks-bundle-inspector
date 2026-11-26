@@ -1,0 +1,133 @@
+resources:
+  jobs:
+    loop_key:
+      name: loop_key
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_loop.py
+    inner_key:
+      name: inner_key
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_inner.py
+    loop_key_default:
+      name: loop_key_default
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_loop_default.py
+    inner_key_typo:
+      name: inner_key_typo
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_inner_typo.py
+    inner_key_no_depends:
+      name: inner_key_no_depends
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          notebook_task:
+            notebook_path: ../src/read_inner.py
+    yaml_inner_key:
+      name: yaml_inner_key
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_widget.py
+            base_parameters:
+              r: "{{tasks.inner.values.result}}"
+    yaml_loop_key:
+      name: yaml_loop_key
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ../src/set_result.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ../src/read_widget.py
+            base_parameters:
+              r: "{{tasks.loop.values.result}}"
+    self_never_set:
+      name: self_never_set
+      tasks:
+        - task_key: selfread
+          notebook_task:
+            notebook_path: ../src/self_never_set.py
+    self_sets:
+      name: self_sets
+      tasks:
+        - task_key: selfread
+          notebook_task:
+            notebook_path: ../src/self_sets.py
+    self_default:
+      name: self_default
+      tasks:
+        - task_key: selfread
+          notebook_task:
+            notebook_path: ../src/self_default.py
+    self_runs_other:
+      name: self_runs_other
+      tasks:
+        - task_key: selfread
+          notebook_task:
+            notebook_path: ../src/self_runs_other.py

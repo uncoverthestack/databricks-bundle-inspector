@@ -1,0 +1,10 @@
+bundle:
+  name: task-value-loops
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true

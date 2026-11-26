@@ -1,0 +1,18 @@
+{
+  "check": "task_value_key_not_set",
+  "issue": 601,
+  "note": "docs/checks.md#task_value_key_not_set: a task reading its own value that it never sets fails the run (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "No task values with key"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

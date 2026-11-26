@@ -2118,6 +2118,13 @@ function pipelineSelectionIssues(graph: BundleGraph): InspectorIssue[] {
   return issues;
 }
 
+/** A for-each task's inner task_key, as written in its settings. */
+function innerTaskKey(task: BundleGraphNode): string | undefined {
+  const raw = task.data as { for_each_task?: { task?: { task_key?: unknown } } } | undefined;
+  const key = raw?.for_each_task?.task?.task_key;
+  return typeof key === "string" && key ? key : undefined;
+}
+
 // `{{tasks.<task_key>.values.<key>}}` in task settings.
 const TASK_VALUE_REFERENCE = /\{\{\s*tasks\.([\w-]+)\.values\.([\w-]+)\s*\}\}/g;
 
@@ -2139,23 +2146,19 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
     tasksByJob.set(node.parentId, tasks);
   }
 
-  const usagesOf = (task: BundleGraphNode): TaskValueUsage[] => {
+  /**
+   * The keys a task sets, or `undefined` when the inspector can't know them all. With
+   * `innerOnly`, only a for-each task's inner task, which is what sets its values.
+   */
+  const keysSetBy = (task: BundleGraphNode, innerOnly = false): Set<string> | undefined => {
     const data = task.taskData;
-    if (!data) return [];
-    return [data, ...(data.nestedTask ? [data.nestedTask] : [])]
-      .flatMap((d) => d.fileReferences)
-      .flatMap((ref) => {
-        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.codeFacts?.taskValueUsage;
-        return usage ? [usage] : [];
-      });
-  };
-
-  /** The keys a task sets, or `undefined` when the inspector can't know them all. */
-  const keysSetBy = (task: BundleGraphNode): Set<string> | undefined => {
-    const data = task.taskData;
-    const refs = data ? [data, ...(data.nestedTask ? [data.nestedTask] : [])].flatMap((d) => d.fileReferences) : [];
+    const parts = !data ? [] : innerOnly ? (data.nestedTask ? [data.nestedTask] : []) : [data, ...(data.nestedTask ? [data.nestedTask] : [])];
+    const refs = parts.flatMap((d) => d.fileReferences);
     const scanned = refs.filter((ref) => ref.referenceType === "notebook" || ref.referenceType === "python_script");
-    const usages = usagesOf(task);
+    const usages = refs.flatMap((ref) => {
+      const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.codeFacts?.taskValueUsage;
+      return usage ? [usage] : [];
+    });
     // Only tasks whose code was all read, with no %run and no key known only at runtime.
     if (scanned.length === 0 || usages.length !== scanned.length) return undefined;
     if (usages.some((usage) => usage.runsOtherNotebooks || usage.sets.some((set) => set.key === null))) {
@@ -2165,6 +2168,14 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
   };
 
   for (const [, tasks] of tasksByJob) {
+    // A for-each task's values are set by its inner task and read by the inner task's
+    // key, as a list in iteration order (https://docs.databricks.com/aws/en/jobs/tasks/for-each).
+    // The loop's own key has none (#601, CLI v1.28.0, serverless, 2 runs each).
+    const loopOfInner = new Map<string, BundleGraphNode>();
+    for (const task of tasks.values()) {
+      const inner = innerTaskKey(task);
+      if (inner && !tasks.has(inner)) loopOfInner.set(inner, task);
+    }
     const upstreamCache = new Map<string, Set<string>>();
     const upstreamOf = (taskKey: string): Set<string> => {
       const cached = upstreamCache.get(taskKey);
@@ -2233,7 +2244,9 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
       reads.sort((a, b) => Number(Boolean(a.hasDefault)) - Number(Boolean(b.hasDefault)));
       for (const read of reads) {
         const id = `task-value:${reader.id}:${read.taskKey}:${read.key ?? ""}`;
-        if (reported.has(id) || read.taskKey === readerKey) continue;
+        if (reported.has(id)) continue;
+        // A loop's code reading by its own loop or inner key: not confirmed live, left alone.
+        if (reader.taskData?.nestedTask && (read.taskKey === readerKey || read.taskKey === innerTaskKey(reader))) continue;
         reported.add(id);
         const location = read.file
           ? issueLocation(read.file, read.line)
@@ -2249,6 +2262,55 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
           ...location,
         };
         const valueName = read.key ? `"${read.key}"` : "a value";
+        // A task reading a value it sets itself: no wait needed, but the key must be set (#601).
+        if (read.taskKey === readerKey) {
+          const own = read.key ? keysSetBy(reader) : undefined;
+          if (own && read.key && !read.hasDefault && !own.has(read.key)) {
+            const suggestion = closestName(read.key, [...own]);
+            issues.push({
+              ...base,
+              kind: "task_value_key_not_set",
+              title: `This task reads its own value "${read.key}", which it may not set.${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+              fixHint: `The task's code has no dbutils.jobs.taskValues.set(key="${read.key}", ...). Databricks reports a missing key as an error when the job runs.`,
+            });
+          }
+          continue;
+        }
+        const loopForInner = loopOfInner.get(read.taskKey);
+        if (loopForInner) {
+          const loopKey = loopForInner.taskData!.taskKey;
+          if (!upstreamOf(readerKey).has(loopKey)) {
+            issues.push({
+              ...base,
+              kind: "task_value_not_upstream",
+              title: `Add "${loopKey}" to this task's depends_on: reading values of its inner task "${read.taskKey}" doesn't make this task wait, so they may not be set yet.`,
+              fixHint: `Add the for-each task "${loopKey}" to this task's depends_on, directly or through another dependency, so it runs first.`,
+            });
+            continue;
+          }
+          const keys = read.key ? keysSetBy(loopForInner, true) : undefined;
+          if (keys && read.key && !read.hasDefault && !keys.has(read.key)) {
+            const suggestion = closestName(read.key, [...keys]);
+            issues.push({
+              ...base,
+              kind: "task_value_key_not_set",
+              title: `Task "${read.taskKey}" may not set value "${read.key}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}`,
+              fixHint: `The task's code has no dbutils.jobs.taskValues.set(key="${read.key}", ...). Databricks reports a missing key as an error when the job runs.`,
+            });
+          }
+          continue;
+        }
+        const loopTask = tasks.get(read.taskKey);
+        const inner = loopTask ? innerTaskKey(loopTask) : undefined;
+        if (inner && !read.hasDefault) {
+          issues.push({
+            ...base,
+            kind: "task_value_key_not_set",
+            title: `Task value ${valueName} is read from for-each task "${read.taskKey}", which may not set values. Did you mean its inner task "${inner}"?`,
+            fixHint: `Values set inside a for-each loop are read by the inner task's key, as a list with one item per iteration: taskKey="${inner}". Databricks reports a missing key as an error when the job runs.`,
+          });
+          continue;
+        }
         if (!tasks.has(read.taskKey)) {
           const suggestion = closestName(read.taskKey, [...tasks.keys()]);
           issues.push({

@@ -1,0 +1,32 @@
+resources:
+  jobs:
+    variable_and_named:
+      name: variable_and_named
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/variable_and_named/parent.py
+    get_all_and_named:
+      name: get_all_and_named
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/get_all_and_named/parent.py
+    named_only:
+      name: named_only
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/named_only/parent.py
+    variable_only:
+      name: variable_only
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/variable_only/parent.py
+    named_with_default:
+      name: named_with_default
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../src/named_with_default/parent.py

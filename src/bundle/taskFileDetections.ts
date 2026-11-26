@@ -1157,8 +1157,10 @@ export async function detectWidgetUsageInFile(
     usage.runReadNames.push(...child.reads.map((read) => read.name), ...child.runReadNames);
     usage.unsetRunReads.push(...child.unsetRunReads);
     usage.runFiles.push(...child.runFiles);
-    // A notebook that itself runs one we can't see may get its widgets from there.
-    if (child.hasUnresolvedRuns || child.hasDynamicReads) continue;
+    // A notebook that itself runs one we can't see may get its widgets from there. A read
+    // by a name known only at runtime doesn't set a widget, so the child's named reads are
+    // still checked, as they are in the task's own notebook (#602).
+    if (child.hasUnresolvedRuns) continue;
     const childDefaults = new Set(child.defaults);
     const reported = new Set<string>();
     for (const read of child.reads) {

@@ -413,7 +413,7 @@ These read the code tasks run. See [Code it reads](#code-it-reads) for which lan
 
 ### `widget_not_set`
 
-A notebook reads a widget that may have no value when it runs as a job: neither the task nor the job passes it, and it has no default. Also reported for a widget created in a cell of the other language (Python and SQL), and for a notebook run with `%run` that reads a widget the `%run` line doesn't pass.
+A notebook reads a widget that may have no value when it runs as a job: neither the task nor the job passes it, and it has no default. Also reported for a widget created in a cell of the other language (Python and SQL), and for a notebook run with `%run` that reads a widget the `%run` line doesn't pass. Reads by a name known only at runtime, such as `get(name)`, don't hide that notebook's reads by name (checked with job runs on Databricks CLI v1.28.0).
 
 - **Severity:** warning.
 - **Example:** `dbutils.widgets.get("run_date")`, with no `run_date` in `base_parameters` or the job's `parameters`. The run fails with "No input widget named run_date is defined". `getArgument("run_date")` and `dbutils.widgets.getArgument("run_date")` fail the same way.
@@ -485,6 +485,7 @@ A task reads a value from a task that doesn't run before it, so the value may no
 - **Severity:** warning.
 - **Example:** `report` reads from `ingest`, and `ingest` is not in `report`'s `depends_on`, directly or through another task.
 - **Fix:** add the task to `depends_on`.
+- **For-each tasks:** a read by the inner task's key needs the for-each task in `depends_on`.
 
 ### `task_value_key_not_set`
 
@@ -493,7 +494,9 @@ A task reads a key that the other task's code never sets. Databricks reports a m
 - **Severity:** warning.
 - **Example:** `get(taskKey="ingest", key="row_count")`, while `ingest` only sets `rows`.
 - **Fix:** set the key in that task, or read the key it sets.
-- **Limits:** only checked when all of that task's code was read, with no `%run` and no key known only at runtime.
+- **For-each tasks:** values set inside a for-each loop are read by the inner task's key, as a list with one item per iteration ([For each docs](https://docs.databricks.com/aws/en/jobs/tasks/for-each)). After a for-each task `loop` whose inner task `inner` sets `result`, `get(taskKey="loop", key="result")` fails the run with `No task values with key "result" were found`, and `get(taskKey="inner", key="result")` works. `{{tasks.loop.values.result}}` in the YAML fails the same run with `Task value referenced by 'tasks.loop.values.result' was not found`, and `{{tasks.inner.values.result}}` works (checked with job runs on Databricks CLI v1.28.0). A read by the loop's key is reported, with the inner task's key as the suggestion.
+- **Own values:** a task reading its own key, `get(taskKey="<its own key>", key=...)`, fails the same way when its code never sets that key (checked with job runs on Databricks CLI v1.28.0).
+- **Limits:** only checked when all of that task's code was read, with no `%run` and no key known only at runtime. A read with a default is not reported. Reads inside a for-each task's own inner task are not checked.
 
 ### `secret_scope_name_mismatch`
 
