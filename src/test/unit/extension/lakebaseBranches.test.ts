@@ -76,10 +76,24 @@ describe("Lakebase branches (issue 543)", () => {
     expect(production.held.map((held) => `${held.group}:${held.label}:${held.detail ?? ""}`)).toEqual([
       "postgres_databases:app_db:database app_db",
       "postgres_roles:app_owner:role app_owner",
-      "postgres_synced_tables:orders:synced from main.sales.orders",
+      "postgres_synced_tables:orders:synced from main.sales.orders, triggered",
     ]);
     expect(production.schedules).toEqual([expect.objectContaining({ label: "daily", cadences: ["Daily at 03:00 UTC, kept 7 days"] })]);
     expect(production.usedBy).toEqual([{ id: "resources.apps.orders_app", label: "orders_app", through: "app_db" }]);
+  });
+
+  test("a synced table's sync mode follows where it syncs from (#737)", async () => {
+    const detailWith = async (yaml: string) => {
+      const [project] = await projectsFrom(yaml);
+      return branchById(project!, `${project!.id}#branch:production`)!.held.find((held) => held.group === "postgres_synced_tables")?.detail;
+    };
+    expect(fixtureYaml()).toContain("scheduling_policy: TRIGGERED");
+    expect(await detailWith(fixtureYaml().replace("scheduling_policy: TRIGGERED", "scheduling_policy: continuous"))).toBe(
+      "synced from main.sales.orders, continuous",
+    );
+    // Near miss: a mode the schema doesn't list, or none, is not shown.
+    expect(await detailWith(fixtureYaml().replace("scheduling_policy: TRIGGERED", "scheduling_policy: SOMETIMES"))).toBe("synced from main.sales.orders");
+    expect(await detailWith(fixtureYaml().replace("      scheduling_policy: TRIGGERED\n", ""))).toBe("synced from main.sales.orders");
   });
 
   test("a branch in a project the bundle doesn't define stays out, so it keeps its own box", async () => {

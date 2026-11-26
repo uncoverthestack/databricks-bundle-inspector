@@ -6,15 +6,17 @@ import { describeCronExpression } from "./graph/cronDescription.js";
  */
 export interface JobTriggerWords {
   /** "Schedule" for `schedule`, else "Trigger". */
-  label: "Schedule" | "Trigger";
+  label: "Schedule" | "Trigger" | "Sync";
   short: string;
   full: string;
   /** The raw cron, or the tables, when they add to `full`. */
   detail?: string[];
+  /** A job's SQL condition in words (issue 737): what must be true before the run goes ahead. */
+  condition?: string[];
 }
 
 interface JobTriggerFields {
-  schedule?: { quartz_cron_expression?: unknown; timezone_id?: unknown; pause_status?: unknown };
+  schedule?: { quartz_cron_expression?: unknown; timezone_id?: unknown; pause_status?: unknown; sql_condition?: unknown };
   continuous?: unknown;
   trigger?: {
     file_arrival?: { url?: unknown };
@@ -22,6 +24,7 @@ interface JobTriggerFields {
     table?: { table_names?: unknown };
     periodic?: { interval?: unknown; unit?: unknown };
     pause_status?: unknown;
+    sql_condition?: unknown;
   };
 }
 
@@ -65,8 +68,38 @@ export function scheduleWords(cron: string, timezone: string | undefined, isPaus
   );
 }
 
-/** The job's schedule or trigger in words, or undefined when it sets none. */
+/**
+ * A schedule's or a trigger's `sql_condition` (beta, issue 737) in words: after the cron or trigger
+ * fires, a saved query decides if the run goes ahead. Undefined when none is set.
+ */
+function conditionWords(value: unknown): string[] | undefined {
+  if (!isObject(value)) return undefined;
+  const query = text(value.sql_query_id);
+  const changes = text(value.trigger_mode)?.toUpperCase() === "RESULT_VALUE_CHANGES";
+  const when = !query
+    ? "Runs only when its SQL condition is met"
+    : changes
+      ? `Runs only when query ${query}'s value changes`
+      : `Runs only when query ${query} returns rows`;
+  const warehouse = text(value.warehouse_id);
+  return [when, ...(warehouse ? [`On warehouse ${warehouse}`] : [])];
+}
+
+/** The job's schedule or trigger in words, with its SQL condition, or undefined when it sets none. */
 export function jobTriggerWords(job: JobTriggerFields): JobTriggerWords | undefined {
+  const words = triggerWords(job);
+  if (!words) return undefined;
+  // The condition of the field the words came from: the schedule wins, as in triggerWords.
+  const source = words.label === "Schedule" ? job.schedule : isObject(job.continuous) ? undefined : job.trigger;
+  const condition = conditionWords(isObject(source) ? source.sql_condition : undefined);
+  if (!condition) return words;
+  const pausedTail = " · Paused";
+  const head = words.short.endsWith(pausedTail) ? words.short.slice(0, -pausedTail.length) : words.short;
+  const tail = words.short.endsWith(pausedTail) ? pausedTail : "";
+  return { ...words, short: `${head} · if SQL condition${tail}`, condition };
+}
+
+function triggerWords(job: JobTriggerFields): JobTriggerWords | undefined {
   const cron = isObject(job.schedule) ? text(job.schedule.quartz_cron_expression) : undefined;
   if (cron && isObject(job.schedule)) return scheduleWords(cron, text(job.schedule.timezone_id), paused(job.schedule.pause_status));
 
@@ -109,4 +142,47 @@ export function jobTriggerWords(job: JobTriggerFields): JobTriggerWords | undefi
     );
   }
   return undefined;
+}
+
+/** A synced table's sync mode (issue 737), from the CLI schema's description of scheduling_policy. */
+const SYNC_MODES: Record<string, { short: string; full: string }> = {
+  CONTINUOUS: { short: "Continuous", full: "Keeps running and applies source changes as they happen" },
+  TRIGGERED: { short: "Triggered", full: "Applies source changes each time its pipeline is run" },
+  SNAPSHOT: { short: "Snapshot", full: "Copies the whole source table each time its pipeline is run" },
+};
+
+export function syncModeWords(policy: unknown): JobTriggerWords | undefined {
+  const mode = typeof policy === "string" ? SYNC_MODES[policy.trim().toUpperCase()] : undefined;
+  return mode && { label: "Sync", ...mode };
+}
+
+/**
+ * A materialization set's schedules (issue 737), one per feature. The cron's format isn't stated
+ * (the schema's example has 5 fields, Quartz has 6 or 7), so it is shown as written, never in words.
+ */
+export function featureScheduleWords(features: unknown): JobTriggerWords | undefined {
+  const rows = (Array.isArray(features) ? features : []).flatMap((entry) => {
+    if (!isObject(entry)) return [];
+    const name = text(entry.feature_name) ?? "feature";
+    const cron = isObject(entry.cron_schedule_trigger) ? entry.cron_schedule_trigger : undefined;
+    if (cron) {
+      const derived = text(cron.mode)?.toUpperCase() === "DERIVED";
+      const expression = text(cron.cron_expression);
+      const zone = text(cron.timezone_id);
+      const when = derived ? "schedule set by Databricks" : expression ? `${expression}${zone ? ` (${zone})` : ""}` : undefined;
+      if (!when) return [];
+      return [{ line: `${name}: ${when}${cron.paused === true ? " (paused)" : ""}`, short: "Scheduled", paused: cron.paused === true }];
+    }
+    if (isObject(entry.table_trigger)) return [{ line: `${name}: when its source table changes`, short: "On table update", paused: false }];
+    return [];
+  });
+  if (rows.length === 0) return undefined;
+  const shorts = new Set(rows.map((row) => row.short));
+  const allPaused = rows.every((row) => row.paused);
+  return {
+    label: "Schedule",
+    short: `${shorts.size === 1 ? rows[0]!.short : "Scheduled"}${allPaused ? " · Paused" : ""}`,
+    full: rows.length === 1 ? "1 feature with a schedule" : `${rows.length} features with a schedule`,
+    detail: rows.map((row) => row.line),
+  };
 }

@@ -3,7 +3,7 @@
  * links between them. Built from the graph the extension sends, so it shows only what the
  * bundle says. Left column: what runs or shows something. Right column: what those use.
  */
-import { scheduleWords, type JobTriggerWords } from "./jobTrigger.js";
+import { featureScheduleWords, scheduleWords, syncModeWords, type JobTriggerWords } from "./jobTrigger.js";
 import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
 import { clusterSettings, jobOwnSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 import { buildLakebaseProjects } from "./lakebaseBranches.js";
@@ -595,6 +595,9 @@ export function resourceScheduleWords(resourceGroup: string, data: Record<string
       : resourceGroup === "data_quality_monitors"
         ? record(record(data.data_profiling_config).schedule)
         : undefined;
+  if (resourceGroup === "postgres_synced_tables") return syncModeWords(data.scheduling_policy);
+  if (resourceGroup === "synced_database_tables") return syncModeWords(record(data.spec).scheduling_policy);
+  if (resourceGroup === "materialization_sets") return featureScheduleWords(data.materialized_features);
   if (!schedule) return undefined;
   // Alerts call it quartz_cron_schedule; monitors quartz_cron_expression.
   const cron = text(resourceGroup === "alerts" ? schedule.quartz_cron_schedule : schedule.quartz_cron_expression);
