@@ -1,0 +1,16 @@
+{
+  "check": "missing_file",
+  "issue": 650,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, profile with serverless, 3 runs: validate stops: \"notebook missing.py not found\". Control deployed and ran.",
+  "variants": {
+    "broken": {
+      "validate": "fail",
+      "failsWith": "not found"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

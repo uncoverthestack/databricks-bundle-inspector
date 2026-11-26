@@ -1,0 +1,8 @@
+bundle:
+  name: __NAME__
+include:
+  - resources/*.yml
+targets:
+  probe:
+    mode: development
+    default: true

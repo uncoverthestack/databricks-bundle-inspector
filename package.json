@@ -378,6 +378,7 @@
     "prepare": "husky",
     "build:e2e": "node scripts/build-e2e.mjs",
     "build:corpus": "node scripts/build-corpus.mjs",
+    "live-rules": "node scripts/build-live-rules.mjs && node out/live-rules/run.cjs",
     "build:cli": "node scripts/build-cli.mjs",
     "pack:cli": "node scripts/pack-cli.mjs",
     "test:e2e": "npm run build:ext && npm run build:webview && npm run build:e2e && node out/e2e/runTest.cjs",

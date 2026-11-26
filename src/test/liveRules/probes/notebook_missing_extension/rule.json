@@ -1,0 +1,16 @@
+{
+  "check": "notebook_missing_extension",
+  "issue": 650,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, profile with serverless, 3 runs: validate stops: 'notebook \"nb\" not found. Did you mean \"nb.py\"?'. Control deployed and ran.",
+  "variants": {
+    "broken": {
+      "validate": "fail",
+      "failsWith": "Did you mean \"nb.py\""
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

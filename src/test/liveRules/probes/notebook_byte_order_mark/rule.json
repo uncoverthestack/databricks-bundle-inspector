@@ -1,0 +1,17 @@
+{
+  "check": "notebook_byte_order_mark",
+  "issue": 589,
+  "note": "docs/checks.md#notebook_byte_order_mark: deploy passes, the run fails (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

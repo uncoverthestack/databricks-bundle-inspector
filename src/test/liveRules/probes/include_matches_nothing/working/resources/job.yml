@@ -1,0 +1,8 @@
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: t
+          notebook_task:
+            notebook_path: ../nb.py

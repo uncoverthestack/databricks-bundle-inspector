@@ -1,0 +1,17 @@
+{
+  "check": "widget_not_set",
+  "issue": 602,
+  "note": "docs/checks.md#widget_not_set: a widget removed and then read fails the run (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

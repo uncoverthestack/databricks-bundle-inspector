@@ -1,0 +1,17 @@
+{
+  "check": "multiple_job_triggers",
+  "issue": 237,
+  "note": "docs/checks.md#multiple_job_triggers: deploy fails (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "Invalid trigger settings"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

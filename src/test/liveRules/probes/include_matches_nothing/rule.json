@@ -1,0 +1,18 @@
+{
+  "check": "include_matches_nothing",
+  "issue": 650,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, profile with serverless, 3 runs: deploy passes without the job: bundle run says \"resource not found or not yet deployed\" (silent). Control deployed and ran.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "resource not found or not yet deployed"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}
