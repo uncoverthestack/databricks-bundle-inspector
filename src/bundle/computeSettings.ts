@@ -279,3 +279,63 @@ export function serverlessSettings(jobs: ServerlessJob[], resolve: Resolve = (va
   if (performance.length > 0) sections.push({ title: "Performance", rows: performance });
   return { sections, alsoSet: [] };
 }
+
+/** Seconds in words: 7200 is "2 hours", 90 is "90 seconds", 0 is "None". */
+function duration(text: string): string {
+  const seconds = Number(text);
+  if (!Number.isInteger(seconds) || seconds < 0) return text;
+  if (seconds === 0) return "None";
+  const [count, unit] = seconds % 3600 === 0 ? [seconds / 3600, "hour"] : seconds % 60 === 0 ? [seconds / 60, "minute"] : [seconds, "second"];
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * A job's own settings for its details on the overview (issue 735): who it runs as, its
+ * parameters, its limits and who hears about a failure. Each section only when the bundle sets
+ * it, and nothing folded away, so a job that sets little keeps a short list.
+ */
+export function jobOwnSettings(
+  config: Record<string, unknown>,
+  resolve: Resolve = (value) => value,
+  fieldLines?: Record<string, number>,
+): ComputeSettings {
+  const sections: SettingSection[] = [];
+
+  const runAs = record(config.run_as);
+  const runAsRow = row("Service principal", runAs.service_principal_name, resolve) ?? row("User", runAs.user_name, resolve);
+  if (runAsRow) sections.push({ title: "Runs as", rows: [runAsRow] });
+
+  const parameters = (Array.isArray(config.parameters) ? config.parameters : []).flatMap((entry) => {
+    const parameter = record(entry);
+    if (typeof parameter.name !== "string" || parameter.name === "") return [];
+    const value = parameter.default;
+    // An empty default is a real value: show it, not hide the parameter.
+    if (value === "") return [{ label: parameter.name, value: "Empty" }];
+    const shown = row(parameter.name, typeof value === "object" && value !== null ? JSON.stringify(value) : value, resolve);
+    return [shown ?? { label: parameter.name, value: "No default" }];
+  });
+  if (parameters.length > 0) sections.push({ title: "Job parameters", rows: parameters });
+
+  // The CLI adds max_concurrent_runs: 1 to every job it outputs: shown only when the YAML writes it
+  // or it isn't the default 1.
+  const addedByCli = fieldLines !== undefined && !("max_concurrent_runs" in fieldLines) && String(config.max_concurrent_runs) === "1";
+  const limits = [
+    row("Timeout", config.timeout_seconds, resolve, duration),
+    addedByCli ? undefined : row("Runs at once", config.max_concurrent_runs, resolve),
+  ].filter(
+    (entry): entry is SettingRow => entry !== undefined,
+  );
+  if (limits.length > 0) sections.push({ title: "Limits", rows: limits });
+
+  const emails = (Array.isArray(record(config.email_notifications).on_failure) ? (record(config.email_notifications).on_failure as unknown[]) : [])
+    .filter(isSet)
+    .map((email) => resolve(String(email)));
+  const webhooks = Array.isArray(record(config.webhook_notifications).on_failure) ? (record(config.webhook_notifications).on_failure as unknown[]).length : 0;
+  const failure: SettingRow[] = [
+    ...(emails.length > 0 ? [{ label: emails.length === 1 ? "Email" : "Emails", value: emails.join(", "), lines: emails }] : []),
+    ...(webhooks > 0 ? [{ label: "Webhooks", value: `${webhooks} webhook${webhooks === 1 ? "" : "s"}` }] : []),
+  ];
+  if (failure.length > 0) sections.push({ title: "On failure, tells", rows: failure });
+
+  return { sections, alsoSet: [] };
+}
