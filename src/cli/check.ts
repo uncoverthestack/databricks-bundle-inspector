@@ -9,6 +9,8 @@ import { cliDiagnosticsOf, inspectorFindings, inspectorFindingsAt, targetResolut
 import { issueDocsUrl } from "../bundle/issueDocs.js";
 import { CHECK_WITH_TARGET_CLI, PICK_TARGET_IN_GRAPH, type InspectorIssue, type InspectorIssueKind } from "../bundle/issues.js";
 import { validateBundle, type BundleResult } from "../bundle/validateBundle.js";
+import { notCheckedIn, type NotChecked, type NotCheckedReason } from "../bundle/notChecked.js";
+import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
 import { databricksCliInstallUrl, resolveDatabricksCli, verifyCliPath } from "../databricksCli/validateDatabricksCli.js";
 import { displayPath } from "./discover.js";
@@ -31,6 +33,17 @@ export interface Finding {
   docs: string;
 }
 
+/** Something the checks couldn't look at, and why (#647). */
+export interface NotCheckedEntry {
+  reason: NotCheckedReason;
+  message: string;
+  /** Relative to where the command ran, with `/`. */
+  file?: string;
+  line?: number;
+  task?: string;
+  resource?: string;
+}
+
 export interface BundleReport {
   /** The bundle folder, relative to where the command ran, with `/`. */
   path: string;
@@ -39,6 +52,8 @@ export interface BundleReport {
   /** False when `bundle validate` failed: only what the Databricks CLI reported is listed. */
   validated: boolean;
   findings: Finding[];
+  /** What the checks couldn't look at. Empty when `bundle validate` failed, as nothing was checked then. */
+  notChecked: NotCheckedEntry[];
 }
 
 export interface CheckReport {
@@ -107,6 +122,18 @@ function checkVersion(cliPath: string, version: string | undefined) {
 /** A finding's words as the command line says them: here a target is checked with --target, not in the graph. */
 function cliTitle(issue: InspectorIssue): string {
   return issue.kind === "path_not_checked" ? issue.title.replace(PICK_TARGET_IN_GRAPH, CHECK_WITH_TARGET_CLI) : issue.title;
+}
+
+function notCheckedEntries(graph: BundleGraph, cwd: string): NotCheckedEntry[] {
+  const taskNames = new Map(graph.nodes.map((node) => [node.id, node.taskKey ?? node.displayName]));
+  return notCheckedIn(graph).map((item: NotChecked) => ({
+    reason: item.reason,
+    message: item.text,
+    ...(item.file ? { file: displayPath(item.file, cwd) } : {}),
+    ...(item.file && item.line !== undefined ? { line: item.line } : {}),
+    ...(item.taskId ? { task: taskNames.get(item.taskId) ?? item.taskId } : {}),
+    ...(item.resourceId ? { resource: item.resourceId } : {}),
+  }));
 }
 
 export function findingFromIssue(issue: InspectorIssue, cwd: string, version: string): Finding {
@@ -186,12 +213,17 @@ export async function checkBundles(
     const shown = displayPath(root, cwd);
     const base = { path: shown, ...(name ? { name } : {}) };
     if (!preview.ok) {
-      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(preview, root, cwd, version) });
+      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(preview, root, cwd, version), notChecked: [] });
       continue;
     }
     if (!target) {
-      const { issues } = await inspectorFindings(preview, root);
-      bundles.push({ ...base, validated: true, findings: issues.map((issue) => findingFromIssue(issue, cwd, version)) });
+      const { graph, issues } = await inspectorFindings(preview, root);
+      bundles.push({
+        ...base,
+        validated: true,
+        findings: issues.map((issue) => findingFromIssue(issue, cwd, version)),
+        notChecked: notCheckedEntries(graph, cwd),
+      });
       continue;
     }
 
@@ -217,7 +249,7 @@ export async function checkBundles(
         };
       }
       // The Databricks CLI rejects the bundle for this target: that is a finding.
-      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(atTarget, root, cwd, version) });
+      bundles.push({ ...base, validated: false, findings: findingsFromFailedValidate(atTarget, root, cwd, version), notChecked: [] });
       continue;
     }
     const { resolutionBundle } = targetResolutionOf(
@@ -226,8 +258,13 @@ export async function checkBundles(
       preview.targetOptions ?? [],
       preview.data,
     );
-    const { issues } = await inspectorFindingsAt(atTarget, root, resolutionBundle, target);
-    bundles.push({ ...base, validated: true, findings: issues.map((issue) => findingFromIssue(issue, cwd, version)) });
+    const { graph, issues } = await inspectorFindingsAt(atTarget, root, resolutionBundle, target);
+    bundles.push({
+      ...base,
+      validated: true,
+      findings: issues.map((issue) => findingFromIssue(issue, cwd, version)),
+      notChecked: notCheckedEntries(graph, cwd),
+    });
   }
   return { ok: true, report: { version, databricksCli: cli, ...(target ? { target } : {}), bundles } };
 }

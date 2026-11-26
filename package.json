@@ -377,6 +377,7 @@
     "fixtures:update:validated-bundle": "node scripts/update-validated-bundle-fixture.mjs",
     "prepare": "husky",
     "build:e2e": "node scripts/build-e2e.mjs",
+    "build:corpus": "node scripts/build-corpus.mjs",
     "live-rules": "node scripts/build-live-rules.mjs && node out/live-rules/run.cjs",
     "build:cli": "node scripts/build-cli.mjs",
     "pack:cli": "node scripts/pack-cli.mjs",

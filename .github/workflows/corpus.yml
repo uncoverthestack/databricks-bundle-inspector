@@ -1,0 +1,102 @@
+name: Findings on real bundles
+
+# Runs the command-line tool built from the base and from the pull request on the same real
+# bundles (src/test/corpus/corpus.json, pinned) and fails when their findings differ (#651).
+# A change that is meant to change findings gets the `corpus-change-expected` label; the job
+# summary lists what changed either way. No sign-in, no secrets: only `bundle validate`, with
+# the bundles' own scripts and Python turned off.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "src/bundle/**"
+      - "src/cli/**"
+      - "src/databricksCli/**"
+      - "src/test/corpus/**"
+      - "src/test/fixtures/**"
+      - "scripts/build-cli.mjs"
+      - "scripts/fetch-corpus.mjs"
+      - "package-lock.json"
+      - ".github/workflows/corpus.yml"
+  # By hand: compare any branch with a base, for example to see a known change caught.
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "The branch, tag or commit to compare with"
+        required: true
+        default: "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Checkout the base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base }}
+          path: base
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          npm ci --include=optional
+          npm ci --include=optional --prefix base
+
+      - name: Build both command-line tools
+        run: |
+          npm run build:cli
+          npm run build:corpus
+          (cd base && npm run build:cli)
+
+      - name: Install Databricks CLI
+        run: |
+          set -euo pipefail
+          CLI_VERSION="$(node -p 'require("./src/test/corpus/corpus.json").databricksCli')"
+          echo "Installing Databricks CLI ${CLI_VERSION}"
+          archive="databricks_cli_${CLI_VERSION}_linux_amd64.tar.gz"
+          base="https://github.com/databricks/cli/releases/download/v${CLI_VERSION}"
+          workdir="$RUNNER_TEMP/databricks-cli"
+          mkdir -p "$workdir"
+          cd "$workdir"
+          curl -fsSLO "$base/$archive"
+          curl -fsSLO "$base/databricks_cli_${CLI_VERSION}_SHA256SUMS"
+          grep " ${archive}\$" "databricks_cli_${CLI_VERSION}_SHA256SUMS" | sha256sum --check -
+          tar -xzf "$archive" databricks
+          echo "$workdir" >> "$GITHUB_PATH"
+
+      - name: Fetch the real bundles
+        run: node scripts/fetch-corpus.mjs "$RUNNER_TEMP/corpus" > "$RUNNER_TEMP/corpus-folders.txt"
+
+      - name: Compare findings
+        env:
+          CHANGE_EXPECTED: ${{ contains(github.event.pull_request.labels.*.name, 'corpus-change-expected') }}
+        run: |
+          set -euo pipefail
+          mapfile -t folders < "$RUNNER_TEMP/corpus-folders.txt"
+          local_folders="$(node -p 'require("./src/test/corpus/corpus.json").local.join("\n")')"
+          mapfile -t -O "${#folders[@]}" folders <<< "$local_folders"
+          allow=()
+          if [ "$CHANGE_EXPECTED" = "true" ]; then allow=(--allow-changes); fi
+          node out/corpus/run.cjs --base base/cli/dist/cli.cjs --head cli/dist/cli.cjs --summary "$GITHUB_STEP_SUMMARY" "${allow[@]}" "${folders[@]}"

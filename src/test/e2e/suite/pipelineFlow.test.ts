@@ -380,7 +380,7 @@ export function pipelineFlowSuite() {
         await screenshot("pipeline-unreadable-source-folder");
       } finally {
         if (existsSync(denied)) chmodSync(denied, 0o755);
-        rmSync(denied, { recursive: true, force: true });
+        rmSync(denied, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
         await openPipeline();
       }
       await waitFor(async () => !(await evaluate('document.querySelector("[data-data-flow-incomplete]")')), "the notice to clear after a successful retry");

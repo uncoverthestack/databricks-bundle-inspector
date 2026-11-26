@@ -1050,10 +1050,47 @@ function validationDiagnosticIssue(
     };
   }
 
+  const replaced = replacedEnumValue(diagnostic);
+  if (replaced) return replaced;
+
   return {
     kind: "cli_diagnostic",
     title: diagnostic.message ?? issue.message,
     fixHint: "Review the Databricks CLI validation diagnostic.",
+  };
+}
+
+/**
+ * Settings where `bundle deploy` passes with a value outside the allowed list and Databricks
+ * stores its own value instead (#645). Checked live on CLI v1.28.0, two deploys each, reading
+ * the stored job back: typos (`PAUSE`) and wrong case (`paused`) are both replaced. Other
+ * settings keep the CLI's own text: some fail deploy instead, and the rest are untested.
+ */
+const REPLACED_ENUM_SETTINGS: { path: RegExp; outcome: string }[] = [
+  { path: /^resources\.jobs\.[^.]+\.schedule\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the schedule may run" },
+  { path: /^resources\.jobs\.[^.]+\.trigger\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the trigger may start runs" },
+  // Live, both continuous jobs started a run as soon as they were deployed.
+  { path: /^resources\.jobs\.[^.]+\.continuous\.pause_status$/, outcome: "Databricks may use UNPAUSED, so the job may start and keep running" },
+  { path: /^resources\.jobs\.[^.]+\.performance_target$/, outcome: "Databricks may leave it unset, so runs may use standard performance" },
+  { path: /^resources\.jobs\.[^.]+\.tasks\[\d+\](?:\.for_each_task\.task)?\.run_if$/, outcome: "Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails" },
+];
+
+/** The CLI's `invalid value "X" for enum field. Valid values are [A B]` (bundle/config/validate/enum.go). */
+const ENUM_WARNING_RE = /^invalid value "(.*)" for enum field\. Valid values are \[(.*)\]$/;
+
+function replacedEnumValue(
+  diagnostic: BundleDiagnostic,
+): Pick<InspectorIssue, "kind" | "title" | "fixHint"> | undefined {
+  const match = ENUM_WARNING_RE.exec(diagnostic.message);
+  const yamlPath = diagnostic.yamlPath;
+  if (!match || !yamlPath) return undefined;
+  const setting = REPLACED_ENUM_SETTINGS.find(({ path }) => path.test(yamlPath));
+  if (!setting) return undefined;
+  const allowed = (match[2] ?? "").split(" ").filter(Boolean).join(", ");
+  return {
+    kind: "cli_diagnostic",
+    title: `"${match[1]}" isn't a value Databricks accepts here. ${setting.outcome}.`,
+    fixHint: `Use one of: ${allowed}. Letter case counts.`,
   };
 }
 

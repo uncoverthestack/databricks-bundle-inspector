@@ -4,6 +4,7 @@
  * its data flow (issue 398), read without running anything and never guessed.
  */
 
+import { dataFlowNotChecked, notCheckedMarkdown } from "../../bundle/notChecked.js";
 import type { PipelineDataFlow } from "../../bundle/pipelineDataFlow.js";
 import { orderBySeverity, severityMeta } from "./issueSeverity.js";
 import { escapeMarkdown } from "../../bundle/markdownText.js";
@@ -255,6 +256,8 @@ export function pipelineReviewSummary(
   const counts = new Map<SourceStatus, number>();
   for (const source of view.sources) counts.set(source.status, (counts.get(source.status) ?? 0) + 1);
   for (const [status, count] of counts) lines.push(`- ${count} ${STATUS_WORDS[status]}`);
+  // What the data flow didn't read, so a summary never looks complete when it isn't (#611).
+  lines.push(...notCheckedMarkdown(view.dataFlow ? dataFlowNotChecked(view.dataFlow, view.key) : [], escapeMarkdown));
   return lines.join("\n");
 }
 

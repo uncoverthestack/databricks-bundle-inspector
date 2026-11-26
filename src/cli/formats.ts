@@ -64,6 +64,9 @@ function bundleHeading(bundle: BundleReport): string {
   return `${bundle.path}${bundle.name ? ` (${bundle.name})` : ""}`;
 }
 
+/** How many "not checked" lines the text and Markdown formats list per bundle; JSON lists every one. */
+export const NOT_CHECKED_SHOWN = 5;
+
 // ── text ─────────────────────────────────────────────────────
 
 const COLOR: Record<Severity, string> = { error: "\x1b[31m", warning: "\x1b[33m", info: "\x1b[34m" };
@@ -86,6 +89,11 @@ export function formatText(report: CheckReport, color: boolean): string {
       lines.push(
         `  ${paint(finding.severity, SEVERITY_WORD[finding.severity].padEnd(7))} ${where ? `${terminalText(where)}  ` : ""}${terminalText(finding.message)}  [${finding.code}]`,
       );
+    }
+    // So "no problems" never hides code that wasn't read (#647).
+    for (const entry of bundle.notChecked.slice(0, NOT_CHECKED_SHOWN)) lines.push(`  not checked  ${terminalText(entry.message)}`);
+    if (bundle.notChecked.length > NOT_CHECKED_SHOWN) {
+      lines.push(`  not checked  ...and ${bundle.notChecked.length - NOT_CHECKED_SHOWN} more (--format json lists every one)`);
     }
     lines.push("");
   }
@@ -130,14 +138,19 @@ export function formatMarkdown(report: CheckReport): string {
     if (!bundle.validated) lines.push("`bundle validate` failed; only what the Databricks CLI reported is listed.", "");
     if (bundle.findings.length === 0) {
       lines.push("No problems.");
-      continue;
+    } else {
+      lines.push("| Severity | Where | Problem | Check |", "| --- | --- | --- | --- |");
+      for (const finding of orderFindings(bundle.findings)) {
+        const where = location(finding);
+        lines.push(
+          `| ${SEVERITY_LABEL[finding.severity]} | ${where ? markdownCode(where) : ""} | ${escapeMarkdown(oneLine(finding.message))} | [${finding.code.replace(/_/g, "\\_")}](${finding.docs}) |`,
+        );
+      }
     }
-    lines.push("| Severity | Where | Problem | Check |", "| --- | --- | --- | --- |");
-    for (const finding of orderFindings(bundle.findings)) {
-      const where = location(finding);
-      lines.push(
-        `| ${SEVERITY_LABEL[finding.severity]} | ${where ? markdownCode(where) : ""} | ${escapeMarkdown(oneLine(finding.message))} | [${finding.code.replace(/_/g, "\\_")}](${finding.docs}) |`,
-      );
+    if (bundle.notChecked.length > 0) {
+      lines.push("", "Not checked:", "");
+      for (const entry of bundle.notChecked.slice(0, NOT_CHECKED_SHOWN)) lines.push(`- ${escapeMarkdown(oneLine(entry.message))}`);
+      if (bundle.notChecked.length > NOT_CHECKED_SHOWN) lines.push(`- ...and ${bundle.notChecked.length - NOT_CHECKED_SHOWN} more.`);
     }
   }
   lines.push("", `Databricks Bundle Inspector ${escapeMarkdown(report.version)}, Databricks CLI ${escapeMarkdown(report.databricksCli.version ?? "unknown")}.`);

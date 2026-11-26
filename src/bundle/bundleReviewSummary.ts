@@ -10,6 +10,7 @@ import { getCurrentJobTaskNodes } from "./jobTasks.js";
 import { parameterFlowMarkdownLabel, type ParameterFlow } from "./parameterFlows.js";
 import { escapeMarkdown, markdownCode } from "./markdownText.js";
 import { reportLocation } from "./reportLocation.js";
+import { notCheckedForTasks, notCheckedMarkdown, type NotChecked } from "./notChecked.js";
 
 /** How many problems the summary lists before "...and N more." */
 export const REVIEW_SUMMARY_ISSUE_LIMIT = 12;
@@ -25,10 +26,14 @@ export interface ReviewSummaryIssue {
   line?: number | undefined;
 }
 
+type ReviewSummaryTaskFiles = { fileReferences?: readonly (FileStatusReference & { path?: string | undefined })[] | undefined };
+
 export interface ReviewSummaryTaskNode {
+  id?: string | undefined;
   nodeType?: string | undefined;
   parentId?: string | undefined;
-  taskData?: { fileReferences?: readonly (FileStatusReference & { path?: string | undefined })[] | undefined } | undefined;
+  /** A for_each task's inner task's files count as the loop's (#611). */
+  taskData?: (ReviewSummaryTaskFiles & { nestedTask?: ReviewSummaryTaskFiles | undefined }) | undefined;
 }
 
 export interface BundleReviewSummaryInput {
@@ -40,6 +45,8 @@ export interface BundleReviewSummaryInput {
   /** The header's panels; only `issues` is read. */
   headerPanelItems: { issues?: readonly ReviewSummaryIssue[] | undefined };
   parameterFlows?: readonly ParameterFlow[] | null | undefined;
+  /** What the checks couldn't look at in the bundle (see notChecked.ts); the job's own are listed. */
+  notChecked?: readonly NotChecked[] | undefined;
 }
 
 export function buildBundleReviewSummary({
@@ -50,6 +57,7 @@ export function buildBundleReviewSummary({
   targetLabel,
   headerPanelItems,
   parameterFlows,
+  notChecked,
 }: BundleReviewSummaryInput): string {
   const bundleName = parsedBundle?.bundle?.name ?? "Unknown bundle";
   const jobName = jobNode?.displayName ?? "Selected job";
@@ -105,7 +113,7 @@ export function buildBundleReviewSummary({
   const fileKeys = new Set<string | undefined>();
   let missingFileCount = 0;
   for (const task of tasks) {
-    for (const ref of task.taskData?.fileReferences ?? []) {
+    for (const ref of [...(task.taskData?.fileReferences ?? []), ...(task.taskData?.nestedTask?.fileReferences ?? [])]) {
       fileKeys.add(ref.resolvedPath ?? ref.path);
       if (fileStatusKey(ref) === "missing") {
         missingFileCount += 1;
@@ -119,6 +127,10 @@ export function buildBundleReviewSummary({
     `- ${fileKeys.size} file reference${fileKeys.size === 1 ? "" : "s"}`,
     `- ${missingFileCount} missing file${missingFileCount === 1 ? "" : "s"}`,
   );
+
+  // So "No issues detected" never hides code the checks didn't read (#611, #647).
+  const taskIds = new Set(tasks.map((task) => task.id).filter((id): id is string => typeof id === "string"));
+  lines.push(...notCheckedMarkdown(notCheckedForTasks(notChecked ?? [], taskIds), text));
 
   return lines.join("\n");
 }

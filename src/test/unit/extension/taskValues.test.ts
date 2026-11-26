@@ -41,6 +41,18 @@ describe("task values", () => {
     );
   });
 
+  test("each read gets the code that names its fix", () => {
+    expect(issues.map((issue) => `${issue.taskName}: ${issue.kind}`).sort()).toEqual([
+      "consumer: task_value_key_not_set",
+      "defaults: task_value_key_not_set",
+      "defaults: task_value_key_not_set",
+      "defaults: task_value_key_not_set",
+      "not_upstream: task_value_not_upstream",
+      "wrong_task: task_value_unknown_task",
+      "yaml_refs: task_value_key_not_set",
+    ]);
+  });
+
   // See the fixture README for why each read is or isn't reported.
   test("reports reads of values that are missing, misnamed or not upstream", () => {
     expect(
