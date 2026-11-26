@@ -553,8 +553,8 @@ function widgetParameterIssues(
         severity: "warning",
         kind: "widget_not_set",
         title: suggestion
-          ? `Notebook reads widget "${read.name}", which this task may not pass. Did you mean "${suggestion}"?`
-          : `Notebook reads widget "${read.name}", which this task may not pass.`,
+          ? `Notebook reads widget "${read.name}", which this task might not pass. Did you mean "${suggestion}"?`
+          : `Notebook reads widget "${read.name}", which this task might not pass.`,
         taskId: task.id,
         taskName: task.displayName,
         yamlPath: ref.yamlPath,
