@@ -20,8 +20,16 @@ When the E2E workflow is red, check [Known flaky E2E tests](e2e-flaky.md) first.
 | Saved files | `npm run test:e2e:saved-file` |
 | Saved files, alternate folder case | `npm run test:e2e:saved-file:other-case` |
 | Targets | `npm run test:e2e:targets` |
+| Targets, with pauses | `npm run test:e2e:targets:watch` |
+| Sidebar | `npm run test:e2e:sidebar` |
+| Workspace changes | `npm run test:e2e:workspace-changes` |
+| Themes | `npm run test:e2e:themes` |
 | Bundle overview | `npm run test:e2e:overview` |
 | Pipeline data flow | `npm run test:e2e:pipeline-flow` |
+| Lakebase branches | `npm run test:e2e:lakebase-branches` |
+| Secrets with a run-time scope | `npm run test:e2e:runtime-secrets` |
+
+Which test to run when, and what CI runs for you: [Which tests to run](testing.md).
 
 The alternate folder case test skips on case-sensitive file systems. Suites that
 use the CLI require it on PATH; see each fixture's README for prerequisites.

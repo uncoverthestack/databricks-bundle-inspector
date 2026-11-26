@@ -87,7 +87,7 @@ To turn it off, use either setting:
 
 Latest release: [0.9.0](https://github.com/uncoverthestack/databricks-bundle-inspector/releases/tag/v0.9.0). This README also describes changes on `main` that are awaiting release; see [Unreleased changes](CHANGELOG.md#unreleased).
 
-Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues).
+Active development. Feedback, bug reports, and feature requests are welcome on the [issue tracker](https://github.com/uncoverthestack/databricks-bundle-inspector/issues). To work on the code, see [Which tests to run](docs/testing.md).
 
 ## License
 

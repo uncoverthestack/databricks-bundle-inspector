@@ -43,5 +43,8 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "auto",
     "skipLibCheck": true,
-  }
+  },
+  // Only the source: without this, tsc also checks .ts files in git-ignored local folders
+  // (such as repo-audit/), and `npm run verify` fails on files that aren't in the repo.
+  "include": ["src"]
 }
