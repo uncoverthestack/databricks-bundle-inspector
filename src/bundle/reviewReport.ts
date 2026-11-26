@@ -4,6 +4,7 @@ import { taskTypeLabel } from "./graph/bundleGraph.js";
 import { describeCronExpression } from "./graph/cronDescription.js";
 import { issueBelongsToJob, type InspectorIssue } from "./issues.js";
 import { reportLocation } from "./reportLocation.js";
+import { notCheckedForTasks, notCheckedIn } from "./notChecked.js";
 
 /** Past this many tasks the report draws no picture and lists only this many rows. */
 export const REVIEW_REPORT_TASK_LIMIT = 50;
@@ -79,7 +80,7 @@ export function jobReviewReport(
     "",
     `${countsText(errors.length, warnings.length)} in ${plural(tasks.length, "task")} and ${plural(files.length, "file")}.`,
   ].join("\n");
-  const notChecked = notCheckedSection(context, parsedBundle, jobKey);
+  const notChecked = notCheckedSection(context, parsedBundle, jobKey, notCheckedForTasks(notCheckedIn(graph), taskIds));
 
   // Filled in order of importance, each part only as far as the room left allows.
   let room = REVIEW_REPORT_MAX_CHARACTERS - header.length - notChecked.length - 200;
@@ -385,7 +386,15 @@ function filesSection(files: readonly ReportFile[]): string {
   ].join("\n");
 }
 
-function notCheckedSection(context: ReviewReportContext, parsedBundle: ParsedBundleConfig, jobKey: string): string {
+/** How many of the job's own "not checked" lines the full report lists. */
+const NOT_CHECKED_REPORT_LIMIT = 25;
+
+function notCheckedSection(
+  context: ReviewReportContext,
+  parsedBundle: ParsedBundleConfig,
+  jobKey: string,
+  items: readonly { text: string }[],
+): string {
   const otherJobs = Object.keys(parsedBundle.resources?.jobs ?? {}).filter((key) => key !== jobKey).length;
   const pipelines = Object.keys(parsedBundle.resources?.pipelines ?? {}).length;
   const others = [
@@ -400,6 +409,9 @@ function notCheckedSection(context: ReviewReportContext, parsedBundle: ParsedBun
       : []),
     "- Whether the clusters, warehouses and other workspace objects the job names exist.",
     "- Code that the job's files import.",
+    // What the checks couldn't read in this job's own files (#647).
+    ...items.slice(0, NOT_CHECKED_REPORT_LIMIT).map((item) => `- ${oneLine(escapeMarkdown(item.text))}`),
+    ...(items.length > NOT_CHECKED_REPORT_LIMIT ? [`- ...and ${items.length - NOT_CHECKED_REPORT_LIMIT} more.`] : []),
     ...(others.length > 0
       ? [`- The bundle's ${others.join(" and ")}. Copy ${otherJobs + pipelines === 1 ? "its report" : "their reports"} from the graph.`]
       : []),

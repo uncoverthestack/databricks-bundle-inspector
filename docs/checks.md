@@ -707,4 +707,14 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
 - `dbutils` wherever it can be traced: `dbutils` itself (also as `self.dbutils`), a variable assigned from it, `DBUtils(spark)` or `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`). Variables holding part of it are followed too, in the order the file assigns them: `w = dbutils.widgets`, `tv = dbutils.jobs.taskValues`, and a single method such as `read = dbutils.widgets.get`, then `read("run_date")`. A call on something that can't be traced, such as a function parameter named `d`, isn't counted; a widget read there makes the inspector say it couldn't check that notebook.
 - Python is read with a full Python parser ([tree-sitter](https://tree-sitter.github.io/)), so strings, comments, f-strings and calls over several lines are read as Python reads them. A file with a syntax error is still read; calls in the broken part may be missed.
 
-**Scala and R are not read.** `.scala` and `.r` notebooks, and `%scala` and `%r` cells, are skipped, so secrets, widgets and task values in them are not found. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
+**Scala and R files are read for `dbutils` calls only**, written as they are in Python (`dbutils.widgets.get("x")`), and `%run` lines. Other code in them isn't read. `%scala` and `%r` cells inside a Python or SQL notebook are skipped. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.
+
+**Not checked.** Copied reviews and the command-line tool list what the checks couldn't look at, so "No issues" never hides code that wasn't read:
+
+- code outside the bundle (the workspace, a volume, DBFS or cloud storage) or in the job's Git repository;
+- the code inside a Python wheel, a JAR, a `spark_submit` task or a dbt project;
+- R and Scala files, read for `dbutils` calls only;
+- a `%run` the widget check couldn't follow;
+- widgets read by names set at run time.
+
+A path set by a variable and a file that couldn't be read are findings already (`path_not_checked`, `file_scan_failed`), so they aren't listed again. A pipeline's copied review also lists the sources and statements its data flow doesn't read.

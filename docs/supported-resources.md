@@ -14,7 +14,7 @@ For bundle syntax and configuration examples, see the official [Databricks bundl
 
 The graph's resource selector lists jobs and pipelines only.
 
-Checks on source code read Python and SQL, including supported notebook formats. Scala and R code is not read. Bundle-wide checks, such as include patterns and unresolved variables, are documented in [Every check](checks.md).
+Checks on source code read Python and SQL, including supported notebook formats. Scala and R files are read for `dbutils` calls only. Bundle-wide checks, such as include patterns and unresolved variables, are documented in [Every check](checks.md).
 
 ## Not supported yet
 

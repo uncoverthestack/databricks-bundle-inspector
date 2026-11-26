@@ -62,7 +62,7 @@ Problems that pass `databricks bundle validate` and only fail when you deploy or
 - **Secret scopes** named by their resource key instead of their name.
 - **Unresolved variables**.
 
-Each finding names its check, such as `[missing_file]`. [Every check, and what code is read](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/docs/checks.md). Checks on code read Python and SQL. Scala and R are not read.
+Each finding names its check, such as `[missing_file]`. [Every check, and what code is read](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/docs/checks.md). Checks on code read Python and SQL. Scala and R files are read for `dbutils` calls only. Under each bundle, `not checked` lines say what the checks couldn't look at, such as a notebook in the workspace.
 
 ## Targets
 
@@ -88,7 +88,7 @@ A target that can't be checked is never replaced by the preview: no sign-in, a p
 | `-p, --profile <name>` | the CLI's default | The `~/.databrickscfg` profile for `--target` |
 | `--no-color` | | Plain text. Also when `NO_COLOR` is set or the output isn't a terminal |
 
-`--format json` has a `schemaVersion`, so scripts can rely on its shape.
+`--format json` has a `schemaVersion`, so scripts can rely on its shape. New fields can be added under the same version; a field that is removed or changes meaning raises it. Each bundle lists its findings in `findings` and what the checks couldn't look at in `notChecked` (`reason`, `message`, and `file`, `line`, `task` when known).
 
 ## Exit codes
 
@@ -106,7 +106,7 @@ A target that can't be checked is never replaced by the preview: no sign-in, a p
 - It writes nothing into your bundle folders.
 - No telemetry, and no network calls of its own. Only with `--target` does the Databricks CLI contact your workspace.
 - Names and messages from a bundle are printed as text: never a link, a mention or a GitHub workflow command.
-- The package has no dependencies: `dist/cli.cjs` is one readable file. The libraries bundled into it are listed in `THIRD_PARTY_NOTICES.md`.
+- The package has no dependencies: `dist/cli.cjs` is one readable file, and `dist/tree-sitter/` holds the Python parser it loads (a JavaScript file and two WebAssembly files, which only read code). The libraries in both are listed in `THIRD_PARTY_NOTICES.md`.
 
 ## Versions
 

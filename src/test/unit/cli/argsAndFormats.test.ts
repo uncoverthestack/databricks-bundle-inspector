@@ -37,7 +37,7 @@ const finding = (overrides: { [K in keyof Finding]?: Finding[K] | undefined } = 
 const report = (findings: Finding[], extra: Partial<CheckReport> = {}): CheckReport => ({
   version: "1.2.3",
   databricksCli: { path: "/usr/local/bin/databricks", version: "v1.27.0" },
-  bundles: [{ path: "bundle", name: "demo", validated: true, findings }],
+  bundles: [{ path: "bundle", name: "demo", validated: true, findings, notChecked: [] }],
   ...extra,
 });
 
@@ -157,7 +157,7 @@ describe("formats (#348)", () => {
   });
 
   test("text: a bundle that failed validate says so", () => {
-    const text = formatText({ ...report([]), bundles: [{ path: "x", validated: false, findings: [finding({ code: "cli_diagnostic" })] }] }, false);
+    const text = formatText({ ...report([]), bundles: [{ path: "x", validated: false, findings: [finding({ code: "cli_diagnostic" })], notChecked: [] }] }, false);
     expect(text).toContain("bundle validate failed");
   });
 
@@ -179,7 +179,7 @@ describe("formats (#348)", () => {
   test("markdown: names, messages and paths from a bundle are text, never links, HTML or mentions", () => {
     const md = formatMarkdown({
       ...report([finding({ message: "[click](https://e.test) <img src=x> @team", file: "a`b|c.yml" })]),
-      bundles: [{ path: "bundle", name: "@org/x [y](z)", validated: true, findings: [finding({ message: "[click](https://e.test) <img src=x> @team", file: "a`b|c.yml" })] }],
+      bundles: [{ path: "bundle", name: "@org/x [y](z)", validated: true, findings: [finding({ message: "[click](https://e.test) <img src=x> @team", file: "a`b|c.yml" })], notChecked: [] }],
     });
     expect(md).toContain("\\[click\\](https:\u200b//e.test) &lt;img src=x&gt; @​team");
     expect(md).toContain("(@​org/x \\[y\\](z))");
@@ -217,7 +217,7 @@ describe("formats (#348)", () => {
 
   test("other formats never print a line that GitHub would run as a command", () => {
     const tricky = report([finding({ message: "x", file: "::error::f" })], {
-      bundles: [{ path: "::add-mask::secret", name: "::stop-commands::t", validated: true, findings: [finding({ message: "\n::error::m" })] }],
+      bundles: [{ path: "::add-mask::secret", name: "::stop-commands::t", validated: true, findings: [finding({ message: "\n::error::m" })], notChecked: [] }],
     });
     for (const format of ["text", "json", "markdown"] as const) {
       const out = formatReport(tricky, format, "error", false);
@@ -274,5 +274,36 @@ describe("the npm package (#348)", () => {
     expect(cli.engines.node).toBe(">=22");
     expect(cli.dependencies ?? {}).toEqual({});
     expect(cli.bin).toEqual({ "databricks-bundle-inspector": "dist/cli.cjs", dabi: "dist/cli.cjs" });
+  });
+});
+
+describe("not checked (#647)", () => {
+  const entries = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ reason: "code_in_workspace" as const, message: `Code outside the bundle isn't read: /Workspace/n${i} (task t).`, task: "t" }));
+  const withNotChecked = (count: number): CheckReport => ({
+    ...report([]),
+    bundles: [{ path: "bundle", name: "demo", validated: true, findings: [], notChecked: entries(count) }],
+  });
+
+  test("text: no problems, then what wasn't checked, up to five", () => {
+    const text = formatText(withNotChecked(7), false);
+    expect(text).toContain("  no problems\n  not checked  Code outside the bundle isn't read: /Workspace/n0 (task t).");
+    expect(text).toContain("  not checked  ...and 2 more (--format json lists every one)");
+    expect(text).not.toContain("/Workspace/n5");
+  });
+
+  test("markdown: a Not checked list after No problems", () => {
+    expect(formatMarkdown(withNotChecked(1))).toContain("No problems.\n\nNot checked:\n\n- Code outside the bundle isn't read: /Workspace/n0 (task t).");
+  });
+
+  test("json: every entry, and the schema version stays 1 (fields are only added)", () => {
+    const json = JSON.parse(formatJson(withNotChecked(7), "error"));
+    expect(json.schemaVersion).toBe(1);
+    expect(json.bundles[0].notChecked).toHaveLength(7);
+  });
+
+  test("a bundle with nothing to say prints no Not checked lines", () => {
+    expect(formatText(withNotChecked(0), false)).not.toContain("not checked");
+    expect(formatMarkdown(withNotChecked(0))).not.toContain("Not checked");
   });
 });

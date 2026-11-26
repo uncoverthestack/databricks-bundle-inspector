@@ -45,6 +45,7 @@ import { typeWords } from "./lib/overviewView";
 import { resourceSelectionProperties } from "./lib/resourceTelemetry";
 import { buildJobUses } from "../bundle/jobUses";
 import { buildBundleReviewSummary } from "../bundle/bundleReviewSummary";
+import { notCheckedIn } from "../bundle/notChecked";
 import { buildParameterFlowsForJob, buildParameterFlowsForTask, buildParameterLinkageMaps, getPrimaryFileNode, parameterLinkageForName } from "../bundle/parameterFlows";
 import { variableSourceLocation } from "./lib/variableSource";
 import { basename, buildTaskAdjacency, collectReachable, formatSourceLocation, getFileStatus, getTaskPath, summarizeTaskIssues } from "./lib/taskIssues";
@@ -2218,6 +2219,7 @@ export default function App({
         targetLabel,
         headerPanelItems,
         parameterFlows: parameterFlowsForJob,
+        notChecked: graph ? notCheckedIn(graph) : [],
       }),
     );
   }
