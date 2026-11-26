@@ -529,6 +529,51 @@ describe("buildInspectorIssues", () => {
     ]);
   });
 
+  describe("values Databricks replaces with its own (#645)", () => {
+    const enumIssue = (message: string, yamlPath?: string) =>
+      buildInspectorIssues(
+        { nodes: [], edges: [] },
+        { bundle: { name: "demo" } },
+        [{
+          code: "BUNDLE_DIAGNOSTICS",
+          message: "Databricks CLI reported bundle diagnostics.",
+          diagnostics: [{ severity: "warning", message, ...(yamlPath ? { yamlPath } : {}) }],
+        }],
+        "/workspace/demo",
+      )[0];
+
+    test.each([
+      ["PAUSE", "[PAUSED UNPAUSED]", "resources.jobs.nightly.schedule.pause_status",
+        "\"PAUSE\" isn't a value Databricks accepts here. Databricks may use UNPAUSED, so the schedule may run.", "Use one of: PAUSED, UNPAUSED. Letter case counts."],
+      ["paused", "[PAUSED UNPAUSED]", "resources.jobs.nightly.schedule.pause_status",
+        "\"paused\" isn't a value Databricks accepts here. Databricks may use UNPAUSED, so the schedule may run.", "Use one of: PAUSED, UNPAUSED. Letter case counts."],
+      ["standard", "[PERFORMANCE_OPTIMIZED STANDARD]", "resources.jobs.nightly.performance_target",
+        "\"standard\" isn't a value Databricks accepts here. Databricks may leave it unset, so runs may use standard performance.", "Use one of: PERFORMANCE_OPTIMIZED, STANDARD. Letter case counts."],
+      ["all_done", "[ALL_DONE ALL_FAILED ALL_SUCCESS]", "resources.jobs.nightly.tasks[3].run_if",
+        "\"all_done\" isn't a value Databricks accepts here. Databricks may use ALL_SUCCESS, so the task may not run when an upstream task fails.", "Use one of: ALL_DONE, ALL_FAILED, ALL_SUCCESS. Letter case counts."],
+    ])("says what Databricks may use for %s at %s", (value, allowed, yamlPath, title, fixHint) => {
+      expect(enumIssue(`invalid value "${value}" for enum field. Valid values are ${allowed}`, yamlPath)).toMatchObject({
+        kind: "cli_diagnostic", severity: "warning", title, fixHint, yamlPath,
+      });
+    });
+
+    test.each([
+      // Deploy fails for this one instead (checked live), so no "may use" text.
+      ["resources.jobs.nightly.tasks[0].condition_task.op"],
+      // Same setting name elsewhere: untested.
+      ["resources.pipelines.p.schedule.pause_status"],
+      ["resources.jobs.nightly.tasks[0].for_each_task.task.run_if"],
+    ])("keeps the CLI's text at %s", (yamlPath) => {
+      const message = 'invalid value "X" for enum field. Valid values are [A B]';
+      expect(enumIssue(message, yamlPath)).toMatchObject({ title: message, fixHint: "Review the Databricks CLI validation diagnostic." });
+    });
+
+    test("keeps the CLI's text when the warning has no setting path", () => {
+      const message = 'invalid value "PAUSE" for enum field. Valid values are [PAUSED UNPAUSED]';
+      expect(enumIssue(message)).toMatchObject({ title: message });
+    });
+  });
+
   test("does not turn Databricks auth failures into inspector issues", () => {
     const graph: BundleGraph = { nodes: [], edges: [] };
     const validationIssues: ValidationIssue[] = [
