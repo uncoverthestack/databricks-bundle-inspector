@@ -43,9 +43,9 @@ The dropdown in the graph's header lists the bundle's **Jobs**, then the **Pipel
 
 Select a pipeline on the [bundle overview](#bundle-overview) to see its details in the side panel, all from its YAML:
 
-- **Run by**: each job in this bundle with a `pipeline_task` that points at it, and the task. Click one to select that job. Jobs outside the bundle that run it aren't known.
+- **Run by**: each job in this bundle with a `pipeline_task` that points at it, and the task, with how that job starts in the same few words as its box (`Every day`, `Continuous`); nothing when the job has no schedule or trigger. Click one to select that job. Jobs outside the bundle that run it aren't known.
 - **Writes to**: the pipeline's `catalog` and `schema` (or the older `target`). Databricks puts tables there unless the code names another catalog or schema.
-- **Settings**: **Serverless** when `serverless: true`, **Triggered** unless `continuous: true`, and **Development mode** when `development: true`.
+- **Settings**: **Serverless** when `serverless: true`; **Continuous** when `continuous: true` or a continuous job runs it, else **Starts when its job runs** when a job in this bundle runs it, else **Triggered**; and **Development mode** when `development: true`. A pipeline has no schedule of its own: the job that runs it decides when.
 - **Code**: each entry in `libraries`, with its problem directly under it. A source with no problem is marked only when it is **No files** (a folder pattern that matches nothing) or **Not checked** (a workspace path, a variable, or a pattern the inspector doesn't read). Click a path to open the file, or its location to open the YAML line.
 - **Uses**: the secret scopes found in its `.py`, `.sql` and `.ipynb` sources and cluster settings, and a schema it names with `${resources...}`.
 - **Data flow**: for a pipeline with `.sql` sources, how many tables and views they create and read from outside, and **Open data flow**. A pipeline with only Python sources says so, and has no data flow yet.

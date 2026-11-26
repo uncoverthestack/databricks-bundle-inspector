@@ -34,6 +34,14 @@ describe("pipelinePanel", () => {
     );
   });
 
+  test("says how it runs from the jobs that run it (issue 542)", () => {
+    const runner = { jobKey: "j", jobName: "j", taskKey: "t" };
+    expect(pipelinePanel(view({ runBy: [runner] })).settings).toBe("Starts when its job runs");
+    expect(pipelinePanel(view({ runBy: [runner, { ...runner, jobKey: "c", continuous: true }] })).settings).toBe("Continuous");
+    expect(pipelinePanel(view({ mode: "Continuous", runBy: [runner] })).settings).toBe("Continuous");
+    expect(pipelinePanel(view({ serverless: true, runBy: [runner] })).settings).toBe("Serverless · Starts when its job runs");
+  });
+
   test("writes to the catalog and schema that are set", () => {
     expect(pipelinePanel(view()).writesTo).toBeUndefined();
     expect(pipelinePanel(view({ catalog: "main", schema: "bronze" })).writesTo).toBe("main.bronze");

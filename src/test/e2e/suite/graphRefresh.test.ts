@@ -224,7 +224,7 @@ export function graphRefreshSuite() {
         assert.match(shown.runBy, /alpha_second\s+task refresh\n[\s\S]*alpha_second\s+task refresh_each/);
         assert.equal(shown.usedBy, false, "Run by says what runs it, once");
         assert.equal(shown.writesTo, "main.alpha");
-        assert.equal(shown.settings, "Serverless · Triggered");
+        assert.equal(shown.settings, "Serverless · Starts when its job runs");
         assert.equal(shown.sources.length, 2);
         // A found source shows no status; the notebook listed as a file has its problem under it.
         assert.match(shown.sources[0], /^\.\.\/src\/task\.py jobs\.yml:\d+$/);
