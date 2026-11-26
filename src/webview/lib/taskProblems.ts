@@ -46,7 +46,7 @@ export function problemWords(counts: { errors: number; warnings: number; infos?:
   return [part(counts.errors, "error"), part(counts.warnings, "warning"), part(counts.infos ?? 0, "note")].filter(Boolean).join(", ");
 }
 
-export function problemTone(counts: TaskProblemCounts | undefined): TaskProblemTone {
+export function problemTone(counts: { errors: number; warnings: number; infos?: number | undefined; total?: number | undefined } | undefined): TaskProblemTone {
   if (!counts) return "none";
   if (counts.errors > 0) return "error";
   if (counts.warnings > 0) return "warning";

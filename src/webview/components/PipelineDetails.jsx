@@ -1,3 +1,7 @@
+// @ts-check
+/** @typedef {import("../lib/pipelineView").PipelinePanel["otherIssues"][number]} PipelineIssue */
+
+/** @type {Partial<Record<import("../lib/pipelineView").SourceStatus, { label: string, className: string, title?: string }>>} */
 const STATUS = {
   missing: { label: "Missing", className: "text-error" },
   no_files: { label: "No files", className: "text-warning" },
@@ -14,14 +18,16 @@ const STATUS = {
   },
 };
 
-const fileName = (file) => String(file ?? "").split(/[\\/]/).pop();
+const fileName = (/** @type {string | undefined} */ file) => String(file ?? "").split(/[\\/]/).pop();
 const linkClass =
   "min-w-0 max-w-full truncate text-left text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
+/** @param {{ children: import("react").ReactNode }} props */
 function Heading({ children }) {
   return <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{children}</div>;
 }
 
+/** @param {{ issue: PipelineIssue }} props */
 function IssueLine({ issue }) {
   return (
     <div className={`text-[11px] leading-4 ${issue.severity === "error" ? "text-error" : "text-warning"}`} data-pipeline-issue={issue.kind}>
@@ -34,8 +40,18 @@ function IssueLine({ issue }) {
  * A pipeline's details on the bundle overview (issue 436): what runs it, where it writes,
  * its settings, each source with its problems directly under it, and its data flow.
  * Each thing is said once.
+ *
+ * @param {{
+ *   view: import("../lib/pipelineView").PipelineViewModel,
+ *   panel: import("../lib/pipelineView").PipelinePanel,
+ *   onSelectItem: (id: string) => void,
+ *   onOpenFile?: ((file: string, line?: number, column?: number) => void) | undefined,
+ *   onOpenDataFlow: () => void,
+ *   resolveName?: ((value: string) => string) | undefined,
+ * }} props
  */
 export default function PipelineDetails({ view, panel, onSelectItem, onOpenFile, onOpenDataFlow, resolveName = (value) => value }) {
+  /** @type {(file: string | undefined, line?: number, column?: number) => unknown} */
   const open = (file, line, column) => file && onOpenFile?.(file, line, column);
   return (
     <div data-pipeline-details={view.key} className="flex flex-col gap-3">
