@@ -14,7 +14,6 @@ import type { BundleGraph, BundleGraphNode } from "./graph/bundleGraph.js";
 import type { PipelineDataFlow } from "./pipelineDataFlow.js";
 import { hasTemplate, isRemotePath } from "./fileStatus.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
-import type { WidgetUsage } from "./taskFileDetections.js";
 
 export type NotCheckedReason =
   /** A task's file in the workspace, a volume, DBFS or cloud storage. */
@@ -89,7 +88,7 @@ function forTask(graph: BundleGraph, task: BundleGraphNode, data: TaskNodeData, 
     if (language) {
       items.push({ reason: "language_partly_read", text: `${language} code is read for dbutils calls only: ${ref.path} (task ${key}).`, file: ref.resolvedPath, ...at });
     }
-    const usage = fileNodeOf(graph, ref)?.data.widgetUsage as WidgetUsage | undefined;
+    const usage = fileNodeOf(graph, ref)?.codeFacts?.widgetUsage;
     if (usage?.hasUnresolvedRuns) {
       items.push({ reason: "run_not_followed", text: `A notebook it runs with %run couldn't be followed: ${ref.path} (task ${key}).`, file: ref.resolvedPath, ...at });
     }

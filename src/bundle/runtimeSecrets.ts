@@ -35,6 +35,7 @@ interface Node {
   id: string;
   nodeType?: string | undefined;
   data?: Record<string, unknown> | undefined;
+  codeFacts?: { runtimeSecrets?: RuntimeSecretRead[] | undefined } | undefined;
   taskData?: {
     taskParameterReferences?: Array<{ name: string; value?: string | undefined }> | undefined;
     jobParameterReferences?: Array<{ name: string; default?: string | undefined }> | undefined;
@@ -72,7 +73,7 @@ export function taskRuntimeSecrets(
     .filter((edge) => edge.source === taskId && edge.kind === "references")
     .map((edge) => nodeById.get(edge.target))
     .find((node) => node?.nodeType === "file");
-  const reads = file?.data?.runtimeSecrets as RuntimeSecretRead[] | undefined;
+  const reads = file?.codeFacts?.runtimeSecrets;
   if (!task || !file || !reads?.length) return [];
   const path = typeof file.data?.resolvedPath === "string" ? file.data.resolvedPath : undefined;
   // Only a notebook task's parameters reach `dbutils.widgets`.

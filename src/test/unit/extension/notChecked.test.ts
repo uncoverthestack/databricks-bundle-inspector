@@ -4,6 +4,7 @@ import type { BundleGraph, BundleGraphNode } from "../../../bundle/graph/bundleG
 import { dataFlowNotChecked, notCheckedForTasks, notCheckedIn } from "../../../bundle/notChecked.js";
 import type { PipelineDataFlow } from "../../../bundle/pipelineDataFlow.js";
 import type { FileReference, TaskNodeData } from "../../../bundle/resources/task.js";
+import type { WidgetUsage } from "../../../bundle/taskFileDetections.js";
 import { pipelineReviewSummary, type PipelineViewModel } from "../../../webview/lib/pipelineView.js";
 
 function ref(path: string, extra: Partial<FileReference> = {}): FileReference {
@@ -33,8 +34,12 @@ function task(key: string, fileReferences: FileReference[], extra: Partial<TaskN
   };
 }
 
-function fileNode(path: string, widgetUsage: Record<string, unknown>): BundleGraphNode {
-  return { id: `file:/b/${path}`, kind: "file", nodeType: "file", displayName: path, data: { widgetUsage } };
+function fileNode(path: string, usage: Partial<WidgetUsage>): BundleGraphNode {
+  const widgetUsage: WidgetUsage = {
+    reads: [], defaults: [], defaultLanguages: {}, hasDynamicReads: false, hasUnresolvedRuns: false,
+    runReadNames: [], unsetRunReads: [], runFiles: [], ...usage,
+  };
+  return { id: `file:/b/${path}`, kind: "file", nodeType: "file", displayName: path, data: {}, codeFacts: { widgetUsage } };
 }
 
 const graphOf = (...nodes: BundleGraphNode[]): BundleGraph => ({ nodes, edges: [] });
