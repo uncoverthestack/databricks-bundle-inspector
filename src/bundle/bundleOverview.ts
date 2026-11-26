@@ -198,6 +198,7 @@ interface GraphNode {
   sourceLine?: number;
   fieldLines?: Record<string, number>;
   data?: Record<string, unknown>;
+  pipelineRuntimeSecrets?: Array<{ file: string; line: number }>;
 }
 
 interface GraphEdge {
@@ -446,9 +447,8 @@ export function buildBundleOverview(
 
   // A pipeline's code has no parameters to name a scope, so one it doesn't name is set at run time.
   for (const node of graph.nodes) {
-    const reads = node.data?.runtimeSecrets;
     const item = items.get(node.id);
-    if (node.resourceGroup === "pipelines" && item && Array.isArray(reads) && reads.length > 0) {
+    if (node.resourceGroup === "pipelines" && item && node.pipelineRuntimeSecrets?.length) {
       item.runtimeSecrets = [{ label: "Set at run time", taskNames: [] }];
     }
   }

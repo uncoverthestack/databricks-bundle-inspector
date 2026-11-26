@@ -370,6 +370,25 @@ export interface BundleGraphNode {
   hasMissingFile?: boolean;
   data: Record<string, unknown>;
   taskData?: TaskNodeData;
+  /** What reading a local file's code found (file nodes only; see enrichGraph.ts). */
+  codeFacts?: FileCodeFacts;
+  /** Secrets a pipeline's source code reads with a scope only known at run time (pipeline nodes only). */
+  pipelineRuntimeSecrets?: Array<{ file: string; line: number }>;
+}
+
+/**
+ * What reading a file's code found, kept on its node for the checks. Each field is left out
+ * when the reader found nothing or doesn't apply to the file's kind of task.
+ */
+export interface FileCodeFacts {
+  widgetUsage?: import("../taskFileDetections.js").WidgetUsage;
+  taskValueUsage?: import("../taskFileDetections.js").TaskValueUsage;
+  runTargets?: import("../taskFileDetections.js").RunTarget[];
+  sqlParameterMarkers?: Array<{ name: string; line: number }>;
+  sqlTextParameters?: import("../taskFileDetections.js").SqlTextParameter[];
+  qualifiedNames?: import("../taskFileDetections.js").QualifiedName[];
+  /** Secrets whose scope isn't written in the code (issue 535). */
+  runtimeSecrets?: import("../runtimeSecrets.js").RuntimeSecretRead[];
 }
 
 /** @deprecated use BundleEdge from edges.ts — kept for callers that destructure relationship */

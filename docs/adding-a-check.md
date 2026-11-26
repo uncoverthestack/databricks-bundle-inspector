@@ -27,4 +27,6 @@ All four are needed before a check ships. A unit test (`checkList.test.ts`, "the
 3. **A near-miss test that must stay quiet.** A unit test titled `near miss (<code>): ...` with a case close to the mistake that gives no finding: `outcome: "true"` beside `"True"`, 5,000 characters beside 5,001, a table the pipeline does create. It stops a check from growing to catch correct bundles.
 4. **An entry in the check list.** The code in `src/bundle/checkList.ts` with its family and the step it stops, and a section in [docs/checks.md](checks.md) saying what fails and how it was confirmed (CLI version and date).
 
+Unit tests read a fixture's recorded CLI output (`validated-bundle.json`, made with `npm run fixtures:update:validated-bundle -- --fixture <folder>`) rather than a config built by hand: the CLI reshapes YAML before the inspector sees it, and a hand-built config can take a shape it never produces. `handBuiltConfigs.test.ts` counts the hand-built configs left and fails if the number goes up.
+
 A new case of an existing check (another field, another kind of file) meets the same bar for that case: a probe variant or a note of how it was confirmed live, the corpus check, and a near-miss case.

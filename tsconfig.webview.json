@@ -1,0 +1,14 @@
+{
+  // Type-checks the webview's .jsx files that start with `// @ts-check`, resolving imports
+  // the way Vite does. Other .jsx files are read but not checked. See #392.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/webview/**/*"]
+}

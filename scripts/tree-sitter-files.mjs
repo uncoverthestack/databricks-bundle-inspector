@@ -11,10 +11,10 @@ const require = createRequire(import.meta.url);
 export const TREE_SITTER_FILES = {
   "tree-sitter.cjs": "web-tree-sitter",
   "tree-sitter.wasm": "web-tree-sitter/tree-sitter.wasm",
-  "tree-sitter-python.wasm": "@vscode/tree-sitter-wasm/wasm/tree-sitter-python.wasm",
+  "tree-sitter-python.wasm": "tree-sitter-python/tree-sitter-python.wasm",
 };
 
-/** Each licence the copied files come under. The grammar inside `@vscode/tree-sitter-wasm` is tree-sitter-python's. */
+/** Each licence the copied files come under. */
 export function treeSitterLicences() {
   // Up from the package's main file: web-tree-sitter's exports don't list its package.json.
   const packageDir = (name) => {
@@ -30,8 +30,7 @@ export function treeSitterLicences() {
   const version = (name) => JSON.parse(readFileSync(path.join(packageDir(name), "package.json"), "utf8")).version;
   return [
     { name: "web-tree-sitter", version: version("web-tree-sitter"), license: "MIT", text: readFileSync(path.join(packageDir("web-tree-sitter"), "LICENSE"), "utf8").trim() },
-    { name: "@vscode/tree-sitter-wasm", version: version("@vscode/tree-sitter-wasm"), license: "MIT", text: readFileSync(path.join(packageDir("@vscode/tree-sitter-wasm"), "LICENSE"), "utf8").trim() },
-    { name: "tree-sitter-python", version: "0.25.0", license: "MIT", text: readFileSync(path.join(import.meta.dirname, "licenses/tree-sitter-python-0.25.0.txt"), "utf8").trim() },
+    { name: "tree-sitter-python", version: version("tree-sitter-python"), license: "MIT", text: readFileSync(path.join(packageDir("tree-sitter-python"), "LICENSE"), "utf8").trim() },
   ];
 }
 

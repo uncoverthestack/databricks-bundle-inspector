@@ -9,7 +9,7 @@ import { bundleSecretScopes } from "./graph/bundleGraph.js";
 import { taskRuntimeSecrets } from "./runtimeSecrets.js";
 import type { ValidationIssue } from "./validateBundle.js";
 import type { FileReference, TaskNodeData } from "./resources/task.js";
-import type { SqlTextParameter, TaskValueUsage, WidgetUsage } from "./taskFileDetections.js";
+import type { TaskValueUsage } from "./taskFileDetections.js";
 import { isVariableResolvedForTarget } from "./targetResolution.js";
 import { notebookHeaderFor, NOTEBOOK_MARKER_RULE_CLI_VERSION, type NotebookHeaderRule, type NotebookPathProblem } from "./notebookFiles.js";
 import { createSyncExclusion, syncsFromBundleRoot, type SyncExclusion } from "./syncRules.js";
@@ -22,7 +22,6 @@ import { isRemotePath } from "./resources/task.js";
 import { closestName } from "./closestName.js";
 import { splitName } from "./pipelineDataFlow.js";
 import { checkRunTarget, unquote } from "./runTargets.js";
-import type { RunTarget } from "./taskFileDetections.js";
 import { findVariableLoops } from "./variableLoops.js";
 import { findWorkspacePathClashes } from "./workspacePathClashes.js";
 import type { VariableSources } from "./variableSources.js";
@@ -58,6 +57,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "duplicate_job_parameter",
   "environment_version_missing",
   "unknown_environment_key",
+  "environments_not_checked",
   "project_environment_version_missing",
   "project_environment_version_unsupported",
   "project_environment_conflict",
@@ -421,7 +421,7 @@ function runTargetIssues(
   for (const ref of taskData.fileReferences) {
     if (ref.referenceType !== "notebook" || ref.source === "GIT" || !ref.exists) continue;
     const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
-    const runs = (fileNode?.data.runTargets as RunTarget[] | undefined) ?? [];
+    const runs = fileNode?.codeFacts?.runTargets ?? [];
     for (const run of runs) {
       // Only the task's own notebook: how a notebook reached with %run resolves its
       // own %run paths wasn't tested.
@@ -489,7 +489,7 @@ function widgetParameterIssues(
   for (const ref of taskData.fileReferences) {
     if (ref.referenceType !== "notebook" || ref.source === "GIT" || !ref.exists) continue;
     const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
-    const usage = fileNode?.data.widgetUsage as WidgetUsage | undefined;
+    const usage = fileNode?.codeFacts?.widgetUsage;
     // A notebook that uses %run can get widgets from the notebook it runs.
     if (!usage) continue;
 
@@ -626,8 +626,8 @@ function sqlParameterIssues(
   for (const ref of taskData.fileReferences) {
     if (ref.referenceType !== "sql" || ref.source === "GIT" || !ref.exists) continue;
     const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
-    const markers = (fileNode?.data.sqlParameterMarkers as Array<{ name: string; line: number }> | undefined) ?? [];
-    const textParameters = (fileNode?.data.sqlTextParameters as SqlTextParameter[] | undefined) ?? [];
+    const markers = fileNode?.codeFacts?.sqlParameterMarkers ?? [];
+    const textParameters = fileNode?.codeFacts?.sqlTextParameters ?? [];
     const passed = new Set([...taskData.taskParameterReferences.map((p) => p.name), ...jobParameterNames]);
     const read = new Set([...markers.map((marker) => marker.name), ...textParameters.map((use) => use.name)]);
     const unread = [...passed].filter((name) => !read.has(name));
@@ -766,7 +766,7 @@ function schemaRenameIssues(graph: BundleGraph, parsedBundle: ParsedBundleConfig
       for (const ref of data.fileReferences) {
         if (ref.source === "GIT" || !ref.exists) continue;
         const fileNode = graph.nodes.find((node) => node.id === `file:${ref.resolvedPath ?? ref.path}`);
-        const names = (fileNode?.data.qualifiedNames as Array<{ parts: string[]; line: number }> | undefined) ?? [];
+        const names = fileNode?.codeFacts?.qualifiedNames ?? [];
         for (const written of names) {
           const schema = matching(written.parts.join("."));
           if (!schema) continue;
@@ -1696,9 +1696,11 @@ function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
       id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
       // Deploy rejects these, or the run fails; duplicates deploy, merged into one.
       severity:
-        finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" || finding.kind === "excluded_from_sync" ? "warning" : "error",
+        finding.kind === "environments_not_checked"
+          ? "info"
+          : finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" || finding.kind === "excluded_from_sync" ? "warning" : "error",
       kind: finding.kind,
-      title: finding.title,
+      title: finding.kind === "environments_not_checked" ? `${finding.title} ${PICK_TARGET_IN_GRAPH}` : finding.title,
       ...(finding.taskKey
         ? { taskId: `${jobId}.tasks.${finding.taskKey}`, taskName: finding.taskKey }
         : { resourceId: jobId }),
@@ -2143,8 +2145,8 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
     return [data, ...(data.nestedTask ? [data.nestedTask] : [])]
       .flatMap((d) => d.fileReferences)
       .flatMap((ref) => {
-        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.data.taskValueUsage;
-        return usage ? [usage as TaskValueUsage] : [];
+        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.codeFacts?.taskValueUsage;
+        return usage ? [usage] : [];
       });
   };
 
@@ -2193,7 +2195,7 @@ function taskValueIssues(graph: BundleGraph): InspectorIssue[] {
         ? [reader.taskData, ...(reader.taskData.nestedTask ? [reader.taskData.nestedTask] : [])].flatMap((d) => d.fileReferences)
         : [];
       for (const ref of readerRefs) {
-        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.data.taskValueUsage as TaskValueUsage | undefined;
+        const usage = nodeById.get(`file:${ref.resolvedPath ?? ref.path}`)?.codeFacts?.taskValueUsage;
         for (const get of usage?.gets ?? []) {
           if (!get.taskKey) continue;
           reads.push({

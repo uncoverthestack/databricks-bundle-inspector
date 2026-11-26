@@ -12,7 +12,7 @@ import {
   detectWidgetsInFile,
 } from "../taskFileDetections.js";
 import { matchSecretScope } from "../resources/secretScope.js";
-import { bundleSecretScopes, type BundleGraph, type BundleGraphNode } from "./bundleGraph.js";
+import { bundleSecretScopes, type BundleGraph, type BundleGraphNode, type FileCodeFacts } from "./bundleGraph.js";
 import { buildPipelineDataFlow, type DataFlowFile } from "../pipelineDataFlow.js";
 import { readPipelineSql } from "../pipelineSql.js";
 import type { BundleEdge } from "./edges.js";
@@ -132,21 +132,17 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
           ...(detection.key ? { key: detection.key } : {}),
           ...(detection.scopeParameter ? { parameter: detection.scopeParameter } : {}),
         }));
-      if (widgetUsage || taskValueUsage || runTargets?.length || sqlParameterMarkers?.length || sqlTextParameters?.length || qualifiedNames?.length || runtimeSecrets.length) {
-        nodeMap.set(fileNode.id, {
-          ...fileNode,
-          data: {
-            ...fileNode.data,
-            ...(widgetUsage ? { widgetUsage } : {}),
-            ...(taskValueUsage ? { taskValueUsage } : {}),
-            ...(runTargets?.length ? { runTargets } : {}),
-            ...(sqlParameterMarkers?.length ? { sqlParameterMarkers } : {}),
-            ...(sqlTextParameters?.length ? { sqlTextParameters } : {}),
-            ...(qualifiedNames?.length ? { qualifiedNames } : {}),
-            ...(runtimeSecrets.length ? { runtimeSecrets } : {}),
-          },
-        });
-      }
+      // Set one key at a time: TypeScript checks each key against FileCodeFacts, which it
+      // doesn't do for keys spread in from another object.
+      const codeFacts: FileCodeFacts = {};
+      if (widgetUsage) codeFacts.widgetUsage = widgetUsage;
+      if (taskValueUsage) codeFacts.taskValueUsage = taskValueUsage;
+      if (runTargets?.length) codeFacts.runTargets = runTargets;
+      if (sqlParameterMarkers?.length) codeFacts.sqlParameterMarkers = sqlParameterMarkers;
+      if (sqlTextParameters?.length) codeFacts.sqlTextParameters = sqlTextParameters;
+      if (qualifiedNames?.length) codeFacts.qualifiedNames = qualifiedNames;
+      if (runtimeSecrets.length) codeFacts.runtimeSecrets = runtimeSecrets;
+      if (Object.keys(codeFacts).length > 0) nodeMap.set(fileNode.id, { ...fileNode, codeFacts });
 
       // One link per scope, so the graph shows it once, holding every line that names it,
       // so each line gets its own finding (#463).
@@ -213,8 +209,7 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
             if (!detection.scope) {
               // A pipeline has no notebook parameters, so its scope is only known at run time.
               const current = nodeMap.get(pipeline.id)!;
-              const reads = (current.data.runtimeSecrets as Array<{ file: string; line: number }> | undefined) ?? [];
-              nodeMap.set(pipeline.id, { ...current, data: { ...current.data, runtimeSecrets: [...reads, { file: filePath, line: detection.line }] } });
+              nodeMap.set(pipeline.id, { ...current, pipelineRuntimeSecrets: [...(current.pipelineRuntimeSecrets ?? []), { file: filePath, line: detection.line }] });
               continue;
             }
             const nodeId = secretScopeNode(detection.scope);

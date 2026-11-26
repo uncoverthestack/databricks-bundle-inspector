@@ -162,7 +162,41 @@ resources:
 
   test("an environment key the preview can't resolve leaves the job's tasks unjudged", () => {
     const text = job("        - task_key: s\n          environment_key: other\n").replace("environment_key: default", "environment_key: ${var.env}");
-    expect(check(text)).toEqual([]);
+    expect(check(text).filter((f) => f.kind === "unknown_environment_key")).toEqual([]);
+  });
+
+  describe("environments_not_checked (#679)", () => {
+    const fromVariable = (task = "          environment_key: default\n") => `
+resources:
+  jobs:
+    j:
+      environments: \${var.serverless_environments}
+      tasks:
+        - task_key: script
+${task}`;
+
+    test("a job whose environments are a variable gets a note on that line, with no target", () => {
+      const findings = check(fromVariable());
+      expect(summary(findings)).toEqual(['environments_not_checked @5: Not checked: job "j"\'s environments use a variable, so they aren\'t known yet.']);
+      expect(findings[0]).toMatchObject({ jobKey: "j" });
+      expect(findings[0]!.taskKey).toBeUndefined();
+    });
+
+    test("so does a job with an environment key the preview can't resolve", () => {
+      const text = job("        - task_key: s\n          environment_key: other\n").replace("environment_key: default", "environment_key: ${var.env}");
+      expect(check(text).map((f) => f.kind)).toEqual(["environments_not_checked"]);
+    });
+
+    test("a for-each task's inner task counts as using a key", () => {
+      const task = "          for_each_task:\n            inputs: '[1]'\n            task:\n              task_key: inner\n              environment_key: default\n";
+      expect(check(fromVariable(task)).map((f) => f.kind)).toEqual(["environments_not_checked"]);
+    });
+
+    test("near miss (environments_not_checked): no note with a target picked, for a written list, or when no task sets environment_key", () => {
+      expect(check(fromVariable(), { activeTarget: "dev" })).toEqual([]);
+      expect(check(job("        - task_key: script\n          environment_key: default\n"))).toEqual([]);
+      expect(check(fromVariable("          existing_cluster_id: abc\n"))).toEqual([]);
+    });
   });
 
   test("a task key resolved from a variable is compared as its value", () => {

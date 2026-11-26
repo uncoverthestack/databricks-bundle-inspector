@@ -1,8 +1,24 @@
+// @ts-check
 import { Search } from "lucide-react";
 import { useState } from "react";
 import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
 
+/**
+ * A job's task, or a box on the bundle overview.
+ * @typedef {(import("../lib/headerItems").SearchItem & { overviewId?: undefined, source?: undefined })
+ *   | import("../lib/headerItems").OverviewSearchItem} SearchResult
+ */
+
+/**
+ * @param {{
+ *   value: string,
+ *   items: SearchResult[],
+ *   onChange: (value: string) => void,
+ *   onSelect: (item: SearchResult) => void,
+ *   placeholder?: string | undefined,
+ * }} props
+ */
 export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {
   const normalized = value.trim().toLowerCase();
   const matches = normalized

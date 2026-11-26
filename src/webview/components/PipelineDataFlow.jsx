@@ -1,7 +1,11 @@
+// @ts-check
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dataFlowColumns } from "../../bundle/pipelineDataFlow";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
+/** @typedef {import("../../bundle/pipelineDataFlow").DataFlowNode} DataFlowNode */
+
+/** @type {Record<import("../../bundle/pipelineDataFlow").DataFlowNodeKind, string>} */
 const KIND_WORDS = {
   streaming_table: "streaming table",
   materialized_view: "materialized view",
@@ -13,9 +17,10 @@ const KIND_WORDS = {
 };
 const UNREAD_SHOWN = 5;
 
-const baseName = (file) => file.split(/[\\/]/).pop();
+const baseName = (/** @type {string} */ file) => file.split(/[\\/]/).pop() ?? file;
 
 /** "line 5" when the file is named after the table (it would repeat the name), else "file.sql:5". */
+/** @param {DataFlowNode} node */
 function fileLinkText(node) {
   const file = baseName(node.file);
   const stem = file.replace(/\.[^.]+$/, "");
@@ -26,23 +31,31 @@ function fileLinkText(node) {
  * A pipeline's data flow from its SQL (issue 398): what it reads from outside, the tables and
  * views it creates, and the lines between them. Nothing is guessed: names the inspector could
  * not read are listed with their file and line.
+ *
+ * @param {{
+ *   flow: import("../../bundle/pipelineDataFlow").PipelineDataFlow | undefined,
+ *   onOpenFile?: (file: string, line?: number) => void,
+ *   resolveName?: (value: string) => string,
+ * }} props
  */
 export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
-  const [pointedId, setActiveId] = useState(null);
-  const [paths, setPaths] = useState([]);
+  const [pointedId, setActiveId] = useState(/** @type {string | null} */ (null));
+  /** @typedef {{ key: string, d: string, from: string, to: string, streaming: boolean | undefined }} LinePath */
+  const [paths, setPaths] = useState(/** @type {LinePath[]} */ ([]));
   const [lineWidth, setLineWidth] = useState(0);
   // Boxes cut off at the right edge. A narrow panel scrolls the flow sideways, and macOS
   // hides the scrollbar until you scroll, so a fade and a count say there is more (issue 550).
   const [hiddenRight, setHiddenRight] = useState(0);
-  const canvasRef = useRef(null);
-  const rowRef = useRef(null);
-  const boxes = useRef(new Map());
+  const canvasRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const rowRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const boxes = useRef(/** @type {Map<string, HTMLElement>} */ (new Map()));
   const columns = useMemo(() => (flow ? dataFlowColumns(flow) : []), [flow]);
   // A box can go away while pointed at or focused (a save removed the table); it gets no
   // blur then, so ignore an id the flow no longer has, or every other box would fade.
   const activeId = pointedId && flow?.nodes.some((node) => node.id === pointedId) ? pointedId : null;
-  const name = (value) => (resolveName ? resolveName(value) : value);
+  const name = (/** @type {string} */ value) => (resolveName ? resolveName(value) : value);
   const unreadInto = useMemo(() => {
+    /** @type {Map<string, number>} */
     const counts = new Map();
     for (const item of flow?.unread ?? []) if (item.target) counts.set(item.target, (counts.get(item.target) ?? 0) + 1);
     return counts;
@@ -58,7 +71,7 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
     return ids;
   }, [activeId, flow]);
 
-  const register = useCallback((id, element) => {
+  const register = useCallback((/** @type {string} */ id, /** @type {HTMLElement | null} */ element) => {
     if (element) boxes.current.set(id, element);
     else boxes.current.delete(id);
   }, []);
@@ -76,6 +89,7 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
     const canvas = canvasRef.current;
     if (!canvas || !flow) return;
     const origin = canvas.getBoundingClientRect();
+    /** @type {LinePath[]} */
     const next = [];
     for (const edge of flow.edges) {
       const from = boxes.current.get(edge.from)?.getBoundingClientRect();
@@ -206,7 +220,7 @@ export default function PipelineDataFlow({ flow, onOpenFile, resolveName }) {
                             {fileLinkText(node)}
                           </button>
                         )}
-                        {unreadInto.get(node.id) > 0 && (
+                        {(unreadInto.get(node.id) ?? 0) > 0 && (
                           <span className="text-[11px] text-muted" data-data-flow-unread-into>
                             {unreadInto.get(node.id)} {unreadInto.get(node.id) === 1 ? "read" : "reads"} could not be read
                           </span>

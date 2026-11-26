@@ -1,10 +1,26 @@
+// @ts-check
 import { X } from "lucide-react";
 import { kindMeta } from "../lib/kindMeta";
 import { severityMeta } from "../lib/issueSeverity";
 import { hasTextSelection } from "../lib/textSelection";
 import SeverityIcon from "./SeverityIcon";
 
+/**
+ * A row in the panel: a task, file or other item (no source location), or an issue.
+ * @typedef {(import("../lib/headerItems").PanelItem & { file?: undefined, fixHint?: undefined })
+ *   | import("../lib/issueItems").IssueItem} ChipItem
+ */
+
+/**
+ * @param {{
+ *   title: string,
+ *   items: ChipItem[],
+ *   onClose: () => void,
+ *   onSelectItem: (item: ChipItem) => void,
+ * }} props
+ */
 export default function HeaderChipPanel({ title, items, onClose, onSelectItem }) {
+  /** @type {Map<string, ChipItem[]>} */
   const groups = new Map();
   for (const item of items) {
     const groupItems = groups.get(item.group) ?? [];

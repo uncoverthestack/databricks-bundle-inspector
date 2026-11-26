@@ -1,8 +1,10 @@
+// @ts-check
 import SeverityIcon from "./SeverityIcon";
 
 // The colour is on the icon and the border, never the number: red or amber digits on a tinted
 // box fall below WCAG AA in light themes (4.3:1), while an icon needs 3:1. The number stays in
 // the strong text colour, which the themes suite measures.
+/** @type {Record<import("../lib/taskProblems").TaskProblemTone, { severity: string, className: string, icon: string }>} */
 const LOOK = {
   error: { severity: "error", className: "border-error/60", icon: "text-error" },
   warning: { severity: "warning", className: "border-warning/60", icon: "text-warning" },
@@ -14,6 +16,13 @@ const LOOK = {
  * X for an error, a triangle for warnings only, as in the Problems panel (issue 303). The number is
  * every problem on the box, so the boxes still add up to the Issues count (issue 393). The
  * shape tells error from warning without colour; `title` says it in words.
+ *
+ * @param {{
+ *   count: number,
+ *   tone: import("../lib/taskProblems").TaskProblemTone,
+ *   title?: string,
+ *   shape?: string,
+ * }} props
  */
 export default function ProblemBadge({ count, tone, title, shape = "rounded-full" }) {
   const look = LOOK[tone] ?? LOOK.none;

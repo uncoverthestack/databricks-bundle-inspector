@@ -1669,6 +1669,38 @@ function SignInBanner({ signIn, fallbackMessage, onOpenTerminal, onCheckAgain, o
   );
 }
 
+/**
+ * The whole panel. Props come from Bootstrap.jsx, which checks each message field first.
+ * This file isn't type-checked yet (issue 697); the type here is what callers are checked against.
+ *
+ * @param {{
+ *   parsedBundle: import("../bundle/graph/bundleGraph").ParsedBundleConfig,
+ *   bundleRoot: string | undefined,
+ *   resolutionBundle: import("../bundle/graph/bundleGraph").ParsedBundleConfig,
+ *   graph: import("../bundle/graph/bundleGraph").BundleGraph | null,
+ *   validationIssues?: import("../bundle/validateBundle").ValidationIssue[],
+ *   inspectorIssues?: import("../bundle/issues").InspectorIssue[],
+ *   inspectedTarget: string | null,
+ *   inspectedTargetMode: string | null,
+ *   requestedTarget: string | null,
+ *   targetOptions?: string[],
+ *   targetFallbackMessage: string | null,
+ *   targetFallbackReason: string | null,
+ *   profileChoice: { host: string, names: string[] } | null,
+ *   onChooseProfile: () => void,
+ *   signIn: { target: string, stage: string, blockedReason: string | null, signsInAs: { profile: string, source: string } | null } | null,
+ *   onOpenSignInTerminal: (target: string) => void,
+ *   onCheckTargetAgain: (target: string) => void,
+ *   onOpenSignInGuide: () => void,
+ *   focusIssuesNonce: number | null,
+ *   initialResource: import("../bundle/resourceFiles").GraphResource | undefined,
+ *   onSelectTarget: (target: string | null | undefined) => void,
+ *   onOpenFile: (filePath: string, line?: number | null, column?: number | null, resourceType?: string) => void,
+ *   onCopyReviewSummary: (markdown: string) => void,
+ *   onCopyReviewReport: (jobKey: string) => void,
+ *   onTelemetry: (event: string, properties?: Record<string, unknown>) => void,
+ * }} props
+ */
 export default function App({
   parsedBundle,
   bundleRoot,
