@@ -1,3 +1,0 @@
-Fixed
-
-- **The header gives up space in a fixed order and never cuts the target** ([#553](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/553), [#551](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/551)). As the panel narrows, the search box first shrinks to its icon (click it to type), then **Copy review** keeps only its icon, then the bundle name and the job picker shorten. Below that, search, **All** / **Issues** and **Copy review** move to a second row. The target (**structural preview** or **target: dev**) always shows in full, since it says how far to trust what the panel shows. Wide panels look the same as before.

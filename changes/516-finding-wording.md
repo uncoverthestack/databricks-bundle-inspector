@@ -1,3 +1,0 @@
-Changed
-
-- **Clearer wording for four findings** ([#516](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/516)). A SQL file's missing `:name` parameter now reads `Pass "run_date" to this task: the SQL file reads ":run_date", so without it the run may fail.` A task value read from a task that doesn't run first now reads `Add "extract" to this task's depends_on: reading its value "output_path" doesn't make this task wait, so the value may not be set yet.` A path with a variable says the file "isn't known yet", and a resource file no include loads says its resources "won't be deployed". When each one shows is unchanged.
