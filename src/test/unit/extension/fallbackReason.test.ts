@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { firstLine, targetFallback, type FallbackCode } from "../../../bundle/fallbackReason.js";
+import { firstLine, SIGN_IN_CODES, targetFallback, type FallbackCode } from "../../../bundle/fallbackReason.js";
 import { validateProperties } from "../../../telemetry/schema.js";
 
 // The messages are the Databricks CLI's (1.21.0), as validateBundle passes them on.
@@ -105,6 +105,17 @@ describe("targetFallback: the short reason in the graph's note", () => {
       "your Databricks sign-in couldn't be used",
     ],
     [
+      // CLI v1.28.0 and v0.299.0, word for word, with a token the workspace turns down (#719).
+      "a sign-in the workspace refused",
+      { error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED", details: "Error: Invalid access token. [ReqId: 3c1f0b2e-1111-2222-3333-444455556666] (403 403)\n\nEndpoint: GET https://h.example.invalid/api/2.0/preview/scim/v2/Me\nHTTP Status: 403 Forbidden" },
+      "the workspace didn't accept the Databricks CLI's sign-in",
+    ],
+    [
+      "a sign-in the workspace refused, as a 401",
+      { error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED", details: "Error: Invalid access token. [ReqId: x] (401 401)" },
+      "the workspace didn't accept the Databricks CLI's sign-in",
+    ],
+    [
       "anything else: the CLI's first line",
       { error: "Failed to validate Databricks bundle.", errorCode: "VALIDATION_FAILED", details: "error: job undefined-job is not defined\nwarning: more" },
       "job undefined-job is not defined",
@@ -132,11 +143,24 @@ describe("targetFallback: the short reason in the graph's note", () => {
       "not_logged_in",
     ],
     ["other login", "error getting token: something", undefined, "login_other"],
+    ["refused sign-in", "Error: Invalid access token. [ReqId: x] (403 403)", undefined, "login_rejected"],
+    // Near misses: a bundle's own words about tokens are the bundle's problem, not a sign-in.
+    ["a field named access_token", "error: unknown field: access_token", undefined, "other"],
+    ["a description about tokens", "error: job x: Invalid access tokens are rotated weekly", undefined, "other"],
     ["anything else", "error: job x is not defined", undefined, "other"],
   ])("%s has the telemetry code the schema takes", (_name, details, errorCode, code) => {
     const fallback = targetFallback({ error: "Failed", ...(errorCode ? { errorCode } : {}), details });
     expect(fallback.code).toBe(code);
     expect(validateProperties("inspect_bundle", { fallback_reason: fallback.code })).toEqual({ fallback_reason: code });
+  });
+
+  test("a refused sign-in offers signing in again, and says so without naming the credential (#719)", () => {
+    const fallback = targetFallback({ error: "Failed", errorCode: "VALIDATION_FAILED", details: "Error: Invalid access token. [ReqId: x] (403 403)" });
+    expect(SIGN_IN_CODES.has(fallback.code)).toBe(true);
+    // The inspector never reads the sign-in: its own words don't talk about tokens.
+    expect(fallback.reason).not.toMatch(/token/i);
+    // The CLI's words stay whole for the tooltip.
+    expect(fallback.message).toContain("Invalid access token");
   });
 
   test("a timeout says how long it waited, not Node's command text", () => {
