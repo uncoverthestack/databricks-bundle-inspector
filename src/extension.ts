@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { isWebviewMessage, type BundleData, type ExtensionMessage } from "./shared/webviewMessages.js";
 import path from "path";
 import os from "os";
 import { existsSync, readFileSync } from "fs";
@@ -908,25 +909,16 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       return undefined;
     }
   }
-  let activeBundleData: unknown;
+  /** The last bundleData sent to the graph, kept for a panel that opens later and for the review report. */
+  let activeBundleData: BundleData | undefined;
+  /** Every message to the webview goes through here, so it is checked against ExtensionMessage. */
+  const send = (webview: vscode.Webview, message: ExtensionMessage) => webview.postMessage(message);
   /** When the graph's data was last checked, for the review report's Checked row. */
   let activeBundleCheckedAt = new Date();
 
   /** Copy review, Full report: built from what the graph shows, with the CLI's version. */
   async function reviewReportFor(jobKey?: string): Promise<string | undefined> {
-    const data = activeBundleData as
-      | {
-          parsedBundle?: ParsedBundleConfig;
-          graph?: BundleGraph;
-          inspectorIssues?: InspectorIssue[];
-          inspectedTarget?: string;
-          inspectedTargetMode?: string;
-          resolutionBundle?: ParsedBundleConfig;
-          writtenBundle?: ParsedBundleConfig;
-          cliVersion?: string;
-          outsideVariables?: OutsideReportVariable[];
-        }
-      | undefined;
+    const data = activeBundleData;
     if (!data?.parsedBundle || !data.graph) return undefined;
     const cliVersion = data.cliVersion ? /v?(\d+\.\d+\.\d+)/.exec(data.cliVersion)?.[1] : undefined;
     const structuralPreview = data.inspectedTargetMode === "probe";
@@ -967,8 +959,9 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     },
     changed: (root, banner) => {
       if (shownBundleDir === root) {
-        activeBundleData = activeBundleData ? { ...(activeBundleData as object), signIn: banner ?? null } : activeBundleData;
-        livePanel()?.webview.postMessage({ type: "signIn", signIn: banner ?? null });
+        activeBundleData = activeBundleData ? { ...activeBundleData, signIn: banner ?? null } : activeBundleData;
+        const panel = livePanel();
+        if (panel) void send(panel.webview, { type: "signIn", signIn: banner ?? null });
       }
       refreshSidebar?.();
     },
@@ -1094,14 +1087,12 @@ export function activate(extensionContext: vscode.ExtensionContext) {
    */
   let shownBundleDir: string | undefined;
 
-  function postBundleData(bundleDir: string, data: object) {
+  function postBundleData(bundleDir: string, data: BundleData) {
     shownBundleDir = bundleDir;
     activeBundleData = data;
     activeBundleCheckedAt = new Date();
-    livePanel()?.webview.postMessage({
-      type: "bundleData",
-      ...data,
-    });
+    const panel = livePanel();
+    if (panel) void send(panel.webview, { type: "bundleData", ...data });
   }
 
   function bundleMessageDataFromInspection(
@@ -1109,7 +1100,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
     inspection: Awaited<ReturnType<typeof inspectBundleAtTarget>>,
     requestedTarget?: string,
     options?: { focusIssues?: boolean; initialResource?: GraphResource | undefined; preserveView?: boolean },
-  ): object | undefined {
+  ): BundleData | undefined {
     const { result } = inspection;
     if (!result.ok) return undefined;
     // A target that fell back for want of a sign-in gets the sign-in banner; any other result clears it.
@@ -1435,7 +1426,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
       const openPanel = livePanel();
       if (options?.focusIssues && openPanel && activeBundleData) {
         openPanel.reveal(vscode.ViewColumn.One);
-        openPanel.webview.postMessage({ type: "focusIssues" });
+        void send(openPanel.webview, { type: "focusIssues" });
         return;
       }
       logInspect("no_bundle_file");
@@ -1607,32 +1598,29 @@ export function activate(extensionContext: vscode.ExtensionContext) {
         });
 
         created.webview.onDidReceiveMessage((message) => {
-          if (message?.type === "webviewReady" && activeBundleData) {
-            created.webview.postMessage({
-              type: "bundleData",
-              ...(activeBundleData as object),
-            });
+          if (isWebviewMessage(message, "webviewReady") && activeBundleData) {
+            void send(created.webview, { type: "bundleData", ...activeBundleData });
           }
           if (
-            message?.type === "selectTarget" &&
+            isWebviewMessage(message, "selectTarget") &&
             (typeof message.target === "string" || message.target === null)
           ) {
             void selectTarget(typeof message.target === "string" ? message.target : undefined);
           }
-          if (message?.type === "chooseProfile") {
+          if (isWebviewMessage(message, "chooseProfile")) {
             void chooseProfileFromGraph();
           }
           // The sign-in banner. The target is the one the banner names, checked against the flow.
-          if (message?.type === "openSignInTerminal" && typeof message.target === "string" && activeBundleDir) {
+          if (isWebviewMessage(message, "openSignInTerminal") && typeof message.target === "string" && activeBundleDir) {
             void signInFlow.openTerminal(activeBundleDir, message.target, "graph");
           }
-          if (message?.type === "checkTargetAgain" && typeof message.target === "string" && activeBundleDir) {
+          if (isWebviewMessage(message, "checkTargetAgain") && typeof message.target === "string" && activeBundleDir) {
             void checkTargetAgain(activeBundleDir, message.target);
           }
-          if (message?.type === "openSignInGuide") {
+          if (isWebviewMessage(message, "openSignInGuide")) {
             void vscode.env.openExternal(vscode.Uri.parse(`${usageDocsUrl(extensionVersion)}#signing-in-for-a-target`));
           }
-          if (message?.type === "openFile" && typeof message.path === "string") {
+          if (isWebviewMessage(message, "openFile") && typeof message.path === "string") {
             if (
               !isOpenFilePathAllowed(
                 message.path,
@@ -1667,7 +1655,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
               });
             }
           }
-          if (message?.type === "copyReviewReport" && (typeof message.jobKey === "string" || message.jobKey === undefined)) {
+          if (isWebviewMessage(message, "copyReviewReport") && (typeof message.jobKey === "string" || message.jobKey === undefined)) {
             telemetry?.logUsage("review_summary_copied", { format: "report" });
             void reviewReportFor(message.jobKey).then((markdown) =>
               markdown === undefined
@@ -1688,7 +1676,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
             });
           }
           if (
-            message?.type === "copyReviewSummary" &&
+            isWebviewMessage(message, "copyReviewSummary") &&
             typeof message.markdown === "string"
           ) {
             telemetry?.logUsage("review_summary_copied", { format: "summary" });
@@ -1707,10 +1695,10 @@ export function activate(extensionContext: vscode.ExtensionContext) {
                   ),
               );
           }
-          if (message?.type === "contextMenuSelection" && typeof message.text === "string") {
+          if (isWebviewMessage(message, "contextMenuSelection") && typeof message.text === "string") {
             contextMenuSelection = message.text;
           }
-          if (message?.type === "telemetry") {
+          if (isWebviewMessage(message, "telemetry")) {
             const parsed = parseWebviewTelemetryMessage(message);
             if (parsed) telemetry?.logUsage(parsed.event, parsed.properties);
           }
@@ -1760,8 +1748,7 @@ export function activate(extensionContext: vscode.ExtensionContext) {
 
   /** The graph's "Choose profile" button: pick one of the matching profiles, then check the target again. */
   async function chooseProfileFromGraph(): Promise<void> {
-    const match = (activeBundleData as { profileChoice?: { host: string; names: string[] } } | undefined)
-      ?.profileChoice;
+    const match = activeBundleData?.profileChoice;
     if (await chooseProfile(match ?? undefined)) await selectTarget(activeRequestedTarget);
   }
 

@@ -53,7 +53,11 @@ export default function Bootstrap() {
   useEffect(() => {
     vscodeApi?.postMessage({ type: "webviewReady" });
 
-    /** @param {MessageEvent} event */
+    /**
+     * The fields are typed from what the extension sends (shared/webviewMessages.ts), and still
+     * checked here: a message is data from another process.
+     * @param {MessageEvent<Partial<import("../shared/webviewMessages").BundleData & { type: import("../shared/webviewMessages").ExtensionMessage["type"] }> | null>} event
+     */
     function handleMessage(event) {
       const { data } = event;
       if (typeof data !== "object" || data === null) {

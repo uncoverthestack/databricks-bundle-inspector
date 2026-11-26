@@ -18,22 +18,8 @@ import {
   type SignInPlan,
 } from "../databricksCli/signIn.js";
 
-/**
- * Where a sign-in for a target stands, as the graph's banner shows it. One state at a time:
- * `needed` (the target fell back for want of a sign-in), `terminal` (the command is typed,
- * waiting for Enter), `updated` (the CLI saved the profile; nothing checks by itself),
- * `checking` (the user asked to check the target again).
- */
-export type SignInStage = "needed" | "terminal" | "updated" | "checking";
-
-export interface SignInBanner {
-  target: string;
-  stage: SignInStage;
-  /** Why the terminal isn't offered, when signing in here would be unsafe or can't work. */
-  blockedReason?: string;
-  /** Before the click: the name the sign-in will use, and where it comes from. */
-  signsInAs?: { profile: string; source: ProfileSource };
-}
+export type { SignInBanner, SignInStage } from "../shared/webviewMessages.js";
+import type { SignInBanner, SignInStage } from "../shared/webviewMessages.js";
 
 interface Flow {
   root: string;
