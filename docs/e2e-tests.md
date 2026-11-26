@@ -3,6 +3,8 @@
 These commands work in PowerShell, Command Prompt, and POSIX shells. Each builds
 the extension and opens a separate VS Code instance for its suite.
 
+When the E2E workflow is red, check [Known flaky E2E tests](e2e-flaky.md) first.
+
 | Suite | Command |
 | --- | --- |
 | Missing CLI | `npm run test:e2e` |
