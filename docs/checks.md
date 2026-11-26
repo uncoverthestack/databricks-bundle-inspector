@@ -390,9 +390,9 @@ A pipeline task refreshes a table or flow its pipeline doesn't create.
 
 A job is written only under a target, such as `targets.prod.resources.jobs.nightly`, and no target is picked. The structural preview leaves that job out, so it isn't in the graph and none of the job checks ran on it. This note says so, so that "not checked" never looks like "no problems".
 
-- **Severity:** note, in the panel's Issues list only. It is not in VS Code's Problems panel, the YAML file, the review report or the command-line tool's output.
-- **Example:** `Job "nightly" is only in target "prod": pick prod to check it.` A job written under several targets gets one note naming them all.
-- **Fix:** pick the target in the graph. The Databricks CLI then adds the job to the bundle and every check runs on it. Nothing needs to change in the bundle.
+- **Severity:** note, in the panel's Issues list and the command-line tool's output. It is not in VS Code's Problems panel, the YAML file or the review report.
+- **Example:** `Job "nightly" is only in target "prod": pick prod to check it.` A job written under several targets gets one note naming them all. The command-line tool says "check it with --target prod." instead.
+- **Fix:** pick the target in the graph, or pass `--target` to the command-line tool. The Databricks CLI then adds the job to the bundle and every check runs on it. Nothing needs to change in the bundle.
 - **Limits:** a job also written in the bundle's own `resources` gets no note, as it is checked already.
 
 ## Compute
@@ -548,13 +548,13 @@ A notebook that exists but that `bundle deploy` doesn't upload, for example beca
 
 ### `unresolved_variable`
 
-A `${var.*}` reference to a variable with no default and no value for the selected target.
+A task's `${var.*}` reference names a variable the bundle doesn't declare under `variables`.
 
 - **Severity:** error.
-- **When it fails:** `bundle validate` with a target stops: "no value assigned to required variable" (checked by deploying, Databricks CLI v1.28.0).
-- **Example:** `warehouse_id: ${var.warehouse_id}` with no default, and no value under the target.
-- **Fix:** give the variable a default, or a value for the target.
-- **Limits:** values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
+- **When it fails:** `bundle validate` with a target stops: "reference does not exist: ${var.name}" (the Databricks CLI's own acceptance test `acceptance/bundle/variables/reference-typo`).
+- **Example:** `warehouse_id: ${var.warehouse_id}` with no `warehouse_id` under `variables`.
+- **Fix:** declare the variable, or correct the name in the reference.
+- **Limits:** a declared variable with no default and no value isn't reported in the structural preview. Once a target is picked, the Databricks CLI reports it itself: "no value assigned to required variable" (checked by deploying, Databricks CLI v1.28.0). Values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
 
 ### `variable_reference_loop`
 
