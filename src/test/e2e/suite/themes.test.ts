@@ -18,6 +18,25 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
 /** True when no finite animation or transition is running in the page. */
 const NO_FADES = `document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity)`;
 
+/**
+ * Turns off colour fades in the graph's page, and returns whether a task box's fade is now
+ * 0s. This suite checks the colours each theme lands on, not the fade to them. On macOS CI
+ * a fade could stay at its start without showing as running, so a task box kept the last
+ * theme's background (Dark+'s #252526) under Light+'s text, and two reads agreed on it
+ * (#569's wait for fades still failed). The page's CSP blocks a <style> element; a
+ * constructed sheet is not blocked.
+ */
+const NO_TRANSITIONS = `(() => {
+  if (!document.documentElement.hasAttribute("data-test-no-transitions")) {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("*, *::before, *::after { transition: none !important; }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    document.documentElement.setAttribute("data-test-no-transitions", "");
+  }
+  const box = document.querySelector(".react-flow__node > div");
+  return Boolean(box) && getComputedStyle(box).transitionDuration === "0s";
+})()`;
+
 /** VS Code's built-in themes, by the name `workbench.colorTheme` takes. */
 const THEMES = [
   { name: "Default Dark Modern", kind: "vscode-dark", mode: "dark" },
@@ -192,7 +211,10 @@ export function themesSuite() {
             const world = await browser.call("Page.createIsolatedWorld", { frameId: frame.id, worldName: "dbi-theme-test" }, attached.sessionId);
             sessionId = attached.sessionId;
             contextId = world.executionContextId;
-            if (await evaluate(`document.querySelectorAll(".react-flow__node").length`) >= 5) return true;
+            if (await evaluate(`document.querySelectorAll(".react-flow__node").length`) >= 5) {
+              assert.equal(await evaluate(NO_TRANSITIONS), true, "colour fades are off in the graph's page");
+              return true;
+            }
             // The panel opens on the bundle overview. The job's Open link goes to its graph.
             await evaluate(`document.querySelector("[data-overview-open]")?.click()`);
           }

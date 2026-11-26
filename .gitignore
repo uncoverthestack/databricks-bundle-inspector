@@ -44,3 +44,6 @@ repo-audit
 # Made by npm run build:cli
 cli/LICENSE
 cli/THIRD_PARTY_NOTICES.md
+
+# Made by npm run test:unit:coverage
+coverage/
