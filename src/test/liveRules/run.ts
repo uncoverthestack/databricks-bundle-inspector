@@ -2,7 +2,7 @@
  * Deploys and runs each live rule probe on a real workspace and compares what happens with what
  * the rule says (#650). Local only: it needs a sign-in, so it never runs in GitHub Actions.
  *
- *   npm run live-rules -- --profile <profile> [--cli <databricks>] [--runs 2] [--probe <id>]...
+ *   npm run live-rules -- --profile <profile> [--cli <databricks>] [--runs 2] [--probe <id>]... [--variant <name>]... [--show-output]
  *
  * Each variant runs `--runs` times, under a new bundle name each time. Everything a run makes
  * is removed after it: `bundle destroy`, then its `.bundle/<name>` folder, then checked gone.
@@ -21,6 +21,10 @@ const { values } = parseArgs({
     cli: { type: "string", default: "databricks" },
     runs: { type: "string", default: "2" },
     probe: { type: "string", multiple: true },
+    /** Print the last lines of every failing step, not only of differing ones: to read why, in discover mode. */
+    "show-output": { type: "boolean", default: false },
+    /** Only these variants, e.g. `broken`. */
+    variant: { type: "string", multiple: true },
     probes: { type: "string", default: path.resolve(__dirname, "../../src/test/liveRules/probes") },
   },
 });
@@ -63,6 +67,7 @@ const leftovers: string[] = [];
 console.log(`${cliVersion}, profile ${profile}, ${probes.length} probes, ${runs} runs each\n`);
 for (const probe of probes) {
   for (const [variant, expected] of Object.entries(probe.variants)) {
+    if (values.variant && !values.variant.includes(variant)) continue;
     for (let run = 1; run <= runs; run++) {
       const name = `dbi-probe-${probe.id}-${variant}-${run}-${Math.random().toString(36).slice(2, 8)}`.replace(/_/g, "-").toLowerCase();
       const dir = mkdtempSync(path.join(tmpdir(), "dbi-probe-"));
@@ -89,9 +94,9 @@ for (const probe of probes) {
       if (!verdict.matches) differs++;
       console.log(`${verdict.matches ? "ok     " : "DIFFERS"} ${probe.id} ${variant} run ${run}: first failure ${verdict.firstFailure}`);
       for (const line of verdict.lines) console.log(`          ${line}`);
-      if (!verdict.matches) {
+      if (!verdict.matches || values["show-output"]) {
         const failed = results.find((result) => result.outcome === "fail") ?? results.at(-1);
-        if (failed) console.log(`          ${failed.step} said: ${failed.output.trim().split("\n").slice(-3).join(" / ").slice(0, 400)}`);
+        if (failed) console.log(`          ${failed.step} said: ${failed.output.trim().split("\n").filter((line) => line.trim()).slice(-4).join(" / ").slice(0, 600)}`);
       }
     }
   }

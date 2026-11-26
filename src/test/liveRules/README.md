@@ -7,6 +7,7 @@ Each folder in `probes/` is one rule: `rule.json` says which finding code it bac
 ```sh
 npm run live-rules -- --profile <profile>
 npm run live-rules -- --profile <profile> --probe widget_removed_then_read --runs 1
+npm run live-rules -- --profile <profile> --variant broken --show-output   # why each step failed
 ```
 
 - It deploys and runs real jobs (serverless), so it needs a sign-in and is never run in GitHub Actions.

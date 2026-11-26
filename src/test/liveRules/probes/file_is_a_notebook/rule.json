@@ -1,12 +1,11 @@
 {
   "check": "file_is_a_notebook",
-  "issue": 648,
-  "note": "docs/checks.md#file_is_a_notebook doesn't say which step fails; this probe finds out (#648, #650).",
+  "issue": 650,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, profile with serverless, 3 runs: validate stops: \"expected a file ... but got a notebook\". Control deployed and ran.",
   "variants": {
     "broken": {
-      "validate": "unknown",
-      "deploy": "unknown",
-      "run": "unknown"
+      "validate": "fail",
+      "failsWith": "is a notebook"
     },
     "working": {
       "validate": "pass",

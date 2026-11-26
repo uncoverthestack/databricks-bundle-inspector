@@ -1,12 +1,11 @@
 {
   "check": "unresolved_variable",
-  "issue": 648,
-  "note": "docs/checks.md#unresolved_variable doesn't say which step fails; this probe finds out (#648, #650).",
+  "issue": 650,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, profile with serverless, 3 runs: validate stops: \"no value assigned to required variable x\". Control deployed and ran.",
   "variants": {
     "broken": {
-      "validate": "unknown",
-      "deploy": "unknown",
-      "run": "unknown"
+      "validate": "fail",
+      "failsWith": "no value assigned to required variable x"
     },
     "working": {
       "validate": "pass",
