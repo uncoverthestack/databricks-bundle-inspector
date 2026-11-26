@@ -71,6 +71,13 @@ describe("SQL warehouse", () => {
       Settings: ["Cluster size: Small", "Channel: ${var.channel} [as written]"],
     });
   });
+
+  test("a serverless flag from a variable determines the type, and an unknown flag is not guessed (#594)", () => {
+    const config = { enable_serverless_compute: "${var.flag}", warehouse_type: "PRO" };
+    expect(rowsOf(warehouseSettings(config, () => "true"))).toEqual({ Settings: ["Type: Serverless"] });
+    expect(rowsOf(warehouseSettings(config, (value) => value === "${var.flag}" ? "false" : value))).toEqual({ Settings: ["Type: Pro"] });
+    expect(rowsOf(warehouseSettings(config))).toEqual({ Settings: ["Type: ${var.flag} [as written]"] });
+  });
 });
 
 describe("cluster", () => {
@@ -175,6 +182,12 @@ describe("serverless", () => {
   test("an environment key the job doesn't have is not given settings", () => {
     const settings = serverlessSettings([{ jobKey: "j", job: { tasks: [{ task_key: "t", environment_key: "missing" }] }, taskKeys: ["t"] }]);
     expect(rowsOf(settings)).toEqual({ "Environment missing": ["Version: Not in the job's environments", "Tasks: t"] });
+  });
+
+  test("resolves the environment definition and task keys consistently (#594)", () => {
+    const job = { environments: [{ environment_key: "${var.env}", spec: { environment_version: "5" } }], tasks: [{ task_key: "t", environment_key: "${var.env}" }] };
+    const resolve = (value: string) => value === "${var.env}" ? "default" : value;
+    expect(rowsOf(serverlessSettings([{ jobKey: "j", job, taskKeys: ["t"] }], resolve))).toEqual({ "Environment default": ["Version: 5", "Tasks: t"] });
   });
 
   test("no tasks with environments, notebooks or a performance target: nothing", () => {
