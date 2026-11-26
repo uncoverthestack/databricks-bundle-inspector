@@ -416,6 +416,29 @@ describe("validateBundleWithDependencies", () => {
       });
     });
 
+    test("is shown, with the Python note as a warning, when the CLI stopped at the bundle's Python code", async () => {
+      const result = await failWith(
+        "Error: Running Python code is not allowed when DATABRICKS_BUNDLE_RESTRICTED_CODE_EXECUTION is set",
+        pastLogin([{ task_key: "t", notebook_task: { notebook_path: "src/nb.py" } }]),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.issues?.[0]?.diagnostics?.[0]).toMatchObject({
+        severity: "warning",
+        message: expect.stringContaining("Python code (the python section) was not run"),
+      });
+    });
+
+    test("still fails on a warning alone that isn't code left unrun", async () => {
+      const result = await failWith(
+        "Warning: something unusual\n",
+        pastLogin([{ task_key: "t", notebook_task: { notebook_path: "src/nb.py" } }]),
+      );
+
+      expect(result.ok).toBe(false);
+    });
+
     test("fails when the CLI stopped before merging the target's tasks into the base ones", async () => {
       const result = await failWith(
         "Error: no value assigned to required variable run_date.",

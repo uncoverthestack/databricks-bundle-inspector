@@ -510,7 +510,11 @@ export async function validateBundleWithDependencies(
         const parsed = parseBundleConfig(raw);
         if (parsed.ok && (!inspectsRealTarget || cliAppliedTarget(raw))) {
           const diagnostics = await readDiagnostics(stderr ?? "");
-          if (inspectsRealTarget && !diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+          // Code the inspector didn't let the CLI run (a bundle's Python or scripts) is the
+          // reason the CLI stopped, though it is shown as a warning: the target is still shown.
+          const explained =
+            isRestrictedExecutionError(stderr) || diagnostics.some((diagnostic) => diagnostic.severity === "error");
+          if (inspectsRealTarget && !explained) {
             throw new Error("No diagnostic explains the failed target validation");
           }
           const targetOptions = parseAvailableTargets(stderr ?? "");
