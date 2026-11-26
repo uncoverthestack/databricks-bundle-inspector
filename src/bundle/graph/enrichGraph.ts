@@ -17,6 +17,14 @@ import { buildPipelineDataFlow, type DataFlowFile } from "../pipelineDataFlow.js
 import { readPipelineSql } from "../pipelineSql.js";
 import type { BundleEdge } from "./edges.js";
 import { createSyncExclusion, type SyncExclusion } from "../syncRules.js";
+import { forEachLimited } from "../forEachLimited.js";
+
+/**
+ * How many task files are read at once. Below the Python reader's cache size, so the checks
+ * of a file share one read (#716). With 3,000 notebooks: 232 MB instead of 929 MB at the same
+ * speed, against all files at once.
+ */
+export const FILE_SCAN_LIMIT = 16;
 
 /**
  * Enriches a bundle graph with secret scope and widget nodes found by scanning
@@ -85,108 +93,108 @@ export async function enrichGraphWithFileContent(graph: BundleGraph): Promise<Bu
       isRegularFile(n.data.resolvedPath),
   );
 
-  await Promise.all(
-    localFileNodes.map(async (fileNode) => {
-      const resolvedPath = fileNode.data.resolvedPath;
-      if (typeof resolvedPath !== "string") return;
-      const fileTypeHint =
-        fileNode.data.referenceType === "sql"
-          ? "sql"
-          : undefined;
+  // A limited number of files at a time: a bundle with thousands of notebooks would otherwise
+  // hold them all in memory at once (#716).
+  await forEachLimited(localFileNodes, FILE_SCAN_LIMIT, async (fileNode) => {
+    const resolvedPath = fileNode.data.resolvedPath;
+    if (typeof resolvedPath !== "string") return;
+    const fileTypeHint =
+      fileNode.data.referenceType === "sql"
+        ? "sql"
+        : undefined;
 
-      const referenceType = fileNode.data.referenceType;
-      const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, sqlTextParameters, qualifiedNames] = await Promise.all([
-        detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "secrets"); return []; }),
-        detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "widget definitions"); return []; }),
-        // Notebook tasks pass their parameters as widgets, so compare them later.
-        fileNode.data.referenceType === "notebook"
-          ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => { failed(fileNode.id, resolvedPath, "widget reads"); return undefined; })
-          : undefined,
-        // Notebooks and Python files set and read task values.
-        referenceType === "notebook" || referenceType === "python_script"
-          ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "task values"); return undefined; })
-          : undefined,
-        // The notebooks a notebook runs with %run or dbutils.notebook.run (#233).
-        referenceType === "notebook"
-          ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "notebook calls"); return undefined; })
-          : undefined,
-        // SQL file tasks fill the file's :name markers from their parameters (#234).
-        referenceType === "sql"
-          ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL parameters"); return undefined; })
-          : undefined,
-        // ...and its {{name}} text parameters, pasted in as quoted text (#484).
-        referenceType === "sql"
-          ? detectSqlTextParametersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL text parameters"); return undefined; })
-          : undefined,
-        // Dotted names in task code, to find schemas a target renames (#235).
-        referenceType === "notebook" || referenceType === "python_script" || referenceType === "sql"
-          ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "schema references"); return undefined; })
-          : undefined,
-      ]);
-      // Secrets whose scope isn't written in the code: kept, so the task never looks like it
-      // reads none, with the parameter the scope comes from when the code shows it (issue 535).
-      const runtimeSecrets = secrets
-        .filter((detection) => !detection.scope)
-        .map((detection) => ({
-          line: detection.line,
-          ...(detection.key ? { key: detection.key } : {}),
-          ...(detection.scopeParameter ? { parameter: detection.scopeParameter } : {}),
-        }));
-      // Set one key at a time: TypeScript checks each key against FileCodeFacts, which it
-      // doesn't do for keys spread in from another object.
-      const codeFacts: FileCodeFacts = {};
-      if (widgetUsage) codeFacts.widgetUsage = widgetUsage;
-      if (taskValueUsage) codeFacts.taskValueUsage = taskValueUsage;
-      if (runTargets?.length) codeFacts.runTargets = runTargets;
-      if (sqlParameterMarkers?.length) codeFacts.sqlParameterMarkers = sqlParameterMarkers;
-      if (sqlTextParameters?.length) codeFacts.sqlTextParameters = sqlTextParameters;
-      if (qualifiedNames?.length) codeFacts.qualifiedNames = qualifiedNames;
-      if (runtimeSecrets.length) codeFacts.runtimeSecrets = runtimeSecrets;
-      if (Object.keys(codeFacts).length > 0) nodeMap.set(fileNode.id, { ...fileNode, codeFacts });
+    const referenceType = fileNode.data.referenceType;
+    const [secrets, widgets, widgetUsage, taskValueUsage, runTargets, sqlParameterMarkers, sqlTextParameters, qualifiedNames] = await Promise.all([
+      detectSecretInNotebook(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "secrets"); return []; }),
+      detectWidgetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "widget definitions"); return []; }),
+      // Notebook tasks pass their parameters as widgets, so compare them later.
+      fileNode.data.referenceType === "notebook"
+        ? detectWidgetUsageInFile(resolvedPath, fileTypeHint, undefined, graph.notebookRule).catch(() => { failed(fileNode.id, resolvedPath, "widget reads"); return undefined; })
+        : undefined,
+      // Notebooks and Python files set and read task values.
+      referenceType === "notebook" || referenceType === "python_script"
+        ? detectTaskValuesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "task values"); return undefined; })
+        : undefined,
+      // The notebooks a notebook runs with %run or dbutils.notebook.run (#233).
+      referenceType === "notebook"
+        ? detectRunTargetsInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "notebook calls"); return undefined; })
+        : undefined,
+      // SQL file tasks fill the file's :name markers from their parameters (#234).
+      referenceType === "sql"
+        ? detectSqlParameterMarkersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL parameters"); return undefined; })
+        : undefined,
+      // ...and its {{name}} text parameters, pasted in as quoted text (#484).
+      referenceType === "sql"
+        ? detectSqlTextParametersInFile(resolvedPath).catch(() => { failed(fileNode.id, resolvedPath, "SQL text parameters"); return undefined; })
+        : undefined,
+      // Dotted names in task code, to find schemas a target renames (#235).
+      referenceType === "notebook" || referenceType === "python_script" || referenceType === "sql"
+        ? detectQualifiedNamesInFile(resolvedPath, fileTypeHint).catch(() => { failed(fileNode.id, resolvedPath, "schema references"); return undefined; })
+        : undefined,
+    ]);
+    // Secrets whose scope isn't written in the code: kept, so the task never looks like it
+    // reads none, with the parameter the scope comes from when the code shows it (issue 535).
+    const runtimeSecrets = secrets
+      .filter((detection) => !detection.scope)
+      .map((detection) => ({
+        line: detection.line,
+        ...(detection.key ? { key: detection.key } : {}),
+        ...(detection.scopeParameter ? { parameter: detection.scopeParameter } : {}),
+      }));
+    // Set one key at a time: TypeScript checks each key against FileCodeFacts, which it
+    // doesn't do for keys spread in from another object.
+    const codeFacts: FileCodeFacts = {};
+    if (widgetUsage) codeFacts.widgetUsage = widgetUsage;
+    if (taskValueUsage) codeFacts.taskValueUsage = taskValueUsage;
+    if (runTargets?.length) codeFacts.runTargets = runTargets;
+    if (sqlParameterMarkers?.length) codeFacts.sqlParameterMarkers = sqlParameterMarkers;
+    if (sqlTextParameters?.length) codeFacts.sqlTextParameters = sqlTextParameters;
+    if (qualifiedNames?.length) codeFacts.qualifiedNames = qualifiedNames;
+    if (runtimeSecrets.length) codeFacts.runtimeSecrets = runtimeSecrets;
+    if (Object.keys(codeFacts).length > 0) nodeMap.set(fileNode.id, { ...fileNode, codeFacts });
 
-      // One link per scope, so the graph shows it once, holding every line that names it,
-      // so each line gets its own finding (#463).
-      const scopeLinks = new Map<string, { line: number; key: string | undefined; lines: number[] }>();
-      for (const detection of secrets) {
-        if (!detection.scope) continue;
-        const nodeId = secretScopeNode(detection.scope);
-        const link = scopeLinks.get(nodeId);
-        if (link) {
-          if (!link.lines.includes(detection.line)) link.lines.push(detection.line);
-          continue;
-        }
-        scopeLinks.set(nodeId, { line: detection.line, key: detection.key ?? undefined, lines: [detection.line] });
+    // One link per scope, so the graph shows it once, holding every line that names it,
+    // so each line gets its own finding (#463).
+    const scopeLinks = new Map<string, { line: number; key: string | undefined; lines: number[] }>();
+    for (const detection of secrets) {
+      if (!detection.scope) continue;
+      const nodeId = secretScopeNode(detection.scope);
+      const link = scopeLinks.get(nodeId);
+      if (link) {
+        if (!link.lines.includes(detection.line)) link.lines.push(detection.line);
+        continue;
       }
-      for (const [nodeId, link] of scopeLinks) {
-        addEdge({
-          id: `${fileNode.id}->references->${nodeId}`,
-          source: fileNode.id,
-          target: nodeId,
-          kind: "references",
-          data: { ...link, file: resolvedPath },
-        });
-      }
+      scopeLinks.set(nodeId, { line: detection.line, key: detection.key ?? undefined, lines: [detection.line] });
+    }
+    for (const [nodeId, link] of scopeLinks) {
+      addEdge({
+        id: `${fileNode.id}->references->${nodeId}`,
+        source: fileNode.id,
+        target: nodeId,
+        kind: "references",
+        data: { ...link, file: resolvedPath },
+      });
+    }
 
-      for (const detection of widgets) {
-        if (!detection.name) continue;
-        const nodeId = `widget:${detection.name}`;
-        addNode({
-          id: nodeId,
-          kind: "widget",
-          nodeType: "widget",
-          displayName: detection.name,
-          data: { name: detection.name, method: detection.method },
-        });
-        addEdge({
-          id: `${fileNode.id}->uses->${nodeId}`,
-          source: fileNode.id,
-          target: nodeId,
-          kind: "uses",
-          data: { line: detection.line },
-        });
-      }
-    }),
-  );
+    for (const detection of widgets) {
+      if (!detection.name) continue;
+      const nodeId = `widget:${detection.name}`;
+      addNode({
+        id: nodeId,
+        kind: "widget",
+        nodeType: "widget",
+        displayName: detection.name,
+        data: { name: detection.name, method: detection.method },
+      });
+      addEdge({
+        id: `${fileNode.id}->uses->${nodeId}`,
+        source: fileNode.id,
+        target: nodeId,
+        kind: "uses",
+        data: { line: detection.line },
+      });
+    }
+  });
 
   // Enumerate each pipeline once. Secrets and lineage must use the same uploaded source set.
   const exclusionOf = graph.sourceUpload

@@ -407,16 +407,25 @@ function passesWidgets(root: SyntaxNode, resolve: (node: SyntaxNode) => Value): 
   });
 }
 
-/** The last views read, by text: one file is read by several checks in a row. */
-const cache = new Map<string, PythonFacts>();
+/**
+ * The last views read, by text. Each file's checks start together (see enrichGraph), so the
+ * read is kept while it runs: the other checks wait for it instead of each parsing the whole
+ * file again (#716). Larger than the number of files checked at once (FILE_SCAN_LIMIT), so a
+ * read still running is never dropped.
+ */
+const cache = new Map<string, Promise<PythonFacts>>();
 const CACHE_SIZE = 32;
 
 /** The facts of a Python view (see {@link notebookViews}): offsets are the view's, which are the document's. */
-export async function pythonFacts(text: string): Promise<PythonFacts> {
+export function pythonFacts(text: string): Promise<PythonFacts> {
   const cached = cache.get(text);
   if (cached) return cached;
-  const facts = text.trim() === "" ? { calls: [], passesWidgets: false } : await withPythonTree(text, readFacts);
+  const facts = text.trim() === "" ? Promise.resolve({ calls: [], passesWidgets: false }) : withPythonTree(text, readFacts);
   cache.set(text, facts);
+  // A failed read isn't kept, so the next check tries again. The callers still get the error.
+  facts.catch(() => {
+    if (cache.get(text) === facts) cache.delete(text);
+  });
   if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   return facts;
 }
