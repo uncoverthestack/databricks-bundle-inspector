@@ -17,6 +17,7 @@ export interface JobStructureFinding {
     | "duplicate_job_parameter"
     | "environment_version_missing"
     | "unknown_environment_key"
+    | "environments_not_checked"
     | "project_environment_version_missing"
     | "project_environment_version_unsupported"
     | "excluded_from_sync"
@@ -495,6 +496,19 @@ export interface EnvironmentOptions extends JobStructureOptions {
   isLocalDependency?: (value: string) => boolean;
 }
 
+/** Where a job's own `environments` is written: the variable, or the key whose environment can't be resolved. */
+function jobEnvironmentsLocation(
+  files: SourceFile[],
+  locate: Map<SourceFile, ReturnType<typeof locator>>,
+  jobKey: string,
+): YamlLocation | undefined {
+  for (const file of files) {
+    const found = locate.get(file)!(["resources", "jobs", jobKey, "environments"]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 /** Where a dependency with this value is written in a job's environment, else the environment itself. */
 function environmentDependencyLocation(
   files: SourceFile[],
@@ -718,11 +732,26 @@ export function findEnvironmentProblems(
     }
 
     // A key the preview can't resolve could be any key: no task's key can be called unknown.
-    if (environments.some(({ key }) => key === undefined)) continue;
     // Nor can it when the whole list is a variable, `environments: ${var.envs}`: the structural
     // preview keeps a complex variable as text, so the job's environments aren't known here.
+    // A note says so (#679), so that "not checked" never looks like "no problems".
     const written = record(job).environments;
-    if (written !== undefined && written !== null && !Array.isArray(written)) continue;
+    const fromVariable = written !== undefined && written !== null && !Array.isArray(written);
+    if (fromVariable || environments.some(({ key }) => key === undefined)) {
+      const tasks = list(record(job).tasks) as (Task & { environment_key?: unknown; for_each_task?: unknown })[];
+      const usesKey = (task: { environment_key?: unknown }) => isSet(task.environment_key);
+      if (target === undefined && tasks.some((task) => usesKey(task) || usesKey(record(record(task.for_each_task).task)))) {
+        findings.push({
+          kind: "environments_not_checked",
+          jobKey,
+          subject: "environments",
+          title: `Not checked: job "${jobKey}"'s environments use a variable, so they aren't known yet.`,
+          fixHint: "The structural preview leaves this variable unresolved, so the check that each task's environment_key names one of the job's environments doesn't run on this job.",
+          ...located(jobEnvironmentsLocation(files, locate, jobKey)),
+        });
+      }
+      continue;
+    }
     const known = environments.map(({ key }) => key as string);
     const reported = new Set<string>();
     const check = (task: Task & { environment_key?: unknown }, taskKey: string, inner: boolean) => {

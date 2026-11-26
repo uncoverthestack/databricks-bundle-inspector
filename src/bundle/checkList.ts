@@ -60,6 +60,7 @@ export const CHECKS = {
   duplicate_job_parameter: { family: "jobs", stops: "silent" },
   environment_version_missing: { family: "jobs", stops: "deploy" },
   unknown_environment_key: { family: "jobs", stops: "deploy" },
+  environments_not_checked: { family: "jobs", stops: "coverage" },
   project_environment_version_missing: { family: "jobs", stops: "run" },
   project_environment_version_unsupported: { family: "jobs", stops: "run" },
   project_environment_conflict: { family: "jobs", stops: "deploy" },

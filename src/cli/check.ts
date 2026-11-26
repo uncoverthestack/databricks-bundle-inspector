@@ -121,7 +121,9 @@ function checkVersion(cliPath: string, version: string | undefined) {
 
 /** A finding's words as the command line says them: here a target is checked with --target, not in the graph. */
 function cliTitle(issue: InspectorIssue): string {
-  return issue.kind === "path_not_checked" ? issue.title.replace(PICK_TARGET_IN_GRAPH, CHECK_WITH_TARGET_CLI) : issue.title;
+  return issue.kind === "path_not_checked" || issue.kind === "environments_not_checked"
+    ? issue.title.replace(PICK_TARGET_IN_GRAPH, CHECK_WITH_TARGET_CLI)
+    : issue.title;
 }
 
 function notCheckedEntries(graph: BundleGraph, cwd: string): NotCheckedEntry[] {

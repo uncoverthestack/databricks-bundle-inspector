@@ -14,7 +14,7 @@ How a new check is confirmed before it ships: [Adding a check](adding-a-check.md
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`, `file_scan_failed`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `environments_not_checked`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`, `inspector_check_failed`
@@ -239,7 +239,16 @@ A task's `environment_key` names an environment the job doesn't have.
 - **Severity:** error.
 - **Example:** `environment_key: defualt` in a job whose environment is `default`. Deploy fails with `Job environment 'defualt' used by task script is not defined in field 'environments'`.
 - **Fix:** use the `environment_key` of one of the job's environments. The finding suggests a close match.
-- **Limits:** a for-each task's inner task is checked too. When an environment key can't be resolved offline, or the job's whole `environments` list is a variable (`environments: ${var.envs}`), the job's tasks aren't judged in the structural preview. Pick a target to check them.
+- **Limits:** a for-each task's inner task is checked too. When an environment key can't be resolved offline, or the job's whole `environments` list is a variable (`environments: ${var.envs}`), the job's tasks aren't judged in the structural preview, and `environments_not_checked` says so. Pick a target to check them.
+
+### `environments_not_checked`
+
+A job's `environments` list is a variable, such as `environments: ${var.envs}`, or one of its environment keys is, and no target is picked. The structural preview keeps the variable as text, so it doesn't know the job's environments, and `unknown_environment_key` didn't run on its tasks. This note says so, so that "not checked" never looks like "no problems".
+
+- **Severity:** note.
+- **Example:** `Not checked: job "nightly"'s environments use a variable, so they aren't known yet. Pick a target in the graph to check it.` The command-line tool says "Use --target to check it." instead.
+- **Fix:** pick a target in the graph. The Databricks CLI then fills in the variable and each task's `environment_key` is checked. Nothing needs to change in the bundle. Checked live on Databricks CLI v1.28.0: with a target, a misspelled key is found; a job like this with the right keys deploys and runs.
+- **Limits:** only for a job where a task or a for-each task's inner task sets `environment_key`. A list that is still a variable with a target picked gets no note.
 
 ### `project_environment_version_missing`
 
