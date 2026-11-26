@@ -1,0 +1,25 @@
+{
+  "comment": "Real bundles every pull request that changes the checks is compared on (#651). Pinned, so a run only differs when the inspector does. Move a commit forward on purpose, in its own pull request.",
+  "databricksCli": "1.28.0",
+  "repositories": [
+    {
+      "url": "https://github.com/databricks/bundle-examples.git",
+      "commit": "1b358c3d3d82c1560aaed60a68647e1b2d5f0fd2",
+      "folder": "bundle-examples",
+      "paths": []
+    },
+    {
+      "url": "https://github.com/databricks/delta-live-tables-notebooks.git",
+      "commit": "1d8b163cfc4c45aad40c3c552807a2a0c2890cf6",
+      "folder": "delta-live-tables-notebooks",
+      "paths": []
+    },
+    {
+      "url": "https://github.com/databricks/cli.git",
+      "commit": "5b9a0b6b095fdb1b785ee82775fe763765373182",
+      "folder": "databricks-cli",
+      "paths": ["acceptance/bundle"]
+    }
+  ],
+  "local": ["src/test/fixtures"]
+}
