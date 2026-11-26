@@ -24,6 +24,14 @@ describe("markdownText (#473)", () => {
     expect(markdownCode("a``b`c")).toBe("``` a``b`c ```");
     expect(markdownCode("a|b\nc")).toBe("`a\\|b c`");
   });
+
+  test("code spans preserve spaces at both ends without changing one-sided or all-space values (#595)", () => {
+    expect(markdownCode(" value ")).toBe("`  value  `");
+    expect(markdownCode(" value")).toBe("` value`");
+    expect(markdownCode("value ")).toBe("`value `");
+    expect(markdownCode("   ")).toBe("`   `");
+    expect(markdownCode(" `value` ")).toBe("``  `value`  ``");
+  });
 });
 
 // GitHub's renderer (POST /markdown, gfm, 2026-11-25) linked each "links" case as written, and
