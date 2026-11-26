@@ -401,7 +401,7 @@ A job is written only under a target, such as `targets.prod.resources.jobs.night
 
 A cluster's `spark_version` is a Databricks Runtime near or past its end of support.
 
-- **Severity:** note when end of support is within a year, warning once it has passed, or for 10.4 LTS and earlier, which Databricks lists as past end of life.
+- **Severity:** note when end of support is within a month, warning once it has passed, or for 10.4 LTS and earlier, which Databricks lists as past end of life.
 - **Example:** `spark_version: 13.3.x-scala2.12`. Databricks Runtime 13.3 LTS reached end of support on 2026-08-22. `bundle validate` and `bundle deploy` don't read the version, and the cluster still starts: a job cluster on 12.2 LTS, past end of support since 2026-03-01, ran in a live test with CLI v1.27.0 on 2026-11-23. Databricks no longer fixes the version, security included. At end of life Databricks removes a version and workloads on it fail; it has announced no end-of-life date for 10.5 or later.
 - **Fix:** move to a supported long-term support (LTS) version, such as the newest one the finding names.
 - **Checked fields:** `spark_version` in `resources.clusters`, in a job's `job_clusters`, and in a task's `new_cluster`, also a `for_each_task`'s inner task. Photon, ML and GPU versions count as the version they are based on. A value from a variable counts once it resolves.
