@@ -70,8 +70,8 @@ export const RUNTIME_RELEASES: Readonly<Record<string, RuntimeRelease>> = {
   "10.5": { lts: false, endOfSupport: "2022-11-04" },
 };
 
-/** A hint starts this many days before end of support: about when Databricks starts emailing users. */
-export const HINT_DAYS_BEFORE = 365;
+/** A hint starts this many days before end of support: a month, so a far-off date is not shown. */
+export const HINT_DAYS_BEFORE = 30;
 
 const DAY = 24 * 60 * 60 * 1000;
 

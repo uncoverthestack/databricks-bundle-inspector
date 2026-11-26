@@ -11,7 +11,7 @@ import {
   todayForChecks,
 } from "../../../bundle/runtimeSupport.js";
 
-// Issue 485: a hint a year before a runtime's end of support, a warning after it.
+// Issue 485: a hint a month before a runtime's end of support, a warning after it.
 const TODAY = "2026-11-24";
 
 const sourceFile = (file: string, text: string): SourceFile => ({ file, doc: parse(text), text, locations: undefined });
@@ -50,10 +50,11 @@ describe("where a version stands (issue 485)", () => {
     expect(runtimeSupport("15.4", "2027-08-19").state).toBe("past_end_of_support");
   });
 
-  test("a hint starts a year before end of support, not earlier", () => {
-    expect(runtimeSupport("14.3", TODAY)).toEqual({ state: "ends_soon", version: "14.3", date: "2027-02-01" });
-    expect(runtimeSupport("15.4", "2026-08-19").state).toBe("ends_soon");
-    expect(runtimeSupport("15.4", "2026-08-18").state).toBe("supported");
+  test("a hint starts a month before end of support, not earlier", () => {
+    expect(runtimeSupport("14.3", "2027-01-15")).toEqual({ state: "ends_soon", version: "14.3", date: "2027-02-01" });
+    expect(runtimeSupport("14.3", TODAY).state).toBe("supported");
+    expect(runtimeSupport("15.4", "2027-07-20").state).toBe("ends_soon");
+    expect(runtimeSupport("15.4", "2027-07-19").state).toBe("supported");
   });
 
   test("current LTS versions and 19, which has no date yet, are fine", () => {
@@ -115,7 +116,7 @@ targets:
   const resources = (file.doc as { resources: Record<string, unknown> }).resources;
 
   test("one finding per old version, at its line, worded by how far past it is", () => {
-    const findings = findRuntimeSupportProblems(resources, [file], { today: TODAY });
+    const findings = findRuntimeSupportProblems(resources, [file], { today: "2027-01-15" });
     const shown = findings.map((f) => [f.resourceId, f.taskKey ?? null, f.severity, f.location?.line, f.title]);
     expect(shown).toEqual([
       ["resources.clusters.shared", null, "warning", 4, "Databricks Runtime 13.3 LTS may be past end of support and no longer gets security fixes."],
