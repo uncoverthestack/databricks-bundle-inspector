@@ -27,10 +27,10 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # The Python grammar comes built from @vscode/tree-sitter-wasm, for the web-tree-sitter
-      # version its own build uses (0.25.10 for 0.3.1). The two move together, by hand: a newer
-      # web-tree-sitter renamed its files in 0.27 and broke the build (#684).
+      # version its own build uses (0.25.10 for 0.3.1). So web-tree-sitter moves by hand, in
+      # the same PR as a @vscode/tree-sitter-wasm update, to the version that release uses.
+      # On its own, 0.27 renamed its files and broke the build (#684).
       - dependency-name: "web-tree-sitter"
-      - dependency-name: "@vscode/tree-sitter-wasm"
 
   - package-ecosystem: github-actions
     directory: /
