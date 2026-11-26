@@ -62,7 +62,7 @@ Problems that pass `databricks bundle validate` and only fail when you deploy or
 - **Secret scopes** named by their resource key instead of their name.
 - **Unresolved variables**.
 
-Each finding names its check, such as `[missing_file]`. [Every check, and what code is read](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/docs/checks.md). Checks on code read Python and SQL. Scala and R files are read for `dbutils` calls only. Under each bundle, `not checked` lines say what the checks couldn't look at, such as a notebook in the workspace.
+Each finding names its check, such as `[missing_file]`. [Every check, and what code is read](https://github.com/uncoverthestack/databricks-bundle-inspector/blob/main/docs/checks.md). Checks on code read Python and SQL. Scala and R files are read for `dbutils` calls only. Under each bundle, `not checked` lines say what the checks couldn't look at, such as a notebook in the workspace or jobs defined in Python. A job written only under a target gets a note: check it with `--target`.
 
 ## Targets
 
@@ -88,7 +88,7 @@ A target that can't be checked is never replaced by the preview: no sign-in, a p
 | `-p, --profile <name>` | the CLI's default | The `~/.databrickscfg` profile for `--target` |
 | `--no-color` | | Plain text. Also when `NO_COLOR` is set or the output isn't a terminal |
 
-`--format json` has a `schemaVersion`, so scripts can rely on its shape. New fields can be added under the same version; a field that is removed or changes meaning raises it. Each bundle lists its findings in `findings` and what the checks couldn't look at in `notChecked` (`reason`, `message`, and `file`, `line`, `task` when known).
+`--format json` has a `schemaVersion`, so scripts can rely on its shape. New fields can be added under the same version; a field that is removed or changes meaning raises it. Each bundle lists its findings in `findings` (with `fix`, how to fix it, when the check has advice) and what the checks couldn't look at in `notChecked` (`reason`, `message`, and `file`, `line`, `task` when known).
 
 ## Exit codes
 

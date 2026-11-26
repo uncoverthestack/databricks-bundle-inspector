@@ -29,7 +29,9 @@ export type NotCheckedReason =
   /** Widgets read by names only known at run time. */
   | "dynamic_widget_names"
   /** Pipeline sources or statements the data flow doesn't read. */
-  | "data_flow_not_read";
+  | "data_flow_not_read"
+  /** Jobs and pipelines returned by the bundle's Python (`python.resources`), which is never run. */
+  | "python_resources";
 
 export interface NotChecked {
   reason: NotCheckedReason;

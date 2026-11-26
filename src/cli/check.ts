@@ -7,10 +7,11 @@ import path from "node:path";
 import { firstLine, targetFallback } from "../bundle/fallbackReason.js";
 import { cliDiagnosticsOf, inspectorFindings, inspectorFindingsAt, targetResolutionOf } from "../bundle/inspectBundle.js";
 import { issueDocsUrl } from "../bundle/issueDocs.js";
-import { CHECK_WITH_TARGET_CLI, PICK_TARGET_IN_GRAPH, type InspectorIssue, type InspectorIssueKind } from "../bundle/issues.js";
+import { CHECK_WITH_TARGET_CLI, issueMessage, PICK_TARGET_IN_GRAPH, type InspectorIssue, type InspectorIssueKind } from "../bundle/issues.js";
 import { validateBundle, type BundleResult } from "../bundle/validateBundle.js";
 import { notCheckedIn, type NotChecked, type NotCheckedReason } from "../bundle/notChecked.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
+import type { TargetOnlyJob } from "../bundle/targetOnlyJobs.js";
 import { isOlderThanSupported, legacyCliVersion, MIN_SUPPORTED_CLI_VERSION } from "../databricksCli/parsing.js";
 import { databricksCliInstallUrl, resolveDatabricksCli, verifyCliPath } from "../databricksCli/validateDatabricksCli.js";
 import { displayPath } from "./discover.js";
@@ -30,6 +31,8 @@ export interface Finding {
   task?: string;
   /** The resource the finding is about, such as `resources.jobs.nightly`. */
   resource?: string;
+  /** How to fix it, as the extension shows it. Absent when there is no advice of its own. */
+  fix?: string;
   docs: string;
 }
 
@@ -138,17 +141,54 @@ function notCheckedEntries(graph: BundleGraph, cwd: string): NotCheckedEntry[] {
   }));
 }
 
+/**
+ * The extension's "only in target" note for each job written only under a target (#348): the
+ * structural preview leaves the job out, so none of the job checks ran on it.
+ */
+export function targetOnlyJobFindings(jobs: readonly TargetOnlyJob[] | undefined, cwd: string, version: string): Finding[] {
+  return (jobs ?? []).map(({ jobKey, targets, location }) => {
+    const named = targets.map((target) => `"${target}"`);
+    const listed = named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
+    const message =
+      targets.length === 1
+        ? `Job "${jobKey}" is only in target ${listed}: check it with --target ${targets[0]}.`
+        : `Job "${jobKey}" is only in targets ${listed}: check it with --target and one of them.`;
+    return {
+      severity: "info",
+      code: "job_only_in_target",
+      message,
+      ...(location ? { file: displayPath(location.file, cwd), line: location.line, column: location.column } : {}),
+      resource: `resources.jobs.${jobKey}`,
+      docs: issueDocsUrl("job_only_in_target", version),
+    };
+  });
+}
+
+/** Resources the bundle's Python returns: the inspector never runs bundle code, so none of them are checked. */
+export function pythonResourcesNotChecked(bundle: object | undefined): NotCheckedEntry[] {
+  // `python` isn't in ParsedBundleConfig: only this note and the panel's empty-state reason read it.
+  const python = (bundle as { python?: { resources?: unknown } | null } | undefined)?.python?.resources;
+  return Array.isArray(python) && python.length > 0
+    ? [{ reason: "python_resources", message: "Jobs and pipelines defined in Python (python: resources:) aren't checked: the inspector doesn't run bundle code." }]
+    : [];
+}
+
+/** The generic hint on a CLI diagnostic the inspector has no advice for: it adds nothing to the message. */
+const GENERIC_FIX_HINT = "Review the Databricks CLI validation diagnostic.";
+
 export function findingFromIssue(issue: InspectorIssue, cwd: string, version: string): Finding {
   const title = cliTitle(issue);
+  const fix = issue.fixHint?.trim();
   return {
     severity: issue.severity,
     code: issue.kind,
-    message: issue.detail ? `${title}: ${issue.detail}` : title,
+    message: issueMessage(issue, title),
     ...(issue.file ? { file: displayPath(issue.file, cwd) } : {}),
     ...(issue.file && issue.line !== undefined ? { line: issue.line } : {}),
     ...(issue.file && issue.column !== undefined ? { column: issue.column } : {}),
     ...(issue.taskName ? { task: issue.taskName } : {}),
     ...(issue.resourceId ? { resource: issue.resourceId } : {}),
+    ...(fix && fix !== GENERIC_FIX_HINT ? { fix: fix.replace(PICK_TARGET_IN_GRAPH, CHECK_WITH_TARGET_CLI) } : {}),
     docs: issueDocsUrl(issue.kind, version),
   };
 }
@@ -223,8 +263,11 @@ export async function checkBundles(
       bundles.push({
         ...base,
         validated: true,
-        findings: issues.map((issue) => findingFromIssue(issue, cwd, version)),
-        notChecked: notCheckedEntries(graph, cwd),
+        findings: [
+          ...issues.map((issue) => findingFromIssue(issue, cwd, version)),
+          ...targetOnlyJobFindings(graph.targetOnlyJobs, cwd, version),
+        ],
+        notChecked: [...pythonResourcesNotChecked(preview.data), ...notCheckedEntries(graph, cwd)],
       });
       continue;
     }
@@ -265,7 +308,7 @@ export async function checkBundles(
       ...base,
       validated: true,
       findings: issues.map((issue) => findingFromIssue(issue, cwd, version)),
-      notChecked: notCheckedEntries(graph, cwd),
+      notChecked: [...pythonResourcesNotChecked(atTarget.data), ...notCheckedEntries(graph, cwd)],
     });
   }
   return { ok: true, report: { version, databricksCli: cli, ...(target ? { target } : {}), bundles } };
