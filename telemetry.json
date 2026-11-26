@@ -13,7 +13,7 @@
         "has_diagnostics": "Failed inspections only: whether the CLI reported file diagnostics.",
         "target_mode": "target | probe",
         "fell_back_to_probe": "Whether the requested target failed and a structural preview was shown instead.",
-        "fallback_reason": "Fell back only: why, as one fixed word, never the message: timeout | not_logged_in | no_profile | several_profiles | other_workspace | no_such_target | login_unreachable (the login needed renewing and Databricks couldn't be reached) | login_expired | login_other | other",
+        "fallback_reason": "Fell back only: why, as one fixed word, never the message: timeout | not_logged_in | no_profile | several_profiles | other_workspace | no_such_target | login_unreachable (the login needed renewing and Databricks couldn't be reached) | login_expired | login_other | login_rejected (the workspace didn't accept the saved sign-in) | other",
         "auth_configured": "Whether Databricks authentication was configured.",
         "target_count": "Number of targets, as a range (0, 1, 2-5, 6-20, 21-50, 51+).",
         "job_count": "Number of jobs, as a range.",

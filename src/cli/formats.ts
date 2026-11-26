@@ -89,6 +89,7 @@ export function formatText(report: CheckReport, color: boolean): string {
       lines.push(
         `  ${paint(finding.severity, SEVERITY_WORD[finding.severity].padEnd(7))} ${where ? `${terminalText(where)}  ` : ""}${terminalText(finding.message)}  [${finding.code}]`,
       );
+      if (finding.fix) lines.push(`          fix: ${terminalText(finding.fix)}`);
     }
     // So "no problems" never hides code that wasn't read (#647).
     for (const entry of bundle.notChecked.slice(0, NOT_CHECKED_SHOWN)) lines.push(`  not checked  ${terminalText(entry.message)}`);
@@ -143,7 +144,7 @@ export function formatMarkdown(report: CheckReport): string {
       for (const finding of orderFindings(bundle.findings)) {
         const where = location(finding);
         lines.push(
-          `| ${SEVERITY_LABEL[finding.severity]} | ${where ? markdownCode(where) : ""} | ${escapeMarkdown(oneLine(finding.message))} | [${finding.code.replace(/_/g, "\\_")}](${finding.docs}) |`,
+          `| ${SEVERITY_LABEL[finding.severity]} | ${where ? markdownCode(where) : ""} | ${escapeMarkdown(oneLine(finding.message))}${finding.fix ? `<br>Fix: ${escapeMarkdown(oneLine(finding.fix))}` : ""} | [${finding.code.replace(/_/g, "\\_")}](${finding.docs}) |`,
         );
       }
     }
@@ -182,7 +183,9 @@ export function formatGithub(report: CheckReport): string {
         ...(finding.file && finding.column !== undefined ? [`col=${finding.column}`] : []),
         `title=${escapeCommandProperty(`${finding.code} (${bundle.path})`)}`,
       ];
-      const message = withoutMentions(withVisibleDirectionControls(`${finding.message}${finding.file ? "" : ` (${bundleHeading(bundle)})`}`));
+      const message = withoutMentions(
+        withVisibleDirectionControls(`${finding.message}${finding.file ? "" : ` (${bundleHeading(bundle)})`}${finding.fix ? `\nFix: ${finding.fix}` : ""}`),
+      );
       lines.push(`::${COMMAND[finding.severity]} ${properties.join(",")}::${escapeCommandData(message)}`);
     }
   }

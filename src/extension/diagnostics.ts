@@ -6,7 +6,7 @@ import { BUNDLE_FILE_NAMES } from "../bundle/includeFiles.js";
 import { validateBundle } from "../bundle/validateBundle.js";
 import type { BundleDiagnostic } from "../bundle/validateBundle.js";
 import { checkedGraphOf, cliDiagnosticsOf } from "../bundle/inspectBundle.js";
-import { buildInspectorIssues, issueHighlight, type InspectorIssue } from "../bundle/issues.js";
+import { buildInspectorIssues, issueHighlight, issueMessage, type InspectorIssue } from "../bundle/issues.js";
 import { getIncludedFiles, parseBundleIncludes } from "./bundleIncludes.js";
 import type { BundleGraph } from "../bundle/graph/bundleGraph.js";
 import { forgetBundleFixes, setBundleFixes, type StoredFix } from "./quickFixes.js";
@@ -78,7 +78,7 @@ function inspectorIssuesToVsCodeDiagnostics(
           : vscode.DiagnosticSeverity.Information;
     const diagnostic = new vscode.Diagnostic(
       range,
-      issue.detail ? `${issue.title}: ${issue.detail}` : issue.title,
+      issueMessage(issue),
       severity,
     );
     diagnostic.source = `Databricks Bundle Inspector (${bundleLabel})`;

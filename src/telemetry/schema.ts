@@ -111,6 +111,7 @@ export const EVENT_SCHEMA: Record<string, Record<string, Rule>> = {
       "login_unreachable",
       "login_expired",
       "login_other",
+      "login_rejected",
       "other",
     ),
     auth_configured: bool,

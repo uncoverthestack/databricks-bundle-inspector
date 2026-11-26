@@ -2,7 +2,16 @@ import { describe, expect, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseCliArgs } from "../../../cli/args.js";
-import { cliErrorLine, findingFromIssue, findingsFromFailedValidate, type CheckReport, type Finding } from "../../../cli/check.js";
+import {
+  cliErrorLine,
+  findingFromIssue,
+  findingsFromFailedValidate,
+  pythonResourcesNotChecked,
+  signInCommand,
+  targetOnlyJobFindings,
+  type CheckReport,
+  type Finding,
+} from "../../../cli/check.js";
 import {
   escapeCommandData,
   escapeCommandProperty,
@@ -227,6 +236,18 @@ describe("formats (#348)", () => {
   });
 });
 
+describe("signing in again after a refused sign-in (#719)", () => {
+  test.each([
+    [undefined, "databricks auth login"],
+    ["DEFAULT", "databricks auth login --profile DEFAULT"],
+    ["prod-eu_2", "databricks auth login --profile prod-eu_2"],
+    ["my team", "databricks auth login --profile 'my team'"],
+    ["it's", "databricks auth login --profile 'it'\\''s'"],
+  ])("profile %p: %s", (profile, command) => {
+    expect(signInCommand(profile)).toBe(command);
+  });
+});
+
 describe("a failed bundle validate (#348)", () => {
   const failed = (diagnostics: Array<{ severity: "error" | "warning"; message: string; path?: string; line?: number }>, details?: string) => ({
     ok: false as const,
@@ -262,6 +283,67 @@ describe("findings in the command line's words (#348)", () => {
   test("other findings keep their words", () => {
     const title = "Pick a target in the graph to check it.";
     expect(findingFromIssue({ id: "1", severity: "info", kind: "unused_parameter", title }, "/b", "1.0.0").message).toBe(title);
+  });
+});
+
+describe("what the extension shows that the command line used to leave out", () => {
+  test("a title that ends a sentence joins its detail without a stray full stop", () => {
+    const issue = { id: "1", severity: "warning" as const, kind: "missing_file" as const, title: "Not in the job's Git repository, so deploy may fail.", detail: "./src/etl" };
+    expect(findingFromIssue(issue, "/b", "1.0.0").message).toBe("Not in the job's Git repository, so deploy may fail: ./src/etl");
+    expect(findingFromIssue({ ...issue, title: "Missing local library" }, "/b", "1.0.0").message).toBe("Missing local library: ./src/etl");
+  });
+
+  test("the fix advice, in --target words, but not the generic advice on a CLI diagnostic", () => {
+    const fixed = findingFromIssue(
+      { id: "1", severity: "info", kind: "environments_not_checked", title: "t", fixHint: "Pick a target in the graph to check it." },
+      "/b",
+      "1.0.0",
+    );
+    expect(fixed.fix).toBe("Use --target to check it.");
+    const generic = findingFromIssue(
+      { id: "2", severity: "warning", kind: "cli_diagnostic", title: "t", fixHint: "Review the Databricks CLI validation diagnostic." },
+      "/b",
+      "1.0.0",
+    );
+    expect(generic).not.toHaveProperty("fix");
+  });
+
+  test("every format prints the fix advice", () => {
+    const withFix = report([finding({ fix: "Create the file." })]);
+    expect(formatText(withFix, false)).toContain("\n          fix: Create the file.\n");
+    expect(formatMarkdown(withFix)).toContain("File not found: ./src/a.py<br>Fix: Create the file. |");
+    expect(formatGithub(withFix)).toContain("File not found: ./src/a.py%0AFix: Create the file.");
+    expect(JSON.parse(formatJson(withFix, "error")).bundles[0].findings[0].fix).toBe("Create the file.");
+  });
+
+  test("a job written only under a target is a note that says to check it with --target", () => {
+    const [one, several] = targetOnlyJobFindings(
+      [
+        { jobKey: "nightly", targets: ["prod"], location: { file: "/b/databricks.yml", line: 9, column: 7 } },
+        { jobKey: "weekly", targets: ["dev", "staging", "prod"] },
+      ],
+      "/b",
+      "1.0.0",
+    );
+    expect(one).toMatchObject({
+      severity: "info",
+      code: "job_only_in_target",
+      message: 'Job "nightly" is only in target "prod": check it with --target prod.',
+      file: "databricks.yml",
+      line: 9,
+      resource: "resources.jobs.nightly",
+    });
+    expect(several?.message).toBe('Job "weekly" is only in targets "dev", "staging" and "prod": check it with --target and one of them.');
+    expect(several).not.toHaveProperty("file");
+  });
+
+  test("jobs defined in Python are listed as not checked", () => {
+    expect(pythonResourcesNotChecked({ python: { resources: ["resources:load_resources"] } })).toEqual([
+      expect.objectContaining({ reason: "python_resources" }),
+    ]);
+    expect(pythonResourcesNotChecked({ python: { resources: [] } })).toEqual([]);
+    expect(pythonResourcesNotChecked({})).toEqual([]);
+    expect(pythonResourcesNotChecked(undefined)).toEqual([]);
   });
 });
 

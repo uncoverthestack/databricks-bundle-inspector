@@ -16,7 +16,7 @@ How a new check is confirmed before it ships: [Adding a check](adding-a-check.md
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
 - [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `environments_not_checked`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
-- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
+- [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `sql_parameter_as_name`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`, `inspector_check_failed`
 
 ## Files and paths
@@ -390,9 +390,9 @@ A pipeline task refreshes a table or flow its pipeline doesn't create.
 
 A job is written only under a target, such as `targets.prod.resources.jobs.nightly`, and no target is picked. The structural preview leaves that job out, so it isn't in the graph and none of the job checks ran on it. This note says so, so that "not checked" never looks like "no problems".
 
-- **Severity:** note, in the panel's Issues list only. It is not in VS Code's Problems panel, the YAML file, the review report or the command-line tool's output.
-- **Example:** `Job "nightly" is only in target "prod": pick prod to check it.` A job written under several targets gets one note naming them all.
-- **Fix:** pick the target in the graph. The Databricks CLI then adds the job to the bundle and every check runs on it. Nothing needs to change in the bundle.
+- **Severity:** note, in the panel's Issues list and the command-line tool's output. It is not in VS Code's Problems panel, the YAML file or the review report.
+- **Example:** `Job "nightly" is only in target "prod": pick prod to check it.` A job written under several targets gets one note naming them all. The command-line tool says "check it with --target prod." instead.
+- **Fix:** pick the target in the graph, or pass `--target` to the command-line tool. The Databricks CLI then adds the job to the bundle and every check runs on it. Nothing needs to change in the bundle.
 - **Limits:** a job also written in the bundle's own `resources` gets no note, as it is checked already.
 
 ## Compute
@@ -456,6 +456,16 @@ A SQL file run by a SQL file task puts a `{{name}}` parameter that the task or j
 - **Example:** `SELECT '{{run_date}}'`, with `run_date` in the task's `sql_task.parameters`.
 - **Fix:** write `{{region}}` without quotes: `WHERE region = {{region}}`.
 - **Limits:** only when the quotes hold nothing but the parameter. A parameter inside a longer string, such as `LIKE '%{{name}}%'`, was not tested and is not reported. Tested on a serverless SQL warehouse, CLI v1.27.0 (2026-11-24, issue 484).
+
+### `sql_parameter_as_name`
+
+A SQL file run by a SQL file task uses a `{{name}}` parameter where SQL needs a name: a catalog, schema or table. Databricks fills `{{name}}` in with the value in quotes, so `FROM {{catalog}}.sales.orders` becomes `FROM 'main'.sales.orders` and the run fails with `PARSE_SYNTAX_ERROR`, whether or not the parameter is passed. `bundle validate` and `bundle deploy` succeed.
+
+- **Severity:** warning.
+- **Reported:** `{{name}}` joined to a name by a dot (`{{catalog}}.sales.orders`, `main.{{schema}}.orders`), inside backticks (`` `{{catalog}}`.sales.orders `` fails with `TABLE_OR_VIEW_NOT_FOUND`, and ``USE CATALOG `{{catalog}}` `` with `` Catalog ''main'' was not found ``; `databricks bundle init default-sql` writes the second since CLI v1.13.0), right after `FROM` or `JOIN`, and after `USE`, `USE SCHEMA` or `USE DATABASE`.
+- **Not reported:** `USE CATALOG {{catalog}}` without backticks and `IDENTIFIER({{schema}})`, which take a quoted name and run. A value, such as `WHERE region = {{region}}`, `EXTRACT(YEAR FROM {{day}})` or `a IS DISTINCT FROM {{value}}`.
+- **Fix:** write the name with `IDENTIFIER()`: `FROM IDENTIFIER({{catalog}} || '.sales.orders')`, or `USE IDENTIFIER({{schema}})`.
+- **Limits:** other statements that take a name, such as `CREATE SCHEMA {{schema}}` or `GRANT ... ON {{table}}`, were not tested and are not reported. Checked with job runs on a serverless SQL warehouse, Databricks CLI v1.28.0 (2026-11-26, issue 707): every reported form failed and every form above that is not reported ran, 2 runs each.
 
 ### `schema_renamed_in_target`
 
@@ -548,13 +558,13 @@ A notebook that exists but that `bundle deploy` doesn't upload, for example beca
 
 ### `unresolved_variable`
 
-A `${var.*}` reference to a variable with no default and no value for the selected target.
+A task's `${var.*}` reference names a variable the bundle doesn't declare under `variables`.
 
 - **Severity:** error.
-- **When it fails:** `bundle validate` with a target stops: "no value assigned to required variable" (checked by deploying, Databricks CLI v1.28.0).
-- **Example:** `warehouse_id: ${var.warehouse_id}` with no default, and no value under the target.
-- **Fix:** give the variable a default, or a value for the target.
-- **Limits:** values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
+- **When it fails:** `bundle validate` with a target stops: "reference does not exist: ${var.name}" (the Databricks CLI's own acceptance test `acceptance/bundle/variables/reference-typo`).
+- **Example:** `warehouse_id: ${var.warehouse_id}` with no `warehouse_id` under `variables`.
+- **Fix:** declare the variable, or correct the name in the reference.
+- **Limits:** a declared variable with no default and no value isn't reported in the structural preview. Once a target is picked, the Databricks CLI reports it itself: "no value assigned to required variable" (checked by deploying, Databricks CLI v1.28.0). Values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
 
 ### `variable_reference_loop`
 

@@ -1,0 +1,18 @@
+{
+  "check": "sql_parameter_as_name",
+  "issue": 707,
+  "note": "docs/checks.md#sql_parameter_as_name: USE CATALOG `{{name}}`, as `databricks bundle init default-sql` writes it since CLI v1.13.0, fails the run with NO_SUCH_CATALOG_EXCEPTION; without the backticks it runs (Databricks CLI v1.28.0, 2026-11-26, needs a warehouse named \"Serverless Starter Warehouse\").",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "was not found"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

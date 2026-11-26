@@ -7,7 +7,7 @@ The SQL files are the ones run live on 2026-11-24 (Databricks CLI v1.27.0, serve
 | `u_string.sql` | no | ran, the text stayed as written | `sql_parameter_not_set`, "may succeed with wrong results" |
 | `u_where.sql` | no | ran, 0 rows, no error | same |
 | `u_value.sql` | no | `PARSE_SYNTAX_ERROR` | `sql_parameter_not_set`, "the run may fail" |
-| `u_table.sql` | no | `PARSE_SYNTAX_ERROR` | same |
+| `u_table.sql` | no | `PARSE_SYNTAX_ERROR` | `sql_parameter_not_set`, and `sql_parameter_as_name`: passed, the quoted value fails too (#707) |
 | `u_comment.sql` | no | ran | none |
 | `p_value.sql` | yes | ran, value filled in quoted | none |
 | `p_string.sql` | yes | `PARSE_SYNTAX_ERROR`, became `''2026-11-24''` | `sql_parameter_quoted` |

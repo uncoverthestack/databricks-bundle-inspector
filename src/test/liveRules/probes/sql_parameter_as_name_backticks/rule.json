@@ -1,0 +1,18 @@
+{
+  "check": "sql_parameter_as_name",
+  "issue": 707,
+  "note": "docs/checks.md#sql_parameter_as_name: a {{name}} parameter in backticks fails the run with TABLE_OR_VIEW_NOT_FOUND; USE CATALOG {{name}} without backticks and USE IDENTIFIER run (Databricks CLI v1.28.0, 2026-11-26, needs a warehouse named \"Serverless Starter Warehouse\").",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "42P01"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from "@jest/globals";
 import { chmodSync, existsSync } from "node:fs";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { inspectorFindings } from "../../bundle/inspectBundle.js";
@@ -187,6 +189,40 @@ describe(`the command-line tool (${cli})`, () => {
         expect(stderr).not.toContain("expected sequence");
       } finally {
         process.env = saved;
+      }
+    });
+
+    test("a sign-in the workspace refuses is a setup problem (3), with the command to sign in again (#719)", async () => {
+      // A stand-in workspace that turns every request down, as Databricks does a revoked or
+      // expired token: the CLI prints "Invalid access token. ... (403 403)".
+      const server = http.createServer((_request, response) => {
+        response.writeHead(403, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error_code: "403", message: "Invalid access token. [ReqId: test]" }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as AddressInfo;
+      const dir = await tempBundle("dbi-cli-target-", ["bundle:", "  name: dbi-cli-refused", "targets:", "  dev:", "    default: true", ...JOB], NOTEBOOK);
+      const saved = { ...process.env };
+      process.env.DATABRICKS_CONFIG_FILE = path.join(dir, "no-such.databrickscfg");
+      for (const name of Object.keys(process.env)) {
+        if (/^DATABRICKS_(HOST|TOKEN|CONFIG_PROFILE|AUTH_TYPE|CLIENT_ID|CLIENT_SECRET|ACCOUNT_ID)$/.test(name)) delete process.env[name];
+      }
+      process.env.DATABRICKS_HOST = `http://127.0.0.1:${port}`;
+      process.env.DATABRICKS_TOKEN = "refused-by-the-test-server";
+      try {
+        for (const failOn of ["error", "never"]) {
+          const { code, stdout, stderr } = await run(["check", dir, "--target", "dev", "--fail-on", failOn, "--databricks-cli", cli]);
+          // Never a finding, so --fail-on never can't turn it into a pass.
+          expect(code).toBe(3);
+          expect(stdout).toBe("");
+          expect(stderr).toContain(`Can't check target "dev" of bundle`);
+          expect(stderr).toContain("the workspace didn't accept the Databricks CLI's sign-in.");
+          expect(stderr).toContain("Sign in again: databricks auth login\n");
+          expect(stderr).toContain("The Databricks CLI said: Invalid access token.");
+        }
+      } finally {
+        process.env = saved;
+        await new Promise((resolve) => server.close(resolve));
       }
     });
 

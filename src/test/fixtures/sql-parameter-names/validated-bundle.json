@@ -1,0 +1,352 @@
+{
+  "bundle": {
+    "name": "sql-parameter-names"
+  },
+  "include": [
+    "resources/jobs.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "backticks": {
+        "name": "backticks",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/backticks.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "backticks_not_passed": {
+        "name": "backticks_not_passed",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/backticks_not_passed.sql"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "distinct_from": {
+        "name": "distinct_from",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/distinct_from.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "dot_before": {
+        "name": "dot_before",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/dot_before.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "extract_from": {
+        "name": "extract_from",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/extract_from.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "from_dotted": {
+        "name": "from_dotted",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/from_dotted.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "from_in_subquery": {
+        "name": "from_in_subquery",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/from_in_subquery.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "from_single": {
+        "name": "from_single",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/from_single.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "from_two_parts": {
+        "name": "from_two_parts",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/from_two_parts.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "identifier": {
+        "name": "identifier",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/identifier.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "join_single": {
+        "name": "join_single",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/join_single.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "use_bare": {
+        "name": "use_bare",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/use_bare.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "use_catalog": {
+        "name": "use_catalog",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/use_catalog.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "use_catalog_backticks": {
+        "name": "use_catalog_backticks",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/use_catalog_backticks.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "use_database": {
+        "name": "use_database",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/use_database.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "use_schema": {
+        "name": "use_schema",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/use_schema.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      },
+      "value_position": {
+        "name": "value_position",
+        "tasks": [
+          {
+            "sql_task": {
+              "file": {
+                "path": "../src/value_position.sql"
+              },
+              "parameters": {
+                "cat": "system",
+                "day": "2026-01-01",
+                "schema": "information_schema",
+                "table": "system.information_schema.catalogs"
+              },
+              "warehouse_id": "abcdef0123456789"
+            },
+            "task_key": "q"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "mode": "development"
+    }
+  }
+}
