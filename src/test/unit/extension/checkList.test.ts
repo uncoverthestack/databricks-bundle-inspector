@@ -25,7 +25,7 @@ describe("the list of checks (#648)", () => {
   test("each code's family is the docs/checks.md section it is under", () => {
     const fromDocs: Record<string, CheckFamily> = {};
     let family: CheckFamily | undefined;
-    for (const line of read("docs/checks.md").split("\n")) {
+    for (const line of read("docs/checks.md").split(/\r?\n/)) {
       const heading = /^## (.+)$/.exec(line)?.[1];
       if (heading !== undefined) family = FAMILY_BY_HEADING[heading];
       const code = /^### `([a-z_]+)`$/.exec(line)?.[1];
