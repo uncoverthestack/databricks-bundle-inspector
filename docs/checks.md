@@ -347,6 +347,7 @@ A `for_each_task`'s `inputs` is written in the bundle and is longer than 5,000 c
 - **Example:** a JSON array of 5,001 characters. Deploy fails with `Invalid inputs: cannot exceed 5000 characters`. 5,000 characters deploys.
 - **Fix:** make the list shorter.
 - **Limits:** inputs that are not a JSON array are `for_each_inputs_not_array` instead. A whole-value dynamic reference or an unresolved bundle variable is filled in later and not judged.
+- **Each item, not checked:** one item in the list may be at most 3,000 bytes, counted in UTF-8 (an accented letter is 2 bytes), and an object item roughly as its JSON text. A longer item deploys, and the run fails with `Max length of a For each input parameter exceeds the limit of 3000 bytes`, also when the list comes from `{{job.parameters.…}}` (Databricks CLI v1.28.0, 2026-11-26, two runs each, #678). No real bundle tested comes close, so the inspector doesn't report it.
 
 ### `unknown_job_parameter`
 
