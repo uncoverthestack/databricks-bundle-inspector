@@ -19,6 +19,7 @@ module.exports = {
     // Mostly VS Code wiring, tested end to end; #652 moves logic out of it.
     "./src/extension.ts": { statements: 4, lines: 4 },
     "./src/telemetry/": { statements: 94, branches: 89, functions: 88, lines: 96 },
+    // .ts helpers only (src/webview/lib/); the .jsx screens are checked by the e2e suites, not counted here.
     "./src/webview/": { statements: 96, branches: 86, functions: 97, lines: 98 },
   },
 };
