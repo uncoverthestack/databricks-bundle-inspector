@@ -221,6 +221,15 @@ export function findingsFromFailedValidate(
 }
 
 /** The CLI's error line from its output, else its first line: the reason, not a warning before it. */
+/**
+ * The command that signs in again, for the profile the check used. Without `--profile` the
+ * CLI picked one itself, so none is named. Quoted when the name needs it in a shell.
+ */
+export function signInCommand(profile: string | undefined): string {
+  if (!profile) return "databricks auth login";
+  return `databricks auth login --profile ${/^[\w.@-]+$/.test(profile) ? profile : `'${profile.replace(/'/g, `'\\''`)}'`}`;
+}
+
 export function cliErrorLine(output: string): string {
   const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const error = lines.find((line) => /^error:/i.test(line));
@@ -290,7 +299,10 @@ export async function checkBundles(
         return {
           ok: false,
           kind: "setup",
-          message: `Can't check target "${target}" of bundle ${shown}: ${fallback.reason}.\nThe Databricks CLI said: ${cliErrorLine(fallback.message)}`,
+          message:
+            `Can't check target "${target}" of bundle ${shown}: ${fallback.reason}.\n` +
+            (fallback.code === "login_rejected" ? `Sign in again: ${signInCommand(profile)}\n` : "") +
+            `The Databricks CLI said: ${cliErrorLine(fallback.message)}`,
         };
       }
       // The Databricks CLI rejects the bundle for this target: that is a finding.

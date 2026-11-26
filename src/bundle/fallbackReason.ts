@@ -9,10 +9,15 @@ export type FallbackCode =
   | "login_unreachable"
   | "login_expired"
   | "login_other"
+  | "login_rejected"
   | "other";
 
-/** The reasons signing in can fix, so the graph offers the sign-in terminal for them. */
-export const SIGN_IN_CODES: ReadonlySet<FallbackCode> = new Set(["not_logged_in", "login_expired", "no_profile"]);
+/**
+ * The reasons signing in can fix, so the graph offers the sign-in terminal for them. A refused
+ * sign-in is one: `databricks auth login --profile <name>` replaces the profile's old
+ * credentials with a browser sign-in (Databricks CLI v0.291.0 and later, cmd/auth/login.go).
+ */
+export const SIGN_IN_CODES: ReadonlySet<FallbackCode> = new Set(["not_logged_in", "login_expired", "no_profile", "login_rejected"]);
 
 /** What a failed real-target check left for the graph's note. */
 export interface TargetFallback {
@@ -54,6 +59,13 @@ function shortReason(errorCode: string | undefined, message: string): Reason {
     return { reason: "the sign-in profile is for a different workspace", code: "other_workspace" };
   }
   if (/: no such target\b/.test(message)) return { reason: "the bundle has no such target", code: "no_such_target" };
+  // The workspace turned the CLI's saved sign-in down, such as a revoked or expired token:
+  // "Error: Invalid access token. [ReqId: ...] (403 403)" (CLI v0.299.0 and v1.28.0). The
+  // CLI's own tests call this rejected credentials, with a 401 or a 403. Worded without
+  // "token": the inspector only passes on what the CLI said.
+  if (/\bInvalid access token\b/.test(message)) {
+    return { reason: "the workspace didn't accept the Databricks CLI's sign-in", code: "login_rejected" };
+  }
   const login = loginReason(message);
   if (login) return login;
   const line = firstLine(message);

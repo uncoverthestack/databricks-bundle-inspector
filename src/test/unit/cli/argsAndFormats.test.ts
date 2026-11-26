@@ -7,6 +7,7 @@ import {
   findingFromIssue,
   findingsFromFailedValidate,
   pythonResourcesNotChecked,
+  signInCommand,
   targetOnlyJobFindings,
   type CheckReport,
   type Finding,
@@ -232,6 +233,18 @@ describe("formats (#348)", () => {
       expect(out.split("\n").filter((line) => /^\s*::/.test(line))).toEqual([]);
     }
     expect(neutraliseCommands("::a\n  ::b\nok :: c")).toBe(":​:a\n  :​:b\nok :: c");
+  });
+});
+
+describe("signing in again after a refused sign-in (#719)", () => {
+  test.each([
+    [undefined, "databricks auth login"],
+    ["DEFAULT", "databricks auth login --profile DEFAULT"],
+    ["prod-eu_2", "databricks auth login --profile prod-eu_2"],
+    ["my team", "databricks auth login --profile 'my team'"],
+    ["it's", "databricks auth login --profile 'it'\\''s'"],
+  ])("profile %p: %s", (profile, command) => {
+    expect(signInCommand(profile)).toBe(command);
   });
 });
 
