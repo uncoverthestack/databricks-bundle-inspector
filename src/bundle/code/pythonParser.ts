@@ -1,8 +1,8 @@
 /**
- * Python syntax trees from tree-sitter (#649): the `web-tree-sitter` runtime with the Python
- * grammar that `@vscode/tree-sitter-wasm` ships (built with tree-sitter 0.25.10, the
- * runtime's version). Both run as WebAssembly, so code is read the same way on every OS, in
- * the extension and in the command-line tool. It only reads text: nothing in the file is run.
+ * Python syntax trees from tree-sitter (#649): the `web-tree-sitter` runtime with the
+ * WebAssembly grammar the official `tree-sitter-python` package ships (0.25.0, built for
+ * tree-sitter 0.25, the runtime's version). Both run as WebAssembly, so code is read the
+ * same way on every OS, in the extension and in the command-line tool. It only reads text: nothing in the file is run.
  *
  * Neither package is bundled. Their three files are copied next to each bundle
  * (`dist/tree-sitter/` for the extension, `cli/dist/tree-sitter/` for the CLI) and loaded
@@ -20,7 +20,7 @@ export type SyntaxNode = TreeSitter.Node;
 export const TREE_SITTER_FILES = {
   "tree-sitter.cjs": "web-tree-sitter",
   "tree-sitter.wasm": "web-tree-sitter/tree-sitter.wasm",
-  "tree-sitter-python.wasm": "@vscode/tree-sitter-wasm/wasm/tree-sitter-python.wasm",
+  "tree-sitter-python.wasm": "tree-sitter-python/tree-sitter-python.wasm",
 } as const;
 
 type TreeSitterFile = keyof typeof TREE_SITTER_FILES;
