@@ -1,0 +1,23 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  pipelines:
+    p:
+      name: __NAME__
+      serverless: true
+      catalog: workspace
+      schema: default
+      libraries:
+        - glob:
+            include: ./dlt/**
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: refresh
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.p.id}

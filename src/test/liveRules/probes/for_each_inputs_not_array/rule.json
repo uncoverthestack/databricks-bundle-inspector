@@ -1,0 +1,17 @@
+{
+  "check": "for_each_inputs_not_array",
+  "issue": 237,
+  "note": "docs/checks.md#for_each_inputs_not_array: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "should be an array"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

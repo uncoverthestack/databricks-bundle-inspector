@@ -144,7 +144,7 @@ targets:
     expect(findRuntimeSupportProblems(withVariable, [varFile], { today: TODAY })).toEqual([]);
   });
 
-  test("a bundle with no clusters, or only current ones, has no findings", () => {
+  test("near miss (runtime_end_of_support): a bundle with no clusters, or only current ones, has no findings", () => {
     expect(findRuntimeSupportProblems({}, [], { today: TODAY })).toEqual([]);
     expect(findRuntimeSupportProblems({ clusters: { a: { spark_version: "17.3.x-scala2.13" } } }, [], { today: TODAY })).toEqual([]);
   });

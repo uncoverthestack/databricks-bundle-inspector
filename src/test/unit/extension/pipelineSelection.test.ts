@@ -48,6 +48,10 @@ describe("pipeline task selections (issue 539)", () => {
     ]);
   });
 
+  test("near miss (pipeline_selection_not_found): a table the pipeline creates gets no warning", async () => {
+    expect((await findings()).filter((line) => line.startsWith("c1_known"))).toEqual([]);
+  });
+
   test("no warning when the names can't all be known: a selection written as a variable", async () => {
     const found = await findings(swap('refresh_selection: ["t_nope"]\n        - task_key: c3_case', 'refresh_selection: "${var.tables}"\n        - task_key: c3_case'));
     expect(found.some((line) => line.startsWith("c2_unknown"))).toBe(false);

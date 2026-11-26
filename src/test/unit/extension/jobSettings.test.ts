@@ -46,7 +46,7 @@ describe("multiple_job_triggers", () => {
     ["one alone", [SCHEDULE]],
     ["an empty `schedule:` beside a trigger (deploys)", ["schedule:", TRIGGER]],
     ["a schedule from a variable the preview leaves unresolved", ["schedule: ${var.schedule}", TRIGGER]],
-  ])("%s is not reported", (_case, fields) => {
+  ])("near miss (multiple_job_triggers): %s is not reported", (_case, fields) => {
     expect(check(`resources:\n  jobs:\n    j:\n${fields.map((f) => `      ${f}\n`).join("")}`)).toEqual([]);
   });
 
@@ -86,7 +86,7 @@ describe("invalid_job_parameter_name", () => {
   });
 
   test.each([["letters, digits, - _ .", "a_b-c.d"], ["a leading dot", "'.a'"], ["a number", "1"], ["a variable", "${var.name}"]])(
-    "%s deploys",
+    "near miss (invalid_job_parameter_name): %s deploys",
     (_case, name) => expect(check(job(name))).toEqual([]),
   );
 
@@ -133,7 +133,7 @@ describe("invalid_task_key", () => {
     ["a variable", "${var.key}"],
     ["100 characters", "k".repeat(100)],
   ])(
-    "%s deploys",
+    "near miss (invalid_task_key): %s deploys",
     (_case, key) => expect(check(job(key))).toEqual([]),
   );
 
@@ -231,7 +231,12 @@ resources:
     ['"false"', '"false"'],
     ["unquoted true (the CLI reads it as \"true\")", "true"],
     ["a variable", "${var.outcome}"],
-  ])("%s on a condition task deploys", (_case, outcome) => expect(check(job(outcome))).toEqual([]));
+  ])("near miss (invalid_outcome): %s on a condition task deploys", (_case, outcome) => expect(check(job(outcome))).toEqual([]));
+
+  test("near miss (outcome_without_condition): a dependency on a task that is not a condition, with no outcome, deploys", () => {
+    const text = `resources:\n  jobs:\n    j:\n      tasks:\n        - task_key: up\n          ${NB}\n        - task_key: down\n          depends_on: [{ task_key: up }]\n          ${NB}\n`;
+    expect(check(text)).toEqual([]);
+  });
 
   test("an outcome the picked target writes again points at the target's, not the job's valid one", () => {
     const text = `
@@ -353,7 +358,7 @@ describe("for_each_inputs_too_long", () => {
     expect(findings[0]!.fixHint).toContain("Invalid inputs: cannot exceed 5000 characters");
   });
 
-  test("5000 characters deploys", () => expect(check(job(list(5000)))).toEqual([]));
+  test("near miss (for_each_inputs_too_long): 5000 characters deploys", () => expect(check(job(list(5000)))).toEqual([]));
 
   test("text that is long and not an array is reported once, as not an array", () => {
     expect(kinds(check(job("x".repeat(5001))))).toEqual(["for_each_inputs_not_array"]);
@@ -383,7 +388,7 @@ describe("for_each_inputs_not_array", () => {
     '["a", true]',
     '[{"a": 1}, {"b": [1, 2]}]',
     '[{"a": null}]',
-  ])("%s deploys", (inputs) => expect(forEachInputsProblem(inputs)).toBeUndefined());
+  ])("near miss (for_each_inputs_not_array): %s deploys", (inputs) => expect(forEachInputsProblem(inputs)).toBeUndefined());
 
   const job = (inputs: string) =>
     `resources:\n  jobs:\n    j:\n      tasks:\n        - task_key: loop\n          for_each_task:\n            inputs: '${inputs}'\n            task: { task_key: i, ${NB} }\n`;
@@ -491,7 +496,18 @@ describe("job parameter references", () => {
     expect(check(text, { activeTarget: "prod" }, resolved)).toEqual([]);
   });
 
+  test("near miss (unknown_job_parameter): a parameter the job defines deploys", () => {
+    expect(check(job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: "{{job.parameters.env}}" } }\n`))).toEqual([]);
+  });
+
   describe("job_parameter_reference_with_dot", () => {
+    test("near miss (job_parameter_reference_with_dot): a name with no dot deploys", () => {
+      const findings = check(
+        job(`          notebook_task: { notebook_path: ./nb.py, base_parameters: { p: "{{job.parameters.a_b}}" } }\n`, "[{ name: a_b, default: x }]"),
+      );
+      expect(findings).toEqual([]);
+    });
+
     test.each([
       ["a defined dotted name", "{{job.parameters.a.b}}"],
       ["a dotted name in brackets", "{{job.parameters.[a.b]}}"],
@@ -514,7 +530,7 @@ describe("job parameter references", () => {
       expect(findings[0]!.fixHint).toContain("is not allowed");
     });
 
-    test("another reference in a default deploys", () => {
+    test("near miss (job_parameter_in_default): another reference in a default deploys", () => {
       expect(check(job(`          ${NB}\n`, '[{ name: id, default: "{{job.id}}" }]'))).toEqual([]);
     });
   });

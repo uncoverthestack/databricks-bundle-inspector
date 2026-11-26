@@ -157,7 +157,7 @@ describe("failed source discovery is visible and incomplete", () => {
     expect(JSON.stringify(failures)).not.toContain("private exception contents");
     expect(selections(found)).toEqual([]);
   });
-  test("an excluded unreadable directory does not produce a scan error", async () => {
+  test("near miss (file_scan_failed): an excluded unreadable directory does not produce a scan error", async () => {
     const denied = path.join(root, "sql", "denied");
     await mkdir(denied);
     const config = configFor("anchor", { exclude: ["sql/denied"] });

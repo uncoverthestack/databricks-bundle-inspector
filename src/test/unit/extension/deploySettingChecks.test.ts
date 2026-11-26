@@ -97,7 +97,7 @@ describe("project_environment must be the only environment source", () => {
     expect(issues[0]).toMatchObject({ kind: "project_environment_conflict", location: { file: "/bundle/databricks.yml", line: 7 } });
     expect(issues[0]!.title).toContain(field.split(":")[0]);
   });
-  test.each(["", "dependencies: []", "java_dependencies: []", 'environment_version: ""'])("does not reject an empty accompanying setting: %s", (field) => {
+  test.each(["", "dependencies: []", "java_dependencies: []", 'environment_version: ""'])("near miss (project_environment_conflict): does not reject an empty accompanying setting: %s", (field) => {
     expect(check(field)).toEqual([]);
   });
 });

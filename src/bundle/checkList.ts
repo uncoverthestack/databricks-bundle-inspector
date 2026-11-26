@@ -17,6 +17,9 @@
  * Left out where docs/checks.md doesn't say which step fails: those are listed in the test,
  * which only lets the list shrink, as each is confirmed by deploying and running (#650).
  *
+ * A code not shipped yet must meet the bar in docs/adding-a-check.md: a live probe, a near-miss
+ * test and a step here (checked by checkList.test.ts), and the real-bundles pull request check.
+ *
  * Every code that has shipped is in shippedCodes.json, with the release it first shipped in
  * since 0.4.0, when codes stopped changing. A shipped code is never renamed or removed.
  */

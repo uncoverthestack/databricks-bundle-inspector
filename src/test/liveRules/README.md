@@ -11,6 +11,7 @@ npm run live-rules -- --profile <profile> --variant broken --show-output   # why
 ```
 
 - It deploys and runs real jobs (serverless), so it needs a sign-in and is never run in GitHub Actions.
-- Each run uses its own bundle name. After each run it calls `bundle destroy`, deletes the run's `.bundle/<name>` folder and checks it is gone. Anything it couldn't remove is listed and fails the run.
+- Each run uses its own bundle name. After each run it calls `bundle destroy`, deletes the run's `.bundle/<name>` folder and checks it is gone. Tables listed in `rule.json`'s `tables` (a pipeline's, which deleting the pipeline leaves behind) are dropped too. Anything it couldn't remove is listed and fails the run.
 - Steps marked `unknown` are rules not confirmed yet: the run says what happened without failing. Once two runs agree, write the step in `rule.json`, `docs/checks.md` and `src/bundle/checkList.ts` (#648).
 - Run it on release day with the newest Databricks CLI, and after a CLI release that mentions bundles.
+- Every new check needs a probe before it ships: [Adding a check](../../../docs/adding-a-check.md).

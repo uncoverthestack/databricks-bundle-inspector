@@ -1,0 +1,20 @@
+{
+  "check": "unsupported_pipeline_file",
+  "issue": 531,
+  "note": "docs/checks.md#unsupported_pipeline_file: a .gitkeep under a pipeline glob fails the update (Databricks CLI v1.28.0, catalog workspace, 2026-11-26, 2 runs).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  },
+  "tables": [
+    "workspace.default.__NAME__"
+  ]
+}

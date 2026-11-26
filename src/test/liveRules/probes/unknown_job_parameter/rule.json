@@ -1,0 +1,17 @@
+{
+  "check": "unknown_job_parameter",
+  "issue": 237,
+  "note": "docs/checks.md#unknown_job_parameter: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "undefined job parameter"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

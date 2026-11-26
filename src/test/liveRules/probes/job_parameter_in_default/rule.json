@@ -1,0 +1,17 @@
+{
+  "check": "job_parameter_in_default",
+  "issue": 237,
+  "note": "docs/checks.md#job_parameter_in_default: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "is not allowed"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

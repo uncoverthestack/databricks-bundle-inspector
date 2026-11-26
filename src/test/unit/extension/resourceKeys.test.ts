@@ -67,7 +67,7 @@ describe("resource keys with a dot", () => {
     expect(hints.map((hint) => hint.match(/for example "([^"]+)"/)?.[1])).toEqual(["x_y_z", "x_y_z_2"]);
   });
 
-  test("dots elsewhere are fine: in a name, a task key's value, or a field", () => {
+  test("near miss (resource_key_has_dot): dots elsewhere are fine: in a name, a task key's value, or a field", () => {
     expect(check("resources:\n  jobs:\n    nightly:\n      name: a.b\n      tags:\n        team.name: x\n")).toEqual([]);
   });
 });

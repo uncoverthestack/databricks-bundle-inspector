@@ -1,0 +1,17 @@
+{
+  "check": "invalid_job_parameter_name",
+  "issue": 237,
+  "note": "docs/checks.md#invalid_job_parameter_name: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "invalid character"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      parameters:
+        - name: a.b
+          default: x
+      tasks:
+        - task_key: load
+          notebook_task:
+            notebook_path: ./nb.py
+            base_parameters:
+              env: "{{job.parameters.a.b}}"

@@ -1,0 +1,20 @@
+{
+  "check": "pipeline_selection_not_found",
+  "issue": 539,
+  "note": "docs/checks.md#pipeline_selection_not_found: a table the pipeline doesn't create fails the run (Databricks CLI v1.28.0, catalog workspace, no retries, 2026-11-26, 2 runs). The run output only says \"Workload failed\"; the working bundle differs only in the table name.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  },
+  "tables": [
+    "workspace.default.__NAME__"
+  ]
+}

@@ -34,6 +34,11 @@ export interface Probe {
   /** Where the rule is written down and when it was last confirmed. */
   note: string;
   variants: Record<string, VariantExpectation>;
+  /**
+   * Tables a run makes, as catalog.schema.table with `__NAME__` for the run's name. Deleting a
+   * pipeline doesn't drop its tables, so the runner drops these and checks they are gone.
+   */
+  tables?: string[];
   folder: string;
 }
 
