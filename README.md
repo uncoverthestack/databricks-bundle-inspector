@@ -25,7 +25,7 @@ Problems that pass `databricks bundle validate` and only fail when you deploy or
 
 Where it can, it suggests the fix: "Did you mean `resources/*.yml`?" For a notebook path missing its extension or a mistyped include pattern, use the light bulb to apply a suggested **Quick Fix**. Click a finding's code in the Problems panel to read what it means and how to fix it.
 
-The inspector also reports **Not checked** when a variable prevents it from checking a local file. Checks on code read Python and SQL. Scala and R are not read.
+The inspector also reports **Not checked** when a variable prevents it from checking a local file, and copied reviews list the code it couldn't read, such as notebooks in the workspace. Checks on code read Python and SQL. Scala and R files are read for `dbutils` calls only.
 
 [Every check, and what code is read](docs/checks.md)
 
