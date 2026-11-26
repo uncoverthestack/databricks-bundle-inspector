@@ -58,6 +58,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "duplicate_job_parameter",
   "environment_version_missing",
   "unknown_environment_key",
+  "environments_not_checked",
   "project_environment_version_missing",
   "project_environment_version_unsupported",
   "project_environment_conflict",
@@ -1696,9 +1697,11 @@ function jobStructureIssues(graph: BundleGraph): InspectorIssue[] {
       id: `job-structure:${finding.kind}:${jobId}:${finding.taskKey ?? ""}:${finding.subject}:${file ?? ""}:${line ?? ""}:${column ?? ""}`,
       // Deploy rejects these, or the run fails; duplicates deploy, merged into one.
       severity:
-        finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" || finding.kind === "excluded_from_sync" ? "warning" : "error",
+        finding.kind === "environments_not_checked"
+          ? "info"
+          : finding.kind === "duplicate_task_key" || finding.kind === "duplicate_job_parameter" || finding.kind === "excluded_from_sync" ? "warning" : "error",
       kind: finding.kind,
-      title: finding.title,
+      title: finding.kind === "environments_not_checked" ? `${finding.title} ${PICK_TARGET_IN_GRAPH}` : finding.title,
       ...(finding.taskKey
         ? { taskId: `${jobId}.tasks.${finding.taskKey}`, taskName: finding.taskKey }
         : { resourceId: jobId }),
