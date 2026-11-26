@@ -342,6 +342,18 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {problemCount(item) > 0 && !pipeline && (
         <div className="text-xs text-fg-soft">{problemWords(item)}. The Problems panel lists them.</div>
       )}
+      {item.trigger && (
+        // A job's schedule or trigger in full (issue 733): the box shows only a few words.
+        <div className="flex flex-col gap-1" data-overview-trigger>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{item.trigger.label}</div>
+          <div className="text-xs text-fg">{item.trigger.full}</div>
+          {item.trigger.detail?.map((line) => (
+            <div key={line} className="break-all font-mono text-[11px] text-muted">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
       {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => file && onOpenFile?.(file, line, undefined, item.kind)} />}
       {pipeline && (
         <PipelineDetails

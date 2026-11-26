@@ -101,6 +101,14 @@ describe("overview wording", () => {
     expect(note("weekly")).toBe("job · 1 task");
   });
 
+  test("a job's schedule or trigger follows its task count in a few words (#733)", () => {
+    const words = { label: "Schedule", short: "Every hour", full: "Every hour (UTC)", detail: ["0 0 * * * ?"] };
+    const scheduled = buildBundleOverview({ nodes: [resource("jobs", "hourly", { taskCount: 3, triggerWords: words })], edges: [] });
+    const job = scheduled.groups.flatMap((group) => group.items).find((entry) => entry.label === "hourly")!;
+    expect(job.trigger).toEqual(words);
+    expect(itemNote(scheduled, job)).toBe("job · 3 tasks · Every hour");
+  });
+
   test("a number always has its word, and says how many jobs when more than one", () => {
     expect(usedByWords(overview, item("analytics").id)).toBe("3 tasks in 2 jobs");
     expect(note("analytics")).toBe("SQL warehouse · 3 tasks in 2 jobs");

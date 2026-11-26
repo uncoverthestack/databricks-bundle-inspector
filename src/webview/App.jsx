@@ -1316,13 +1316,6 @@ function DetailPanel({
               )}
               title={parentJob?.displayName}
             />
-            {parentJob?.trigger && parentJob.trigger !== "Not specified" && (
-              <ConfigRow
-                label={parentJob.trigger.startsWith("Schedule:") ? "Schedule" : "Trigger"}
-                value={parentJob.trigger}
-                detail={parentJob.triggerTooltip}
-              />
-            )}
             <ConfigRow label="Kind" value={node.taskTypeLabel} />
             <ConfigRow
               label="Source"
