@@ -27,10 +27,11 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # The Python grammar (tree-sitter-python, #691) is built for one tree-sitter version
-      # (0.25 for grammar 0.25.0). So web-tree-sitter moves by hand, in the same PR as a
-      # grammar update, to the version that grammar is built for. On its own, 0.27 renamed
-      # its files and broke the build (#684).
+      # (0.25 for grammar 0.25.0). A 0.x minor release of web-tree-sitter is a breaking one:
+      # 0.27 renamed its files and broke the build (#684). So those move by hand, in the same
+      # PR as a grammar update. Patch releases (0.25.x) still come.
       - dependency-name: "web-tree-sitter"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
