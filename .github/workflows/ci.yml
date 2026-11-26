@@ -70,8 +70,9 @@ jobs:
       - name: Build webview
         run: npm run build:webview
 
-      - name: Run tests (jest)
-        run: npm run test:unit
+      # With a coverage floor per folder (jest.coverage.config.cjs).
+      - name: Run tests with coverage (jest)
+        run: npm run test:unit:coverage
 
       - name: Run semantic tests (jest)
         run: npm run test:semantic
