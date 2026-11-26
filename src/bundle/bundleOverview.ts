@@ -5,7 +5,7 @@
  */
 import type { JobTriggerWords } from "./jobTrigger.js";
 import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
-import { clusterSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
+import { clusterSettings, jobOwnSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 import { buildLakebaseProjects } from "./lakebaseBranches.js";
 
 export type OverviewColumn = "workloads" | "uses";
@@ -513,6 +513,7 @@ export function buildBundleOverview(
       const config = node?.data ?? {};
       if (item.resourceGroup === "sql_warehouses") return warehouseSettings(config, resolve, node?.fieldLines, node?.sourceFile);
       if (item.resourceGroup === "clusters") return clusterSettings(config, resolve, node?.fieldLines, node?.sourceFile);
+      if (item.resourceGroup === "jobs") return jobOwnSettings(config, resolve, node?.fieldLines);
       return undefined;
     }
     if (item.source === "job_cluster" && item.definedIn) {
