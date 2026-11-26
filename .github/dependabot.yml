@@ -15,6 +15,12 @@ updates:
         patterns:
           - eslint
           - "@eslint/js"
+      # A 0.x minor release of web-tree-sitter can rename its files and fail the build (0.27
+      # did, #684), so it comes in its own PR and never holds up the other updates. Before
+      # merging, compare findings on real bundles as #701 did.
+      web-tree-sitter:
+        patterns:
+          - web-tree-sitter
       minor-and-patch:
         update-types: [minor, patch]
     ignore:
