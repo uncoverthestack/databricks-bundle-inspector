@@ -4,23 +4,27 @@
   },
   "resources": {
     "jobs": {
-      "ingest_job": {
-        "name": "Ingest Job",
-        "trigger": {
-          "periodic": {
-            "interval": 2,
-            "unit": "DAYS"
-          }
-        },
+      "cleanup_job": {
+        "name": "Cleanup Job",
         "tasks": [
           {
-            "task_key": "extract",
+            "spark_python_task": {
+              "python_file": "./src/cleanup.py"
+            },
+            "task_key": "cleanup"
+          }
+        ]
+      },
+      "ingest_job": {
+        "name": "Ingest Job",
+        "tasks": [
+          {
             "notebook_task": {
               "notebook_path": "./src/extract.py"
-            }
+            },
+            "task_key": "extract"
           },
           {
-            "task_key": "transform",
             "depends_on": [
               {
                 "task_key": "extract"
@@ -28,10 +32,10 @@
             ],
             "spark_python_task": {
               "python_file": "./src/transform.py"
-            }
+            },
+            "task_key": "transform"
           },
           {
-            "task_key": "load",
             "depends_on": [
               {
                 "task_key": "transform"
@@ -42,21 +46,20 @@
                 "path": "./src/load.sql"
               },
               "warehouse_id": "warehouse-main"
-            }
+            },
+            "task_key": "load"
           }
-        ]
-      },
-      "cleanup_job": {
-        "name": "Cleanup Job",
-        "tasks": [
-          {
-            "task_key": "cleanup",
-            "spark_python_task": {
-              "python_file": "./src/cleanup.py"
-            }
+        ],
+        "trigger": {
+          "periodic": {
+            "interval": 2,
+            "unit": "DAYS"
           }
-        ]
+        }
       }
     }
+  },
+  "targets": {
+    "default": {}
   }
 }

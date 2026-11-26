@@ -94,6 +94,12 @@ jobs:
       - name: Notebook header rule
         run: npm run test:notebook-rule:cli
 
+      # Fixtures unit tests read in place of the CLI must match what the CLI produces.
+      # Older CLIs may shape output differently, so only the latest is compared.
+      - name: Recorded fixtures match the CLI
+        if: matrix.cli == 'latest'
+        run: npm run test:recorded-fixtures:cli
+
       # The inspector reads pipeline SQL with its own parser (src/bundle/pipelineSql.ts), so a
       # change to Databricks' pipeline SQL reference must fail here, not draw a wrong data flow
       # (issue 398). It fetches docs.databricks.com, so weekly and by hand only: a slow docs

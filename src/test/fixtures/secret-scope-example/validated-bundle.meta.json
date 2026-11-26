@@ -1,12 +1,12 @@
 {
   "source": "databricks bundle validate --output json",
-  "databricksCliVersion": "manual-fixture",
-  "generatedAt": "2026-04-27T00:00:00.000Z",
+  "databricksCliVersion": "v1.28.0",
+  "generatedAt": "2026-11-26T02:38:50.381Z",
   "bundleTarget": "__bundle_inspector_probe__",
-  "validatedBundleCanonicalSha256": "0ba558151075882d3ade32782b4bf4f08d480294b35600c60d1b061283194386",
+  "validatedBundleCanonicalSha256": "2aa52af963eae84bdca888939f6eb68b8188257d4670cee904533fe3a02fc323",
   "notes": [
     "This file records the source of validated-bundle.json for semantic graph baseline tests.",
-    "Normal tests must not overwrite validated-bundle.json. Regenerate it only through an explicit fixture update workflow.",
+    "Normal tests must not overwrite validated-bundle.json. Regenerate it only through this explicit fixture update workflow.",
     "The fixture is CLI-shaped JSON, not raw YAML parser output."
   ]
 }
