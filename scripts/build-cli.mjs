@@ -5,6 +5,7 @@ import * as esbuild from "esbuild";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { copyTreeSitterFiles, treeSitterLicences } from "./tree-sitter-files.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const cliDir = path.join(root, "cli");
@@ -49,6 +50,9 @@ for (const input of Object.keys(result.metafile.inputs)) {
     text: licenceFile ? readFileSync(path.join(dir, licenceFile), "utf8").trim() : undefined,
   });
 }
+// The Python parser's files sit next to cli.cjs, not inside it (#649).
+copyTreeSitterFiles(path.join(cliDir, "dist"));
+for (const entry of treeSitterLicences()) packages.set(entry.name, entry);
 const notices = [...packages.values()].sort((a, b) => a.name.localeCompare(b.name));
 const missing = notices.filter((entry) => !entry.text).map((entry) => entry.name);
 if (missing.length > 0) throw new Error(`No licence file found for: ${missing.join(", ")}`);
@@ -57,7 +61,7 @@ writeFileSync(
   [
     "# Third-party notices",
     "",
-    "`dist/cli.cjs` includes these packages.",
+    "`dist/cli.cjs` and `dist/tree-sitter/` include these packages.",
     ...notices.flatMap((entry) => ["", `## ${entry.name} ${entry.version} (${entry.license})`, "", "```", entry.text, "```"]),
     "",
   ].join("\n"),

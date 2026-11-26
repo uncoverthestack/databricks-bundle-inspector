@@ -1,4 +1,5 @@
 import * as esbuild from "esbuild";
+import { copyTreeSitterFiles } from "./scripts/tree-sitter-files.mjs";
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -14,6 +15,8 @@ const esbuildProblemMatcherPlugin = {
       console.log("[watch] build started");
     });
     build.onEnd((result) => {
+      // The Python parser isn't bundled: its files go next to the bundle (#649).
+      if (result.errors.length === 0) copyTreeSitterFiles("dist");
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ [ERROR] ${text}`);
         console.error(

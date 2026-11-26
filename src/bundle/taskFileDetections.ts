@@ -9,6 +9,7 @@ import {
   type PythonToken,
 } from "./code/pythonTokenizer.js";
 import { legacyReferencesInString, tokenizeSql, type SqlToken } from "./code/sqlTokenizer.js";
+import { argumentFact, pythonFacts, type PythonFacts } from "./code/pythonFacts.js";
 import { checkRunTarget, unquote } from "./runTargets.js";
 import type { NotebookHeaderRule } from "./notebookFiles.js";
 import { emptyRecord, hasOwnKey, own } from "./ownKeys.js";
@@ -312,6 +313,101 @@ function viewsFor(
     scala: ext === ".scala" && fileTypeHint !== "notebook",
   });
 }
+
+/**
+ * The Python view's facts, read with tree-sitter (#649). `undefined` for Scala, whose code
+ * goes in the Python view (see {@link notebookViews}) but isn't Python, so it is read with
+ * the tokenizer as before.
+ */
+async function factsFor(
+  filePath: string,
+  views: NotebookViews,
+  fileTypeHint?: "sql" | "python" | "notebook",
+): Promise<PythonFacts | undefined> {
+  if (path.extname(filePath).toLowerCase() === ".scala" && fileTypeHint !== "notebook") return undefined;
+  return pythonFacts(views.python);
+}
+
+type LineAt = (offset: number) => number;
+
+const SECRET_METHODS = new Set(["get", "getBytes", "list"]);
+
+/** {@link scanPythonSecrets} from facts. */
+function factSecrets(facts: PythonFacts, document: string, lineAt: LineAt): SecretDetection[] {
+  return facts.calls
+    .filter((call) =>
+      call.known && ((call.module === "secrets" && SECRET_METHODS.has(call.method)) || call.module === "sdk.secrets"))
+    .map((call) => {
+      const scopeArgument = argumentFact(call.args, "scope", 0);
+      const scope = scopeArgument?.value ?? null;
+      const parameter = scope === null ? scopeArgument?.widgetRead : undefined;
+      return {
+        line: lineAt(call.start),
+        raw: getLineText(document, call.start),
+        scope,
+        key: argumentFact(call.args, "key", 1)?.value ?? null,
+        ...(parameter ? { scopeParameter: parameter } : {}),
+      };
+    });
+}
+
+const WIDGET_READ_METHODS = new Set(["get", "getArgument", "getAll"]);
+
+/** {@link scanPythonWidgets} from facts, including a bare `getArgument(...)` and a bound `read = dbutils.widgets.get`. */
+function factWidgets(facts: PythonFacts, document: string, lineAt: LineAt): WidgetDetection[] {
+  return facts.calls
+    .filter((call) => call.module === "widgets" && WIDGET_READ_METHODS.has(call.method))
+    .map((call) => {
+      const method = call.method as WidgetMethod;
+      const detection: WidgetDetection = {
+        line: lineAt(call.start),
+        raw: getLineText(document, call.start),
+        // A read on something not traceable to dbutils isn't claimed as a named read,
+        // but still marks the notebook as reading widgets the inspector can't check.
+        name: method === "getAll" || !call.known ? null : (argumentFact(call.args, "name", 0)?.value ?? null),
+        method,
+      };
+      if (method === "getArgument") {
+        detection.note = WIDGET_DEPRECATED_NOTE;
+        // Only a second positional argument, the form checked live: it returned the default
+        // when the widget wasn't set, for both spellings of the call.
+        if (call.args.filter((arg) => arg.keyword === undefined).length >= 2) detection.withDefault = true;
+      }
+      return detection;
+    });
+}
+
+const WIDGET_CREATE_METHODS = new Set(["text", "dropdown", "combobox", "multiselect"]);
+
+/**
+ * Widgets created with a default, from facts. Only on `dbutils` itself: an unknown object's
+ * `.widgets.text("a")` makes no widget (#602). A widget removed with `remove("a")` or
+ * `removeAll()` and then read is left out, as the read fails (live, CLI v1.28.0: "No input
+ * widget named needed is defined"); one read before it is removed keeps its default.
+ */
+function factWidgetDefaults(facts: PythonFacts): string[] {
+  const created: string[] = [];
+  const live = new Set<string>();
+  const readAfterRemove = new Set<string>();
+  for (const call of facts.calls) {
+    if (call.module !== "widgets" || !call.known) continue;
+    const name = argumentFact(call.args, "name", 0)?.value ?? null;
+    if (WIDGET_CREATE_METHODS.has(call.method)) {
+      if (name === null) continue;
+      created.push(name);
+      live.add(name);
+    } else if (call.method === "remove") {
+      if (name !== null) live.delete(name);
+    } else if (call.method === "removeAll") {
+      live.clear();
+    } else if (WIDGET_READS.has(call.method) && name !== null && created.includes(name) && !live.has(name)) {
+      readAfterRemove.add(name);
+    }
+  }
+  return created.filter((name) => !readAfterRemove.has(name));
+}
+
+const WIDGET_READS = new Set(["get", "getArgument"]);
 
 const sourceLine = (views: NotebookViews, line: number): number => views.sourceLines?.[line - 1] ?? line;
 const sourceLineAt = (views: NotebookViews, offset: number): number => {
@@ -790,9 +886,11 @@ export async function detectSecretInNotebook(
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<SecretDetection[]> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const lineAt = (offset: number) => sourceLineAt(views, offset);
+  const facts = await factsFor(filePath, views, fileTypeHint);
   return [
-    ...scanPythonSecrets(views.python, views.document, (offset) => sourceLineAt(views, offset)),
-    ...scanSqlSecrets(views.sql, views.document, (offset) => sourceLineAt(views, offset)),
+    ...(facts ? factSecrets(facts, views.document, lineAt) : scanPythonSecrets(views.python, views.document, lineAt)),
+    ...scanSqlSecrets(views.sql, views.document, lineAt),
   ].sort(byLine);
 }
 
@@ -809,9 +907,11 @@ export async function detectWidgetsInFile(
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<WidgetDetection[]> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
+  const lineAt = (offset: number) => sourceLineAt(views, offset);
+  const facts = await factsFor(filePath, views, fileTypeHint);
   return [
-    ...scanPythonWidgets(views.python, views.document, (offset) => sourceLineAt(views, offset)),
-    ...scanSqlWidgets(views.sql, views.document, (offset) => sourceLineAt(views, offset)).reads,
+    ...(facts ? factWidgets(facts, views.document, lineAt) : scanPythonWidgets(views.python, views.document, lineAt)),
+    ...scanSqlWidgets(views.sql, views.document, lineAt).reads,
   ].sort(byLine);
 }
 
@@ -1011,9 +1111,11 @@ export async function detectWidgetUsageInFile(
   rule: NotebookHeaderRule = "contains",
 ): Promise<WidgetUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
-  const python = scanPythonWidgets(views.python, views.document, (offset) => sourceLineAt(views, offset));
-  const sql = scanSqlWidgets(views.sql, views.document, (offset) => sourceLineAt(views, offset));
-  const pythonDefaults = scanPythonWidgetDefaults(views.python);
+  const lineAt = (offset: number) => sourceLineAt(views, offset);
+  const facts = await factsFor(filePath, views, fileTypeHint);
+  const python = facts ? factWidgets(facts, views.document, lineAt) : scanPythonWidgets(views.python, views.document, lineAt);
+  const sql = scanSqlWidgets(views.sql, views.document, lineAt);
+  const pythonDefaults = facts ? factWidgetDefaults(facts) : scanPythonWidgetDefaults(views.python);
   const defaultLanguages = emptyRecord<CodeLanguage[]>();
   for (const [language, names] of [["python", pythonDefaults], ["sql", sql.defaults]] as const) {
     for (const name of names) defaultLanguages[name] = [...(own(defaultLanguages, name) ?? []), language];
@@ -1024,7 +1126,7 @@ export async function detectWidgetUsageInFile(
     reads: [...python.flatMap(withLanguage("python")), ...sql.reads.flatMap(withLanguage("sql"))].sort(byLine),
     defaults: [...pythonDefaults, ...sql.defaults],
     defaultLanguages,
-    hasDynamicReads: python.some((d) => d.name === null) || passesWidgetsObject(views.python),
+    hasDynamicReads: python.some((d) => d.name === null) || (facts ? facts.passesWidgets : passesWidgetsObject(views.python)),
     hasUnresolvedRuns: false,
     runReadNames: [],
     unsetRunReads: [],
@@ -1118,25 +1220,40 @@ function givesDefault(arg: PythonArgument | undefined): boolean {
   return !(arg.tokens.length === 1 && arg.tokens[0]!.kind === "name" && arg.tokens[0]!.value === "None");
 }
 
+/** A tokenizer argument in the shape of a fact, for Scala, which is read with the tokenizer. */
+function tokenArgument(arg: PythonArgument | undefined): { value: string | null; isNone: boolean } | undefined {
+  return arg && arg.tokens.length > 0 ? { value: literalValue(arg), isNone: !givesDefault(arg) } : undefined;
+}
+
 export async function detectTaskValuesInFile(
   filePath: string,
   fileTypeHint?: "sql" | "python" | "notebook",
 ): Promise<TaskValueUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const usage: TaskValueUsage = { sets: [], gets: [], runsOtherNotebooks: views.runs.length > 0 };
-  for (const call of taskValueCalls(tokenizePython(views.python))) {
+  const facts = await factsFor(filePath, views, fileTypeHint);
+  const calls = facts
+    ? facts.calls
+        .filter((call) => call.module === "jobs.taskValues" && (call.method === "set" || call.method === "get"))
+        .map((call) => ({ method: call.method, offset: call.start, knownReceiver: call.known, arg: (keyword: string, position: number) => argumentFact(call.args, keyword, position) }))
+    : taskValueCalls(tokenizePython(views.python)).map((call) => ({
+        ...call,
+        arg: (keyword: string, position: number) => tokenArgument(argument(call.args, keyword, position)),
+      }));
+  for (const call of calls) {
     const line = sourceLineAt(views, call.offset);
     if (call.method === "set") {
       // A set on an unknown receiver makes the task's keys unknown, which only
       // suppresses warnings.
-      usage.sets.push({ key: call.knownReceiver ? literalValue(argument(call.args, "key", 0)) : null, line });
+      usage.sets.push({ key: call.knownReceiver ? (call.arg("key", 0)?.value ?? null) : null, line });
     } else if (call.knownReceiver) {
+      const fallback = call.arg("default", 2);
       usage.gets.push({
-        taskKey: literalValue(argument(call.args, "taskKey", 0)),
-        key: literalValue(argument(call.args, "key", 1)),
+        taskKey: call.arg("taskKey", 0)?.value ?? null,
+        key: call.arg("key", 1)?.value ?? null,
         // A missing key raises ValueError unless a default is given, and `default=None`
         // still raises (tested on job runs, #586). `debugValue` only applies outside a job.
-        hasDefault: givesDefault(argument(call.args, "default", 2)),
+        hasDefault: fallback !== undefined && !fallback.isNone,
         line,
       });
     }
@@ -1202,14 +1319,16 @@ export async function detectRunTargetsInFile(
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const file = path.resolve(filePath);
   const found: RunTarget[] = views.runs.map((run) => ({ kind: "run", target: run.target, line: sourceLine(views, run.line), file }));
-  const tokens = tokenizePython(views.python);
-  for (const call of dbutilsCalls(tokens, "notebook", ["run"]).filter((c) => c.knownReceiver)) {
-    found.push({
-      kind: "notebook_run",
-      target: literalValue(argument(call.args, "path", 0)),
-      line: sourceLineAt(views, call.offset),
-      file,
-    });
+  const facts = await factsFor(filePath, views, fileTypeHint);
+  const runs = facts
+    ? facts.calls
+        .filter((call) => call.known && call.module === "notebook" && call.method === "run")
+        .map((call) => ({ target: argumentFact(call.args, "path", 0)?.value ?? null, offset: call.start }))
+    : dbutilsCalls(tokenizePython(views.python), "notebook", ["run"])
+        .filter((c) => c.knownReceiver)
+        .map((call) => ({ target: literalValue(argument(call.args, "path", 0)), offset: call.offset }));
+  for (const run of runs) {
+    found.push({ kind: "notebook_run", target: run.target, line: sourceLineAt(views, run.offset), file });
   }
   return found.sort((a, b) => a.line - b.line);
 }
