@@ -1,18 +1,23 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_CONFIG = "semantic-cli-matrix.config.json";
+// The one test in jest.semantic-cli.config.cjs that reads the fixture. The config's other
+// files ignore it, so they run once per CLI, not once per fixture.
+const FIXTURE_TEST = "src/test/integration/semanticCli.integration.test.ts";
 
 function usage() {
   return [
     "Usage:",
     "  node scripts/run-semantic-cli-matrix.mjs [--config <path>]",
     "",
-    "The config file contains CLI commands and fixture/baseline pairs. A fixture with",
-    "\"minCliVersion\" is skipped for older CLIs.",
+    "The config file contains CLI commands and fixture/baseline pairs. For each CLI, the",
+    "integration tests that don't read a fixture run once, then the fixture test runs once",
+    "per fixture. A fixture with \"minCliVersion\" is skipped for older CLIs.",
   ].join("\n");
 }
 
@@ -61,28 +66,41 @@ function isOlderThan(version, minimum) {
   return false;
 }
 
-function runCase(cli, fixture) {
-  const env = {
-    ...process.env,
-    SEMANTIC_CLI_COMMAND: cli.command,
-    SEMANTIC_CLI_FIXTURE: fixture.fixture,
-    SEMANTIC_CLI_BASELINE: fixture.baseline,
-    SEMANTIC_CLI_ARTIFACT_DIR:
-      process.env.SEMANTIC_CLI_ARTIFACT_DIR ??
-      path.join(".test-artifacts", "semantic-cli-matrix"),
-  };
-
-  const label = `${cli.name} x ${fixture.name}`;
+function runJest(label, env, jestArgs) {
   console.log(`\n[semantic-cli-matrix] ${label}`);
-  const result = spawnSync("npm", ["run", "test:semantic:cli"], {
-    env,
+  const result = spawnSync("npm", ["run", "test:semantic:cli", "--", ...jestArgs], {
+    env: {
+      ...process.env,
+      SEMANTIC_CLI_ARTIFACT_DIR:
+        process.env.SEMANTIC_CLI_ARTIFACT_DIR ??
+        path.join(".test-artifacts", "semantic-cli-matrix"),
+      ...env,
+    },
     stdio: "inherit",
   });
+  return { label, status: result.status ?? 1 };
+}
 
-  return {
-    label,
-    status: result.status ?? 1,
-  };
+/** Every test in the config except the fixture test, against this CLI. */
+function runOtherTests(cli) {
+  return runJest(
+    `${cli.name} x other integration tests`,
+    { SEMANTIC_CLI_COMMAND: cli.command },
+    ["--testPathIgnorePatterns", path.basename(FIXTURE_TEST)],
+  );
+}
+
+/** Only the fixture test. Jest fails with "No tests found" if the path stops matching. */
+function runFixture(cli, fixture) {
+  return runJest(
+    `${cli.name} x ${fixture.name}`,
+    {
+      SEMANTIC_CLI_COMMAND: cli.command,
+      SEMANTIC_CLI_FIXTURE: fixture.fixture,
+      SEMANTIC_CLI_BASELINE: fixture.baseline,
+    },
+    [FIXTURE_TEST],
+  );
 }
 
 async function main() {
@@ -93,6 +111,9 @@ async function main() {
   }
 
   const config = await readConfig(path.resolve(options.config));
+  if (!existsSync(FIXTURE_TEST)) {
+    throw new Error(`${FIXTURE_TEST} not found: update FIXTURE_TEST in this script.`);
+  }
   const failures = [];
 
   for (const cli of config.clis) {
@@ -100,6 +121,8 @@ async function main() {
       throw new Error(`Each CLI entry must include "name" and "command".`);
     }
     const version = cliVersion(cli.command);
+    const others = runOtherTests(cli);
+    if (others.status !== 0) failures.push(others);
     for (const fixture of config.fixtures) {
       if (!fixture?.name || !fixture?.fixture || !fixture?.baseline) {
         throw new Error(
@@ -113,7 +136,7 @@ async function main() {
         );
         continue;
       }
-      const result = runCase(cli, fixture);
+      const result = runFixture(cli, fixture);
       if (result.status !== 0) failures.push(result);
     }
   }
