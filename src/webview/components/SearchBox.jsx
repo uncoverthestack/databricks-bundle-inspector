@@ -16,7 +16,7 @@ import TypeDot from "./TypeDot";
  *   items: SearchResult[],
  *   onChange: (value: string) => void,
  *   onSelect: (item: SearchResult) => void,
- *   placeholder?: string,
+ *   placeholder?: string | undefined,
  * }} props
  */
 export default function SearchBox({ value, items, onChange, onSelect, placeholder = "Search tasks" }) {

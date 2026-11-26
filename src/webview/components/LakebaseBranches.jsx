@@ -1,3 +1,4 @@
+// @ts-check
 import { useMemo, useRef } from "react";
 import { branchById, branchCountWords, branchStates, holdsWords, sourceWords } from "../../bundle/lakebaseBranches";
 import { UI_COLOR } from "../lib/vscodeTheme";
@@ -9,12 +10,19 @@ const STEP = 24;
 const RING_X = 18;
 const RING_Y = 22;
 
-const baseName = (file) => file.split(/[\\/]/).pop();
+/** @typedef {import("../../bundle/lakebaseBranches").LakebaseProject} LakebaseProject */
+/** @typedef {import("../../bundle/lakebaseBranches").LakebaseBranch} LakebaseBranch */
+/** @typedef {(file: string, line?: number) => void} OpenFile */
+/** @typedef {(element: HTMLElement | null) => void} Register */
 
+const baseName = (/** @type {string} */ file) => file.split(/[\\/]/).pop() ?? file;
+
+/** @param {{ children: import("react").ReactNode }} props */
 function Tag({ children }) {
   return <span className="rounded border border-line px-1.5 text-[11px] font-normal leading-5 text-fg-soft">{children}</span>;
 }
 
+/** @param {{ file: string | undefined, line?: number | undefined, onOpenFile?: OpenFile | undefined }} props */
 function FileLink({ file, line, onOpenFile }) {
   if (!file) return null;
   return (
@@ -32,12 +40,13 @@ function FileLink({ file, line, onOpenFile }) {
 /**
  * For each row of the tree, which columns carry a line: the elbow into the row itself, and the
  * lines passing by to a later sibling of one of its parents.
+ * @param {LakebaseProject["tree"]} tree
  */
 function treeLines(tree) {
   return tree.map(({ depth }, index) => {
     const later = tree.slice(index + 1);
     // Column k carries a line past this row when a later row at depth k + 1 comes before any row at depth k or less.
-    const continues = (k) => {
+    const continues = (/** @type {number} */ k) => {
       for (const row of later) {
         if (row.depth <= k) return false;
         if (row.depth === k + 1) return true;
@@ -48,6 +57,7 @@ function treeLines(tree) {
   });
 }
 
+/** @param {{ columns: Array<{ elbow: boolean, down: boolean }> }} props */
 function Gutter({ columns }) {
   const line = UI_COLOR.boxLine;
   return columns.map(({ elbow, down }, k) => (
@@ -77,6 +87,7 @@ function Gutter({ columns }) {
   ));
 }
 
+/** @param {{ selected: boolean, outside?: boolean }} props */
 function Ring({ selected, outside }) {
   return (
     <span
@@ -90,6 +101,7 @@ function Ring({ selected, outside }) {
   );
 }
 
+/** @param {{ branch: LakebaseBranch, selected: boolean, onSelect: (id: string | null) => void, register: (id: string, element: HTMLElement | null) => void }} props */
 function BranchRow({ branch, selected, onSelect, register }) {
   const outside = branch.origin === "outside";
   const holds = holdsWords(branch);
@@ -137,6 +149,7 @@ function BranchRow({ branch, selected, onSelect, register }) {
   );
 }
 
+/** @param {{ label: string, children?: import("react").ReactNode }} props */
 function Fact({ label, children }) {
   if (children === undefined || children === null || children === "" || (Array.isArray(children) && children.length === 0)) return null;
   return (
@@ -147,6 +160,7 @@ function Fact({ label, children }) {
   );
 }
 
+/** @param {{ project: LakebaseProject, onOpenFile?: OpenFile | undefined, resolveName: (value: string) => string }} props */
 function ProjectFacts({ project, onOpenFile, resolveName }) {
   return (
     <>
@@ -163,6 +177,7 @@ function ProjectFacts({ project, onOpenFile, resolveName }) {
   );
 }
 
+/** @param {{ branch: LakebaseBranch, project: LakebaseProject, onOpenFile?: OpenFile | undefined, onClose: () => void, resolveName: (value: string) => string }} props */
 function BranchDetails({ branch, project, onOpenFile, onClose, resolveName }) {
   const source = branch.source;
   const madeFrom =
@@ -235,16 +250,29 @@ function BranchDetails({ branch, project, onOpenFile, onClose, resolveName }) {
  * branches made from a snapshot below, and the selected branch's details on the right.
  * Grey lines and rings, blue only for the selected branch.
  */
+/**
+ * @param {{
+ *   project: LakebaseProject,
+ *   selectedBranchId: string | null | undefined,
+ *   onSelectBranch: (id: string | null) => void,
+ *   onOpenFile?: OpenFile | undefined,
+ *   resolveName?: (value: string) => string,
+ * }} props
+ */
 export default function LakebaseBranches({ project, selectedBranchId, onSelectBranch, onOpenFile, resolveName = (value) => value }) {
   const lines = useMemo(() => treeLines(project.tree), [project]);
   const order = useMemo(() => [...project.tree.map((row) => row.id), ...project.fromSnapshot], [project]);
   const selected = selectedBranchId ? branchById(project, selectedBranchId) : undefined;
-  const rows = useRef(new Map());
-  const register = (id, element) => (element ? rows.current.set(id, element) : rows.current.delete(id));
+  const rows = useRef(/** @type {Map<string, HTMLElement>} */ (new Map()));
+  // A ref callback returns nothing: React 19 would take a returned value for its cleanup.
+  const register = (/** @type {string} */ id, /** @type {HTMLElement | null} */ element) => {
+    if (element) rows.current.set(id, element);
+    else rows.current.delete(id);
+  };
   const schedules = project.branches.flatMap((branch) => branch.schedules.map((schedule) => ({ schedule, branch })));
 
   // Up and down move between branches, as on the overview's boxes.
-  const onKeyDown = (event) => {
+  const onKeyDown = (/** @type {import("react").KeyboardEvent} */ event) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     const at = order.indexOf(selected?.id ?? "");
     const next = order[event.key === "ArrowDown" ? Math.min(order.length - 1, at + 1) : Math.max(0, at < 0 ? 0 : at - 1)];
@@ -278,6 +306,7 @@ export default function LakebaseBranches({ project, selectedBranchId, onSelectBr
             <div role="list" aria-label={`Branches of ${project.label}`} className="flex flex-col">
               {project.tree.map(({ id, depth }, index) => {
                 const branch = branchById(project, id);
+                if (!branch) return null;
                 // A branch with branches made from it: a line from its ring down to its first child's.
                 const hasChildren = (project.tree[index + 1]?.depth ?? -1) > depth;
                 return (
@@ -290,7 +319,7 @@ export default function LakebaseBranches({ project, selectedBranchId, onSelectBr
                         style={{ left: depth * STEP + RING_X - 1, top: RING_Y + 6, borderLeft: `1.5px solid ${UI_COLOR.boxLine}` }}
                       />
                     )}
-                    <Gutter columns={lines[index]} />
+                    <Gutter columns={lines[index] ?? []} />
                     <BranchRow branch={branch} selected={selected?.id === id} onSelect={onSelectBranch} register={register} />
                   </div>
                 );
@@ -308,6 +337,7 @@ export default function LakebaseBranches({ project, selectedBranchId, onSelectBr
                 ))}
                 {project.fromSnapshot.map((id) => {
                   const branch = branchById(project, id);
+                  if (!branch) return null;
                   const isSelected = selected?.id === id;
                   return (
                     <button
@@ -324,7 +354,7 @@ export default function LakebaseBranches({ project, selectedBranchId, onSelectBr
                       }}
                     >
                       <span aria-hidden="true" className="text-muted">◆</span>
-                      <span className="truncate text-xs text-muted">{branch.source.label}</span>
+                      <span className="truncate text-xs text-muted">{"label" in branch.source ? branch.source.label : ""}</span>
                       <span aria-hidden="true" className="text-muted">-----</span>
                       <Ring selected={isSelected} />
                       <span className={`truncate font-semibold ${isSelected ? "text-link-active" : "text-fg"}`}>{branch.label}</span>

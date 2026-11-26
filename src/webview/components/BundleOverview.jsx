@@ -1,3 +1,4 @@
+// @ts-check
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import PipelineDetails from "./PipelineDetails";
 import ProblemBadge from "./ProblemBadge";
@@ -22,6 +23,13 @@ import {
 } from "../lib/overviewView";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
+/** @typedef {import("../../bundle/bundleOverview").OverviewItem} OverviewItem */
+/** @typedef {import("../../bundle/bundleOverview").OverviewLink} OverviewLink */
+/** @typedef {import("../../bundle/bundleOverview").BundleOverview} Overview */
+/** @typedef {Map<string, { view: import("../lib/pipelineView").PipelineViewModel, panel: import("../lib/pipelineView").PipelinePanel }>} Pipelines */
+/** @typedef {"selected" | "related" | "plain" | "dimmed"} RowState */
+/** @typedef {(file: string, line?: number | null, column?: number | null, resourceType?: string) => void} OpenFile */
+
 const COLUMNS = [
   { id: "workloads", title: "Workloads", empty: "Nothing in this bundle runs or shows data." },
   { id: "uses", title: "What they use", empty: "No compute, secrets or data in this bundle." },
@@ -30,6 +38,8 @@ const COLUMNS = [
 /**
  * A job of this bundle has its own graph to open; a pipeline only its data flow, and only
  * when it has SQL sources to draw it from (issue 436).
+ * @param {OverviewItem} item
+ * @param {Pipelines | undefined} pipelines
  */
 function opens(item, pipelines) {
   if (item.source !== "bundle" || !item.resourceKey) return false;
@@ -38,25 +48,44 @@ function opens(item, pipelines) {
   return item.kind === "pipeline" && Boolean(pipelines?.get(item.id)?.panel.dataFlow?.opens);
 }
 
-/** What the box's link and the details' button open. */
+/**
+ * What the box's link and the details' button open.
+ * @param {OverviewItem} item
+ */
 function openWords(item) {
   if (item.kind === "postgres_projects") return "branches";
   return item.kind === "pipeline" ? "data flow" : `${typeWords(item)} graph`;
 }
 
 /** The link on the box: `Open ›`, `Data flow ›`, `Branches ›`. */
+/** @type {Record<string, string>} */
 const LINK_WORDS = { pipeline: "Data flow ›", postgres_projects: "Branches ›" };
+/** @type {Record<string, string>} */
 const LINK_ROOM = { pipeline: "pr-[5.75rem]", postgres_projects: "pr-[5.5rem]" };
 
+/** @param {OverviewItem} item */
 function problemCount(item) {
   return item.problems.errors + item.problems.warnings;
 }
 
+/** @param {OverviewItem} item */
 function problemWords(item) {
   return wordsForProblems(item.problems);
 }
 
-/** One box: a resource, or something the bundle names from outside. */
+/**
+ * One box: a resource, or something the bundle names from outside.
+ * @param {{
+ *   item: OverviewItem,
+ *   note: string,
+ *   state: RowState,
+ *   onHover: (id: string | null) => void,
+ *   onToggle: (id: string) => void,
+ *   onOpen: (item: OverviewItem) => void,
+ *   register: (id: string, element: HTMLElement | null) => void,
+ *   pipelines: Pipelines | undefined,
+ * }} props
+ */
 function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, pipelines }) {
   const problems = problemCount(item);
   const selected = state === "selected";
@@ -154,9 +183,10 @@ function OverviewRow({ item, note, state, onHover, onToggle, onOpen, register, p
 /**
  * A compute box's settings (issue 417): sections of label and value in Databricks' words,
  * then "Also set", the other fields the bundle sets, each opening the line it is on.
+ * @param {{ settings: import("../../bundle/computeSettings").ComputeSettings, onOpenFile: (file: string | undefined, line?: number) => void }} props
  */
 function ComputeSettingsList({ settings, onOpenFile }) {
-  const heading = (text) => <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{text}</div>;
+  const heading = (/** @type {string} */ text) => <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{text}</div>;
   return (
     <div data-overview-settings className="flex flex-col gap-3">
       {settings.sections.map((section) => (
@@ -216,13 +246,26 @@ function ComputeSettingsList({ settings, onOpenFile }) {
 }
 
 /** What the selected box is, where it is defined, and what it is linked to. */
+/**
+ * @param {{
+ *   overview: Overview,
+ *   item: OverviewItem,
+ *   itemById: Map<string, OverviewItem>,
+ *   onSelect: (id: string | null) => void,
+ *   onOpen: (item: OverviewItem) => void,
+ *   onOpenFile?: OpenFile | undefined,
+ *   onClose: () => void,
+ *   pipelines: Pipelines | undefined,
+ *   resolveName?: ((value: string) => string) | undefined,
+ * }} props
+ */
 function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFile, onClose, pipelines, resolveName }) {
   const pipeline = item.kind === "pipeline" ? pipelines?.get(item.id) : undefined;
   const links = linksOf(overview, item.id);
   const uses = links.filter((link) => link.from === item.id);
   const usedBy = links.filter((link) => link.to === item.id);
   const fileName = item.file ? item.file.split(/[\\/]/).pop() : "";
-  const linkList = (title, list, otherEnd) =>
+  const linkList = (/** @type {string} */ title, /** @type {OverviewLink[]} */ list, /** @type {"from" | "to"} */ otherEnd) =>
     list.length > 0 && (
       <div className="flex flex-col gap-1.5">
         <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">{title}</div>
@@ -288,7 +331,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {item.file && (
         <button
           type="button"
-          onClick={() => onOpenFile?.(item.file, item.line, undefined, item.kind)}
+          onClick={() => item.file && onOpenFile?.(item.file, item.line, undefined, item.kind)}
           data-overview-open-file
           className="max-w-full self-start break-all text-left text-xs text-link hover:text-link-active focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
@@ -299,7 +342,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
       {problemCount(item) > 0 && !pipeline && (
         <div className="text-xs text-fg-soft">{problemWords(item)}. The Problems panel lists them.</div>
       )}
-      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => onOpenFile?.(file, line, undefined, item.kind)} />}
+      {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => file && onOpenFile?.(file, line, undefined, item.kind)} />}
       {pipeline && (
         <PipelineDetails
           view={pipeline.view}
@@ -311,7 +354,7 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
         />
       )}
       {linkList("Uses", uses, "to")}
-      {item.runtimeSecrets?.length > 0 && (
+      {item.runtimeSecrets && item.runtimeSecrets.length > 0 && (
         // Secrets whose scope is set at run time (issue 535): listed, never joined into one box.
         <div className="flex flex-col gap-1.5" data-overview-runtime-secrets>
           {uses.length === 0 && <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Uses</div>}
@@ -344,6 +387,24 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
  * them. Pointing at a box, or focusing it, lights up what it is linked to; clicking keeps
  * it lit and shows its details. In a narrow panel the columns stack and no lines are drawn.
  */
+/**
+ * @param {{
+ *   overview: Overview,
+ *   background?: import("react").CSSProperties,
+ *   selectedId: string | null | undefined,
+ *   onSelect: (id: string | null) => void,
+ *   onOpen: (item: OverviewItem) => void,
+ *   onOpenFile?: OpenFile | undefined,
+ *   find?: string,
+ *   problemsOnly?: boolean,
+ *   onShowAll?: () => void,
+ *   scrollMemoryRef?: { current: number | null },
+ *   openedGroups?: Set<string>,
+ *   onOpenGroup?: (id: string) => void,
+ *   pipelines?: Pipelines,
+ *   resolveName?: (value: string) => string,
+ * }} props
+ */
 export default function BundleOverview({
   overview,
   background,
@@ -366,9 +427,9 @@ export default function BundleOverview({
   pipelines,
   resolveName,
 }) {
-  const [hoverId, setHoverId] = useState(null);
+  const [hoverId, setHoverId] = useState(/** @type {string | null} */ (null));
   const setSelectedId = onSelect;
-  const [localOpened, setLocalOpened] = useState(() => new Set());
+  const [localOpened, setLocalOpened] = useState(() => /** @type {Set<string>} */ (new Set()));
   const opened = useMemo(() => {
     const ids = new Set(openedGroups ?? localOpened);
     // A selected box never hides inside a folded group.
@@ -376,10 +437,11 @@ export default function BundleOverview({
     if (holding) ids.add(holding);
     return ids;
   }, [openedGroups, localOpened, overview, selectedId]);
-  const openGroup = (id) => (onOpenGroup ? onOpenGroup(id) : setLocalOpened((current) => new Set(current).add(id)));
-  const [paths, setPaths] = useState([]);
-  const canvasRef = useRef(null);
-  const rowElements = useRef(new Map());
+  const openGroup = (/** @type {string} */ id) => (onOpenGroup ? onOpenGroup(id) : setLocalOpened((current) => new Set(current).add(id)));
+  /** @typedef {{ key: string, d: string, from: string, to: string, kind: OverviewLink["kind"] }} LinkPath */
+  const [paths, setPaths] = useState(/** @type {LinkPath[]} */ ([]));
+  const canvasRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const rowElements = useRef(/** @type {Map<string, HTMLElement>} */ (new Map()));
 
   const itemById = useMemo(
     () => new Map(overview.groups.flatMap((group) => group.items).map((item) => [item.id, item])),
@@ -407,6 +469,7 @@ export default function BundleOverview({
   }, [baseFolded, foundLit, kept, overview]);
   // The boxes on screen: not filtered out by Issues, and not inside a group still folded.
   const shownIds = useMemo(() => {
+    /** @type {Set<string>} */
     const ids = new Set();
     for (const group of overview.groups) {
       if (folded.has(group.id) && !opened.has(group.id)) continue;
@@ -418,10 +481,10 @@ export default function BundleOverview({
   // filtered it out); it then gets no blur. Ignore it, or every other box would fade.
   const hovered = hoverId && shownIds.has(hoverId) ? hoverId : null;
   const activeId = hovered ?? (selected ? selected.id : null);
-  const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : new Set()), [overview, activeId]);
+  const lit = useMemo(() => (activeId ? linkedIds(overview, activeId) : /** @type {Set<string>} */ (new Set())), [overview, activeId]);
   const allLines = showsAllLines(overview);
 
-  const register = useCallback((id, element) => {
+  const register = useCallback((/** @type {string} */ id, /** @type {HTMLElement | null} */ element) => {
     if (element) rowElements.current.set(id, element);
     else rowElements.current.delete(id);
   }, []);
@@ -430,6 +493,7 @@ export default function BundleOverview({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const origin = canvas.getBoundingClientRect();
+    /** @type {LinkPath[]} */
     const next = [];
     // Stacked columns (a narrow panel) get no lines at all, not even within one column:
     // the boxes' notes and details say what they are linked to.
@@ -463,7 +527,7 @@ export default function BundleOverview({
       next.push({ key: `${link.from}->${link.to}`, d, from: link.from, to: link.to, kind: link.kind });
     }
     setPaths((previous) =>
-      previous.length === next.length && previous.every((path, index) => path.d === next[index].d && path.key === next[index].key)
+      previous.length === next.length && previous.every((path, index) => path.d === next[index]?.d && path.key === next[index]?.key)
         ? previous
         : next,
     );
@@ -478,6 +542,7 @@ export default function BundleOverview({
     return () => observer.disconnect();
   }, [measure, opened, find, problemsOnly]);
 
+  /** @type {(item: OverviewItem) => RowState} */
   const stateOf = (item) => {
     if (selected?.id === item.id) return "selected";
     // While a search is typed it decides what is lit; pointing at a box still lights its links.
@@ -487,9 +552,9 @@ export default function BundleOverview({
     return "dimmed";
   };
 
-  const toggle = (id) => setSelectedId(selectedId === id ? null : id);
+  const toggle = (/** @type {string} */ id) => setSelectedId(selectedId === id ? null : id);
 
-  const scrollerRef = useRef(null);
+  const scrollerRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   // A box selected after the overview appears (from search, or from the details' links)
   // comes into view; a box already in view does not move.
   const firstSelection = useRef(true);
@@ -541,7 +606,7 @@ export default function BundleOverview({
               const active =
                 activeId !== null
                   ? path.from === activeId || path.to === activeId
-                  : Boolean(matches) && (matches.has(path.from) || matches.has(path.to));
+                  : matches !== null && (matches.has(path.from) || matches.has(path.to));
               if (!allLines && !active) return null;
               return (
                 <path

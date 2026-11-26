@@ -1,9 +1,40 @@
+// @ts-check
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ClipboardCopy } from "lucide-react";
 import GraphModeToggle from "./GraphModeToggle";
 import SearchBox from "./SearchBox";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
+/**
+ * @param {{
+ *   bundleName?: string,
+ *   targetLabel: string,
+ *   targetTitle?: string,
+ *   targetMode: string | null,
+ *   targetOptions?: string[],
+ *   selectedTarget: string | null | undefined,
+ *   onTargetChange: (target: string | null | undefined) => void,
+ *   pickerGroups?: Array<{ label: string, options: Array<{ value: string, key: string, label: string }> }>,
+ *   selectedValue: string,
+ *   onPickerChange: (value: string) => void,
+ *   overviewValue?: string,
+ *   onBack?: () => void,
+ *   showTaskTools?: boolean,
+ *   showSearch?: boolean,
+ *   searchPlaceholder?: string,
+ *   searchValue: string,
+ *   searchItems: import("./SearchBox").SearchResult[],
+ *   onSearchChange: (value: string) => void,
+ *   onSearchSelect: (item: import("./SearchBox").SearchResult) => void,
+ *   graphMode: "all" | "issues",
+ *   onGraphModeChange: (mode: "all" | "issues") => void,
+ *   issueCount?: number,
+ *   nothingToFilterNote?: string,
+ *   onCopyReviewSummary?: () => void,
+ *   onCopyReviewReport?: () => void,
+ *   copyReviewTitle?: string,
+ * }} props
+ */
 export default function AppHeader({
   bundleName,
   targetLabel,
@@ -117,7 +148,7 @@ export default function AppHeader({
                 ))}
           </select>
         ) : options.length === 1 ? (
-          <span className="w-16 max-w-max grow truncate text-xs text-fg-soft">{options[0].key}</span>
+          <span className="w-16 max-w-max grow truncate text-xs text-fg-soft">{options[0]?.key}</span>
         ) : null}
       </div>
       {/* The tools: they keep their size, and go to a second row when the place can't shrink further. */}
@@ -170,14 +201,18 @@ const COPY_BUTTON =
 // target are cut (issues 551, 553). The tooltip still names it.
 const COPY_LABEL = "hidden lg:inline";
 
-/** Copy review, as a menu: the short summary, or the full report with the task graph. */
+/**
+ * Copy review, as a menu: the short summary, or the full report with the task graph.
+ * Shown only when both actions exist.
+ * @param {{ onCopySummary: () => void, onCopyReport: () => void }} props
+ */
 function CopyReviewMenu({ onCopySummary, onCopyReport }) {
   const [open, setOpen] = useState(false);
-  const menu = useRef(null);
+  const menu = useRef(/** @type {HTMLDivElement | null} */ (null));
   useEffect(() => {
     if (!open) return undefined;
-    const close = (event) => {
-      if (event.type === "keydown" ? event.key === "Escape" : !menu.current?.contains(event.target)) setOpen(false);
+    const close = (/** @type {MouseEvent | KeyboardEvent} */ event) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !menu.current?.contains(/** @type {Node | null} */ (event.target))) setOpen(false);
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", close);
@@ -186,7 +221,7 @@ function CopyReviewMenu({ onCopySummary, onCopyReport }) {
       document.removeEventListener("keydown", close);
     };
   }, [open]);
-  const choose = (copy) => {
+  const choose = (/** @type {() => void} */ copy) => {
     setOpen(false);
     copy();
   };

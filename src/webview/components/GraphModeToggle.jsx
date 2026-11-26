@@ -10,8 +10,8 @@ import { Check } from "lucide-react";
  * @param {{
  *   value: "all" | "issues",
  *   onChange: (value: "all" | "issues") => void,
- *   issueCount?: number,
- *   nothingToFilterNote?: string,
+ *   issueCount?: number | undefined,
+ *   nothingToFilterNote?: string | undefined,
  * }} props
  */
 export default function GraphModeToggle({ value, onChange, issueCount = 0, nothingToFilterNote }) {

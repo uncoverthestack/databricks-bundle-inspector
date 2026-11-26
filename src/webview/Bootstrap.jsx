@@ -1,3 +1,4 @@
+// @ts-check
 import { useEffect, useState } from "react";
 import App from "./App";
 import { contextMenuContext } from "./lib/textSelection";
@@ -10,7 +11,10 @@ const vscodeApi =
 
 const SIGN_IN_STAGES = ["needed", "terminal", "updated", "checking"];
 
-/** The sign-in banner's state from the extension, or null. */
+/**
+ * The sign-in banner's state from the extension, or null.
+ * @param {any} value the message field, checked here
+ */
 function validSignIn(value) {
   return value && typeof value.target === "string" && SIGN_IN_STAGES.includes(value.stage)
     ? {
@@ -25,27 +29,31 @@ function validSignIn(value) {
     : null;
 }
 
+/** @typedef {import("../bundle/graph/bundleGraph").ParsedBundleConfig} ParsedBundleConfig */
+
+// Messages from the extension are untyped here: each field is checked before it is used.
 export default function Bootstrap() {
-  const [parsedBundle, setParsedBundle] = useState(null);
-  const [bundleRoot, setBundleRoot] = useState(undefined);
-  const [resolutionBundle, setResolutionBundle] = useState(null);
-  const [bundleGraph, setBundleGraph] = useState(null);
-  const [validationIssues, setValidationIssues] = useState([]);
-  const [inspectorIssues, setInspectorIssues] = useState([]);
-  const [inspectedTarget, setInspectedTarget] = useState(null);
-  const [inspectedTargetMode, setInspectedTargetMode] = useState(null);
-  const [requestedTarget, setRequestedTarget] = useState(null);
-  const [targetOptions, setTargetOptions] = useState([]);
-  const [targetFallbackMessage, setTargetFallbackMessage] = useState(null);
-  const [targetFallbackReason, setTargetFallbackReason] = useState(null);
-  const [profileChoice, setProfileChoice] = useState(null);
-  const [signIn, setSignIn] = useState(null);
-  const [focusIssuesNonce, setFocusIssuesNonce] = useState(null);
-  const [initialResource, setInitialResource] = useState(null);
+  const [parsedBundle, setParsedBundle] = useState(/** @type {ParsedBundleConfig | null} */ (null));
+  const [bundleRoot, setBundleRoot] = useState(/** @type {string | undefined} */ (undefined));
+  const [resolutionBundle, setResolutionBundle] = useState(/** @type {ParsedBundleConfig | null} */ (null));
+  const [bundleGraph, setBundleGraph] = useState(/** @type {import("../bundle/graph/bundleGraph").BundleGraph | null} */ (null));
+  const [validationIssues, setValidationIssues] = useState(/** @type {import("../bundle/validateBundle").ValidationIssue[]} */ ([]));
+  const [inspectorIssues, setInspectorIssues] = useState(/** @type {import("../bundle/issues").InspectorIssue[]} */ ([]));
+  const [inspectedTarget, setInspectedTarget] = useState(/** @type {string | null} */ (null));
+  const [inspectedTargetMode, setInspectedTargetMode] = useState(/** @type {string | null} */ (null));
+  const [requestedTarget, setRequestedTarget] = useState(/** @type {string | null} */ (null));
+  const [targetOptions, setTargetOptions] = useState(/** @type {string[]} */ ([]));
+  const [targetFallbackMessage, setTargetFallbackMessage] = useState(/** @type {string | null} */ (null));
+  const [targetFallbackReason, setTargetFallbackReason] = useState(/** @type {string | null} */ (null));
+  const [profileChoice, setProfileChoice] = useState(/** @type {{ host: string, names: string[] } | null} */ (null));
+  const [signIn, setSignIn] = useState(/** @type {ReturnType<typeof validSignIn>} */ (null));
+  const [focusIssuesNonce, setFocusIssuesNonce] = useState(/** @type {number | null} */ (null));
+  const [initialResource, setInitialResource] = useState(/** @type {(import("../bundle/resourceFiles").GraphResource & { nonce: number }) | null} */ (null));
 
   useEffect(() => {
     vscodeApi?.postMessage({ type: "webviewReady" });
 
+    /** @param {MessageEvent} event */
     function handleMessage(event) {
       const { data } = event;
       if (typeof data !== "object" || data === null) {
@@ -86,7 +94,7 @@ export default function Bootstrap() {
         );
         setTargetOptions(
           Array.isArray(data.targetOptions)
-            ? data.targetOptions.filter((item) => typeof item === "string")
+            ? data.targetOptions.filter((/** @type {unknown} */ item) => typeof item === "string")
             : [],
         );
         setTargetFallbackMessage(
@@ -130,6 +138,7 @@ export default function Bootstrap() {
 
     // Runs before VS Code's own listener on the window, which reads the context
     // set here to build the menu. The text is sent now, while it is still selected.
+    /** @param {MouseEvent} event */
     function handleContextMenu(event) {
       const inTextBox =
         event.target instanceof Element &&
@@ -157,6 +166,12 @@ export default function Bootstrap() {
     );
   }
 
+  /**
+   * @param {string} filePath
+   * @param {number | null} [line]
+   * @param {number | null} [column]
+   * @param {string} [resourceType]
+   */
   function handleOpenFile(filePath, line, column, resourceType) {
     vscodeApi?.postMessage({
       type: "openFile",
@@ -171,10 +186,12 @@ export default function Bootstrap() {
     vscodeApi?.postMessage({ type: "chooseProfile" });
   }
 
+  /** @param {string} target */
   function handleOpenSignInTerminal(target) {
     vscodeApi?.postMessage({ type: "openSignInTerminal", target });
   }
 
+  /** @param {string} target */
   function handleCheckTargetAgain(target) {
     vscodeApi?.postMessage({ type: "checkTargetAgain", target });
   }
@@ -183,6 +200,7 @@ export default function Bootstrap() {
     vscodeApi?.postMessage({ type: "openSignInGuide" });
   }
 
+  /** @param {string | null | undefined} target */
   function handleSelectTarget(target) {
     vscodeApi?.postMessage({
       type: "selectTarget",
@@ -191,15 +209,21 @@ export default function Bootstrap() {
   }
 
   // Only allow-listed event names and properties are forwarded by the extension.
+  /**
+   * @param {string} event
+   * @param {Record<string, unknown>} [properties]
+   */
   function handleTelemetry(event, properties) {
     vscodeApi?.postMessage({ type: "telemetry", event, properties });
   }
 
   // The extension builds the full report: it knows the CLI's version and its own.
+  /** @param {string} jobKey */
   function handleCopyReviewReport(jobKey) {
     vscodeApi?.postMessage({ type: "copyReviewReport", jobKey });
   }
 
+  /** @param {string} markdown */
   function handleCopyReviewSummary(markdown) {
     vscodeApi?.postMessage({
       type: "copyReviewSummary",
