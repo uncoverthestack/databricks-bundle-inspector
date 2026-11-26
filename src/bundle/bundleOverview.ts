@@ -3,7 +3,7 @@
  * links between them. Built from the graph the extension sends, so it shows only what the
  * bundle says. Left column: what runs or shows something. Right column: what those use.
  */
-import type { JobTriggerWords } from "./jobTrigger.js";
+import { scheduleWords, type JobTriggerWords } from "./jobTrigger.js";
 import { buildJobUses, computeName, type UsesSource } from "./jobUses.js";
 import { clusterSettings, jobOwnSettings, serverlessSettings, warehouseSettings, type ComputeSettings } from "./computeSettings.js";
 import { buildLakebaseProjects } from "./lakebaseBranches.js";
@@ -148,7 +148,7 @@ export interface OverviewItem {
   hasChecks: boolean;
   /** Jobs only. */
   taskCount?: number;
-  /** Jobs only: its schedule or trigger in words (issue 733). */
+  /** A job's schedule or trigger (issue 733), or an alert's or a monitor's schedule (issue 541), in words. */
   trigger?: JobTriggerWords;
   file?: string;
   line?: number;
@@ -502,6 +502,13 @@ export function buildBundleOverview(
     }
   }
 
+  // An alert's or a monitor's schedule in words (issue 541), as a job's (issue 733).
+  for (const item of items.values()) {
+    if (item.source !== "bundle" || !item.resourceGroup) continue;
+    const words = resourceScheduleWords(item.resourceGroup, nodeById.get(item.id)?.data ?? {});
+    if (words) item.trigger = words;
+  }
+
   // 5. A compute box's settings, from the resolved config, with the lines they are written on.
   for (const item of items.values()) {
     const settings = settingsOf(item);
@@ -571,4 +578,26 @@ export function buildBundleOverview(
     links: [...links.values()].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)),
     bundleWide,
   };
+}
+
+/**
+ * The schedule of an alert, a quality monitor or a data quality monitor (issue 541). A data
+ * quality monitor's pause status is read-only, so it is never said.
+ */
+export function resourceScheduleWords(resourceGroup: string, data: Record<string, unknown>): JobTriggerWords | undefined {
+  const record = (value: unknown): Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const paused = (value: unknown) => typeof value === "string" && value.toUpperCase() === "PAUSED";
+  const schedule =
+    resourceGroup === "alerts" || resourceGroup === "quality_monitors"
+      ? record(data.schedule)
+      : resourceGroup === "data_quality_monitors"
+        ? record(record(data.data_profiling_config).schedule)
+        : undefined;
+  if (!schedule) return undefined;
+  // Alerts call it quartz_cron_schedule; monitors quartz_cron_expression.
+  const cron = text(resourceGroup === "alerts" ? schedule.quartz_cron_schedule : schedule.quartz_cron_expression);
+  if (!cron) return undefined;
+  return scheduleWords(cron, text(schedule.timezone_id), resourceGroup !== "data_quality_monitors" && paused(schedule.pause_status));
 }

@@ -314,3 +314,26 @@ describe("describeCronExpression — says every limit, or shows the expression (
     expect(describeCronExpression(expr)).toBe(expr);
   });
 });
+
+describe("describeCronExpression: seconds in hourly repeats, and */1 (#541)", () => {
+  test.each([
+    // Quartz fields are seconds, minutes, hours: the Databricks docs' alert example runs hourly.
+    ["44 19 */1 * * ?", "Runs every hour at 19 minutes 44 seconds past"],
+    ["44 19 * * * ?", "Runs every hour at 19 minutes 44 seconds past"],
+    ["30 0 * * * ?", "Runs every hour at 30 seconds past"],
+    ["1 1 * * * ?", "Runs every hour at 1 minute 1 second past"],
+    // "*/1" and "0/1" are every hour, never "every 1 hours".
+    ["0 19 */1 * * ?", "Runs every hour at 19 minutes past"],
+    ["0 0 0/1 * * ?", "Runs every hour"],
+    ["0 0 1/1 * * ?", "Runs every hour, 01:00 to 23:00"],
+    ["44 19 0/2 * * ?", "Runs every 2 hours, 00:19:44 to 22:19:44"],
+    ["5 0 9-17 * * ?", "Runs every hour, 09:00:05 to 17:00:05"],
+    ["44 19 * ? * MON-FRI", "Runs every hour at 19 minutes 44 seconds past, every weekday (Mon–Fri)"],
+  ])("%s", (expr, words) => {
+    expect(describeCronExpression(expr)).toBe(words);
+  });
+
+  test("near miss: seconds in a repeat by the minute still show the expression", () => {
+    expect(describeCronExpression("44 0/15 * * * ?")).toBe("44 0/15 * * * ?");
+  });
+});
