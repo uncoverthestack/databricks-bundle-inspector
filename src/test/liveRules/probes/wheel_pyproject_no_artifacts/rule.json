@@ -1,0 +1,17 @@
+{
+  "check": "missing_library",
+  "issue": 680,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, 2 runs: pyproject.toml, no artifacts, no setup.py: deploy fails \"no files match pattern: ./dist/*.whl\". With an artifacts entry and build: uv build --wheel it deploys, and the run imports the package (#680).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "no files match"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}
