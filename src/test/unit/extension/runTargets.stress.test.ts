@@ -82,7 +82,7 @@ other.notebook.run("./other", 60)
     const graph = await enrichGraphWithFileContent(await extractBundleGraph(config, root));
     const issues = buildInspectorIssues(graph, config, [], root).filter((issue) => issue.kind === "run_target_not_found");
     expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatchObject({ file: path.join(root, fileName), taskName: "main", line: format === "jupyter" ? 2 : 4 });
+    expect(issues[0]).toMatchObject({ file: path.join(root, fileName), taskName: "main", line: format === "jupyter" ? 1 : 4 });
     expect(issues[0]!.title).toContain('./absent helper');
   });
 

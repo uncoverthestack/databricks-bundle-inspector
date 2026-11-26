@@ -313,6 +313,23 @@ function viewsFor(
   });
 }
 
+const sourceLine = (views: NotebookViews, line: number): number => views.sourceLines?.[line - 1] ?? line;
+const sourceLineAt = (views: NotebookViews, offset: number): number => {
+  const spans = views.sourceSpans;
+  if (spans) {
+    let low = 0;
+    let high = spans.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (spans[mid]!.end <= offset) low = mid + 1;
+      else high = mid;
+    }
+    const span = spans[low];
+    if (span && span.start <= offset && offset < span.end) return span.line;
+  }
+  return sourceLine(views, getStartLine(views.document, offset));
+};
+
 /**
  * `dbutils.secrets.get(...)`, `dbutils.secrets.getBytes(...)` and `dbutils.secrets.list(...)` calls in Python code
  * (not comments or strings, including multi-line and triple-quoted ones). Scope and
@@ -320,7 +337,7 @@ function viewsFor(
  * are `null` when not a string literal. `list` takes only a scope, so its key is `null`;
  * it fails the same way as `get` when the scope does not exist (#236).
  */
-function scanPythonSecrets(view: string, document: string): SecretDetection[] {
+function scanPythonSecrets(view: string, document: string, lineAt: (offset: number) => number = (offset) => getStartLine(document, offset)): SecretDetection[] {
   const tokens = tokenizePython(view);
   const names = dbutilsNames(tokens);
   const parameterOf = scopeParameterReader(tokens, names);
@@ -329,7 +346,7 @@ function scanPythonSecrets(view: string, document: string): SecretDetection[] {
     const scope = literalValue(scopeArgument);
     const parameter = scope === null ? parameterOf(scopeArgument) : undefined;
     return {
-      line: getStartLine(document, call.offset),
+      line: lineAt(call.offset),
       raw: getLineText(document, call.offset),
       scope,
       key: literalValue(argument(call.args, "key", 1)),
@@ -472,7 +489,7 @@ function sqlLiteral(arg: SqlToken[] | undefined): string | null {
  * arguments must be string literals per the Databricks SQL spec. Every detection
  * carries {@link SQL_PREVIEW_NOTE}.
  */
-function scanSqlSecrets(view: string, document: string): SecretDetection[] {
+function scanSqlSecrets(view: string, document: string, lineAt: (offset: number) => number = (offset) => getStartLine(document, offset)): SecretDetection[] {
   const tokens = tokenizeSql(view);
   const detections: SecretDetection[] = [];
   tokens.forEach((token, i) => {
@@ -481,7 +498,7 @@ function scanSqlSecrets(view: string, document: string): SecretDetection[] {
     if (tokens[i + 1]?.value !== "(") return;
     const [scope, key] = sqlArguments(tokens, i + 1);
     detections.push({
-      line: getStartLine(document, token.start),
+      line: lineAt(token.start),
       raw: getLineText(document, token.start),
       scope: sqlLiteral(scope),
       key: sqlLiteral(key),
@@ -569,14 +586,14 @@ function bareGetArgumentCalls(tokens: PythonToken[]): DbutilsCall[] {
  * bare `getArgument(...)`. The name is the `name=` or first positional argument when it is
  * a string literal.
  */
-function scanPythonWidgets(view: string, document: string): WidgetDetection[] {
+function scanPythonWidgets(view: string, document: string, lineAt: (offset: number) => number = (offset) => getStartLine(document, offset)): WidgetDetection[] {
   const tokens = tokenizePython(view);
   return [...dbutilsCalls(tokens, "widgets", ["get", "getArgument", "getAll"]), ...bareGetArgumentCalls(tokens)]
     .sort((a, b) => a.offset - b.offset)
     .map((call) => {
       const method = call.method as WidgetMethod;
       const detection: WidgetDetection = {
-        line: getStartLine(document, call.offset),
+        line: lineAt(call.offset),
         raw: getLineText(document, call.offset),
         // A read on something not traceable to dbutils isn't claimed as a named read,
         // but still marks the notebook as reading widgets the inspector can't check.
@@ -690,13 +707,13 @@ function endsExpression(token: SqlToken): boolean {
  * - Legacy `${name}` references, in code, strings or backtick identifiers.
  * - `CREATE WIDGET TEXT|DROPDOWN|COMBOBOX|MULTISELECT name DEFAULT ...` sets a default.
  */
-function scanSqlWidgets(view: string, document: string): { reads: WidgetDetection[]; defaults: string[] } {
+function scanSqlWidgets(view: string, document: string, lineAt: (offset: number) => number = (offset) => getStartLine(document, offset)): { reads: WidgetDetection[]; defaults: string[] } {
   const tokens = tokenizeSql(view);
   const reads: WidgetDetection[] = [];
   const legacy: WidgetDetection[] = [];
   const defaults: string[] = [];
   const at = (offset: number) => ({
-    line: getStartLine(document, offset),
+    line: lineAt(offset),
     raw: getLineText(document, offset),
   });
 
@@ -763,7 +780,7 @@ function byLine<T extends { line: number }>(a: T, b: T): number {
  * | SQL (`.sql`, `%sql` cells)                | `secret()`, `try_secret()`             |
  *
  * Notebooks are read cell by cell in each cell's language, so a `%sql` cell in a
- * Python notebook is read as SQL. Line numbers count every cell in document order.
+ * Python notebook is read as SQL. Jupyter findings use lines in the notebook JSON file.
  *
  * `null` on `scope` or `key` means that argument is not a string literal.
  * SQL detections always carry a `note` marking the preview status.
@@ -774,8 +791,8 @@ export async function detectSecretInNotebook(
 ): Promise<SecretDetection[]> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   return [
-    ...scanPythonSecrets(views.python, views.document),
-    ...scanSqlSecrets(views.sql, views.document),
+    ...scanPythonSecrets(views.python, views.document, (offset) => sourceLineAt(views, offset)),
+    ...scanSqlSecrets(views.sql, views.document, (offset) => sourceLineAt(views, offset)),
   ].sort(byLine);
 }
 
@@ -793,8 +810,8 @@ export async function detectWidgetsInFile(
 ): Promise<WidgetDetection[]> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   return [
-    ...scanPythonWidgets(views.python, views.document),
-    ...scanSqlWidgets(views.sql, views.document).reads,
+    ...scanPythonWidgets(views.python, views.document, (offset) => sourceLineAt(views, offset)),
+    ...scanSqlWidgets(views.sql, views.document, (offset) => sourceLineAt(views, offset)).reads,
   ].sort(byLine);
 }
 
@@ -807,10 +824,10 @@ export interface QualifiedName {
 const DOTTED_IN_TEXT = /[A-Za-z_`][\w`]*(?:\.[A-Za-z_`][\w`]*)+/g;
 
 /** The dotted names inside a string's text (`"SELECT * FROM main.sales.orders"`). */
-function dottedNamesIn(text: string, offset: number, document: string): QualifiedName[] {
+function dottedNamesIn(text: string, offset: number, document: string, lineAt: (offset: number) => number = (at) => getStartLine(document, at)): QualifiedName[] {
   return [...text.matchAll(DOTTED_IN_TEXT)].map((match) => ({
     parts: match[0].split(".").map((part) => part.replace(/`/g, "")),
-    line: getStartLine(document, offset + match.index!),
+    line: lineAt(offset + match.index!),
   }));
 }
 
@@ -829,7 +846,7 @@ export async function detectQualifiedNamesInFile(
   for (let i = 0; i < sql.length; i++) {
     const token = sql[i]!;
     if (token.kind === "string") {
-      names.push(...dottedNamesIn(token.value, token.bodyStart ?? token.start, views.document));
+      names.push(...dottedNamesIn(token.value, token.bodyStart ?? token.start, views.document, (offset) => sourceLineAt(views, offset)));
       continue;
     }
     if (token.kind !== "word" && token.kind !== "quoted_identifier") continue;
@@ -842,11 +859,11 @@ export async function detectQualifiedNamesInFile(
       parts.push(next.value);
       j += 2;
     }
-    if (parts.length > 1) names.push({ parts, line: getStartLine(views.document, token.start) });
+    if (parts.length > 1) names.push({ parts, line: sourceLineAt(views, token.start) });
     i = j;
   }
   for (const token of tokenizePython(views.python)) {
-    if (token.kind === "string") names.push(...dottedNamesIn(token.value, token.start, views.document));
+    if (token.kind === "string") names.push(...dottedNamesIn(token.value, token.start, views.document, (offset) => sourceLineAt(views, offset)));
   }
   return names.sort(byLine);
 }
@@ -860,7 +877,7 @@ export async function detectQualifiedNamesInFile(
  */
 export async function detectSqlParameterMarkersInFile(filePath: string): Promise<Array<{ name: string; line: number }>> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), "sql");
-  return scanSqlWidgets(views.sql, views.document)
+  return scanSqlWidgets(views.sql, views.document, (offset) => sourceLineAt(views, offset))
     .reads.filter((read) => read.method === "sqlParameterMarker" && read.name)
     .map((read) => ({ name: read.name!, line: read.line }));
 }
@@ -994,8 +1011,8 @@ export async function detectWidgetUsageInFile(
   rule: NotebookHeaderRule = "contains",
 ): Promise<WidgetUsage> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
-  const python = scanPythonWidgets(views.python, views.document);
-  const sql = scanSqlWidgets(views.sql, views.document);
+  const python = scanPythonWidgets(views.python, views.document, (offset) => sourceLineAt(views, offset));
+  const sql = scanSqlWidgets(views.sql, views.document, (offset) => sourceLineAt(views, offset));
   const pythonDefaults = scanPythonWidgetDefaults(views.python);
   const defaultLanguages = emptyRecord<CodeLanguage[]>();
   for (const [language, names] of [["python", pythonDefaults], ["sql", sql.defaults]] as const) {
@@ -1108,7 +1125,7 @@ export async function detectTaskValuesInFile(
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const usage: TaskValueUsage = { sets: [], gets: [], runsOtherNotebooks: views.runs.length > 0 };
   for (const call of taskValueCalls(tokenizePython(views.python))) {
-    const line = getStartLine(views.document, call.offset);
+    const line = sourceLineAt(views, call.offset);
     if (call.method === "set") {
       // A set on an unknown receiver makes the task's keys unknown, which only
       // suppresses warnings.
@@ -1184,13 +1201,13 @@ export async function detectRunTargetsInFile(
 ): Promise<RunTarget[]> {
   const views = viewsFor(filePath, await fs.readFile(filePath, "utf8"), fileTypeHint);
   const file = path.resolve(filePath);
-  const found: RunTarget[] = views.runs.map((run) => ({ kind: "run", target: run.target, line: run.line, file }));
+  const found: RunTarget[] = views.runs.map((run) => ({ kind: "run", target: run.target, line: sourceLine(views, run.line), file }));
   const tokens = tokenizePython(views.python);
   for (const call of dbutilsCalls(tokens, "notebook", ["run"]).filter((c) => c.knownReceiver)) {
     found.push({
       kind: "notebook_run",
       target: literalValue(argument(call.args, "path", 0)),
-      line: getStartLine(views.document, call.offset),
+      line: sourceLineAt(views, call.offset),
       file,
     });
   }

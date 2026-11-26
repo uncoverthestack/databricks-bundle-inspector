@@ -16,11 +16,12 @@
  * - Any other file is one cell in the file's language.
  */
 import { emptyRecord } from "../ownKeys.js";
+import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 
 export type CodeLanguage = "python" | "sql";
 
 export interface NotebookViews {
-  /** The text line numbers refer to (for `.ipynb`, the joined cell sources). */
+  /** Source text used to tokenize code (for `.ipynb`, joined cell sources). */
   document: string;
   python: string;
   sql: string;
@@ -28,6 +29,9 @@ export interface NotebookViews {
   runsOtherNotebooks: boolean;
   /** Each `%run`: the notebook path as written, the `$name="value"` widget values it passes, and its line. */
   runs: NotebookRun[];
+  /** Maps one-based joined source lines to lines in the Jupyter JSON file. */
+  sourceLines?: number[];
+  sourceSpans?: Array<{ start: number; end: number; line: number }>;
 }
 
 export interface NotebookRun {
@@ -236,9 +240,47 @@ function jupyterLines(raw: string): NotebookViews {
 
   const lines: Line[] = [];
   const runs: NotebookRun[] = [];
-  for (const cell of notebook.cells ?? []) {
+  const sourceLines: number[] = [];
+  const sourceSpans: Array<{ start: number; end: number; line: number }> = [];
+  let documentOffset = 0;
+  // JSON is also YAML. Node ranges locate source strings even when their contents repeat.
+  const parsed = parseDocument(raw);
+  const cellsNode = isMap(parsed.contents) ? parsed.contents.get("cells", true) : undefined;
+  const cellNodes = isSeq(cellsNode) ? cellsNode.items : [];
+  const lineStarts = [0];
+  for (let i = 0; i < raw.length; i++) if (raw[i] === "\n") lineStarts.push(i + 1);
+  const lineAt = (offset: number) => {
+    let low = 0;
+    let high = lineStarts.length;
+    while (low + 1 < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (lineStarts[mid]! <= offset) low = mid;
+      else high = mid;
+    }
+    return low + 1;
+  };
+  for (const [cellIndex, cell] of (notebook.cells ?? []).entries()) {
     const source = Array.isArray(cell.source) ? cell.source.join("") : (cell.source ?? "");
     const cellLines = source.split("\n");
+    const node = cellNodes[cellIndex];
+    const sourceNode = isMap(node) ? node.get("source", true) : undefined;
+    const parts = isSeq(sourceNode) ? sourceNode.items : sourceNode ? [sourceNode] : [];
+    const mapped: number[] = [];
+    let current = 0;
+    let partOffset = documentOffset;
+    for (const part of parts) {
+      if (!isScalar(part) || typeof part.value !== "string" || !part.range) continue;
+      const fileLine = lineAt(part.range[0]);
+      sourceSpans.push({ start: partOffset, end: partOffset + part.value.length, line: fileLine });
+      partOffset += part.value.length;
+      for (const char of part.value) {
+        mapped[current] ??= fileLine;
+        if (char === "\n") current += 1;
+      }
+    }
+    const fallback = mapped.at(-1) ?? (isMap(node) && node.range ? lineAt(node.range[0]) : 1);
+    for (let i = 0; i < cellLines.length; i++) sourceLines.push(mapped[i] ?? fallback);
+    documentOffset += source.length + 1;
     const isCode = (cell.cell_type ?? "code") === "code";
     const magic = isCode ? /^\s*%(\w+)/.exec(cellLines[0] ?? "") : null;
     if (magic?.[1]?.toLowerCase() === "run") {
@@ -250,7 +292,7 @@ function jupyterLines(raw: string): NotebookViews {
       lines.push({ text, language: magic && index === 0 ? "other" : language, markupLength: 0 });
     });
   }
-  return buildViews(lines, runs);
+  return { ...buildViews(lines, runs), sourceLines, sourceSpans };
 }
 
 /**

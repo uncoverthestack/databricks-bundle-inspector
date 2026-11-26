@@ -9,6 +9,8 @@ import {
   detectSecretInNotebook,
   detectWidgetsInFile,
   detectWidgetUsageInFile,
+  detectTaskValuesInFile,
+  detectRunTargetsInFile,
 } from "../../../bundle/taskFileDetections.js";
 
 const created: string[] = [];
@@ -156,9 +158,45 @@ describe("detections on real-world shapes", () => {
       }),
     );
     expect((await detectWidgetsInFile(ipynb)).map((w) => [w.line, w.name])).toEqual([
-      [2, "from_code"],
-      [4, "from_sql_cell"],
+      [1, "from_code"],
+      [1, "from_sql_cell"],
     ]);
+  });
+
+  test("Jupyter findings point to their source strings in the JSON file (#613)", async () => {
+    const notebook = { cells: [
+      { cell_type: "markdown", source: ["intro\n"] },
+      { cell_type: "code", source: ["x = 1\n", "dbutils.widgets.get('needed')\n", "dbutils.secrets.get('scope', 'key')\n"] },
+      { cell_type: "code", source: ["dbutils.jobs.taskValues.get(taskKey='up', key='result')\n", "dbutils.notebook.run('./missing', 0)\n"] },
+      { cell_type: "code", source: ["%sql\n", "SELECT :sql_arg"] },
+    ], metadata: {}, nbformat: 4 };
+    const raw = JSON.stringify(notebook, null, 2);
+    const f = await file("physical-lines.ipynb", raw);
+    const line = (text: string) => raw.split("\n").findIndex((part) => part.includes(text)) + 1;
+    expect((await detectWidgetsInFile(f)).map((d) => [d.name, d.line])).toEqual([
+      ["needed", line("widgets.get")], ["sql_arg", line("SELECT :sql_arg")],
+    ]);
+    expect((await detectWidgetUsageInFile(f)).reads.map((d) => [d.name, d.line])).toEqual([
+      ["needed", line("widgets.get")], ["sql_arg", line("SELECT :sql_arg")],
+    ]);
+    expect((await detectSecretInNotebook(f))[0]?.line).toBe(line("secrets.get"));
+    expect((await detectTaskValuesInFile(f)).gets[0]?.line).toBe(line("taskValues.get"));
+    expect((await detectRunTargetsInFile(f))[0]?.line).toBe(line("notebook.run"));
+  });
+
+  test("Jupyter code split across JSON strings points to the string containing the call", async () => {
+    const notebook = { cells: [{ cell_type: "code", source: ["x = ", "dbutils.widgets.get('needed')"] }], metadata: {}, nbformat: 4 };
+    const raw = JSON.stringify(notebook, null, 2);
+    const f = await file("split-source.ipynb", raw);
+    const expected = raw.split("\n").findIndex((line) => line.includes("widgets.get")) + 1;
+    expect((await detectWidgetsInFile(f))[0]?.line).toBe(expected);
+  });
+
+  test("a single JSON string with escaped newlines points to that physical line", async () => {
+    const raw = JSON.stringify({ cells: [{ cell_type: "code", source: "x = 1\ndbutils.widgets.get('needed')" }], metadata: {}, nbformat: 4 }, null, 2);
+    const f = await file("string-source.ipynb", raw);
+    const expected = raw.split("\n").findIndex((line) => line.includes("widgets.get")) + 1;
+    expect((await detectWidgetsInFile(f))[0]?.line).toBe(expected);
   });
 
   test("keeps scope and key null when they come from variables", async () => {

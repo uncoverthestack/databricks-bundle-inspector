@@ -2,7 +2,7 @@
 
 [Back to the README](../README.md)
 
-These are the problems the inspector reports. Each one is listed in the Problems panel at the file and line it comes from, and in the graph's issues list. Each has a code, shown next to it in the Problems panel; click the code to open its section here.
+These are the problems the inspector reports. Each one is listed in the Problems panel at the file and line it comes from, and in the graph's issues list. Each has a code, shown next to it in the Problems panel; click the code to open its section here. For Jupyter notebooks, a finding points to the source string in the `.ipynb` JSON file; code split across strings points to the string containing the call.
 
 Severities: an **error** is likely to fail `bundle deploy` or the job run, a **warning** may fail or behave differently from what you expect, and a **note** is worth a look but often fine.
 
