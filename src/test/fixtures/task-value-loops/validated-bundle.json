@@ -1,0 +1,259 @@
+{
+  "bundle": {
+    "name": "task-value-loops"
+  },
+  "include": [
+    "resources/jobs.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "inner_key": {
+        "name": "inner_key",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/read_inner.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "inner_key_no_depends": {
+        "name": "inner_key_no_depends",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "../src/read_inner.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "inner_key_typo": {
+        "name": "inner_key_typo",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/read_inner_typo.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "loop_key": {
+        "name": "loop_key",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/read_loop.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "loop_key_default": {
+        "name": "loop_key_default",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "notebook_path": "../src/read_loop_default.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "self_default": {
+        "name": "self_default",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/self_default.py"
+            },
+            "task_key": "selfread"
+          }
+        ]
+      },
+      "self_never_set": {
+        "name": "self_never_set",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/self_never_set.py"
+            },
+            "task_key": "selfread"
+          }
+        ]
+      },
+      "self_runs_other": {
+        "name": "self_runs_other",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/self_runs_other.py"
+            },
+            "task_key": "selfread"
+          }
+        ]
+      },
+      "self_sets": {
+        "name": "self_sets",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/self_sets.py"
+            },
+            "task_key": "selfread"
+          }
+        ]
+      },
+      "yaml_inner_key": {
+        "name": "yaml_inner_key",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "base_parameters": {
+                "r": "{{tasks.inner.values.result}}"
+              },
+              "notebook_path": "../src/read_widget.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      },
+      "yaml_loop_key": {
+        "name": "yaml_loop_key",
+        "tasks": [
+          {
+            "for_each_task": {
+              "inputs": "[1, 2]",
+              "task": {
+                "notebook_task": {
+                  "notebook_path": "../src/set_result.py"
+                },
+                "task_key": "inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "depends_on": [
+              {
+                "task_key": "loop"
+              }
+            ],
+            "notebook_task": {
+              "base_parameters": {
+                "r": "{{tasks.loop.values.result}}"
+              },
+              "notebook_path": "../src/read_widget.py"
+            },
+            "task_key": "after"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "mode": "development"
+    }
+  }
+}

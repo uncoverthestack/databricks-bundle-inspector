@@ -1,0 +1,25 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: loop
+          for_each_task:
+            inputs: "[1, 2]"
+            task:
+              task_key: inner
+              notebook_task:
+                notebook_path: ./set.py
+        - task_key: after
+          depends_on:
+            - task_key: loop
+          notebook_task:
+            notebook_path: ./read.py
+            base_parameters:
+              r: "{{tasks.loop.values.result}}"

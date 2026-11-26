@@ -1,0 +1,73 @@
+{
+  "bundle": {
+    "name": "run-child-dynamic-reads"
+  },
+  "include": [
+    "resources/jobs.yml"
+  ],
+  "resources": {
+    "jobs": {
+      "get_all_and_named": {
+        "name": "get_all_and_named",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/get_all_and_named/parent.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "named_only": {
+        "name": "named_only",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/named_only/parent.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "named_with_default": {
+        "name": "named_with_default",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/named_with_default/parent.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "variable_and_named": {
+        "name": "variable_and_named",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/variable_and_named/parent.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      },
+      "variable_only": {
+        "name": "variable_only",
+        "tasks": [
+          {
+            "notebook_task": {
+              "notebook_path": "../src/variable_only/parent.py"
+            },
+            "task_key": "t"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "dev": {
+      "default": true,
+      "mode": "development"
+    }
+  }
+}

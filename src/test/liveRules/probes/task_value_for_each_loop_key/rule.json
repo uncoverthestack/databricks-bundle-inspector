@@ -1,0 +1,18 @@
+{
+  "check": "task_value_key_not_set",
+  "issue": 601,
+  "note": "docs/checks.md#task_value_key_not_set: after a for-each task, a value read by the loop's key fails the run; the inner task's key works (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "No task values with key"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

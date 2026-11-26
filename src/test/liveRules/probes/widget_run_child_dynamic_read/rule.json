@@ -1,0 +1,18 @@
+{
+  "check": "widget_not_set",
+  "issue": 602,
+  "note": "docs/checks.md#widget_not_set: a %run notebook reading one widget by a variable and another by name; the named read fails the run when nothing sets it (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "InputWidgetNotDefined"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

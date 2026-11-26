@@ -1,0 +1,10 @@
+bundle:
+  name: run-child-dynamic-reads
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
