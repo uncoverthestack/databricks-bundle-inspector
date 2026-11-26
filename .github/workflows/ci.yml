@@ -64,6 +64,10 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # Webview .jsx files that start with `// @ts-check`.
+      - name: Type check webview
+        run: npm run typecheck:webview
+
       - name: Build extension
         run: npm run build:ext
 

@@ -356,6 +356,7 @@
     "watch-tests": "tsc -p . --outDir out --watch",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc --noEmit",
+    "typecheck:webview": "tsc -p tsconfig.webview.json",
     "compile": "npm run build:ext",
     "test": "npm run test:unit && npm run test:semantic",
     "test:unit": "jest --testPathIgnorePatterns semanticGraph.test.ts",

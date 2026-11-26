@@ -7,9 +7,21 @@
 import type { MarkerType } from "@xyflow/react";
 import type { ParsedBundleConfig } from "../../bundle/graph/bundleGraph.js";
 import { isDrawnDependency, taskLevels } from "./taskLevels.js";
-import { taskProblemCounts, type TaskProblemIssue } from "./taskProblems.js";
+import { taskProblemCounts, type TaskProblemCounts, type TaskProblemIssue, type TaskProblemTone } from "./taskProblems.js";
 import { taskBoxProblems, type GraphLike, type TaskNode } from "./taskIssues.js";
 import { UI_COLOR } from "./vscodeTheme.js";
+
+/** What a task box on the graph shows (components/TaskNode.jsx). A type, not an interface, so it fits FlowNode's data. */
+export type TaskBoxData = {
+  name: string;
+  fullName: string;
+  kind: string | undefined;
+  typeLabel: string | undefined;
+  subtitle: string | undefined;
+  branchOutcomes: string[];
+  issueCounts: TaskProblemCounts;
+  problemTone: TaskProblemTone;
+};
 
 export const NODE_W = 260;
 export const NODE_H = 48;
@@ -173,7 +185,7 @@ export function buildDagFlow(
           subtitle: task.subtitle,
           branchOutcomes: [...new Set(branchOutcomesByTask.get(task.id) ?? [])],
           ...taskBoxProblems(task, parsedBundle, targetName, inspectorIssues, problemsByTask),
-        },
+        } satisfies TaskBoxData,
       });
     });
   });
