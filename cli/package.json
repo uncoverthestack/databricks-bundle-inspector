@@ -1,6 +1,6 @@
 {
   "name": "@uncoverthestack/databricks-bundle-inspector",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Checks Databricks bundles for mistakes that pass bundle validate and deploy, then fail when the job runs. For terminals and CI.",
   "license": "Apache-2.0",
   "repository": {

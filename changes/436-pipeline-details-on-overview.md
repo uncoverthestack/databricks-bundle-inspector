@@ -1,3 +1,0 @@
-Changed
-
-- **A pipeline's details are on the bundle overview, and its data flow has its own page** ([#436](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/436)). Select a pipeline's box to see, in the side panel, the job and task that run it, where it writes, its settings on one line, and each source with its problem directly under it. A pipeline with SQL sources gets **Data flow ›** on its box, which opens the data flow on the whole page; a pipeline with only Python sources says so and has no link. The separate pipeline page is gone: a job task's **Pipeline** row, and opening the graph with the cursor in a pipeline, select the pipeline on the overview, and the dropdown lists each pipeline's data flow.
