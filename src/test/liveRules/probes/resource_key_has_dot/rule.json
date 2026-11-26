@@ -1,0 +1,16 @@
+{
+  "check": "resource_key_has_dot",
+  "issue": 511,
+  "note": "docs/checks.md#resource_key_has_dot: validate passes, deploy stops (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

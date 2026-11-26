@@ -1,0 +1,17 @@
+{
+  "check": "not_a_notebook",
+  "issue": 648,
+  "note": "docs/checks.md#not_a_notebook doesn't say which step fails; this probe finds out (#648, #650).",
+  "variants": {
+    "broken": {
+      "validate": "unknown",
+      "deploy": "unknown",
+      "run": "unknown"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

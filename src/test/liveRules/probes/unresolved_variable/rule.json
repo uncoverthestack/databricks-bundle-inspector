@@ -1,0 +1,17 @@
+{
+  "check": "unresolved_variable",
+  "issue": 648,
+  "note": "docs/checks.md#unresolved_variable doesn't say which step fails; this probe finds out (#648, #650).",
+  "variants": {
+    "broken": {
+      "validate": "unknown",
+      "deploy": "unknown",
+      "run": "unknown"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}
