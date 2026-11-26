@@ -12,7 +12,18 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 export const NPM_NAMES = ["@uncoverthestack/databricks-bundle-inspector", "databricks-bundle-inspector"];
-const PACKED_FILES = ["package.json", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "dist/cli.cjs"];
+const PACKED_FILES = [
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+  "dist/cli.cjs",
+  // The Python parser, loaded from next to cli.cjs (#649).
+  "dist/tree-sitter/THIRD_PARTY_NOTICES.md",
+  "dist/tree-sitter/tree-sitter.cjs",
+  "dist/tree-sitter/tree-sitter.wasm",
+  "dist/tree-sitter/tree-sitter-python.wasm",
+];
 
 const root = path.resolve(import.meta.dirname, "..");
 const cliDir = path.join(root, "cli");

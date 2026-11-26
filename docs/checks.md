@@ -399,6 +399,7 @@ A notebook reads a widget that may have no value when it runs as a job: neither 
 - **Severity:** warning.
 - **Example:** `dbutils.widgets.get("run_date")`, with no `run_date` in `base_parameters` or the job's `parameters`. The run fails with "No input widget named run_date is defined". `getArgument("run_date")` and `dbutils.widgets.getArgument("run_date")` fail the same way.
 - **Not reported:** `getArgument("run_date", "2024-01-01")`, in either spelling, which returns its second argument when the widget isn't set (checked with job runs on Databricks CLI v1.28.0). A default given by keyword is still reported, as only the positional form was checked.
+- **Defaults:** only a widget created on `dbutils` (`dbutils.widgets.text("run_date", "")`, also through a variable or `self.dbutils`) counts. One removed with `remove("run_date")` before it is read doesn't: the read fails with the same error (checked with job runs on Databricks CLI v1.28.0). `removeAll()` is treated the same way.
 - **Fix:** pass it in the task's `base_parameters` or the job's `parameters`, or give the widget a default in the notebook. When the name is close to one that is passed, the warning suggests it.
 
 ### `unused_parameter`
@@ -703,6 +704,7 @@ Checks on code (secrets, widgets, task values) read **Python and SQL**:
 
 - `.py` and `.sql` files, Jupyter notebooks (`.ipynb`), and Databricks source-format notebooks.
 - `%python` and `%sql` cells inside a notebook of the other language, each read in its own language.
-- `dbutils` wherever it can be traced: `dbutils` itself (also as `self.dbutils`), a variable assigned from it, `DBUtils(spark)` or `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`). A call on something that can't be traced, such as a function parameter named `d`, isn't counted; a widget read there makes the inspector say it couldn't check that notebook.
+- `dbutils` wherever it can be traced: `dbutils` itself (also as `self.dbutils`), a variable assigned from it, `DBUtils(spark)` or `get_dbutils(spark)`, imports under another name, and the Databricks SDK (`WorkspaceClient().dbutils`, `w.secrets.get_secret(...)`). Variables holding part of it are followed too, in the order the file assigns them: `w = dbutils.widgets`, `tv = dbutils.jobs.taskValues`, and a single method such as `read = dbutils.widgets.get`, then `read("run_date")`. A call on something that can't be traced, such as a function parameter named `d`, isn't counted; a widget read there makes the inspector say it couldn't check that notebook.
+- Python is read with a full Python parser ([tree-sitter](https://tree-sitter.github.io/)), so strings, comments, f-strings and calls over several lines are read as Python reads them. A file with a syntax error is still read; calls in the broken part may be missed.
 
 **Scala and R are not read.** `.scala` and `.r` notebooks, and `%scala` and `%r` cells, are skipped, so secrets, widgets and task values in them are not found. Markdown cells and other magic cells (`%md`, `%sh`, `%pip`) are not code and are skipped too.

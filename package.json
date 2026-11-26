@@ -402,12 +402,14 @@
     "test:e2e:runtime-secrets": "npm run test:e2e -- --suite runtimeSecrets --fixture src/test/fixtures/runtime-secrets"
   },
   "dependencies": {
+    "@vscode/tree-sitter-wasm": "0.3.1",
     "@xyflow/react": "^13.0.2",
     "ignore": "^7.0.14",
     "lucide-react": "^1.73.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "smol-toml": "^1.9.1",
+    "web-tree-sitter": "0.25.10",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },

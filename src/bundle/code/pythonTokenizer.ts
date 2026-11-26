@@ -258,7 +258,7 @@ export function decodeEscapes(body: string, bytes: boolean): string | null {
 }
 
 /** Python reads source with Windows line ends as `\n`, so a string over two lines holds `\n`. */
-function decodedString(body: string, prefix: string): string | null {
+export function decodedString(body: string, prefix: string): string | null {
   const lines = body.replace(/\r\n?/g, "\n");
   return /r/i.test(prefix) ? lines : decodeEscapes(lines, /b/i.test(prefix));
 }
