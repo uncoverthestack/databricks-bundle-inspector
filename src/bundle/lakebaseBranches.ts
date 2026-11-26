@@ -255,7 +255,10 @@ function heldOf(node: LakebaseGraphNode): LakebaseHeld {
   let detail: string | undefined;
   if (group === "postgres_synced_tables") {
     const from = text(data.source_table_full_name);
-    detail = from ? `synced from ${from}` : undefined;
+    // Its sync mode in a word (issue 737): whether it keeps updating by itself.
+    const mode = text(data.scheduling_policy)?.toLowerCase();
+    const known = mode === "continuous" || mode === "triggered" || mode === "snapshot" ? mode : undefined;
+    detail = [from ? `synced from ${from}` : "", known ?? ""].filter(Boolean).join(", ") || undefined;
   } else if (group === "postgres_databases") {
     detail = text(data.postgres_database) ? `database ${text(data.postgres_database)}` : undefined;
   } else if (group === "postgres_roles") {

@@ -352,6 +352,12 @@ function OverviewDetails({ overview, item, itemById, onSelect, onOpen, onOpenFil
               {line}
             </div>
           ))}
+          {item.trigger.condition?.map((line, index) => (
+            // A job's SQL condition (issue 737): the run goes ahead only when it is met.
+            <div key={line} data-overview-condition className={index === 0 ? "text-xs text-fg" : "break-all text-[11px] text-muted"}>
+              {line}
+            </div>
+          ))}
         </div>
       )}
       {item.settings && <ComputeSettingsList settings={item.settings} onOpenFile={(file, line) => file && onOpenFile?.(file, line, undefined, item.kind)} />}
