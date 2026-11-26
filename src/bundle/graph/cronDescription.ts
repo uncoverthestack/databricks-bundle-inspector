@@ -132,6 +132,11 @@ function describeTimes(sec: string, min: string, hour: string): Times | undefine
   const s = Number(sec);
   const time = (h: number, m: number) => `${hhmm(String(h), String(m))}${s ? `:${String(s).padStart(2, "0")}` : ""}`;
   const repeat = (text: string): Times | undefined => (s ? undefined : { kind: "repeat", text });
+  // Repeats by the hour name their seconds, which the times in them show too (issue 541).
+  const hourly = (text: string): Times => ({ kind: "repeat", text });
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const pastTheHour = (m: number) =>
+    [m ? unit(m, "minute") : "", s ? unit(s, "second") : ""].filter(Boolean).join(" ");
   const minutes = min === "*" ? stepValues("0/1", 59) : stepValues(min, 59);
 
   if (minutes) {
@@ -148,24 +153,27 @@ function describeTimes(sec: string, min: string, hour: string): Times | undefine
   if (!inRange(min, 0, 59)) return undefined;
   const m = Number(min);
   if (inRange(hour, 0, 23)) return { kind: "at", text: ` at ${time(Number(hour), m)}` };
-  if (hour === "*") return repeat(m === 0 ? "Runs every hour" : `Runs every hour at ${m} minutes past`);
+  // "*/1" and "0/1" are every hour, the same as "*".
+  if (hour === "*" || hour === "*/1" || hour === "0/1") {
+    return hourly(m === 0 && !s ? "Runs every hour" : `Runs every hour at ${pastTheHour(m)} past`);
+  }
   if (/^\d+(,\d+)+$/.test(hour)) {
     const hours = hour.split(",");
     if (!hours.every((h) => inRange(h, 0, 23))) return undefined;
     return { kind: "at", text: ` at ${listInWords(hours.map((h) => time(Number(h), m)))}` };
   }
   const range = /^\d+-\d+$/.test(hour) ? hourSpan(hour) : undefined;
-  if (range) return repeat(`Runs every hour, ${time(range[0], m)} to ${time(range[1], m)}`);
+  if (range) return hourly(`Runs every hour, ${time(range[0], m)} to ${time(range[1], m)}`);
 
   const hours = stepValues(hour, 23);
   if (!hours) return undefined;
   const step = (hours[1] ?? 24) - hours[0]!;
-  if (m === 0 && hours[0] === 0 && 24 % step === 0) {
-    return repeat(step === 1 ? "Runs every hour" : `Runs every ${step} hours`);
+  if (m === 0 && !s && hours[0] === 0 && 24 % step === 0) {
+    return hourly(step === 1 ? "Runs every hour" : `Runs every ${step} hours`);
   }
   // Not evenly through the day: name the times while there are few enough to read.
   if (hours.length <= 6) return { kind: "at", text: ` at ${listInWords(hours.map((h) => time(h, m)))}` };
-  return repeat(`Runs every ${step} hours, ${time(hours[0]!, m)} to ${time(hours.at(-1)!, m)}`);
+  return hourly(`Runs every ${step === 1 ? "hour" : `${step} hours`}, ${time(hours[0]!, m)} to ${time(hours.at(-1)!, m)}`);
 }
 
 interface Days {

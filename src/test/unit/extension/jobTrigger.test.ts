@@ -15,17 +15,19 @@ describe("jobTriggerWords (#733)", () => {
     expect(short({ schedule: { quartz_cron_expression: "0 0 9 ? * MON-FRI" } })).toBe("Every weekday (Mon–Fri) at 09:00");
   });
 
-  test("a schedule the words can't say, or that is too long for the box, says Scheduled", () => {
-    expect(jobTriggerWords({ schedule: { quartz_cron_expression: "44 19 */1 * * ?", timezone_id: "Europe/Amsterdam" } })).toEqual({
+  test("a schedule the words can't say says Scheduled; one too long for the box keeps its first part", () => {
+    expect(jobTriggerWords({ schedule: { quartz_cron_expression: "0 0 9 1,L * ?", timezone_id: "Europe/Amsterdam" } })).toEqual({
       label: "Schedule",
       short: "Scheduled",
       full: "Cron schedule (Europe/Amsterdam)",
-      detail: ["44 19 */1 * * ?"],
+      detail: ["0 0 9 1,L * ?"],
     });
     expect(short({ schedule: { quartz_cron_expression: "${var.cron}" } })).toBe("Scheduled");
-    // "Every 4 hours, on Monday, Wednesday, Friday" is over the box's limit; the details keep it.
+    // The details keep the whole sentence (#541).
     const long = jobTriggerWords({ schedule: { quartz_cron_expression: "0 0 0/4 ? * MON,WED,FRI" } });
-    expect([long?.short, long?.full]).toEqual(["Scheduled", "Every 4 hours, on Monday, Wednesday, Friday"]);
+    expect([long?.short, long?.full]).toEqual(["Every 4 hours", "Every 4 hours, on Monday, Wednesday, Friday"]);
+    const docs = jobTriggerWords({ schedule: { quartz_cron_expression: "44 19 */1 * * ?", timezone_id: "Europe/Amsterdam" } });
+    expect([docs?.short, docs?.full]).toEqual(["Every hour", "Every hour at 19 minutes 44 seconds past (Europe/Amsterdam)"]);
   });
 
   test("continuous, also when empty", () => {

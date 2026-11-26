@@ -1,0 +1,3 @@
+Added
+
+- **Alert and monitor schedules on the bundle overview** ([#541](https://github.com/uncoverthestack/databricks-bundle-inspector/issues/541)). Alerts, quality monitors and data quality monitors say when they run on their box, such as `alert · Every hour · Paused`, with the time zone and cron in their details. Schedules with seconds, such as the Databricks docs' alert example `44 19 */1 * * ?` ("Every hour at 19 minutes 44 seconds past"), are now said in words, and `*/1` hours read "every hour", not "every 1 hours". A schedule too long for a box keeps its first part, such as "Every hour", instead of "Scheduled".

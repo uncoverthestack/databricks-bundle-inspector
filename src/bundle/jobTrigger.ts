@@ -43,24 +43,32 @@ function withPause(words: Omit<JobTriggerWords, "short" | "full"> & { short: str
   return isPaused ? { ...words, short: `${words.short} · Paused`, full: `${words.full} (paused)` } : words;
 }
 
+/**
+ * A Quartz schedule in words, for a job, an alert or a monitor (issues 733, 541). Too long for the
+ * box, it keeps its first part ("Every hour" of "Every hour at 19 minutes 44 seconds past"); the
+ * details keep it all.
+ */
+export function scheduleWords(cron: string, timezone: string | undefined, isPaused: boolean): JobTriggerWords {
+  const words = describeCronExpression(cron);
+  const described = words !== cron;
+  const plain = described ? words.replace(/^Runs e/, "E") : "";
+  const head = plain.split(/ at |, /)[0] ?? "";
+  const short = !described ? "Scheduled" : plain.length <= SHORT_MAX ? plain : head.startsWith("Every") && head.length <= SHORT_MAX ? head : "Scheduled";
+  return withPause(
+    {
+      label: "Schedule",
+      short,
+      full: described ? `${plain}${timezone ? ` (${timezone})` : ""}` : `Cron schedule${timezone ? ` (${timezone})` : ""}`,
+      detail: [cron],
+    },
+    isPaused,
+  );
+}
+
 /** The job's schedule or trigger in words, or undefined when it sets none. */
 export function jobTriggerWords(job: JobTriggerFields): JobTriggerWords | undefined {
   const cron = isObject(job.schedule) ? text(job.schedule.quartz_cron_expression) : undefined;
-  if (cron && isObject(job.schedule)) {
-    const timezone = text(job.schedule.timezone_id);
-    const words = describeCronExpression(cron);
-    const described = words !== cron;
-    const plain = described ? words.replace(/^Runs e/, "E") : "";
-    return withPause(
-      {
-        label: "Schedule",
-        short: described && plain.length <= SHORT_MAX ? plain : "Scheduled",
-        full: described ? `${plain}${timezone ? ` (${timezone})` : ""}` : `Cron schedule${timezone ? ` (${timezone})` : ""}`,
-        detail: [cron],
-      },
-      paused(job.schedule.pause_status),
-    );
-  }
+  if (cron && isObject(job.schedule)) return scheduleWords(cron, text(job.schedule.timezone_id), paused(job.schedule.pause_status));
 
   // `continuous: {}` is still continuous: the job runs again as soon as a run ends.
   if (isObject(job.continuous)) {

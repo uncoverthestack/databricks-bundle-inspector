@@ -101,6 +101,8 @@ export function itemNote(overview: BundleOverview, item: OverviewItem): string {
     if (runners.length > 0) parts.push(`run by ${runners.map((link) => labelOf(link.from)).join(", ")}`);
     return parts.join(" · ");
   }
+  // An alert's or a monitor's schedule in a few words (issue 541).
+  if (item.trigger) parts.push(item.trigger.short);
   const used = usedByWords(overview, item.id);
   if (used) parts.push(used);
   return parts.join(" · ");
