@@ -40,18 +40,7 @@ describe("the list of checks (#648)", () => {
     const undocumented = Object.entries(CHECKS)
       .filter(([, info]) => !("stops" in info))
       .map(([code]) => code);
-    expect(undocumented).toEqual([
-      "missing_file",
-      "notebook_missing_extension",
-      "not_a_notebook",
-      "file_is_a_notebook",
-      "include_matches_nothing",
-      "resource_not_included",
-      "unresolved_variable",
-      "variable_in_auth_field",
-      "secret_value_not_variable",
-      "secret_variable_has_default",
-    ]);
+    expect(undocumented).toEqual(["variable_in_auth_field", "secret_value_not_variable", "secret_variable_has_default"]);
   });
 });
 

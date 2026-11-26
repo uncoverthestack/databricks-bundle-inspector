@@ -34,13 +34,13 @@ export interface CheckInfo {
 
 export const CHECKS = {
   // Files and paths
-  missing_file: { family: "files" },
-  notebook_missing_extension: { family: "files" },
+  missing_file: { family: "files", stops: "validate" },
+  notebook_missing_extension: { family: "files", stops: "validate" },
   missing_pipeline_source: { family: "files", stops: "deploy" },
   unsupported_pipeline_file: { family: "files", stops: "run" },
   missing_library: { family: "files", stops: "deploy" },
-  not_a_notebook: { family: "files" },
-  file_is_a_notebook: { family: "files" },
+  not_a_notebook: { family: "files", stops: "validate" },
+  file_is_a_notebook: { family: "files", stops: "validate" },
   notebook_byte_order_mark: { family: "files", stops: "run" },
   path_is_a_folder: { family: "files", stops: "validate" },
   excluded_from_sync: { family: "files", stops: "run" },
@@ -48,8 +48,8 @@ export const CHECKS = {
   same_workspace_path: { family: "files", stops: "deploy" },
   file_scan_failed: { family: "files", stops: "coverage" },
   // include
-  include_matches_nothing: { family: "include" },
-  resource_not_included: { family: "include" },
+  include_matches_nothing: { family: "include", stops: "silent" },
+  resource_not_included: { family: "include", stops: "silent" },
   // Jobs
   unknown_task_dependency: { family: "jobs", stops: "deploy" },
   task_dependency_loop: { family: "jobs", stops: "deploy" },
@@ -88,7 +88,7 @@ export const CHECKS = {
   // Bundle configuration
   missing_bundle_name: { family: "configuration", stops: "deploy" },
   empty_bundle_name_in_root_path: { family: "configuration", stops: "silent" },
-  unresolved_variable: { family: "configuration" },
+  unresolved_variable: { family: "configuration", stops: "validate" },
   variable_reference_loop: { family: "configuration", stops: "validate" },
   resource_key_has_dot: { family: "configuration", stops: "deploy" },
   internal_resource_set: { family: "configuration", stops: "validate" },

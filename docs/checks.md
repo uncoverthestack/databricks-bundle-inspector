@@ -24,6 +24,7 @@ Most findings are worded as "may": the inspector reads your local files, while t
 A task points at a local notebook or file that doesn't exist, including the inner task of a `for_each` task.
 
 - **Severity:** error.
+- **When it fails:** `bundle validate` with a target stops: "notebook missing.py not found" (checked by deploying, Databricks CLI v1.28.0). A path wrong only in letter case gets further on macOS and Windows: see **Letter case**.
 - **Example:** `notebook_path: ../src/etl.py`, with no `src/etl.py`.
 - **Letter case:** the workspace is case sensitive, so `./Notebooks/Main.py` is not found when the file is `notebooks/main.py`, on every OS. On macOS and Windows, which ignore case, `bundle validate` and deploy pass, and the job fails with "Unable to access the notebook" (checked by deploying, Databricks CLI v1.27.0). Names above the bundle folder aren't compared.
 - **Fix:** create the file, or correct the path. Paths are relative to the YAML file they are written in.
@@ -36,6 +37,7 @@ A task points at a local notebook or file that doesn't exist, including the inne
 A notebook path is written without its extension, and a notebook exists once the extension is added. The Databricks CLI needs the extension for local notebooks.
 
 - **Severity:** error.
+- **When it fails:** `bundle validate` with a target stops: `notebook "nb" not found. Did you mean "nb.py"?` (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `notebook_path: ../src/etl`, with `src/etl.py` on disk.
 - **Fix:** add the extension (`.py`, `.r`, `.scala`, `.sql` or `.ipynb`).
 - **Quick fix:** yes, from the light bulb: `../src/etl` becomes `../src/etl.py`. It is only offered while the file still holds that value, so a path from a variable gets none.
@@ -81,6 +83,7 @@ A notebook task, or a pipeline `notebook` library, points at a file that the CLI
 The inspector uses the rules of the CLI that validated the bundle, and the newer ones when it can't read the version. A `.ipynb` file must be a Jupyter notebook as the CLI reads it: `cells` a list, `metadata` an object, and `nbformat` a whole number, 4 or more.
 
 - **Severity:** error.
+- **When it fails:** `bundle validate` with a target stops: "expected a notebook ... but got a file" (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `notebook_path: ../src/query.sql`, where the file has no `-- Databricks notebook source` line.
 - **Fix:** add the header line (the warning says which one), or run the file from a task that takes a file, such as `spark_python_task` or `sql_task`.
 
@@ -89,6 +92,7 @@ The inspector uses the rules of the CLI that validated the bundle, and the newer
 A task that takes a plain file (`spark_python_task`, `sql_task`), or a pipeline `file` library, points at a notebook. The CLI treats a file whose first line is the notebook header as a notebook. From Databricks CLI v1.24.0, a first line that only contains `Databricks notebook source` is enough, so a file with a byte order mark or other text on that line is a notebook too (see [`not_a_notebook`](#not_a_notebook)).
 
 - **Severity:** error.
+- **When it fails:** `bundle validate` with a target stops: "expected a file ... but got a notebook" (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `python_file: ../src/job.py`, where the first line is `# Databricks notebook source`.
 - **Fix:** remove the header line, or run it from a notebook task or a pipeline `notebook` library.
 
@@ -160,6 +164,7 @@ The CLI loads only `databricks.yml` and the files its `include` list selects, an
 An `include` pattern matches no files, and a likely fix exists: a misspelled folder, or `.yml` where the files end in `.yaml`.
 
 - **Severity:** warning.
+- **When it fails:** nothing fails. `bundle deploy` succeeds without the resources in the files the pattern meant, so those jobs are never created, and `bundle run` says "resource not found or not yet deployed" (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `include: [resource/*.yml]`, with the files in `resources/`.
 - **Fix:** correct the pattern.
 - **Quick fix:** yes, from the light bulb: `resource/*.yml` becomes `resources/*.yml`.
@@ -170,6 +175,7 @@ An `include` pattern matches no files, and a likely fix exists: a misspelled fol
 A YAML file in the bundle defines resources, but no `include` entry loads it.
 
 - **Severity:** warning.
+- **When it fails:** nothing fails. `bundle deploy` succeeds without that file's resources, so its jobs are never created, and `bundle run` says "resource not found or not yet deployed" (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `resources/jobs/nightly.yml` with `include: [resources/*.yml]`, as `*` doesn't go into subfolders.
 - **Fix:** add a pattern that covers the file, such as `resources/**/*.yml`, or delete the file if it's unused.
 - **Limits:** a file named in `databricks.yml`, even in a comment, is taken as left out on purpose.
@@ -529,6 +535,7 @@ A notebook that exists but that `bundle deploy` doesn't upload, for example beca
 A `${var.*}` reference to a variable with no default and no value for the selected target.
 
 - **Severity:** error.
+- **When it fails:** `bundle validate` with a target stops: "no value assigned to required variable" (checked by deploying, Databricks CLI v1.28.0).
 - **Example:** `warehouse_id: ${var.warehouse_id}` with no default, and no value under the target.
 - **Fix:** give the variable a default, or a value for the target.
 - **Limits:** values from `BUNDLE_VAR_<name>`, `--var` or `.databricks/bundle/<target>/variable-overrides.json` aren't seen in the structural preview.
