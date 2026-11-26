@@ -123,6 +123,41 @@ describe("resource file that include does not load", () => {
     );
   });
 
+  test("flags a file in a sub-folder when the pattern matches no file at all", () => {
+    // The CLI output has no include list when nothing matches, as in the docs' own example.
+    const root = makeBundle({
+      "databricks.yml": "include:\n  - resources/*.yml\n",
+      "resources/jobs/job.yml": JOB_FILE,
+    });
+    const issues = includeIssues(config(), root).filter((i) => i.kind === "resource_not_included");
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.file).toBe(path.join(root, "resources/jobs/job.yml"));
+  });
+
+  test("a misspelled pattern is one finding: the files its suggested fix loads aren't listed again", () => {
+    const root = makeBundle({
+      "databricks.yml": "include:\n  - resource/*.yml\n",
+      "resources/job.yml": JOB_FILE,
+      "resources/jobs/nested.yml": JOB_FILE,
+    });
+    const issues = includeIssues(config(), root);
+    expect(issues.map((i) => [i.kind, path.relative(root, i.file!)])).toEqual([
+      ["include_matches_nothing", "databricks.yml"],
+      // The suggestion "resources/*.yml" wouldn't load this one either.
+      ["resource_not_included", path.join("resources", "jobs", "nested.yml")],
+    ]);
+  });
+
+  test("stays quiet when an entry without the CLI's list still matches a file", () => {
+    // Defensive: a matching entry means the missing list isn't "nothing loaded".
+    const root = makeBundle({
+      "databricks.yml": "include:\n  - resources/*.yml\n  - other/*.yml\n",
+      "resources/a.yml": JOB_FILE,
+      "other/jobs/b.yml": JOB_FILE,
+    });
+    expect(includeIssues(config(), root).filter((i) => i.kind === "resource_not_included")).toEqual([]);
+  });
+
   test("adds the ** caveat to the hint when an entry uses it", () => {
     const root = makeBundle({
       "databricks.yml": "include:\n  - resources/**/*.yml\n",

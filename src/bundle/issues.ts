@@ -1019,6 +1019,15 @@ function globFix(
  * The 0-based columns an editor highlights for an issue on its line: from its column to
  * `endColumn` when it has one (a `{{name}}` placeholder, #484), else to the end of the line.
  */
+/**
+ * A finding's one-line message: the title, then the detail after ": ", as VS Code's Problems
+ * panel and the command-line tool show it. A title that ends a sentence drops its full stop, so
+ * the line never reads "deploy may fail.: ./src/etl".
+ */
+export function issueMessage(issue: Pick<InspectorIssue, "title" | "detail">, title = issue.title): string {
+  return issue.detail ? `${title.replace(/\.$/, "")}: ${issue.detail}` : title;
+}
+
 export function issueHighlight(issue: Pick<InspectorIssue, "column" | "endColumn">): { start: number; end: number } {
   const start = Math.max(0, (issue.column ?? 1) - 1);
   const end = issue.endColumn && issue.endColumn - 1 > start ? issue.endColumn - 1 : Number.MAX_SAFE_INTEGER;
@@ -1764,6 +1773,8 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
   const issues: InspectorIssue[] = [];
   const { file: bundleFile, text: bundleText, entries } = readIncludeEntries(bundleRoot);
   const bundleFilePath = path.join(bundleRoot, bundleFile ?? "databricks.yml");
+  // Files a suggested include fix would load: that finding already covers them.
+  const coveredBySuggestion = new Set<string>();
 
   for (const { entry, line } of entries) {
     // An entry without wildcards that matches nothing is already an error from the CLI.
@@ -1775,6 +1786,7 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
     // such as `resources/*.yml` in a bundle whose resources are written in Python.
     const suggestion = suggestInclude(bundleRoot, entry);
     if (!suggestion) continue;
+    for (const file of globSync(bundleRoot, suggestion) ?? []) coveredBySuggestion.add(file);
 
     issues.push({
       id: `include:matches-nothing:${entry}`,
@@ -1789,11 +1801,16 @@ export function includeIssues(parsedBundle: ParsedBundleConfig, bundleRoot: stri
     });
   }
 
-  // Without an include entry the CLI output has no include list at all.
-  const loaded = parsedBundle.include ?? (entries.length === 0 ? [] : undefined);
+  // Without an include entry the CLI output has no include list at all. It has none either
+  // when every entry matches nothing, such as `resources/*.yml` with the only resource file
+  // in `resources/jobs/`: then nothing is loaded.
+  const loaded =
+    parsedBundle.include ??
+    (entries.every(({ entry }) => globSync(bundleRoot, entry)?.length === 0) ? [] : undefined);
   if (loaded && !loaded.some(hasGlobCharacters)) {
     const caveat = entries.map(({ entry }) => includeCaveat(entry)).find(Boolean);
     for (const { file, line } of findUnloadedResourceFiles(bundleRoot, loaded, bundleText)) {
+      if (coveredBySuggestion.has(file)) continue;
       issues.push({
         id: `include:not-included:${file}`,
         severity: "warning",
