@@ -1,0 +1,218 @@
+resources:
+  jobs:
+    from_dotted:
+      name: from_dotted
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/from_dotted.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    from_two_parts:
+      name: from_two_parts
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/from_two_parts.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    backticks:
+      name: backticks
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/backticks.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    use_bare:
+      name: use_bare
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/use_bare.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    use_schema:
+      name: use_schema
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/use_schema.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    use_database:
+      name: use_database
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/use_database.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    from_single:
+      name: from_single
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/from_single.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    join_single:
+      name: join_single
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/join_single.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    dot_before:
+      name: dot_before
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/dot_before.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    from_in_subquery:
+      name: from_in_subquery
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/from_in_subquery.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    use_catalog_backticks:
+      name: use_catalog_backticks
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/use_catalog_backticks.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    use_catalog:
+      name: use_catalog
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/use_catalog.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    identifier:
+      name: identifier
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/identifier.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    value_position:
+      name: value_position
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/value_position.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    extract_from:
+      name: extract_from
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/extract_from.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    distinct_from:
+      name: distinct_from
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/distinct_from.sql
+            parameters:
+              cat: system
+              schema: information_schema
+              table: system.information_schema.catalogs
+              day: "2026-01-01"
+    backticks_not_passed:
+      name: backticks_not_passed
+      tasks:
+        - task_key: q
+          sql_task:
+            warehouse_id: abcdef0123456789
+            file:
+              path: ../src/backticks_not_passed.sql

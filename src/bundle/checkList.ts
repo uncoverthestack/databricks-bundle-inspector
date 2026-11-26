@@ -83,6 +83,7 @@ export const CHECKS = {
   unused_parameter: { family: "code", stops: "advice" },
   sql_parameter_not_set: { family: "code", stops: "run" },
   sql_parameter_quoted: { family: "code", stops: "run" },
+  sql_parameter_as_name: { family: "code", stops: "run" },
   schema_renamed_in_target: { family: "code", stops: "run" },
   task_value_unknown_task: { family: "code", stops: "run" },
   task_value_not_upstream: { family: "code", stops: "run" },

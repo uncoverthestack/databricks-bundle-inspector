@@ -1,0 +1,18 @@
+{
+  "check": "sql_parameter_as_name",
+  "issue": 707,
+  "note": "docs/checks.md#sql_parameter_as_name: USE SCHEMA {{name}} fails the run with PARSE_SYNTAX_ERROR, although USE CATALOG {{name}} runs; USE IDENTIFIER() runs (Databricks CLI v1.28.0, 2026-11-26, needs a warehouse named \"Serverless Starter Warehouse\").",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "'information_schema'"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}
