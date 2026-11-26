@@ -50,6 +50,7 @@ changes/**
 semantic-cli-matrix.config.json
 semantic-cli-matrix.local.json
 **/tsconfig.jest.json
+tsconfig.webview.json
 vite.config.js
 repo-audit
 telemetry-proxy/**

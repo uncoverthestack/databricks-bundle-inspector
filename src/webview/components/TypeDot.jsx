@@ -1,3 +1,4 @@
+// @ts-check
 import {
   Activity,
   AppWindow,
@@ -33,6 +34,7 @@ import {
 import { kindMeta } from "../lib/kindMeta";
 import { iconOfKind } from "../lib/kindIcons";
 
+/** @type {Record<string, import("lucide-react").LucideIcon>} */
 const ICONS = {
   activity: Activity,
   "app-window": AppWindow,
@@ -79,6 +81,8 @@ const ICONS = {
  * to tell apart, worst on a faded box. `ring` draws a hollow dashed ring in place of the icon,
  * for Serverless or inherited compute: it isn't a cluster, and a filled dot beside icons reads
  * as a status light. The dashes match the dashed border that means "not defined in this bundle".
+ *
+ * @param {{ kind: string | undefined, dot?: boolean, ring?: boolean }} props
  */
 export default function TypeDot({ kind, dot = false, ring = false }) {
   const color = kindMeta(kind).color;

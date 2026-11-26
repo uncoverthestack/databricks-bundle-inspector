@@ -1,12 +1,19 @@
+// @ts-check
 import TypeDot from "./TypeDot";
 
+/** @typedef {import("../../bundle/jobUses").UsesItem} UsesItem */
+
+/** @type {Record<UsesItem["kind"], string>} */
 const KIND_LABEL = {
   warehouse: "SQL warehouse",
   cluster: "cluster",
   secret_scope: "secret scope",
 };
 
-/** One line on where the name comes from, for the tooltip. */
+/**
+ * One line on where the name comes from, for the tooltip.
+ * @param {UsesItem} item
+ */
 function sourceLine(item) {
   switch (item.source) {
     case "bundle":
@@ -31,15 +38,17 @@ function sourceLine(item) {
   }
 }
 
-const fileName = (file) => String(file ?? "").split(/[\\/]/).pop();
+const fileName = (/** @type {string | undefined} */ file) => String(file ?? "").split(/[\\/]/).pop();
 
 /** "By default, from env_scope": a parameter gives this scope unless a run passes another (issue 535). */
+/** @param {UsesItem} item */
 function defaultLine(item) {
   if (!item.byDefault?.length) return "";
   const parameters = [...new Set(item.byDefault.map((entry) => entry.parameter))];
   return `By default, from the ${parameters.join(", ")} parameter${parameters.length === 1 ? "" : "s"}. A run can pass another value.`;
 }
 
+/** @param {UsesItem} item */
 function tooltip(item) {
   const used = `Used by ${item.taskNames.join(", ")}`;
   const reads = (item.reads ?? []).map((read) => `${fileName(read.file)}:${read.line}`);
@@ -55,6 +64,7 @@ function tooltip(item) {
 }
 
 /** Every task reads this scope only through a parameter's default, so the chip says so. */
+/** @param {UsesItem} item */
 function onlyByDefault(item) {
   return item.byDefault?.length === item.taskIds.length;
 }
@@ -63,6 +73,14 @@ function onlyByDefault(item) {
  * The "Uses" row above a job's graph. A solid chip is defined in this bundle; a dashed one
  * is named by a variable or an ID, is a scope from outside the bundle, or is the default
  * compute. Pointing at a chip, or focusing it, lights up its tasks; clicking keeps them lit.
+ *
+ * @param {{
+ *   items: UsesItem[] | undefined,
+ *   activeId: string | null | undefined,
+ *   pinnedId: string | null | undefined,
+ *   onHover: (id: string | null) => void,
+ *   onTogglePin: (id: string) => void,
+ * }} props
  */
 export default function UsesRow({ items, activeId, pinnedId, onHover, onTogglePin }) {
   if (!items?.length) return null;

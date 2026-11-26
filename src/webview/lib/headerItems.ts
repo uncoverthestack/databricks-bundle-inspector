@@ -255,6 +255,19 @@ export interface SearchItem {
   problemTone: TaskProblemTone;
 }
 
+/** A search result on the bundle overview: one of its boxes (built in App.jsx). */
+export interface OverviewSearchItem {
+  id: string;
+  /** The overview box it selects. */
+  overviewId: string;
+  label: string;
+  subtitle: string;
+  kind: string;
+  source: import("../../bundle/bundleOverview.js").OverviewSource;
+  issueCount: number;
+  problemTone: TaskProblemTone;
+}
+
 /** The search box's items: the job's tasks, each with the problem count its box shows. */
 export function buildSearchItems(
   graph: GraphLike | null | undefined,

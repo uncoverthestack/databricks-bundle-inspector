@@ -1,9 +1,16 @@
+// @ts-check
 import { Handle, Position } from "@xyflow/react";
 import ProblemBadge from "./ProblemBadge";
 import TypeDot from "./TypeDot";
 import { problemWords } from "../lib/taskProblems";
 import { UI_COLOR } from "../lib/vscodeTheme";
 
+/**
+ * @param {{
+ *   data: import("../lib/dagFlow").TaskBoxData & { focusState?: import("../lib/displayNodes").FocusState },
+ *   selected?: boolean,
+ * }} props
+ */
 export default function TaskNode({ data, selected }) {
   // Red for an error, amber for warnings only, from the problem list Issues uses (issue 393).
   const tone = data.problemTone ?? "none";

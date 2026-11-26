@@ -1,3 +1,4 @@
+// @ts-check
 import { useState } from "react";
 import { Check } from "lucide-react";
 
@@ -5,10 +6,18 @@ import { Check } from "lucide-react";
  * All / Issues. With nothing to filter (`issueCount` 0 and `nothingToFilterNote` set),
  * Issues is dimmed and does nothing; pointing at it, or reaching it with Tab, says why.
  * It stays reachable by keyboard on purpose, so the note is not mouse-only (issue 390).
+ *
+ * @param {{
+ *   value: "all" | "issues",
+ *   onChange: (value: "all" | "issues") => void,
+ *   issueCount?: number,
+ *   nothingToFilterNote?: string,
+ * }} props
  */
 export default function GraphModeToggle({ value, onChange, issueCount = 0, nothingToFilterNote }) {
   const [noteShown, setNoteShown] = useState(false);
   const issuesUnavailable = Boolean(nothingToFilterNote) && issueCount === 0;
+  /** @type {Array<{ value: "all" | "issues", label: string, count?: number | undefined }>} */
   const options = [
     { value: "all", label: "All" },
     {
