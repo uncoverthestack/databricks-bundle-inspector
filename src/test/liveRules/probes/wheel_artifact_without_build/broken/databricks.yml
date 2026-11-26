@@ -1,0 +1,25 @@
+bundle:
+  name: __NAME__
+artifacts:
+  default:
+    type: whl
+    path: .
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - ./dist/*.whl
+      tasks:
+        - task_key: t
+          environment_key: default
+          spark_python_task:
+            python_file: ./main.py

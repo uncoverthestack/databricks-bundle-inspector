@@ -1,0 +1,17 @@
+{
+  "check": "unknown_environment_key",
+  "issue": 679,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, 2 runs: with environments from a complex variable the job deploys and runs; a misspelled key fails deploy: \"Job environment 'defualt' used by task t is not defined in field 'environments'\" (#679).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "not defined"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+VALUE = 'probe-pkg-installed'

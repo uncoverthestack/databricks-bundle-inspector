@@ -1,0 +1,17 @@
+{
+  "check": "missing_library",
+  "issue": 680,
+  "note": "Live, Databricks CLI v1.28.0, 2026-11-26, 2 runs: an artifact of type whl without build runs setup.py bdist_wheel, so deploy fails in a pyproject.toml project (\"can't open file ... setup.py\"). With build: uv build --wheel it works (#680).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "setup.py"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+bundle:
+  name: __NAME__
+variables:
+  envs:
+    type: complex
+    default:
+      - environment_key: default
+        spec:
+          environment_version: "2"
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      environments: ${var.envs}
+      tasks:
+        - task_key: t
+          environment_key: default
+          spark_python_task:
+            python_file: ./main.py
