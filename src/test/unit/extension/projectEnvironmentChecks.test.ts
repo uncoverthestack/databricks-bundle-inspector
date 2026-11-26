@@ -54,7 +54,7 @@ describe("the project's own Databricks environment table", () => {
     '[tool.databricks.environment]\nbase_environment = "workspace#base"',
     '[tool.other]\nenvironment_version = "4"\n[tool.databricks.environment]\nenvironment_version = "5"',
     '[project]\nlarge_number = 9223372036854775807\n[tool.databricks.environment]\nenvironment_version = "5"',
-  ])("keeps valid project settings quiet: %s", (text) => expect(check(text)).toEqual([]));
+  ])("near miss (project_environment_version_unsupported): keeps valid project settings quiet: %s", (text) => expect(check(text)).toEqual([]));
   test("a parser failure is not misreported as a missing version", () => {
     expect(check('[tool.databricks.environment]\nenvironment_version = "5')).toEqual([]);
   });

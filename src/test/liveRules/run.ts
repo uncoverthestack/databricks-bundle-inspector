@@ -88,6 +88,11 @@ for (const probe of probes) {
         const folder = `/Workspace/Users/${user}/.bundle/${name}`;
         cli(["workspace", "delete", folder, "--recursive"]);
         if (cli(["workspace", "get-status", folder]).ok) leftovers.push(folder);
+        for (const table of probe.tables ?? []) {
+          const fullName = table.replaceAll("__NAME__", name);
+          cli(["tables", "delete", fullName]);
+          if (cli(["tables", "get", fullName]).ok) leftovers.push(fullName);
+        }
         rmSync(dir, { recursive: true, force: true });
       }
       const verdict = judge(expected, results);

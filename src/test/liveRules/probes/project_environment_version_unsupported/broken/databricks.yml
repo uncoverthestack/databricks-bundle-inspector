@@ -1,0 +1,19 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      environments:
+        - environment_key: e
+          spec:
+            project_environment: ./pyproject.toml
+      tasks:
+        - task_key: t
+          environment_key: e
+          spark_python_task:
+            python_file: ./main.py

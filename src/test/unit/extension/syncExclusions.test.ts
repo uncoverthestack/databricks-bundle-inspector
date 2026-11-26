@@ -243,7 +243,7 @@ describe("deployed files a pipeline glob refuses (#531)", () => {
   });
 
   test.each(["README.md", "notes.txt", "data.csv", "config.json", "nb.ipynb", "helpers.py", ".hidden.py"])(
-    "%s is skipped by the pipeline: no finding",
+    "near miss (unsupported_pipeline_file): %s is skipped by the pipeline: no finding",
     async (file) => {
       expect(await findings({ [`src/dlt/${file}`]: "x\n" })).toEqual([]);
     },

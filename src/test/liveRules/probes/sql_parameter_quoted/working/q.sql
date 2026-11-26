@@ -1,0 +1,1 @@
+SELECT {{region}} AS region

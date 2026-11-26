@@ -56,7 +56,7 @@ describe("a notebook that starts with a byte order mark (#589)", () => {
     ]);
   });
 
-  test("no error without the mark (control)", async () => {
+  test("near miss (notebook_byte_order_mark): no error without the mark (control)", async () => {
     expect(await bomFindings({ "py.py": PY }, job([notebookTask("py", "py.py")]))).toEqual([]);
   });
 

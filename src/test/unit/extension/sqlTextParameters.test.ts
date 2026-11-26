@@ -55,6 +55,12 @@ describe("SQL file {{name}} text parameters (issue 484)", () => {
     ]);
   });
 
+  test("near miss (sql_parameter_quoted): a passed parameter with no quotes, or only part of a longer string, is not reported", () => {
+    const quoted = issues.filter((issue) => issue.kind === "sql_parameter_quoted").map((issue) => issue.taskName);
+    expect(quoted).toEqual(expect.arrayContaining(["p_string"]));
+    expect(quoted.filter((task) => task === "p_value" || task === "p_part")).toEqual([]);
+  });
+
   test("the highlight covers the placeholder, and its quotes when they are the problem", () => {
     // What the editor highlights, through the same helper the Problems panel uses.
     const text = (issue: InspectorIssue | undefined) => {

@@ -1,0 +1,17 @@
+{
+  "check": "invalid_task_key",
+  "issue": 237,
+  "note": "docs/checks.md#invalid_task_key: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "contains an invalid character"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

@@ -46,7 +46,7 @@ describe("jobs only a target writes, with no target picked", () => {
     expect(findTargetOnlyJobs(picked, [])).toEqual([]);
   });
 
-  test("a job also in the bundle's own resources gets no note", () => {
+  test("near miss (job_only_in_target): a job also in the bundle's own resources gets no note", () => {
     const bundle = { resources: { jobs: { shared: {} } }, targets: { dev: { resources: { jobs: { shared: {} } } } } };
     expect(findTargetOnlyJobs(bundle, [])).toEqual([]);
   });

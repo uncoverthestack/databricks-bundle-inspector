@@ -1,0 +1,22 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: check
+          condition_task:
+            op: EQUAL_TO
+            left: "1"
+            right: "1"
+        - task_key: after
+          depends_on:
+            - task_key: check
+              outcome: "True"
+          notebook_task:
+            notebook_path: ./nb.py

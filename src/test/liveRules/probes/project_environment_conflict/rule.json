@@ -1,0 +1,17 @@
+{
+  "check": "project_environment_conflict",
+  "issue": 612,
+  "note": "docs/checks.md#project_environment_conflict: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "fail",
+      "failsWith": "cannot be combined with environment version"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

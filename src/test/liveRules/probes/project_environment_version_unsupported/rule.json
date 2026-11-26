@@ -1,0 +1,18 @@
+{
+  "check": "project_environment_version_unsupported",
+  "issue": 604,
+  "note": "docs/checks.md#project_environment_version_unsupported: confirmed by the probe, Databricks CLI v1.28.0, 2026-11-26, 2 runs.",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "environment_version 5"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

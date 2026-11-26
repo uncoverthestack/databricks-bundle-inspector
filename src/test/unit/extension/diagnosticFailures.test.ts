@@ -72,7 +72,7 @@ describe("incomplete findings do not become a clean check", () => {
     expect(messages()).toHaveLength(1);
     expect(bundleProblemCount(root).errors).toBe(1);
   });
-  test("a successful retry replaces stale findings and restores complete results", async () => {
+  test("near miss (inspector_check_failed): a successful retry replaces stale findings and restores complete results", async () => {
     await updateBundleDiagnostics(result("old"), root, collection, new Map());
     jest.mocked(inspector.checkedGraphOf).mockRejectedValueOnce(new Error("failed"));
     await updateBundleDiagnostics(result(), root, collection, new Map());

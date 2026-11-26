@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { CHECKS, type CheckFamily } from "../../../bundle/checkList.js";
 import { INSPECTOR_ISSUE_KINDS } from "../../../bundle/issues.js";
+import { loadProbes, STEPS, type Step } from "../../liveRules/probes.js";
 
 const root = path.resolve(__dirname, "../../../..");
 const read = (file: string) => readFileSync(path.join(root, file), "utf8");
@@ -82,5 +83,80 @@ describe("every check is tested", () => {
     const testedOtherwise = new Set(["inspector_check_failed"]);
     const untested = INSPECTOR_ISSUE_KINDS.filter((code) => !testedOtherwise.has(code) && !new RegExp(`\\b${code}\\b`).test(text));
     expect(untested).toEqual([]);
+  });
+});
+
+/**
+ * The bar a check meets before it ships (docs/checks.md, "Adding a check"). It applies to every
+ * code not in shippedCodes.json yet, so a new code can't reach a release without it:
+ *
+ * 1. its failing step is confirmed live: a probe in src/test/liveRules/probes (#650);
+ * 2. no new false alarms on real bundles: the "Findings on real bundles" pull request check
+ *    (#660), reviewed by hand, so not tested here;
+ * 3. a near-miss test that must stay quiet, with "near miss (<code>)" in its title;
+ * 4. an entry in the check list, with the step it stops (#648).
+ */
+describe("the bar every check meets before it ships", () => {
+  const shipped = JSON.parse(read("src/bundle/shippedCodes.json")) as Record<string, string>;
+  const unshipped = INSPECTOR_ISSUE_KINDS.filter((code) => !(code in shipped));
+  const probes = loadProbes(path.join(root, "src/test/liveRules/probes"));
+  /** Nothing fails for these, so there is no step to confirm live. */
+  const NOTHING_FAILS = new Set(["advice", "coverage", "cli"]);
+
+  /** The first step the variant is confirmed to fail at, or "none" when every listed step passes. */
+  const failsAt = (variant: Partial<Record<Step, string>>): Step | "none" | "unconfirmed" => {
+    for (const step of STEPS) {
+      if (variant[step] === "unknown") return "unconfirmed";
+      if (variant[step] === "fail") return step;
+    }
+    return "none";
+  };
+  const confirmed = (code: string): boolean => {
+    const stops = (CHECKS as Record<string, { stops?: string }>)[code]?.stops;
+    return probes.some((probe) => {
+      if (probe.check !== code) return false;
+      const broken = failsAt(probe.variants.broken ?? {});
+      const working = failsAt(probe.variants.working ?? {});
+      if (working !== "none" || probe.variants.working?.run !== "pass") return false;
+      // Silent: it deploys and runs, but does the wrong thing; how that shows varies by check.
+      return stops === "silent" ? broken !== "unconfirmed" : broken === stops;
+    });
+  };
+
+  test("4. every check not shipped yet says which step it stops", () => {
+    expect(unshipped.filter((code) => !("stops" in CHECKS[code]))).toEqual([]);
+  });
+
+  test("1. every check not shipped yet has its failing step confirmed live, by a probe that fails there", () => {
+    const missing = unshipped.filter((code) => !NOTHING_FAILS.has((CHECKS[code] as { stops?: string }).stops ?? "") && !confirmed(code));
+    // Add a probe: src/test/liveRules/README.md. Run it twice on a workspace before setting the steps.
+    expect(missing).toEqual([]);
+  });
+
+  test("3. every check not shipped yet has a near-miss test", () => {
+    function testFiles(dir: string): string[] {
+      return readdirSync(dir).flatMap((name) => {
+        const file = path.join(dir, name);
+        if (statSync(file).isDirectory()) return testFiles(file);
+        return name.endsWith(".ts") && name !== "checkList.test.ts" ? [file] : [];
+      });
+    }
+    const named = new Set<string>();
+    for (const file of testFiles(path.join(root, "src/test"))) {
+      for (const match of readFileSync(file, "utf8").matchAll(/near miss \(([a-z_]+)\)/g)) named.add(match[1]!);
+    }
+    // A test titled "near miss (<code>): ..." with a case close to the mistake that must give no finding.
+    expect(unshipped.filter((code) => !named.has(code))).toEqual([]);
+  });
+
+  test("every probe backs a check, and fails at the step the check list names", () => {
+    const wrong = probes.flatMap((probe) => {
+      const info = (CHECKS as Record<string, { stops?: string }>)[probe.check];
+      if (!info) return [`${probe.id}: no check "${probe.check}"`];
+      const broken = failsAt(probe.variants.broken ?? {});
+      if (broken === "unconfirmed" || info.stops === undefined || info.stops === "silent") return [];
+      return broken === info.stops ? [] : [`${probe.id}: fails at ${broken}, the check list says ${info.stops}`];
+    });
+    expect(wrong).toEqual([]);
   });
 });
