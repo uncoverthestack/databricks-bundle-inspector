@@ -6,7 +6,9 @@ import { keyLocator } from "./targetChecks.js";
  * A resource key with a dot in it (#511). `bundle validate` accepts it, and deploy fails on
  * every CLI from v0.299.2 to v1.28.0, for jobs, pipelines and schemas alike (live,
  * 2026-11-25): the Terraform engine with "Invalid resource name", the direct engine with
- * a crash. Nothing in the bundle deploys, not even the resources next to it.
+ * a crash. Nothing in the bundle deploys, not even the resources next to it. On a bundle
+ * deployed before, the direct engine uploads the files first, so an existing job ran the new
+ * code with its old settings (live, CLI v1.28.0, 2026-11-27, #577).
  * The CLI reports it with no target either, so it is checked in both.
  */
 export interface ResourceKeyFinding {
@@ -67,7 +69,7 @@ export function findResourceKeyProblems(cliOutput: unknown, files: SourceFile[])
       group,
       key,
       title: `The resource key "${key}" has a dot, which deploy doesn't accept, so deploy may fail.`,
-      fixHint: `Use letters, digits, _ or - in the key, for example "${suggest(key)}", and update any \${resources.${group}.${key}...} references. Deploy stops before it creates anything, with "Invalid resource name" or a Databricks CLI crash.`,
+      fixHint: `Rename it to "${suggest(key)}" and update any \${resources.${group}.${key}...} references. Otherwise deploy crashes, and jobs deployed before may run the new code with their old settings.`,
       ...(location ? { location } : {}),
     });
   }

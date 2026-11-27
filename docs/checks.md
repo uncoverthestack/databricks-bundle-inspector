@@ -577,12 +577,12 @@ Variable values refer to each other in a loop, or a variable refers to itself, s
 
 ### `resource_key_has_dot`
 
-A resource key has a dot in it. `bundle validate` accepts it, with or without a target, and `bundle deploy` stops before it creates anything: not the resource, nor any other in the bundle.
+A resource key has a dot in it. `bundle validate` accepts it, with or without a target, and `bundle deploy` stops before it creates or updates any resource: not the dotted one, nor any other in the bundle. On a bundle deployed before, the direct engine uploads the bundle's files first, so existing jobs run the new code with their old settings.
 
 - **Severity:** error.
 - **Example:** `resources: jobs: nightly.load:`.
 - **Fix:** use letters, digits, `_` or `-` in the key, such as `nightly_load`, and update any `${resources.jobs.nightly.load...}` references.
-- **Checked:** by deploying, with a control key that deploys. Databricks CLI v0.299.2 and v1.17.0 with the Terraform engine stop with "Invalid resource name". The direct engine crashes on v0.299.2, v1.17.0 and v1.28.0, for a job, a pipeline and a schema key.
+- **Checked:** by deploying, with a control key that deploys. Databricks CLI v0.299.2 and v1.17.0 with the Terraform engine stop with "Invalid resource name". The direct engine crashes on v0.299.2, v1.17.0 and v1.28.0, for a job, a pipeline and a schema key. On v1.28.0, adding a dotted key to a bundle deployed before: the files uploaded, the existing job kept its old name, and a run of it returned the new code (#577).
 - **Limits:** keys written through a YAML merge (`<<`) are found, but the finding goes on `databricks.yml`.
 
 ### `internal_resource_set`
