@@ -1,5 +1,9 @@
 # Databricks Bundle Inspector (command line)
 
+[![VS Code Marketplace](https://vsmarketplacebadges.dev/version/UncoverTheStack.databricks-bundle-inspector.svg?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector)
+[![Open VSX](https://img.shields.io/open-vsx/v/UncoverTheStack/databricks-bundle-inspector?label=Open%20VSX)](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector)
+[![npm](https://img.shields.io/npm/v/@uncoverthestack/databricks-bundle-inspector?label=npm)](https://www.npmjs.com/package/@uncoverthestack/databricks-bundle-inspector)
+
 Find Databricks bundle problems before you deploy, including ones `databricks bundle validate` misses, from a terminal or a CI pipeline.
 
 It runs the same checks as the [Databricks Bundle Inspector extension](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector) for VS Code, on every Declarative Automation Bundle (formerly Databricks Asset Bundle) under a folder, and exits with `1` when it finds errors, so a pull request can fail before anything is deployed.

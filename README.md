@@ -1,5 +1,9 @@
 # Databricks Bundle Inspector
 
+[![VS Code Marketplace](https://vsmarketplacebadges.dev/version/UncoverTheStack.databricks-bundle-inspector.svg?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=UncoverTheStack.databricks-bundle-inspector)
+[![Open VSX](https://img.shields.io/open-vsx/v/UncoverTheStack/databricks-bundle-inspector?label=Open%20VSX)](https://open-vsx.org/extension/UncoverTheStack/databricks-bundle-inspector)
+[![npm](https://img.shields.io/npm/v/@uncoverthestack/databricks-bundle-inspector?label=npm)](https://www.npmjs.com/package/@uncoverthestack/databricks-bundle-inspector)
+
 Find Databricks bundle problems before you deploy, including ones `databricks bundle validate` misses. See them in your code, at the exact line, and explore how your jobs and tasks connect.
 
 It checks your Declarative Automation Bundle (formerly Databricks Asset Bundle) for missing files, broken task dependencies, notebook parameters a task doesn't pass, and more. Findings go to the Problems panel. The graph shows each job's tasks and how they depend on each other. Select a pipeline on the bundle overview to see what runs it and its sources; one with SQL sources also has a data flow of its tables.
