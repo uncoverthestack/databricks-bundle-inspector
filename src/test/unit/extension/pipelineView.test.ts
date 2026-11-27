@@ -91,6 +91,25 @@ describe("pipelineRunners", () => {
     expect(runners.size).toBe(1);
   });
 
+  test("carries how each job starts, and nothing for a job without a schedule (issue 542)", () => {
+    const task = { task_key: "t", pipeline_task: { pipeline_id: "${resources.pipelines.p.id}" } };
+    const runners = pipelineRunners(
+      bundle(
+        { p: {} },
+        {
+          daily: { tasks: [task], trigger: { periodic: { interval: 1, unit: "DAYS" } } },
+          always: { tasks: [task], continuous: {} },
+          none: { tasks: [task] },
+        },
+      ),
+    ).get("p")!;
+    expect(runners[0]!.trigger?.short).toBe("Every day");
+    expect(runners[0]!.continuous).toBeUndefined();
+    expect(runners[1]!.trigger?.short).toBe("Continuous");
+    expect(runners[1]!.continuous).toBe(true);
+    expect(runners[2]).toEqual({ jobKey: "none", jobName: "none", taskKey: "t" });
+  });
+
   test("copes with jobs that have no task list", () => {
     expect(pipelineRunners(bundle({}, { a: {}, b: { tasks: "nope" }, c: { tasks: [null, 3] } })).size).toBe(0);
   });

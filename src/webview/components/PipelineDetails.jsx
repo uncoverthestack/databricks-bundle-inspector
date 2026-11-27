@@ -70,6 +70,12 @@ export default function PipelineDetails({ view, panel, onSelectItem, onOpenFile,
             >
               <span className="min-w-0 max-w-[65%] shrink-0 truncate font-medium">{runner.jobKey}</span>
               <span className="min-w-0 flex-1 truncate text-muted">task {runner.taskKey}</span>
+              {runner.trigger && (
+                // How the job starts (issue 542), the same few words as its overview box.
+                <span title={runner.trigger.full} data-pipeline-runner-trigger className="max-w-[45%] shrink-0 truncate rounded border border-line px-1.5 text-[10.5px] text-muted">
+                  {runner.trigger.short}
+                </span>
+              )}
             </button>
           ))
         )}

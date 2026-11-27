@@ -9,6 +9,7 @@ import type { PipelineDataFlow } from "../../bundle/pipelineDataFlow.js";
 import { orderBySeverity, severityMeta } from "./issueSeverity.js";
 import { escapeMarkdown } from "../../bundle/markdownText.js";
 import { reportLocation } from "../../bundle/reportLocation.js";
+import { jobTriggerWords, type JobTriggerWords } from "../../bundle/jobTrigger.js";
 
 interface GraphNode {
   id: string;
@@ -72,6 +73,10 @@ export interface PipelineRunner {
   jobKey: string;
   jobName: string;
   taskKey: string;
+  /** How the job starts, in the words of its overview box (issue 542); absent when it sets none. */
+  trigger?: JobTriggerWords;
+  /** The job sets `continuous`, so it keeps the pipeline running (issue 542). */
+  continuous?: true;
 }
 
 export interface PipelineSecret {
@@ -123,6 +128,9 @@ export function taskPipelineKey(task: unknown): string | undefined {
   return referencedPipelineKey(pipelineTask.pipeline_id);
 }
 
+/** `continuous: {}` is still continuous, as in jobTrigger. */
+const isContinuous = (value: unknown) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 /** The tasks in this bundle's jobs that run each pipeline, by pipeline key. */
 export function pipelineRunners(parsedBundle: unknown): Map<string, PipelineRunner[]> {
   const runners = new Map<string, PipelineRunner[]>();
@@ -135,7 +143,14 @@ export function pipelineRunners(parsedBundle: unknown): Map<string, PipelineRunn
       const taskKey = asString(asRecord(task).task_key);
       if (!pipelineKey || !taskKey) continue;
       const list = runners.get(pipelineKey) ?? [];
-      list.push({ jobKey, jobName: asString(asRecord(job).name) ?? jobKey, taskKey });
+      const trigger = jobTriggerWords(asRecord(job));
+      list.push({
+        jobKey,
+        jobName: asString(asRecord(job).name) ?? jobKey,
+        taskKey,
+        ...(trigger ? { trigger } : {}),
+        ...(isContinuous(asRecord(job).continuous) ? { continuous: true as const } : {}),
+      });
       runners.set(pipelineKey, list);
     }
   }
@@ -250,7 +265,10 @@ export function pipelineReviewSummary(
 
   lines.push("", "### Run by");
   if (view.runBy.length === 0) lines.push("- No job in this bundle runs this pipeline.");
-  for (const runner of view.runBy) lines.push(`- ${escapeMarkdown(resolveName(runner.jobName))} (task ${escapeMarkdown(runner.taskKey)})`);
+  for (const runner of view.runBy) {
+    const starts = runner.trigger ? ` · ${escapeMarkdown(runner.trigger.full)}` : "";
+    lines.push(`- ${escapeMarkdown(resolveName(runner.jobName))} (task ${escapeMarkdown(runner.taskKey)})${starts}`);
+  }
 
   lines.push("", "### Sources", `- ${view.sources.length} source${view.sources.length === 1 ? "" : "s"} in libraries`);
   const counts = new Map<SourceStatus, number>();
@@ -275,7 +293,7 @@ export interface PipelineSourceRow extends PipelineSource {
 export interface PipelinePanel {
   /** The `name` as written, when it differs from the key. */
   name?: string;
-  /** "Serverless · Triggered · Development mode". */
+  /** "Serverless · Starts when its job runs · Development mode". */
   settings: string;
   /** The default catalog and schema, or undefined when neither is set. */
   writesTo?: string;
@@ -304,6 +322,15 @@ function dataFlowLine(flow: PipelineDataFlow): PipelinePanel["dataFlow"] {
   return { summary: `${parts.join(", ")}.`, opens: true };
 }
 
+/**
+ * How the pipeline runs (issue 542). A pipeline has no schedule of its own: a job's
+ * `pipeline_task` starts it, and a continuous job's setting wins over the pipeline's.
+ */
+function runMode(view: PipelineViewModel): string {
+  if (view.mode === "Continuous" || view.runBy.some((runner) => runner.continuous)) return "Continuous";
+  return view.runBy.length > 0 ? "Starts when its job runs" : "Triggered";
+}
+
 export function pipelinePanel(view: PipelineViewModel, resolveName: (value: string) => string = (value) => value): PipelinePanel {
   const sameLine = (issue: Issue, source: PipelineSource) => issue.file === source.file && issue.line === source.line;
   const sources = view.sources.map((source) => ({ ...source, issues: view.issues.filter((issue) => sameLine(issue, source)) }));
@@ -314,7 +341,7 @@ export function pipelinePanel(view: PipelineViewModel, resolveName: (value: stri
     ...(name !== view.key ? { name } : {}),
     // "Serverless" only when the bundle says so: without it, the workspace may still pick
     // serverless, so "classic" would be a guess.
-    settings: [...(view.serverless ? ["Serverless"] : []), view.mode, ...(view.development ? ["Development mode"] : [])].join(" · "),
+    settings: [...(view.serverless ? ["Serverless"] : []), runMode(view), ...(view.development ? ["Development mode"] : [])].join(" · "),
     ...(writesTo ? { writesTo } : {}),
     sources,
     otherIssues: view.issues.filter((issue) => !view.sources.some((source) => sameLine(issue, source))),
