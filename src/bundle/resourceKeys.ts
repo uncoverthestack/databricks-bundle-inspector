@@ -69,7 +69,7 @@ export function findResourceKeyProblems(cliOutput: unknown, files: SourceFile[])
       group,
       key,
       title: `The resource key "${key}" has a dot, which deploy doesn't accept, so deploy may fail.`,
-      fixHint: `Use letters, digits, _ or - in the key, for example "${suggest(key)}", and update any \${resources.${group}.${key}...} references. Deploy stops with "Invalid resource name" or a Databricks CLI crash. On a bundle deployed before, the new files may already be uploaded, so its jobs may run the new code with their old settings.`,
+      fixHint: `Rename it to "${suggest(key)}" and update any \${resources.${group}.${key}...} references. Otherwise deploy crashes, and jobs deployed before may run the new code with their old settings.`,
       ...(location ? { location } : {}),
     });
   }

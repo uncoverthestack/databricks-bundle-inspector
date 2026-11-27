@@ -29,11 +29,11 @@ describe("resource keys with a dot", () => {
 
   test("the fix names the key with _ in place of each dot", () => {
     const [finding] = findResourceKeyProblems(parse("resources:\n  jobs:\n    a.b.c:\n      name: n\n"), []);
-    expect(finding!.fixHint).toContain('for example "a_b_c"');
+    expect(finding!.fixHint).toContain('Rename it to "a_b_c"');
     expect(finding!.fixHint).toContain("${resources.jobs.a.b.c...}");
     // #577: a bundle deployed before gets its files uploaded before the crash.
     expect(finding!.fixHint).not.toContain("before it creates anything");
-    expect(finding!.fixHint).toContain("run the new code with their old settings");
+    expect(finding!.fixHint).toContain("jobs deployed before may run the new code with their old settings");
     expect(finding!.location).toBeUndefined();
   });
 
@@ -61,13 +61,13 @@ describe("resource keys with a dot", () => {
       scripts: { c_d: { content: "echo" } },
     };
     const hints = findResourceKeyProblems(bundle, []).map((finding) => finding.fixHint);
-    expect(hints[0]).toContain('for example "a_b_3"');
-    expect(hints[1]).toContain('for example "c_d_2"');
+    expect(hints[0]).toContain('Rename it to "a_b_3"');
+    expect(hints[1]).toContain('Rename it to "c_d_2"');
   });
 
   test("two dotted keys that would share a suggestion get different ones", () => {
     const hints = findResourceKeyProblems({ resources: { jobs: { "x.y_z": {}, "x_y.z": {} } } }, []).map((finding) => finding.fixHint);
-    expect(hints.map((hint) => hint.match(/for example "([^"]+)"/)?.[1])).toEqual(["x_y_z", "x_y_z_2"]);
+    expect(hints.map((hint) => hint.match(/Rename it to "([^"]+)"/)?.[1])).toEqual(["x_y_z", "x_y_z_2"]);
   });
 
   test("near miss (resource_key_has_dot): dots elsewhere are fine: in a name, a task key's value, or a field", () => {
