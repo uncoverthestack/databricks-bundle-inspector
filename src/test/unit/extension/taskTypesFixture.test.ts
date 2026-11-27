@@ -5,7 +5,7 @@ import { enrichGraphWithFileContent } from "../../../bundle/graph/enrichGraph.js
 import { extractBundleGraph, type ParsedBundleConfig } from "../../../bundle/graph/bundleGraph.js";
 import { buildInspectorIssues } from "../../../bundle/issues.js";
 
-// The task-types fixture (#646), from the Databricks CLI's own output with target prod. See
+// The task-types fixture (#646), from the Databricks CLI's own output for the structural preview. See
 // the fixture's README for what deploy did with each case (CLI v1.28.0, 2026-11-27).
 const ROOT = path.resolve("src/test/fixtures/task-types");
 
@@ -22,7 +22,7 @@ async function findings() {
 }
 
 describe("multiple_task_types", () => {
-  test("a task with two task types is reported, on the type a target adds", async () => {
+  test("a task with two task types written in the base is reported", async () => {
     expect(await findings()).toEqual([
       {
         task: "both_in_base",
@@ -38,25 +38,11 @@ describe("multiple_task_types", () => {
         at: "notebook_task: { notebook_path: ./src/nb.py }",
         title: 'Keep one task type on task "loop_inner": it has notebook_task and condition_task, and Databricks may run only one.',
       },
-      {
-        task: "nb_to_py",
-        severity: "error",
-        line: 49,
-        at: "spark_python_task: { python_file: ./src/s.py }",
-        title: 'Keep one task type on task "nb_to_py": it has notebook_task and spark_python_task, and Databricks may run only one.',
-      },
-      {
-        task: "py_to_nb",
-        severity: "error",
-        line: 47,
-        at: "notebook_task: { notebook_path: ./src/nb.py }",
-        title: 'Keep one task type on task "py_to_nb": it has notebook_task and spark_python_task, and Databricks may run only one.',
-      },
     ]);
   });
 
   test("near miss (multiple_task_types): a target that keeps the type, or one type alone, is not reported", async () => {
     const tasks = (await findings()).map((finding) => finding.task);
-    for (const quiet of ["same_type_new_path", "other_setting", "one_type"]) expect(tasks).not.toContain(quiet);
+    for (const quiet of ["same_type_new_path", "other_setting", "one_type", "py_to_nb", "nb_to_py"]) expect(tasks).not.toContain(quiet);
   });
 });

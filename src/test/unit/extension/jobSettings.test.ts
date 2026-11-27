@@ -535,3 +535,41 @@ describe("job parameter references", () => {
     });
   });
 });
+
+describe("multiple_task_types", () => {
+  // With a target picked, the CLI joins the target's task with the base task by task_key, so a
+  // different type sits beside the old one (`bundle validate -t t -o json`, CLI v1.28.0,
+  // 2026-11-27, #646). Deploy passes and Databricks keeps one of them.
+  const PY = "spark_python_task: { python_file: ./s.py }";
+  const swap = (base: string, target: string) => `resources:
+  jobs:
+    j:
+      tasks:
+        - task_key: a
+          ${base}
+targets:
+  prod:
+    resources:
+      jobs:
+        j:
+          tasks:
+            - task_key: a
+              ${target}
+`;
+  const merged = (...types: Record<string, unknown>[]) => ({ j: { tasks: [Object.assign({ task_key: "a" }, ...types)] } });
+
+  test.each([
+    ["a Python file to a notebook", PY, NB, 14],
+    ["a notebook to a Python file", NB, PY, 14],
+  ])("a target that swaps %s is reported on the target's line", (_case, base, target, line) => {
+    const resolved = merged({ spark_python_task: { python_file: "./s.py" } }, { notebook_task: { notebook_path: "./nb.py" } });
+    expect(summary(check(swap(base, target), { activeTarget: "prod" }, resolved))).toEqual([
+      `multiple_task_types @${line}: Keep one task type on task "a": it has notebook_task and spark_python_task, and Databricks may run only one.`,
+    ]);
+  });
+
+  test("near miss (multiple_task_types): a target that changes only the notebook path is not reported", () => {
+    const resolved = merged({ notebook_task: { notebook_path: "./nb2.py" } });
+    expect(kinds(check(swap(NB, "notebook_task: { notebook_path: ./nb2.py }"), { activeTarget: "prod" }, resolved))).toEqual([]);
+  });
+});

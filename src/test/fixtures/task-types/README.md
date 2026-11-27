@@ -1,6 +1,6 @@
 # A task with more than one task type (issue 646)
 
-A target's task settings are joined with the base task's by `task_key`, so a target that sets another task type leaves the task with two. Recorded with `--target prod`.
+A target's task settings are joined with the base task's by `task_key`, so a target that sets another task type leaves the task with two. Recorded for the structural preview, which doesn't apply a target's settings, so only the cases written in the base are reported here. The target swaps are covered in `jobSettings.test.ts` with the jobs as the CLI resolves them with `-t prod`.
 
 Checked live on 2026-11-27, Databricks CLI v1.28.0, 2 deploys, settings read back with `databricks jobs get`:
 
@@ -10,8 +10,8 @@ Checked live on 2026-11-27, Databricks CLI v1.28.0, 2 deploys, settings read bac
 
 | Task | Case | Reported |
 |---|---|---|
-| `py_to_nb` | target swaps a Python file for a notebook | yes |
-| `nb_to_py` | target swaps a notebook for a Python file | yes |
+| `py_to_nb` | target swaps a Python file for a notebook | with `-t prod` |
+| `nb_to_py` | target swaps a notebook for a Python file | with `-t prod` |
 | `both_in_base` | two types in one task, no target | yes |
 | `loop` | for-each inner task with two types | yes |
 | `same_type_new_path` | target changes the notebook path | no |

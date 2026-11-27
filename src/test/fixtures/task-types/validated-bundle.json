@@ -1,8 +1,6 @@
 {
   "bundle": {
-    "environment": "prod",
-    "name": "task_types",
-    "target": "prod"
+    "name": "task_types"
   },
   "resources": {
     "jobs": {
@@ -74,37 +72,45 @@
               "notebook_path": "./src/nb.py"
             },
             "task_key": "one_type"
-          },
-          {
-            "notebook_task": {
-              "notebook_path": "./src/nb.py"
-            },
-            "task_key": "py_to_nb"
-          },
-          {
-            "environment_key": "e",
-            "spark_python_task": {
-              "python_file": "./src/s.py"
-            },
-            "task_key": "nb_to_py"
-          },
-          {
-            "notebook_task": {
-              "notebook_path": "./src/nb2.py"
-            },
-            "task_key": "same_type_new_path"
-          },
-          {
-            "task_key": "other_setting",
-            "timeout_seconds": 600
           }
         ]
       }
     }
   },
-  "sync": {
-    "paths": [
-      "."
-    ]
+  "targets": {
+    "prod": {
+      "default": true,
+      "resources": {
+        "jobs": {
+          "j": {
+            "tasks": [
+              {
+                "notebook_task": {
+                  "notebook_path": "./src/nb.py"
+                },
+                "task_key": "py_to_nb"
+              },
+              {
+                "environment_key": "e",
+                "spark_python_task": {
+                  "python_file": "./src/s.py"
+                },
+                "task_key": "nb_to_py"
+              },
+              {
+                "notebook_task": {
+                  "notebook_path": "./src/nb2.py"
+                },
+                "task_key": "same_type_new_path"
+              },
+              {
+                "task_key": "other_setting",
+                "timeout_seconds": 600
+              }
+            ]
+          }
+        }
+      }
+    }
   }
 }
