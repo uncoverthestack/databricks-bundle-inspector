@@ -65,6 +65,7 @@ export const CHECKS = {
   project_environment_version_unsupported: { family: "jobs", stops: "run" },
   project_environment_conflict: { family: "jobs", stops: "deploy" },
   multiple_job_triggers: { family: "jobs", stops: "deploy" },
+  multiple_task_types: { family: "jobs", stops: "silent" },
   invalid_job_parameter_name: { family: "jobs", stops: "deploy" },
   invalid_task_key: { family: "jobs", stops: "deploy" },
   outcome_without_condition: { family: "jobs", stops: "deploy" },

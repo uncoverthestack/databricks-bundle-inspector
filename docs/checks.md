@@ -14,7 +14,7 @@ How a new check is confirmed before it ships: [Adding a check](adding-a-check.md
 
 - [Files and paths](#files-and-paths): `missing_file`, `notebook_missing_extension`, `missing_pipeline_source`, `unsupported_pipeline_file`, `missing_library`, `not_a_notebook`, `file_is_a_notebook`, `notebook_byte_order_mark`, `path_is_a_folder`, `excluded_from_sync`, `path_not_checked`, `same_workspace_path`, `file_scan_failed`
 - [`include`](#include): `include_matches_nothing`, `resource_not_included`
-- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `environments_not_checked`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
+- [Jobs](#jobs): `unknown_task_dependency`, `task_dependency_loop`, `duplicate_task_key`, `duplicate_job_parameter`, `environment_version_missing`, `unknown_environment_key`, `environments_not_checked`, `project_environment_version_missing`, `project_environment_version_unsupported`, `project_environment_conflict`, `multiple_job_triggers`, `multiple_task_types`, `invalid_job_parameter_name`, `invalid_task_key`, `outcome_without_condition`, `invalid_outcome`, `for_each_inputs_not_array`, `for_each_inputs_too_long`, `unknown_job_parameter`, `job_parameter_reference_with_dot`, `job_parameter_in_default`, `pipeline_selection_not_found`, `job_only_in_target`
 - [Compute](#compute): `runtime_end_of_support`
 - [Code in notebooks and files](#code-in-notebooks-and-files): `widget_not_set`, `unused_parameter`, `sql_parameter_not_set`, `sql_parameter_quoted`, `sql_parameter_as_name`, `schema_renamed_in_target`, `task_value_unknown_task`, `task_value_not_upstream`, `task_value_key_not_set`, `secret_scope_name_mismatch`, `run_target_not_found`
 - [Bundle configuration](#bundle-configuration): `missing_bundle_name`, `empty_bundle_name_in_root_path`, `unresolved_variable`, `variable_reference_loop`, `resource_key_has_dot`, `internal_resource_set`, `resource_not_defined`, `variable_in_auth_field`, `variable_in_bundle_name`, `invalid_engine`, `terraform_engine_removed`, `terraform_setting_has_no_effect`, `script_no_content`, `variable_in_script_content`, `script_env_reference_not_resolved`, `secret_value_not_variable`, `secret_variable_has_default`, `cli_diagnostic`, `unknown_or_deprecated_field`, `unknown_task_type`, `git_source_not_recommended`, `inspector_check_failed`
@@ -292,6 +292,16 @@ A job sets more than one of `schedule`, `trigger` and `continuous`.
 - **Example:** a job with a `schedule` and a `trigger.periodic`. Deploy fails with `Invalid trigger settings. One of 'schedule', 'trigger' or 'continuous' can be set.` An empty `schedule: {}` counts as set; `schedule:` with no value does not, and deploys.
 - **Fix:** keep only one of them.
 - **Limits:** checks the job as the CLI resolved it, so a trigger a target adds counts, and the finding points at it. A trigger from a variable the preview can't resolve is not counted.
+
+### `multiple_task_types`
+
+A task has more than one task type, such as `notebook_task` and `spark_python_task`. Usually a target sets a different type than the base task: a target's task settings are joined with the base task's by `task_key`, so the new type is added beside the old one rather than replacing it.
+
+- **Severity:** error.
+- **Example:** the base task has `spark_python_task`, and target `prod` gives the same `task_key` a `notebook_task`. `bundle validate` and `bundle deploy` pass, the job runs and succeeds, and Databricks runs the Python file: the target's notebook never runs. Every redeploy reports the job as changed.
+- **Fix:** keep one task type. Set the type in each target, or remove one.
+- **Checked:** deployed and read back with `databricks jobs get`, Databricks CLI v1.28.0, 2026-11-27, with a control target that only changes the notebook path. Databricks kept one type and dropped `notebook_task` beside each of `spark_python_task`, `sql_task`, `condition_task` and `run_job_task`, whichever side it was on. Two types written in one task with no target deploy the same way. `spark_python_task` beside `sql_task` failed deploy instead, with `A task environment can only be provided for task a using serverless compute ...`.
+- **Limits:** a swap in a target shows only once that target is picked; the structural preview doesn't apply a target's settings. Which type is kept was checked for the pairs above only, so the finding doesn't say which one runs. A for-each inner task is checked too.
 
 ### `invalid_job_parameter_name`
 

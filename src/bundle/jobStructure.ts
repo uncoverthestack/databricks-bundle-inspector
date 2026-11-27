@@ -32,7 +32,8 @@ export interface JobStructureFinding {
     | "for_each_inputs_too_long"
     | "unknown_job_parameter"
     | "job_parameter_reference_with_dot"
-    | "job_parameter_in_default";
+    | "job_parameter_in_default"
+    | "multiple_task_types";
   /** The job's resource key, e.g. `nightly` for `resources.jobs.nightly`. */
   jobKey: string;
   /** The task the finding belongs to; none for a job parameter. */

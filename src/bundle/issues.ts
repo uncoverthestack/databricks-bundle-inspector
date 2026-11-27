@@ -62,6 +62,7 @@ export const INSPECTOR_ISSUE_KINDS = [
   "project_environment_version_unsupported",
   "project_environment_conflict",
   "multiple_job_triggers",
+  "multiple_task_types",
   "invalid_job_parameter_name",
   "invalid_task_key",
   "outcome_without_condition",

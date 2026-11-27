@@ -1,0 +1,26 @@
+bundle:
+  name: __NAME__
+targets:
+  probe:
+    mode: development
+    default: true
+    resources:
+      jobs:
+        probe:
+          tasks:
+            - task_key: t
+              notebook_task:
+                notebook_path: ./nb.py
+resources:
+  jobs:
+    probe:
+      name: __NAME__
+      tasks:
+        - task_key: t
+          spark_python_task:
+            python_file: ./s.py
+          environment_key: e
+      environments:
+        - environment_key: e
+          spec:
+            environment_version: "4"
