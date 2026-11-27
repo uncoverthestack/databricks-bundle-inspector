@@ -1,5 +1,6 @@
 import type { YamlLocation } from "./sourceLocations.js";
 import { closestName } from "./closestName.js";
+import { TASK_PAYLOAD_KEYS } from "./resources/task.js";
 import {
   dependencyLocation,
   jobLists,
@@ -100,8 +101,9 @@ function taskFieldLocation(
   taskKey: string,
   field: (string | number)[],
   options: JobStructureOptions,
+  sides: readonly boolean[] = [true, false],
 ): YamlLocation | undefined {
-  for (const fromTarget of [true, false]) {
+  for (const fromTarget of sides) {
     let last: YamlLocation | undefined;
     for (const file of files) {
       for (const tasks of jobLists(file.doc, "tasks")) {
@@ -324,6 +326,29 @@ export function findJobSettingProblems(
           subject: field.length > 1 ? `${key}#inner` : key,
           ...wording,
           ...located(taskFieldLocation(files, locate, jobKey, taskKey, [...field], options)),
+        });
+      }
+
+      // A target's task settings join the base task's (#646), so a target that sets another task
+      // type leaves the task with two. Deploy passes and Databricks keeps one: live on CLI
+      // v1.28.0 it dropped notebook_task beside each other type tried. A for-each inner task too.
+      for (const [prefix, body, name] of [
+        [[], task, ownKey ?? taskKey],
+        [["for_each_task", "task"], inner, innerKey ?? taskKey],
+      ] as const) {
+        const types = TASK_PAYLOAD_KEYS.filter((type) => type !== "for_each_task" || prefix.length === 0).filter((type) => isMap(body[type]));
+        if (types.length < 2) continue;
+        const where = (sides: readonly boolean[]) =>
+          types.map((type) => taskFieldLocation(files, locate, jobKey, taskKey, [...prefix, type], options, sides)).find(Boolean);
+        findings.push({
+          kind: "multiple_task_types",
+          jobKey,
+          taskKey: graphKey,
+          subject: `${types.join("+")}${prefix.length ? "#inner" : ""}`,
+          title: `Keep one task type on task "${name}": it has ${quoted(types)}, and Databricks may run only one.`,
+          fixHint: `A target adds its task settings to the base task, so a new type doesn't replace the old one. Set the type in each target, or remove one.`,
+          // The type a target adds, which is what made it two; else the first one written.
+          ...located(where([true]) ?? where([false])),
         });
       }
 

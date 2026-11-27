@@ -76,6 +76,7 @@ describe("problem names and Issues groups (#392)", () => {
       "unknown_environment_key",
       "project_environment_version_missing",
       "multiple_job_triggers",
+      "multiple_task_types",
       "invalid_job_parameter_name",
       "invalid_task_key",
       "outcome_without_condition",

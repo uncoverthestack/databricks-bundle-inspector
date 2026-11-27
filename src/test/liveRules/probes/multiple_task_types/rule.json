@@ -1,0 +1,18 @@
+{
+  "check": "multiple_task_types",
+  "issue": 646,
+  "note": "docs/checks.md#multiple_task_types: the target's notebook is dropped, the base Python file runs (CLI v1.28.0).",
+  "variants": {
+    "broken": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "fail",
+      "failsWith": "BASE_PYTHON_FILE_RAN"
+    },
+    "working": {
+      "validate": "pass",
+      "deploy": "pass",
+      "run": "pass"
+    }
+  }
+}

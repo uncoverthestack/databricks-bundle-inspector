@@ -1,0 +1,116 @@
+{
+  "bundle": {
+    "name": "task_types"
+  },
+  "resources": {
+    "jobs": {
+      "j": {
+        "environments": [
+          {
+            "environment_key": "e",
+            "spec": {
+              "environment_version": "4"
+            }
+          }
+        ],
+        "name": "task-types",
+        "tasks": [
+          {
+            "environment_key": "e",
+            "spark_python_task": {
+              "python_file": "./src/s.py"
+            },
+            "task_key": "py_to_nb"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "./src/nb.py"
+            },
+            "task_key": "nb_to_py"
+          },
+          {
+            "environment_key": "e",
+            "notebook_task": {
+              "notebook_path": "./src/nb.py"
+            },
+            "spark_python_task": {
+              "python_file": "./src/s.py"
+            },
+            "task_key": "both_in_base"
+          },
+          {
+            "for_each_task": {
+              "inputs": "[\"a\", \"b\"]",
+              "task": {
+                "condition_task": {
+                  "left": "1",
+                  "op": "EQUAL_TO",
+                  "right": "1"
+                },
+                "notebook_task": {
+                  "notebook_path": "./src/nb.py"
+                },
+                "task_key": "loop_inner"
+              }
+            },
+            "task_key": "loop"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "./src/nb.py"
+            },
+            "task_key": "same_type_new_path"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "./src/nb.py"
+            },
+            "task_key": "other_setting"
+          },
+          {
+            "notebook_task": {
+              "notebook_path": "./src/nb.py"
+            },
+            "task_key": "one_type"
+          }
+        ]
+      }
+    }
+  },
+  "targets": {
+    "prod": {
+      "default": true,
+      "resources": {
+        "jobs": {
+          "j": {
+            "tasks": [
+              {
+                "notebook_task": {
+                  "notebook_path": "./src/nb.py"
+                },
+                "task_key": "py_to_nb"
+              },
+              {
+                "environment_key": "e",
+                "spark_python_task": {
+                  "python_file": "./src/s.py"
+                },
+                "task_key": "nb_to_py"
+              },
+              {
+                "notebook_task": {
+                  "notebook_path": "./src/nb2.py"
+                },
+                "task_key": "same_type_new_path"
+              },
+              {
+                "task_key": "other_setting",
+                "timeout_seconds": 600
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
