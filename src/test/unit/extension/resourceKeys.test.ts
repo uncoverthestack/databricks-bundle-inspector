@@ -31,6 +31,9 @@ describe("resource keys with a dot", () => {
     const [finding] = findResourceKeyProblems(parse("resources:\n  jobs:\n    a.b.c:\n      name: n\n"), []);
     expect(finding!.fixHint).toContain('for example "a_b_c"');
     expect(finding!.fixHint).toContain("${resources.jobs.a.b.c...}");
+    // #577: a bundle deployed before gets its files uploaded before the crash.
+    expect(finding!.fixHint).not.toContain("before it creates anything");
+    expect(finding!.fixHint).toContain("run the new code with their old settings");
     expect(finding!.location).toBeUndefined();
   });
 
